@@ -2,7 +2,7 @@
  * Repositories for `repricing_state`, `price_submissions`, `update_budget_usage`
  * (doc 05 §6).
  */
-import { and, asc, eq, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lte, sql } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -71,6 +71,84 @@ export async function getRepricingState(
           .where(eq(mysqlSchema.repricingState.listingId, listingId))
       )[0],
   }) as Promise<RepricingStateRow | undefined>;
+}
+
+/**
+ * "Force re-optimisation" bulk action (doc 06 §4.6): resets phase to `SEEKING` and clears
+ * the learned good/bad/optimum prices so the next `Reprice` run starts the phase machine
+ * over, for every listing id that already has a `repricing_state` row. Listings the engine
+ * has not decided on yet have no row here and need no reset.
+ */
+export async function resetPhaseToSeeking(
+  appDb: AppDatabase,
+  listingIds: readonly string[],
+  nowMs: number,
+): Promise<void> {
+  if (listingIds.length === 0) return;
+  const set = {
+    phase: 'SEEKING' as const,
+    lastGoodPrice: null,
+    lastBadPrice: null,
+    optimumPrice: null,
+    consecutiveRejections: 0,
+    updatedAt: nowMs,
+  };
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .update(sqliteSchema.repricingState)
+        .set(set)
+        .where(inArray(sqliteSchema.repricingState.listingId, [...listingIds])),
+    postgres: (db) =>
+      db
+        .update(postgresSchema.repricingState)
+        .set(set)
+        .where(inArray(postgresSchema.repricingState.listingId, [...listingIds])),
+    mysql: (db) =>
+      db
+        .update(mysqlSchema.repricingState)
+        .set(set)
+        .where(inArray(mysqlSchema.repricingState.listingId, [...listingIds])),
+  });
+}
+
+/** Phase distribution for the dashboard (doc 06 §2): count of listings per phase, per marketplace. */
+export async function getPhaseDistribution(
+  appDb: AppDatabase,
+  marketplaceCode?: string,
+): Promise<Record<string, number>> {
+  return withDialect(appDb, {
+    sqlite: async (db) => {
+      const rows = await db
+        .select({ phase: sqliteSchema.repricingState.phase, count: sql<number>`count(*)` })
+        .from(sqliteSchema.repricingState)
+        .innerJoin(sqliteSchema.listings, eq(sqliteSchema.listings.id, sqliteSchema.repricingState.listingId))
+        .where(marketplaceCode ? eq(sqliteSchema.listings.marketplaceCode, marketplaceCode) : undefined)
+        .groupBy(sqliteSchema.repricingState.phase);
+      return Object.fromEntries(rows.map((r) => [r.phase, Number(r.count)]));
+    },
+    postgres: async (db) => {
+      const rows = await db
+        .select({ phase: postgresSchema.repricingState.phase, count: sql<number>`count(*)` })
+        .from(postgresSchema.repricingState)
+        .innerJoin(
+          postgresSchema.listings,
+          eq(postgresSchema.listings.id, postgresSchema.repricingState.listingId),
+        )
+        .where(marketplaceCode ? eq(postgresSchema.listings.marketplaceCode, marketplaceCode) : undefined)
+        .groupBy(postgresSchema.repricingState.phase);
+      return Object.fromEntries(rows.map((r) => [r.phase, Number(r.count)]));
+    },
+    mysql: async (db) => {
+      const rows = await db
+        .select({ phase: mysqlSchema.repricingState.phase, count: sql<number>`count(*)` })
+        .from(mysqlSchema.repricingState)
+        .innerJoin(mysqlSchema.listings, eq(mysqlSchema.listings.id, mysqlSchema.repricingState.listingId))
+        .where(marketplaceCode ? eq(mysqlSchema.listings.marketplaceCode, marketplaceCode) : undefined)
+        .groupBy(mysqlSchema.repricingState.phase);
+      return Object.fromEntries(rows.map((r) => [r.phase, Number(r.count)]));
+    },
+  });
 }
 
 export interface PriceSubmissionRow {
@@ -313,6 +391,97 @@ export async function listSubmittedSubmissions(
           ),
         )
         .orderBy(asc(mysqlSchema.priceSubmissions.submittedAt))
+        .limit(limit),
+  }) as Promise<PriceSubmissionRow[]>;
+}
+
+/** Recent decisions for the dashboard (doc 06 §2), newest first, joined with product name. */
+export async function listRecentDecisions(
+  appDb: AppDatabase,
+  limit: number,
+): Promise<(PriceSubmissionRow & { productName: string; marketplaceListingId: string })[]> {
+  return withDialect(appDb, {
+    sqlite: async (db) =>
+      db
+        .select({ submission: sqliteSchema.priceSubmissions, listing: sqliteSchema.listings })
+        .from(sqliteSchema.priceSubmissions)
+        .innerJoin(
+          sqliteSchema.listings,
+          eq(sqliteSchema.listings.id, sqliteSchema.priceSubmissions.listingId),
+        )
+        .orderBy(desc(sqliteSchema.priceSubmissions.decidedAt))
+        .limit(limit)
+        .then((rows) =>
+          rows.map((r) => ({
+            ...r.submission,
+            productName: r.listing.productName,
+            marketplaceListingId: r.listing.marketplaceListingId,
+          })),
+        ),
+    postgres: async (db) =>
+      db
+        .select({ submission: postgresSchema.priceSubmissions, listing: postgresSchema.listings })
+        .from(postgresSchema.priceSubmissions)
+        .innerJoin(
+          postgresSchema.listings,
+          eq(postgresSchema.listings.id, postgresSchema.priceSubmissions.listingId),
+        )
+        .orderBy(desc(postgresSchema.priceSubmissions.decidedAt))
+        .limit(limit)
+        .then((rows) =>
+          rows.map((r) => ({
+            ...r.submission,
+            productName: r.listing.productName,
+            marketplaceListingId: r.listing.marketplaceListingId,
+          })),
+        ),
+    mysql: async (db) =>
+      db
+        .select({ submission: mysqlSchema.priceSubmissions, listing: mysqlSchema.listings })
+        .from(mysqlSchema.priceSubmissions)
+        .innerJoin(mysqlSchema.listings, eq(mysqlSchema.listings.id, mysqlSchema.priceSubmissions.listingId))
+        .orderBy(desc(mysqlSchema.priceSubmissions.decidedAt))
+        .limit(limit)
+        .then((rows) =>
+          rows.map((r) => ({
+            ...r.submission,
+            productName: r.listing.productName,
+            marketplaceListingId: r.listing.marketplaceListingId,
+          })),
+        ),
+  }) as Promise<(PriceSubmissionRow & { productName: string; marketplaceListingId: string })[]>;
+}
+
+/**
+ * Every `price_submission` for one listing (doc 06 §5 History panel), newest first — "what
+ * makes a price explainable months later."
+ */
+export async function listPriceSubmissionsForListing(
+  appDb: AppDatabase,
+  listingId: string,
+  limit = 200,
+): Promise<PriceSubmissionRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.priceSubmissions)
+        .where(eq(sqliteSchema.priceSubmissions.listingId, listingId))
+        .orderBy(desc(sqliteSchema.priceSubmissions.decidedAt))
+        .limit(limit),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.priceSubmissions)
+        .where(eq(postgresSchema.priceSubmissions.listingId, listingId))
+        .orderBy(desc(postgresSchema.priceSubmissions.decidedAt))
+        .limit(limit),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.priceSubmissions)
+        .where(eq(mysqlSchema.priceSubmissions.listingId, listingId))
+        .orderBy(desc(mysqlSchema.priceSubmissions.decidedAt))
         .limit(limit),
   }) as Promise<PriceSubmissionRow[]>;
 }

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AppDatabase } from '../client.js';
 import { newId } from '../id.js';
 import { ALL_DIALECTS, createTestDb, type TestDb } from '../test-helpers.js';
+import * as circuitBreakerRepo from './circuit-breaker.js';
 import * as competitionRepo from './competition.js';
 import * as configRepo from './config.js';
 import * as eventsRepo from './events.js';
@@ -284,6 +285,151 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     expect(latest?.id).toBe(campaignId);
   }, 30_000);
 
+  it('listings: queryListings pages and filters structurally, joined with repricing phase', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    const { marketplaceCode, baseStockCode, listingId } = await seed(appDb);
+    await repricingRepo.upsertRepricingState(appDb, {
+      listingId,
+      phase: 'OPTIMUM',
+      lastGoodPrice: 1900n,
+      lastBadPrice: null,
+      optimumPrice: 1950n,
+      optimumCtxUnitCost: null,
+      optimumCtxCommissionRate: null,
+      optimumCtxVatRate: null,
+      optimumCtxCampaignRatio: null,
+      optimumCtxSecondPrice: null,
+      optimumCtxSecondSellerRef: null,
+      pendingSubmissionId: null,
+      settleUntil: null,
+      consecutiveRejections: 0,
+      updatedAt: NOW,
+    });
+    const secondId = newId();
+    await listingsRepo.upsertListing(appDb, {
+      id: secondId,
+      marketplaceCode,
+      marketplaceListingId: 'barcode-2',
+      sellerStockCode: baseStockCode,
+      baseStockCode,
+      unitCount: 1,
+      isBundle: false,
+      productName: 'Gadget',
+      price: 3000n,
+      listPrice: null,
+      customerPrice: null,
+      offeredStock: 5,
+      commissionRate: 16,
+      vatRate: 10,
+      dispatchTime: null,
+      isSalable: false,
+      isLocked: true,
+      isSuspended: false,
+      isFrozen: false,
+      isArchived: false,
+      isBlacklisted: false,
+      lockReasons: null,
+      deactivationReasons: null,
+      minPrice: null,
+      maxPrice: null,
+      allowIncrease: true,
+      allowDecrease: true,
+      repriceEnabled: false,
+      extra: null,
+      firstSeenAt: NOW,
+      lastSeenAt: NOW + 1,
+      updatedAt: NOW,
+    });
+
+    const page1 = await listingsRepo.queryListings(appDb, {
+      marketplaceCode,
+      limit: 1,
+      offset: 0,
+      sort: 'lastSeenAt',
+      sortDir: 'desc',
+    });
+    expect(page1.total).toBe(2); // total reflects the whole filtered set, not just this page
+    expect(page1.rows).toHaveLength(1);
+    expect(page1.rows[0]!.id).toBe(secondId); // most recently seen first
+
+    const byPhase = await listingsRepo.queryListings(appDb, { phases: ['OPTIMUM'], limit: 10, offset: 0 });
+    expect(byPhase.rows.map((r) => r.id)).toEqual([listingId]);
+    expect(byPhase.rows[0]!.optimumPrice).toBe(1950n);
+
+    const byText = await listingsRepo.queryListings(appDb, { text: 'Gadget', limit: 10, offset: 0 });
+    expect(byText.rows.map((r) => r.id)).toEqual([secondId]);
+
+    const locked = await listingsRepo.queryListings(appDb, { isLocked: true, limit: 10, offset: 0 });
+    expect(locked.rows.map((r) => r.id)).toEqual([secondId]);
+
+    // Freshly-seeded listing has no repricing_state row yet — phase must surface as null, not throw.
+    const unphased = await listingsRepo.queryListings(appDb, {
+      marketplaceCode,
+      isLocked: true,
+      limit: 10,
+      offset: 0,
+    });
+    expect(unphased.rows[0]!.phase).toBeNull();
+  }, 30_000);
+
+  it('listings: bulk overrides and force-reoptimisation apply to every id in the selection', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    const { listingId } = await seed(appDb);
+    await repricingRepo.upsertRepricingState(appDb, {
+      listingId,
+      phase: 'BLOCKED',
+      lastGoodPrice: 1800n,
+      lastBadPrice: 1700n,
+      optimumPrice: null,
+      optimumCtxUnitCost: null,
+      optimumCtxCommissionRate: null,
+      optimumCtxVatRate: null,
+      optimumCtxCampaignRatio: null,
+      optimumCtxSecondPrice: null,
+      optimumCtxSecondSellerRef: null,
+      pendingSubmissionId: null,
+      settleUntil: null,
+      consecutiveRejections: 3,
+      updatedAt: NOW,
+    });
+
+    await listingsRepo.bulkSetListingOverrides(appDb, [listingId], { repriceEnabled: false }, NOW + 1);
+    expect((await listingsRepo.getListing(appDb, listingId))?.repriceEnabled).toBe(false);
+
+    await repricingRepo.resetPhaseToSeeking(appDb, [listingId], NOW + 2);
+    const state = await repricingRepo.getRepricingState(appDb, listingId);
+    expect(state?.phase).toBe('SEEKING');
+    expect(state?.lastGoodPrice).toBeNull();
+    expect(state?.consecutiveRejections).toBe(0);
+  }, 30_000);
+
+  it('stock: listStockGrid joins prefs and derived offered stock per marketplace', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    const { marketplaceCode, baseStockCode } = await seed(appDb);
+    await stockRepo.ensureStockMarketplacePrefs(appDb, {
+      baseStockCode,
+      marketplaceCode,
+      priceMultiplier: 1.0,
+      autoRepriceEnabled: false,
+      updatedBy: 'import',
+      updatedAt: NOW,
+    });
+    await stockRepo.updateStockMarketplacePrefs(appDb, baseStockCode, marketplaceCode, {
+      priceMultiplier: 1.1,
+      autoRepriceEnabled: true,
+      updatedBy: 'operator',
+      updatedAt: NOW,
+    });
+
+    const grid = await stockRepo.listStockGrid(appDb);
+    const row = grid.find((r) => r.baseStockCode === baseStockCode);
+    expect(row?.prefs[marketplaceCode]).toEqual({ priceMultiplier: 1.1, autoRepriceEnabled: true });
+    expect(row?.offeredStock[marketplaceCode]).toBe(10); // from the seeded listing's offeredStock
+  }, 30_000);
+
   it('listings: upsert never repoints the primary key on conflict, even when the caller supplies a fresh id', async () => {
     // A real import job doesn't know a listing's existing row id in advance — it generates a
     // fresh one for `values()` on every call and relies on the upsert to leave an existing
@@ -440,6 +586,184 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     expect(await competitionRepo.latestBuyboxObservation(appDb, listingId)).toBeUndefined();
   }, 30_000);
 
+  it('competition: bounded reporting fetches for competitor-history (doc 06 §6, doc 12 6.8)', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    const { marketplaceCode, listingId } = await seed(appDb);
+
+    await competitionRepo.insertBuyboxObservation(appDb, {
+      id: newId(),
+      listingId,
+      observedAt: NOW,
+      rank: 1,
+      buyboxPrice: 2000n,
+      secondPrice: 2100n,
+      thirdPrice: null,
+      hasMultipleSeller: true,
+      source: 'api',
+    });
+    await competitionRepo.insertBuyboxObservation(appDb, {
+      id: newId(),
+      listingId,
+      observedAt: NOW + 1000,
+      rank: 2,
+      buyboxPrice: 1950n,
+      secondPrice: 2000n,
+      thirdPrice: null,
+      hasMultipleSeller: true,
+      source: 'api',
+    });
+
+    const history = await competitionRepo.buyboxObservationHistory(appDb, listingId, NOW);
+    expect(history.map((h) => h.rank)).toEqual([1, 2]); // oldest first
+
+    const run1 = newId();
+    await competitionRepo.recordScrapeRun(
+      appDb,
+      {
+        id: run1,
+        listingId,
+        observedAt: NOW,
+        source: 'trendyol',
+        sellerCount: 2,
+        payloadHash: 'h1',
+        status: 'ok',
+        changed: false,
+      },
+      [
+        {
+          id: newId(),
+          listingId,
+          scrapeRunId: run1,
+          observedAt: NOW,
+          rank: 1,
+          sellerName: 'Farmaucuz',
+          sellerRef: 'seller-1',
+          price: 2000n,
+          finalPrice: null,
+          rating: 4.5,
+          dispatchTime: 1,
+          offeredStock: 10,
+          hasPromotion: false,
+          promotionText: null,
+        },
+        {
+          id: newId(),
+          listingId,
+          scrapeRunId: run1,
+          observedAt: NOW,
+          rank: 2,
+          sellerName: 'Rakip A',
+          sellerRef: 'seller-2',
+          price: 2050n,
+          finalPrice: null,
+          rating: 4.1,
+          dispatchTime: 2,
+          offeredStock: 5,
+          hasPromotion: false,
+          promotionText: null,
+        },
+      ],
+    );
+    const run2 = newId();
+    await competitionRepo.recordScrapeRun(
+      appDb,
+      {
+        id: run2,
+        listingId,
+        observedAt: NOW + 3600_000,
+        source: 'trendyol',
+        sellerCount: 1,
+        payloadHash: 'h2-fetch-failed',
+        status: 'fetchFailed',
+        changed: false,
+      },
+      [],
+    );
+
+    const observations = await competitionRepo.competitorObservationsInRange(appDb, {
+      sinceMs: NOW - 1000,
+      untilMs: NOW + 7200_000,
+      marketplaceCode,
+    });
+    expect(observations).toHaveLength(2);
+    expect(
+      observations.every((o) => o.marketplaceCode === marketplaceCode && o.productName === 'Widget'),
+    ).toBe(true);
+    // sellerRef filter is a structural equality predicate, not a substring scan.
+    const onlySeller1 = await competitionRepo.competitorObservationsInRange(appDb, {
+      sinceMs: NOW - 1000,
+      untilMs: NOW + 7200_000,
+      sellerRef: 'seller-1',
+    });
+    expect(onlySeller1).toHaveLength(1);
+    expect(onlySeller1[0]?.sellerName).toBe('Farmaucuz');
+
+    // A second *changed* batch, later, with a different seller set (seller-2 dropped out,
+    // seller-3 appeared). `observationsAsOf` at "now" must return only this latest batch —
+    // not the union of every changed batch ever written (the bug the listing detail page's
+    // Competition panel caught live: stale sellers from run1 leaking alongside run3's).
+    const run3 = newId();
+    await competitionRepo.recordScrapeRun(
+      appDb,
+      {
+        id: run3,
+        listingId,
+        observedAt: NOW + 7200_000,
+        source: 'trendyol',
+        sellerCount: 2,
+        payloadHash: 'h3',
+        status: 'ok',
+        changed: false,
+      },
+      [
+        {
+          id: newId(),
+          listingId,
+          scrapeRunId: run3,
+          observedAt: NOW + 7200_000,
+          rank: 1,
+          sellerName: 'Farmaucuz',
+          sellerRef: 'seller-1',
+          price: 1990n,
+          finalPrice: null,
+          rating: 4.5,
+          dispatchTime: 1,
+          offeredStock: 9,
+          hasPromotion: false,
+          promotionText: null,
+        },
+        {
+          id: newId(),
+          listingId,
+          scrapeRunId: run3,
+          observedAt: NOW + 7200_000,
+          rank: 2,
+          sellerName: 'Rakip B',
+          sellerRef: 'seller-3',
+          price: 2100n,
+          finalPrice: null,
+          rating: 3.9,
+          dispatchTime: 3,
+          offeredStock: 2,
+          hasPromotion: false,
+          promotionText: null,
+        },
+      ],
+    );
+
+    const current = await competitionRepo.observationsAsOf(appDb, listingId, NOW + 8000_000);
+    expect(current.map((o) => o.sellerRef).sort()).toEqual(['seller-1', 'seller-3']); // seller-2 is gone
+    expect(current.every((o) => o.observedAt === NOW + 7200_000)).toBe(true); // only the latest batch
+
+    const runs = await competitionRepo.scrapeRunsInRange(appDb, {
+      sinceMs: NOW - 1000,
+      untilMs: NOW + 7200_000,
+    });
+    expect(runs).toHaveLength(3); // run1, run2 (fetch-failed), run3
+    expect(runs.find((r) => r.id === run2)?.status).toBe('fetchFailed'); // observation-coverage gap
+  }, 30_000);
+
   it('repricing: state, price submissions outbox + confirmation, budget usage increments', async () => {
     testDb = await createTestDb(dialect);
     const { appDb } = testDb;
@@ -498,6 +822,11 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     expect(outbox.map((s) => s.id)).not.toContain(submissionId); // no longer queued
 
     await repricingRepo.markConfirmed(appDb, submissionId, NOW + 20);
+
+    // Listing detail's History panel (doc 06 §5): every submission for this listing, newest first.
+    const history = await repricingRepo.listPriceSubmissionsForListing(appDb, listingId);
+    expect(history.map((s) => s.id)).toEqual([submissionId]);
+    expect(history[0]?.state).toBe('confirmed');
 
     await repricingRepo.prunePriceSubmissions(appDb, NOW - 1); // cutoff before decidedAt -> nothing pruned
     const stillThereResult = await repricingRepo.drainOutbox(appDb, marketplaceCode, 10);
@@ -566,6 +895,160 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     await jobsRepo.pruneJobRuns(appDb, NOW + 1000);
   }, 30_000);
 
+  it('jobs: run history filters, latest-per-job-name, queue depth, claimed jobs (doc 06 §7, doc 12 6.9)', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+
+    await jobsRepo.startJobRun(appDb, {
+      id: newId(),
+      jobName: 'ObserveBuybox',
+      startedAt: NOW,
+      finishedAt: NOW + 10,
+      state: 'success',
+      itemsTotal: 3,
+      itemsOk: 3,
+      itemsFailed: 0,
+      error: null,
+      correlationId: 'corr-a',
+    });
+    const laterRunId = newId();
+    await jobsRepo.startJobRun(appDb, {
+      id: laterRunId,
+      jobName: 'ObserveBuybox',
+      startedAt: NOW + 1000,
+      finishedAt: NOW + 1010,
+      state: 'failed',
+      itemsTotal: 1,
+      itemsOk: 0,
+      itemsFailed: 1,
+      error: 'boom',
+      correlationId: 'corr-b',
+    });
+    await jobsRepo.startJobRun(appDb, {
+      id: newId(),
+      jobName: 'Reprice',
+      startedAt: NOW + 500,
+      finishedAt: NOW + 510,
+      state: 'success',
+      itemsTotal: 2,
+      itemsOk: 2,
+      itemsFailed: 0,
+      error: null,
+      correlationId: 'corr-c',
+    });
+
+    const allRuns = await jobsRepo.listJobRuns(appDb, {});
+    expect(allRuns).toHaveLength(3);
+    const observeOnly = await jobsRepo.listJobRuns(appDb, { jobName: 'ObserveBuybox' });
+    expect(observeOnly).toHaveLength(2);
+    const failedOnly = await jobsRepo.listJobRuns(appDb, { state: 'failed' });
+    expect(failedOnly.map((r) => r.id)).toEqual([laterRunId]);
+
+    const latest = await jobsRepo.latestJobRunPerJobName(appDb);
+    const observeLatest = latest.find((r) => r.jobName === 'ObserveBuybox');
+    expect(observeLatest?.id).toBe(laterRunId); // the more recent of the two ObserveBuybox runs
+
+    await jobsRepo.enqueueJob(appDb, {
+      id: newId(),
+      jobName: 'ImportListings',
+      payload: '{}',
+      priority: 0,
+      state: 'ready',
+      runAfter: NOW,
+      lockedBy: null,
+      lockedUntil: null,
+      attempts: 0,
+      maxAttempts: 3,
+      lastError: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const claimedId = newId();
+    await jobsRepo.enqueueJob(appDb, {
+      id: claimedId,
+      jobName: 'Reprice',
+      payload: '{}',
+      priority: 0,
+      state: 'locked',
+      runAfter: NOW,
+      lockedBy: 'worker-1',
+      lockedUntil: NOW + 60_000,
+      attempts: 1,
+      maxAttempts: 3,
+      lastError: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    const depth = await jobsRepo.queueDepthByState(appDb);
+    expect(depth.ready).toBe(1);
+    expect(depth.locked).toBe(1);
+
+    const claimed = await jobsRepo.listClaimedJobs(appDb);
+    expect(claimed.map((j) => j.id)).toEqual([claimedId]);
+  }, 30_000);
+
+  it('circuit breaker: closed by default, opens on threshold, half-opens after cooldown, manual reset (doc 07 §3, doc 12 6.9)', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    await configRepo.upsertMarketplace(appDb, {
+      code: 'trendyol',
+      displayName: 'Trendyol',
+      enabled: true,
+      merchantRef: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    // No row yet: proceeds, and the Jobs screen sees nothing tripped.
+    expect(await circuitBreakerRepo.canProceed(appDb, 'trendyol', NOW, 60_000)).toBe(true);
+    expect(await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol')).toBeUndefined();
+
+    // Two failures below the threshold of 3: still closed.
+    await circuitBreakerRepo.recordFailure(appDb, 'trendyol', NOW, 'timeout', 3);
+    await circuitBreakerRepo.recordFailure(appDb, 'trendyol', NOW + 10, 'timeout', 3);
+    let state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+    expect(state?.state).toBe('closed');
+    expect(state?.consecutiveFailures).toBe(2);
+
+    // Third consecutive failure trips it open.
+    await circuitBreakerRepo.recordFailure(appDb, 'trendyol', NOW + 20, 'timeout', 3);
+    state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+    expect(state?.state).toBe('open');
+    expect(state?.openedAt).toBe(NOW + 20);
+    expect(await circuitBreakerRepo.canProceed(appDb, 'trendyol', NOW + 20, 60_000)).toBe(false);
+
+    // Still within the cooldown: stays blocked.
+    expect(await circuitBreakerRepo.canProceed(appDb, 'trendyol', NOW + 30_000, 60_000)).toBe(false);
+
+    // Cooldown elapsed: self-transitions to half-open and allows one trial.
+    expect(await circuitBreakerRepo.canProceed(appDb, 'trendyol', NOW + 60_020, 60_000)).toBe(true);
+    state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+    expect(state?.state).toBe('half-open');
+
+    // A failure during the half-open trial reopens immediately (not after another full threshold).
+    await circuitBreakerRepo.recordFailure(appDb, 'trendyol', NOW + 60_030, 'timeout again', 3);
+    state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+    expect(state?.state).toBe('open');
+
+    // Manual reset (doc 12 6.9 DoD) overrides regardless of current state.
+    await circuitBreakerRepo.resetCircuitBreaker(appDb, 'trendyol', NOW + 70_000);
+    state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+    expect(state?.state).toBe('closed');
+    expect(state?.consecutiveFailures).toBe(0);
+    expect(await circuitBreakerRepo.canProceed(appDb, 'trendyol', NOW + 70_001, 60_000)).toBe(true);
+
+    // A success closes it and clears the counter, from any state.
+    await circuitBreakerRepo.recordFailure(appDb, 'trendyol', NOW + 80_000, 'x', 3);
+    await circuitBreakerRepo.recordSuccess(appDb, 'trendyol', NOW + 80_010);
+    state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+    expect(state?.state).toBe('closed');
+    expect(state?.consecutiveFailures).toBe(0);
+
+    const listed = await circuitBreakerRepo.listCircuitBreakerStates(appDb);
+    expect(listed.map((r) => r.marketplaceCode)).toEqual(['trendyol']);
+  }, 30_000);
+
   it('events: log, filter by level, retention prune', async () => {
     testDb = await createTestDb(dialect);
     const { appDb } = testDb;
@@ -603,5 +1086,65 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     const afterPrune = await eventsRepo.listRecentEvents(appDb, 10);
     expect(afterPrune).toHaveLength(1); // info pruned (90d window passed), error kept (1y window not passed)
     expect(afterPrune[0]?.level).toBe('error');
+  }, 30_000);
+
+  it('events: full filter set — level, marketplace, listing, job run, code, date range (doc 06 §8)', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    const { marketplaceCode, listingId } = await seed(appDb);
+
+    const jobRunId = newId();
+    await jobsRepo.startJobRun(appDb, {
+      id: jobRunId,
+      jobName: 'ObserveBuybox',
+      startedAt: NOW,
+      finishedAt: NOW + 10,
+      state: 'success',
+      itemsTotal: 1,
+      itemsOk: 1,
+      itemsFailed: 0,
+      error: null,
+      correlationId: 'corr-x',
+    });
+
+    const matchId = newId();
+    await eventsRepo.logEvent(appDb, {
+      id: matchId,
+      at: NOW + 100,
+      level: 'warn',
+      marketplaceCode,
+      listingId,
+      jobRunId,
+      code: 'PriceRejected',
+      message: 'rejected',
+      context: null,
+    });
+    // A near-identical event on a different listing/job run/code — must not match the filters below.
+    await eventsRepo.logEvent(appDb, {
+      id: newId(),
+      at: NOW + 100,
+      level: 'warn',
+      marketplaceCode,
+      listingId: null,
+      jobRunId: null,
+      code: 'OtherCode',
+      message: 'other',
+      context: null,
+    });
+
+    const byListing = await eventsRepo.listEventsFiltered(appDb, { listingId });
+    expect(byListing.map((e) => e.id)).toEqual([matchId]);
+    const byJobRun = await eventsRepo.listEventsFiltered(appDb, { jobRunId });
+    expect(byJobRun.map((e) => e.id)).toEqual([matchId]);
+    const byCode = await eventsRepo.listEventsFiltered(appDb, { code: 'PriceRejected' });
+    expect(byCode.map((e) => e.id)).toEqual([matchId]);
+    const byMarketplaceAndRange = await eventsRepo.listEventsFiltered(appDb, {
+      marketplaceCode,
+      sinceMs: NOW + 50,
+      untilMs: NOW + 150,
+    });
+    expect(byMarketplaceAndRange).toHaveLength(2); // both events on this marketplace, within range
+    const outsideRange = await eventsRepo.listEventsFiltered(appDb, { sinceMs: NOW + 200 });
+    expect(outsideRange).toHaveLength(0);
   }, 30_000);
 });

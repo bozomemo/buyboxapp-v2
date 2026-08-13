@@ -5,8 +5,12 @@
  */
 import { getAdapter } from '../adapter-registry.js';
 import type { MarketplaceCode } from '@buybox/core';
-import { competitionRepo, listingsRepo, newId, repricingRepo } from '@buybox/db';
+import { circuitBreakerRepo, competitionRepo, listingsRepo, newId, repricingRepo } from '@buybox/db';
 import { z } from 'zod';
+import {
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+  CIRCUIT_BREAKER_OPEN_DURATION_MS,
+} from '../circuit-breaker-config.js';
 import type { JobContext, JobResult } from '../job.js';
 
 export const OBSERVE_BUYBOX_JOB = 'ObserveBuybox';
@@ -94,7 +98,33 @@ export async function observeBuybox(ctx: JobContext): Promise<JobResult> {
     return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
   }
 
-  const observations = await adapter.fetchBuyboxObservations(dueListingIds);
+  // doc 07 §3: stop outbound calls while the circuit is open. Nothing has been read from the
+  // adapter yet, so skipping here has no partial-state to unwind.
+  if (
+    !(await circuitBreakerRepo.canProceed(
+      ctx.appDb,
+      marketplaceCode,
+      nowMs,
+      CIRCUIT_BREAKER_OPEN_DURATION_MS,
+    ))
+  ) {
+    return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0, error: `circuit open for ${marketplaceCode}` };
+  }
+
+  let observations;
+  try {
+    observations = await adapter.fetchBuyboxObservations(dueListingIds);
+    await circuitBreakerRepo.recordSuccess(ctx.appDb, marketplaceCode, nowMs);
+  } catch (error) {
+    await circuitBreakerRepo.recordFailure(
+      ctx.appDb,
+      marketplaceCode,
+      nowMs,
+      error instanceof Error ? error.message : String(error),
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    );
+    throw error; // preserve existing retry-at-the-job-level behaviour (JobRunner)
+  }
 
   let itemsOk = 0;
   let itemsFailed = 0;

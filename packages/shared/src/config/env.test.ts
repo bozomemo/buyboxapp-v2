@@ -20,6 +20,14 @@ describe('parseBootstrapEnv', () => {
     expect(env.SINGLE_PROCESS).toBe('0');
   });
 
+  it('defaults SECRET_STORE_PATH when absent', () => {
+    const env = parseBootstrapEnv({
+      DATABASE_URL: 'sqlite://./data/app.db',
+      SECRET_STORE_KEY: 'a-key',
+    });
+    expect(env.SECRET_STORE_PATH).toBe('./data/secrets.enc.json');
+  });
+
   it('rejects a missing DATABASE_URL', () => {
     expect(() => parseBootstrapEnv({ SECRET_STORE_KEY: 'a-key' })).toThrow();
   });

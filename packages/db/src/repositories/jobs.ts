@@ -5,7 +5,7 @@
  * built on the enqueue/list/mark primitives below: `FOR UPDATE SKIP LOCKED` on Postgres
  * and MySQL (both support it), a single-writer transaction on SQLite (doc 10 §1.2).
  */
-import { and, asc, eq, inArray, lt, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -650,6 +650,103 @@ export async function finishJobRun(
     postgres: (db) => db.update(postgresSchema.jobRuns).set(set).where(eq(postgresSchema.jobRuns.id, id)),
     mysql: (db) => db.update(mysqlSchema.jobRuns).set(set).where(eq(mysqlSchema.jobRuns.id, id)),
   });
+}
+
+export interface JobRunFilters {
+  readonly jobName?: string;
+  readonly state?: string;
+  readonly sinceMs?: number;
+}
+
+/** Run history for the Jobs screen (doc 06 §7): "state, duration, item counts and errors", newest first. */
+export async function listJobRuns(
+  appDb: AppDatabase,
+  filters: JobRunFilters,
+  limit = 200,
+): Promise<JobRunRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.jobRuns)
+        .where(
+          and(
+            filters.jobName ? eq(sqliteSchema.jobRuns.jobName, filters.jobName) : undefined,
+            filters.state ? eq(sqliteSchema.jobRuns.state, filters.state) : undefined,
+            filters.sinceMs !== undefined ? gte(sqliteSchema.jobRuns.startedAt, filters.sinceMs) : undefined,
+          ),
+        )
+        .orderBy(desc(sqliteSchema.jobRuns.startedAt))
+        .limit(limit),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.jobRuns)
+        .where(
+          and(
+            filters.jobName ? eq(postgresSchema.jobRuns.jobName, filters.jobName) : undefined,
+            filters.state ? eq(postgresSchema.jobRuns.state, filters.state) : undefined,
+            filters.sinceMs !== undefined
+              ? gte(postgresSchema.jobRuns.startedAt, filters.sinceMs)
+              : undefined,
+          ),
+        )
+        .orderBy(desc(postgresSchema.jobRuns.startedAt))
+        .limit(limit),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.jobRuns)
+        .where(
+          and(
+            filters.jobName ? eq(mysqlSchema.jobRuns.jobName, filters.jobName) : undefined,
+            filters.state ? eq(mysqlSchema.jobRuns.state, filters.state) : undefined,
+            filters.sinceMs !== undefined ? gte(mysqlSchema.jobRuns.startedAt, filters.sinceMs) : undefined,
+          ),
+        )
+        .orderBy(desc(mysqlSchema.jobRuns.startedAt))
+        .limit(limit),
+  }) as Promise<JobRunRow[]>;
+}
+
+/** The most recent run per job name — "last run" in the Jobs screen's per-job table (doc 06 §7). */
+export async function latestJobRunPerJobName(appDb: AppDatabase): Promise<JobRunRow[]> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => db.select().from(sqliteSchema.jobRuns).orderBy(desc(sqliteSchema.jobRuns.startedAt)),
+    postgres: (db) =>
+      db.select().from(postgresSchema.jobRuns).orderBy(desc(postgresSchema.jobRuns.startedAt)),
+    mysql: (db) => db.select().from(mysqlSchema.jobRuns).orderBy(desc(mysqlSchema.jobRuns.startedAt)),
+  })) as JobRunRow[];
+  const seen = new Set<string>();
+  const latest: JobRunRow[] = [];
+  for (const row of rows) {
+    if (seen.has(row.jobName)) continue;
+    seen.add(row.jobName);
+    latest.push(row);
+  }
+  return latest;
+}
+
+/** "Queue depth and currently-claimed jobs" (doc 06 §7) — counts of `job_queue` rows by state. */
+export async function queueDepthByState(appDb: AppDatabase): Promise<Record<string, number>> {
+  const rows = await withDialect(appDb, {
+    sqlite: (db) => db.select({ state: sqliteSchema.jobQueue.state }).from(sqliteSchema.jobQueue),
+    postgres: (db) => db.select({ state: postgresSchema.jobQueue.state }).from(postgresSchema.jobQueue),
+    mysql: (db) => db.select({ state: mysqlSchema.jobQueue.state }).from(mysqlSchema.jobQueue),
+  });
+  const counts: Record<string, number> = {};
+  for (const row of rows) counts[row.state] = (counts[row.state] ?? 0) + 1;
+  return counts;
+}
+
+/** Currently `locked` (claimed) rows — the Jobs screen's "currently-claimed jobs" list (doc 06 §7). */
+export async function listClaimedJobs(appDb: AppDatabase): Promise<JobQueueRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) => db.select().from(sqliteSchema.jobQueue).where(eq(sqliteSchema.jobQueue.state, 'locked')),
+    postgres: (db) =>
+      db.select().from(postgresSchema.jobQueue).where(eq(postgresSchema.jobQueue.state, 'locked')),
+    mysql: (db) => db.select().from(mysqlSchema.jobQueue).where(eq(mysqlSchema.jobQueue.state, 'locked')),
+  }) as Promise<JobQueueRow[]>;
 }
 
 /** Retention: 90 days (doc 05 §10). */

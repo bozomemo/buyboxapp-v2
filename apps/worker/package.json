@@ -6,6 +6,7 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -b",
+    "start": "node dist/main.js",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },

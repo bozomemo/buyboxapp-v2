@@ -10,6 +10,8 @@ export const BootstrapEnvSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   /** Key used to derive the local secret-store encryption key. Never the secret itself. */
   SECRET_STORE_KEY: z.string().min(1, 'SECRET_STORE_KEY is required'),
+  /** Path to the encrypted secret-store file. Defaults alongside a local SQLite install. */
+  SECRET_STORE_PATH: z.string().min(1).optional().default('./data/secrets.enc.json'),
   /** '1' boots the worker's scheduler inside the Next.js process (single-host install). */
   SINGLE_PROCESS: z
     .union([z.literal('0'), z.literal('1')])

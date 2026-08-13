@@ -8,6 +8,13 @@
       "when": 1786550933343,
       "tag": "0000_hard_joshua_kane",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1786573524128,
+      "tag": "0001_conscious_puppet_master",
+      "breakpoints": true
     }
   ]
 }

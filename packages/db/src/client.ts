@@ -3,6 +3,8 @@
  * once at boot with the configured `DATABASE_URL`; every repository takes the resulting
  * `AppDatabase` so it works identically regardless of which of the three engines is live.
  */
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
 import { drizzle as drizzleMysql } from 'drizzle-orm/mysql2';
@@ -35,7 +37,13 @@ export function createDb(databaseUrl: string, dialectOverride?: Dialect): AppDat
   const dialect = dialectOverride ?? inferDialect(databaseUrl);
 
   if (dialect === 'sqlite') {
-    const sqlite = new Database(sqliteFilePath(databaseUrl));
+    const filePath = sqliteFilePath(databaseUrl);
+    // A fresh local install's setup wizard (doc 10 §6 step 1) offers `file:./data/app.db`
+    // before `./data` exists — better-sqlite3 refuses to create the parent directory itself.
+    if (filePath !== ':memory:') {
+      mkdirSync(path.dirname(filePath), { recursive: true });
+    }
+    const sqlite = new Database(filePath);
     sqlite.pragma('foreign_keys = ON');
     const db = drizzleSqlite(sqlite, { schema: sqliteSchema });
     return { dialect, db, close: () => sqlite.close() };

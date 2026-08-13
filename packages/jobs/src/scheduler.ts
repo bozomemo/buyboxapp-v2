@@ -7,10 +7,11 @@
  * a fake clock, with no real timers in the test suite. `startLoop()`/`shutdown()` are the thin
  * real-timer wrapper `apps/worker` uses; they are not unit-tested with real waiting.
  */
-import { jobsRepo, newId } from '@buybox/db';
+import { configRepo, jobsRepo, newId } from '@buybox/db';
 import type { AppDatabase } from '@buybox/db';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
 import type { Clock } from './clock.js';
+import { jobEnabledSettingKey } from './job-catalog.js';
 import { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, type JobDefinition } from './job.js';
 import { JobRunner } from './runner.js';
 
@@ -28,6 +29,12 @@ export interface TickResult {
   readonly heldLock: boolean;
   readonly enqueued: readonly string[];
   readonly ran: readonly { jobName: string; ok: boolean }[];
+}
+
+/** doc 12 6.9 "enable/disable" — false only when the operator has explicitly disabled the job. */
+export async function isJobEnabled(appDb: AppDatabase, jobName: string): Promise<boolean> {
+  const setting = await configRepo.getAppSetting(appDb, jobEnabledSettingKey(jobName));
+  return setting?.value !== 'false';
 }
 
 export class Scheduler {
@@ -99,6 +106,7 @@ export class Scheduler {
     const enqueued: string[] = [];
     for (const def of this.definitions.values()) {
       if (def.cadenceMs === undefined) continue;
+      if (!(await isJobEnabled(this.appDb, def.jobName))) continue; // doc 12 6.9: operator disabled it
       const active = await jobsRepo.countActiveJobs(this.appDb, def.jobName);
       if (active > 0) continue; // still pending or running — doc 07 §8: one run at a time
       await this.enqueueNow(def.jobName, '{}');

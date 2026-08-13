@@ -1,5 +1,5 @@
 /** Repository for `app_events` (doc 05 §7) — replaces the legacy `log_table`. */
-import { and, desc, inArray, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -52,6 +52,84 @@ export async function listRecentEvents(
         .select()
         .from(mysqlSchema.appEvents)
         .where(levels ? inArray(mysqlSchema.appEvents.level, levels) : undefined)
+        .orderBy(desc(mysqlSchema.appEvents.at))
+        .limit(limit),
+  }) as Promise<AppEventRow[]>;
+}
+
+export interface EventFilters {
+  readonly minLevel?: AppEventRow['level'];
+  readonly marketplaceCode?: string;
+  readonly listingId?: string;
+  readonly jobRunId?: string;
+  readonly code?: string;
+  readonly sinceMs?: number;
+  readonly untilMs?: number;
+}
+
+/** doc 06 §8: "Filter by level, marketplace, listing, job run, date range, code." Structural filters — never a substring scan (doc 09 §20). */
+export async function listEventsFiltered(
+  appDb: AppDatabase,
+  filters: EventFilters,
+  limit = 500,
+): Promise<AppEventRow[]> {
+  const levels = filters.minLevel ? levelsAtOrAbove(filters.minLevel) : undefined;
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.appEvents)
+        .where(
+          and(
+            levels ? inArray(sqliteSchema.appEvents.level, levels) : undefined,
+            filters.marketplaceCode
+              ? eq(sqliteSchema.appEvents.marketplaceCode, filters.marketplaceCode)
+              : undefined,
+            filters.listingId ? eq(sqliteSchema.appEvents.listingId, filters.listingId) : undefined,
+            filters.jobRunId ? eq(sqliteSchema.appEvents.jobRunId, filters.jobRunId) : undefined,
+            filters.code ? eq(sqliteSchema.appEvents.code, filters.code) : undefined,
+            filters.sinceMs !== undefined ? gte(sqliteSchema.appEvents.at, filters.sinceMs) : undefined,
+            filters.untilMs !== undefined ? lte(sqliteSchema.appEvents.at, filters.untilMs) : undefined,
+          ),
+        )
+        .orderBy(desc(sqliteSchema.appEvents.at))
+        .limit(limit),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.appEvents)
+        .where(
+          and(
+            levels ? inArray(postgresSchema.appEvents.level, levels) : undefined,
+            filters.marketplaceCode
+              ? eq(postgresSchema.appEvents.marketplaceCode, filters.marketplaceCode)
+              : undefined,
+            filters.listingId ? eq(postgresSchema.appEvents.listingId, filters.listingId) : undefined,
+            filters.jobRunId ? eq(postgresSchema.appEvents.jobRunId, filters.jobRunId) : undefined,
+            filters.code ? eq(postgresSchema.appEvents.code, filters.code) : undefined,
+            filters.sinceMs !== undefined ? gte(postgresSchema.appEvents.at, filters.sinceMs) : undefined,
+            filters.untilMs !== undefined ? lte(postgresSchema.appEvents.at, filters.untilMs) : undefined,
+          ),
+        )
+        .orderBy(desc(postgresSchema.appEvents.at))
+        .limit(limit),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.appEvents)
+        .where(
+          and(
+            levels ? inArray(mysqlSchema.appEvents.level, levels) : undefined,
+            filters.marketplaceCode
+              ? eq(mysqlSchema.appEvents.marketplaceCode, filters.marketplaceCode)
+              : undefined,
+            filters.listingId ? eq(mysqlSchema.appEvents.listingId, filters.listingId) : undefined,
+            filters.jobRunId ? eq(mysqlSchema.appEvents.jobRunId, filters.jobRunId) : undefined,
+            filters.code ? eq(mysqlSchema.appEvents.code, filters.code) : undefined,
+            filters.sinceMs !== undefined ? gte(mysqlSchema.appEvents.at, filters.sinceMs) : undefined,
+            filters.untilMs !== undefined ? lte(mysqlSchema.appEvents.at, filters.untilMs) : undefined,
+          ),
+        )
         .orderBy(desc(mysqlSchema.appEvents.at))
         .limit(limit),
   }) as Promise<AppEventRow[]>;

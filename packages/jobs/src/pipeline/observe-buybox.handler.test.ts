@@ -1,4 +1,4 @@
-import { competitionRepo, repricingRepo } from '@buybox/db';
+import { circuitBreakerRepo, competitionRepo, repricingRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { describe, expect, it } from 'vitest';
 import { FakeClock } from '../clock.js';
@@ -110,6 +110,76 @@ describe('observeBuybox (handler)', () => {
       await scheduler.tick();
 
       expect(called).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('a transport failure counts toward the circuit breaker and a pre-tripped circuit is skipped entirely (doc 07 §3)', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      const listingId = await seedListing(appDb);
+      const clock = new FakeClock(NOW);
+      const failingAdapter = createFakeAdapter({
+        async fetchBuyboxObservations() {
+          throw new Error('ETIMEDOUT');
+        },
+      });
+      const scheduler = new Scheduler({
+        appDb,
+        clock,
+        adapters: new Map([['trendyol', failingAdapter]]),
+        instanceId: 'test',
+      });
+      scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
+      await scheduler.enqueueNow(
+        OBSERVE_BUYBOX_JOB,
+        JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+      );
+      const tick = await scheduler.tick();
+      expect(tick.ran).toEqual([{ jobName: OBSERVE_BUYBOX_JOB, ok: false }]); // job-level failure, retried by JobRunner
+
+      const state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+      expect(state?.consecutiveFailures).toBe(1);
+      await scheduler.shutdown(); // release the DB-backed scheduler lock so a second instance can acquire it
+
+      // Manually force it open, then confirm a subsequent run never calls the adapter at all.
+      await circuitBreakerRepo.recordFailure(appDb, 'trendyol', NOW, 'x', 1);
+      let called = false;
+      const trackingAdapter = createFakeAdapter({
+        async fetchBuyboxObservations(ids) {
+          called = true;
+          return ids.map((id) => ({
+            marketplaceListingId: id,
+            rank: 1,
+            buyboxPrice: null,
+            secondPrice: null,
+            thirdPrice: null,
+            hasMultipleSeller: false,
+            observedAt: new Date(NOW),
+          }));
+        },
+      });
+      const scheduler2 = new Scheduler({
+        appDb,
+        clock,
+        adapters: new Map([['trendyol', trackingAdapter]]),
+        instanceId: 'test2',
+      });
+      scheduler2.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
+      await scheduler2.enqueueNow(
+        OBSERVE_BUYBOX_JOB,
+        JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+      );
+      const tick2 = await scheduler2.tick();
+      // Returns cleanly (doesn't throw) but reports the skip via JobResult.error, same as
+      // SubmitPriceChanges' open-circuit skip — the job "ran" without ever calling the adapter.
+      expect(tick2.ran).toEqual([{ jobName: OBSERVE_BUYBOX_JOB, ok: false }]);
+      expect(called).toBe(false);
+
+      const observation = await competitionRepo.latestBuyboxObservation(appDb, listingId);
+      expect(observation).toBeUndefined(); // nothing was ever recorded — the call never happened
     } finally {
       cleanup();
     }

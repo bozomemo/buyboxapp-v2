@@ -91,12 +91,16 @@ export interface FeeSettingsRow {
   readonly commissionVatDeductible: boolean;
   readonly commissionBase: 'gross' | 'net';
   readonly defaultCommissionRate: number;
-  /** Serialised JSON: `{ maxPrice: string | null; amount: string }[]` (money as decimal strings). */
+  /**
+   * Serialised JSON: `{ maxPrice: string | null; amount: string }[]`, where each amount is
+   * `Money.toJSON()` — the exact kuruş integer as a string, e.g. `"1100"` for ₺11.00 — parsed
+   * back with `Money.fromJSON` (packages/jobs' `mapFeeSettings`). Not a decimal string.
+   */
   readonly cargoBands: string;
   readonly cargoAmountsIncludeVat: boolean;
   readonly cargoVatRate: number;
   readonly cargoVatDeductible: boolean;
-  /** Serialised JSON: `{ minPrice: string; amount: string }[]`. */
+  /** Serialised JSON: `{ minPrice: string; amount: string }[]`, same `Money.toJSON()` convention. */
   readonly expenditureBands: string;
   readonly expenditureIncludesVat: boolean;
   readonly expenditureVatRate: number;
@@ -165,6 +169,33 @@ export async function getEffectiveFeeSettings(
           .limit(1)
       )[0],
   }) as Promise<FeeSettingsRow | undefined>;
+}
+
+/** Full effective-dated history for a marketplace, newest first (doc 06 §9 Fees page: "effective-dated"). */
+export async function listFeeSettingsHistory(
+  appDb: AppDatabase,
+  marketplaceCode: string,
+): Promise<FeeSettingsRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.feeSettings)
+        .where(eq(sqliteSchema.feeSettings.marketplaceCode, marketplaceCode))
+        .orderBy(desc(sqliteSchema.feeSettings.effectiveFrom)),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.feeSettings)
+        .where(eq(postgresSchema.feeSettings.marketplaceCode, marketplaceCode))
+        .orderBy(desc(postgresSchema.feeSettings.effectiveFrom)),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.feeSettings)
+        .where(eq(mysqlSchema.feeSettings.marketplaceCode, marketplaceCode))
+        .orderBy(desc(mysqlSchema.feeSettings.effectiveFrom)),
+  }) as Promise<FeeSettingsRow[]>;
 }
 
 export interface RepricingPolicyRow {
@@ -321,6 +352,27 @@ export async function getAppSetting(appDb: AppDatabase, key: string): Promise<Ap
       (await db.select().from(postgresSchema.appSettings).where(eq(postgresSchema.appSettings.key, key)))[0],
     mysql: async (db) =>
       (await db.select().from(mysqlSchema.appSettings).where(eq(mysqlSchema.appSettings.key, key)))[0],
+  });
+}
+
+/** Shared audit-row writer (doc 06 §9: "Every change is audited") for Settings save routes that aren't `setAppSetting`. */
+export async function recordSettingsAudit(
+  appDb: AppDatabase,
+  row: {
+    id: string;
+    entity: string;
+    entityId: string;
+    field: string;
+    oldValue: string | null;
+    newValue: string | null;
+    changedBy: string;
+    changedAt: number;
+  },
+): Promise<void> {
+  await runDialect(appDb, {
+    sqlite: (db) => db.insert(sqliteSchema.settingsAudit).values(row),
+    postgres: (db) => db.insert(postgresSchema.settingsAudit).values(row),
+    mysql: (db) => db.insert(mysqlSchema.settingsAudit).values(row),
   });
 }
 

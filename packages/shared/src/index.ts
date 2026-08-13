@@ -6,3 +6,10 @@ export type { Logger, LogLevel, LogFields, LogSink, LoggerOptions } from './logg
 export { createLogger } from './logger.js';
 export type { BootstrapEnv } from './config/env.js';
 export { BootstrapEnvSchema, parseBootstrapEnv } from './config/env.js';
+export type { ISecretStore } from './secrets/store.js';
+export {
+  FileSecretStore,
+  secretsEqual,
+  marketplaceCredentialsKey,
+  productSourceSecretKey,
+} from './secrets/store.js';

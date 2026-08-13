@@ -1,12 +1,16 @@
 /**
  * doc 12 Phase 5.6 DoD: "Budget test: exhausted budget admits priority 0 only."
  */
-import { repricingRepo } from '@buybox/db';
+import { circuitBreakerRepo, configRepo, repricingRepo } from '@buybox/db';
 import { describe, expect, it } from 'vitest';
 import { FakeClock } from '../clock.js';
 import { Scheduler } from '../scheduler.js';
 import { createFakeAdapter, createSqliteTestDb, NOW, seedListing, seedMarketplace } from '../test-helpers.js';
-import { SUBMIT_PRICE_CHANGES_JOB, submitPriceChanges } from './submit-price-changes.js';
+import {
+  SUBMIT_PRICE_CHANGES_JOB,
+  marketplaceKillSwitchSetting,
+  submitPriceChanges,
+} from './submit-price-changes.js';
 
 async function run(
   appDb: Awaited<ReturnType<typeof createSqliteTestDb>>['appDb'],
@@ -123,6 +127,50 @@ describe('submitPriceChanges', () => {
     }
   });
 
+  it('the global kill switch (doc 06 §2, R-UI-9) blocks all submissions, leaving them queued', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      const listingId = await seedListing(appDb);
+      await queueSubmission(appDb, listingId, 0, 'sub-a'); // even priority 0 is blocked
+      await configRepo.setAppSetting(
+        appDb,
+        { key: 'global.killSwitch', value: 'true', updatedBy: 'test', updatedAt: NOW },
+        'audit-1',
+      );
+
+      const tick = await run(appDb, createFakeAdapter());
+      expect(tick.ran).toEqual([{ jobName: SUBMIT_PRICE_CHANGES_JOB, ok: true }]);
+
+      const a = await repricingRepo.getPriceSubmission(appDb, 'sub-a');
+      expect(a?.state).toBe('queued');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('the per-marketplace kill switch (doc 06 §2) blocks only that marketplace, leaving submissions queued', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      const listingId = await seedListing(appDb);
+      await queueSubmission(appDb, listingId, 0, 'sub-a');
+      await configRepo.setAppSetting(
+        appDb,
+        { key: marketplaceKillSwitchSetting('trendyol'), value: 'true', updatedBy: 'test', updatedAt: NOW },
+        'audit-1',
+      );
+
+      const tick = await run(appDb, createFakeAdapter());
+      expect(tick.ran).toEqual([{ jobName: SUBMIT_PRICE_CHANGES_JOB, ok: true }]);
+
+      const a = await repricingRepo.getPriceSubmission(appDb, 'sub-a');
+      expect(a?.state).toBe('queued');
+    } finally {
+      cleanup();
+    }
+  });
+
   it('does not touch the budget ledger itself — only ConfirmSubmissions consumes it', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {
@@ -138,6 +186,70 @@ describe('submitPriceChanges', () => {
         new Date(NOW).toISOString().slice(0, 10),
       );
       expect(usage).toBeUndefined(); // nothing confirmed yet, so no usage row at all
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('circuit breaker: repeated transport failures trip it, then a subsequent drain is skipped without calling the adapter (doc 07 §3, doc 12 6.9)', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      const listingId = await seedListing(appDb);
+      let calls = 0;
+      const failingAdapter = createFakeAdapter({
+        async submitPriceChanges() {
+          calls += 1;
+          throw new Error('ECONNRESET');
+        },
+      });
+
+      // CIRCUIT_BREAKER_FAILURE_THRESHOLD is 5 (packages/jobs/src/circuit-breaker-config.ts) —
+      // five separate drains, each with a submission queued, to accumulate five consecutive
+      // transport failures.
+      for (let i = 0; i < 5; i += 1) {
+        await queueSubmission(appDb, listingId, 1, `sub-${i}`);
+        await run(appDb, failingAdapter);
+      }
+      expect(calls).toBe(5);
+      const state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+      expect(state?.state).toBe('open');
+
+      // A sixth queued submission: the drain must skip entirely — the circuit is open, so the
+      // failing adapter must not be called a sixth time, and the submission stays `queued`
+      // rather than being marked failed (doc 07 §3: not a silent repricing disable, just a pause).
+      await queueSubmission(appDb, listingId, 1, 'sub-5');
+      await run(appDb, failingAdapter);
+      expect(calls).toBe(5); // unchanged — adapter was never called
+      const sub5 = await repricingRepo.getPriceSubmission(appDb, 'sub-5');
+      expect(sub5?.state).toBe('queued');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('circuit breaker: a successful submit closes the circuit and clears the failure count', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      const listingId = await seedListing(appDb);
+      await queueSubmission(appDb, listingId, 1, 'sub-a');
+      const failingAdapter = createFakeAdapter({
+        async submitPriceChanges() {
+          throw new Error('ECONNRESET');
+        },
+      });
+      await run(appDb, failingAdapter);
+      let state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+      expect(state?.consecutiveFailures).toBe(1);
+
+      await queueSubmission(appDb, listingId, 1, 'sub-b');
+      await run(appDb, createFakeAdapter()); // succeeds
+      state = await circuitBreakerRepo.getCircuitBreakerState(appDb, 'trendyol');
+      expect(state?.state).toBe('closed');
+      expect(state?.consecutiveFailures).toBe(0);
+      const subB = await repricingRepo.getPriceSubmission(appDb, 'sub-b');
+      expect(subB?.state).toBe('submitted');
     } finally {
       cleanup();
     }

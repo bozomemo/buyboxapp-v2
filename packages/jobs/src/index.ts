@@ -8,7 +8,7 @@ export type { JobContext, JobDefinition, JobHandler, JobResult } from './job.js'
 export { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, zeroResult } from './job.js';
 
 export { JobRunner } from './runner.js';
-export { Scheduler, type SchedulerOptions, type TickResult } from './scheduler.js';
+export { isJobEnabled, Scheduler, type SchedulerOptions, type TickResult } from './scheduler.js';
 
 export type { BudgetAdmission } from './budget.js';
 export { admitByPriority, remainingBudget, reserveAmount } from './budget.js';
@@ -44,6 +44,7 @@ export {
   SUBMIT_PRICE_CHANGES_JOB,
   SubmitPriceChangesPayloadSchema,
   submitPriceChanges,
+  marketplaceKillSwitchSetting,
   type SubmitPriceChangesPayload,
 } from './pipeline/submit-price-changes.js';
 export {
@@ -62,8 +63,20 @@ export {
 export { PRUNE_HISTORY_JOB, pruneHistoryJob } from './pipeline/prune-history-job.js';
 
 export {
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+  CIRCUIT_BREAKER_OPEN_DURATION_MS,
+} from './circuit-breaker-config.js';
+
+export { JOB_CATALOG, jobEnabledSettingKey, type JobCatalogEntry } from './job-catalog.js';
+
+export {
   buildAdapterRegistry,
   getAdapter,
   UnregisteredMarketplaceError,
   type MarketplaceAdapterRegistry,
 } from './adapter-registry.js';
+
+// DB row ↔ core type mappings — shared with apps/web so the settings UI's "preview impact"
+// (doc 06 §9) builds the exact same `FeeSettings`/`RepricingPolicy` the engine actually uses.
+export { mapFeeSettings, mapPolicy } from './pipeline/mapping.js';
+export { preloadCostDeps } from './pipeline/cost-deps.js';

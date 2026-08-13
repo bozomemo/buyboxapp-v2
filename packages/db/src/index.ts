@@ -29,3 +29,4 @@ export * as competitionRepo from './repositories/competition.js';
 export * as repricingRepo from './repositories/repricing.js';
 export * as jobsRepo from './repositories/jobs.js';
 export * as eventsRepo from './repositories/events.js';
+export * as circuitBreakerRepo from './repositories/circuit-breaker.js';

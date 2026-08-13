@@ -2,7 +2,7 @@
  * Repositories for `stock_items`, `stock_marketplace_prefs`, `bundles`, `bundle_members`
  * (doc 05 §3).
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -192,6 +192,154 @@ export async function getStockMarketplacePrefs(
             ),
           )
       )[0],
+  });
+}
+
+/** Per-marketplace offered stock, summed across every (non-archived) listing sharing the base stock code. */
+async function offeredStockByBase(appDb: AppDatabase): Promise<Map<string, Map<string, number>>> {
+  const rows = await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({
+          baseStockCode: sqliteSchema.listings.baseStockCode,
+          marketplaceCode: sqliteSchema.listings.marketplaceCode,
+          total: sql<number>`sum(${sqliteSchema.listings.offeredStock})`,
+        })
+        .from(sqliteSchema.listings)
+        .where(eq(sqliteSchema.listings.isArchived, false))
+        .groupBy(sqliteSchema.listings.baseStockCode, sqliteSchema.listings.marketplaceCode),
+    postgres: (db) =>
+      db
+        .select({
+          baseStockCode: postgresSchema.listings.baseStockCode,
+          marketplaceCode: postgresSchema.listings.marketplaceCode,
+          total: sql<number>`sum(${postgresSchema.listings.offeredStock})`,
+        })
+        .from(postgresSchema.listings)
+        .where(eq(postgresSchema.listings.isArchived, false))
+        .groupBy(postgresSchema.listings.baseStockCode, postgresSchema.listings.marketplaceCode),
+    mysql: (db) =>
+      db
+        .select({
+          baseStockCode: mysqlSchema.listings.baseStockCode,
+          marketplaceCode: mysqlSchema.listings.marketplaceCode,
+          total: sql<number>`sum(${mysqlSchema.listings.offeredStock})`,
+        })
+        .from(mysqlSchema.listings)
+        .where(eq(mysqlSchema.listings.isArchived, false))
+        .groupBy(mysqlSchema.listings.baseStockCode, mysqlSchema.listings.marketplaceCode),
+  });
+  const byBase = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    if (!row.baseStockCode) continue;
+    const perMarketplace = byBase.get(row.baseStockCode) ?? new Map<string, number>();
+    perMarketplace.set(row.marketplaceCode, Number(row.total));
+    byBase.set(row.baseStockCode, perMarketplace);
+  }
+  return byBase;
+}
+
+export interface StockGridRow extends StockItemRow {
+  /** Per marketplace code: the operator-owned multiplier/automation switch (doc 06 §3). */
+  readonly prefs: Record<string, { priceMultiplier: number; autoRepriceEnabled: boolean }>;
+  /** Per marketplace code: sum of `offered_stock` across this base code's listings (derived, doc 06 §3). */
+  readonly offeredStock: Record<string, number>;
+}
+
+/**
+ * The Stock screen's grid (doc 06 §3): every stock item joined with its per-marketplace
+ * multiplier/automation prefs and derived offered-stock totals, so the row-highlighting
+ * rules (over-listed, missing cost, listing opportunity) can be computed client-side without
+ * further queries. Stock catalogues are small relative to listings (doc 12 6.5 has no
+ * paging DoD, unlike 6.6), so this loads the full set in one call.
+ */
+export async function listStockGrid(appDb: AppDatabase): Promise<StockGridRow[]> {
+  const [items, prefRows, offered] = await Promise.all([
+    listStockItems(appDb),
+    withDialect(appDb, {
+      sqlite: (db) => db.select().from(sqliteSchema.stockMarketplacePrefs),
+      postgres: (db) => db.select().from(postgresSchema.stockMarketplacePrefs),
+      mysql: (db) => db.select().from(mysqlSchema.stockMarketplacePrefs),
+    }) as Promise<StockMarketplacePrefsRow[]>,
+    offeredStockByBase(appDb),
+  ]);
+  const prefsByBase = new Map<
+    string,
+    Record<string, { priceMultiplier: number; autoRepriceEnabled: boolean }>
+  >();
+  for (const p of prefRows) {
+    const entry = prefsByBase.get(p.baseStockCode) ?? {};
+    entry[p.marketplaceCode] = {
+      priceMultiplier: p.priceMultiplier,
+      autoRepriceEnabled: p.autoRepriceEnabled,
+    };
+    prefsByBase.set(p.baseStockCode, entry);
+  }
+  return items.map((item) => ({
+    ...item,
+    prefs: prefsByBase.get(item.baseStockCode) ?? {},
+    offeredStock: Object.fromEntries(offered.get(item.baseStockCode) ?? []),
+  }));
+}
+
+export interface BundleSummaryRow {
+  readonly bundleStockCode: string;
+  readonly name: string;
+  readonly memberCount: number;
+}
+
+/** All defined bundles with their member count, for the bundle editor's list view. */
+export async function listBundles(appDb: AppDatabase): Promise<BundleSummaryRow[]> {
+  return withDialect(appDb, {
+    sqlite: async (db) => {
+      const bundles = await db.select().from(sqliteSchema.bundles);
+      return Promise.all(
+        bundles.map(async (b) => ({
+          bundleStockCode: b.bundleStockCode,
+          name: b.name,
+          memberCount: (
+            await db
+              .select({ count: sql<number>`count(*)` })
+              .from(sqliteSchema.bundleMembers)
+              .where(eq(sqliteSchema.bundleMembers.bundleStockCode, b.bundleStockCode))
+          )[0]!.count,
+        })),
+      );
+    },
+    postgres: async (db) => {
+      const bundles = await db.select().from(postgresSchema.bundles);
+      return Promise.all(
+        bundles.map(async (b) => ({
+          bundleStockCode: b.bundleStockCode,
+          name: b.name,
+          memberCount: Number(
+            (
+              await db
+                .select({ count: sql<number>`count(*)` })
+                .from(postgresSchema.bundleMembers)
+                .where(eq(postgresSchema.bundleMembers.bundleStockCode, b.bundleStockCode))
+            )[0]!.count,
+          ),
+        })),
+      );
+    },
+    mysql: async (db) => {
+      const bundles = await db.select().from(mysqlSchema.bundles);
+      return Promise.all(
+        bundles.map(async (b) => ({
+          bundleStockCode: b.bundleStockCode,
+          name: b.name,
+          memberCount: Number(
+            (
+              await db
+                .select({ count: sql<number>`count(*)` })
+                .from(mysqlSchema.bundleMembers)
+                .where(eq(mysqlSchema.bundleMembers.bundleStockCode, b.bundleStockCode))
+            )[0]!.count,
+          ),
+        })),
+      );
+    },
   });
 }
 

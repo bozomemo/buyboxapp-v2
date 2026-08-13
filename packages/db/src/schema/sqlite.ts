@@ -448,3 +448,21 @@ export const appEvents = sqliteTable(
     index('app_events_listing_at').on(t.listingId, t.at),
   ],
 );
+
+/**
+ * Per-marketplace circuit breaker state (doc 07 §3, doc 12 6.9), persisted so it survives
+ * worker restarts and is visible/resettable from the web process — `CircuitBreaker`
+ * (packages/adapters) is the pure in-memory state machine this table mirrors; not in doc 05
+ * because the doc predates this table being needed cross-process. One row per marketplace,
+ * created on first use.
+ */
+export const circuitBreakerState = sqliteTable('circuit_breaker_state', {
+  marketplaceCode: text('marketplace_code')
+    .primaryKey()
+    .references(() => marketplaces.code, { onDelete: 'cascade' }),
+  state: text('state').notNull(), // closed|open|half-open
+  consecutiveFailures: integer('consecutive_failures').notNull(),
+  openedAt: timestampMs('opened_at'),
+  lastError: text('last_error'),
+  updatedAt: timestampMs('updated_at').notNull(),
+});

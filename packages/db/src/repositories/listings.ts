@@ -1,7 +1,7 @@
 /**
  * Repositories for `listings` and `listing_campaigns` (doc 05 §4).
  */
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, lt, sql } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -104,6 +104,245 @@ export async function setListingOverrides(
     postgres: (db) => db.update(postgresSchema.listings).set(set).where(eq(postgresSchema.listings.id, id)),
     mysql: (db) => db.update(mysqlSchema.listings).set(set).where(eq(mysqlSchema.listings.id, id)),
   });
+}
+
+/**
+ * A listing row joined with its `repricing_state` phase/prices for the grid (doc 06 §4).
+ * `phase` is `null` for a listing the engine has not yet decided on (freshly imported).
+ */
+export type ListingGridRow = ListingRow & {
+  readonly phase: RepricingPhase | null;
+  readonly optimumPrice: bigint | null;
+  readonly lastGoodPrice: bigint | null;
+};
+
+export type RepricingPhase = 'SEEKING' | 'CLIMBING' | 'REFINING' | 'OPTIMUM' | 'BLOCKED';
+
+/** Tri-state filter: `undefined` means "any", `true`/`false` means exactly that value. */
+export interface ListingQueryOptions {
+  readonly marketplaceCode?: string;
+  /** Multi-select over `repricing_state.phase` (doc 06 §4.4). */
+  readonly phases?: readonly RepricingPhase[];
+  /** Structural text search over product name, marketplace SKU and stock code — never
+   * string-concatenated into the query, always a bound `LIKE` parameter (doc 09 §20). */
+  readonly text?: string;
+  readonly isSalable?: boolean;
+  readonly isLocked?: boolean;
+  readonly isSuspended?: boolean;
+  readonly isBlacklisted?: boolean;
+  readonly repriceEnabled?: boolean;
+  readonly excludeArchived?: boolean;
+  readonly sort?: 'lastSeenAt' | 'productName' | 'price';
+  readonly sortDir?: 'asc' | 'desc';
+  readonly limit: number;
+  readonly offset: number;
+}
+
+/**
+ * Server-paged, server-filtered listing query for the main grid (doc 06 §4, R-UI-4/R-UI-5).
+ * Returns only `limit` rows plus a total count, so a 50,000-row catalogue never loads into
+ * memory at once (doc 12 6.6 DoD). Filters are structural `and()`/`eq()`/`like()` predicate
+ * composition, never string concatenation.
+ */
+export async function queryListings(
+  appDb: AppDatabase,
+  options: ListingQueryOptions,
+): Promise<{ rows: ListingGridRow[]; total: number }> {
+  const { limit, offset } = options;
+  return withDialect(appDb, {
+    sqlite: async (db) => {
+      const where = buildListingsWhere(sqliteSchema, options);
+      const orderCol = sortColumn(sqliteSchema.listings, options.sort);
+      const orderFn = options.sortDir === 'asc' ? asc : desc;
+      const [rows, totalRow] = await Promise.all([
+        db
+          .select({ listing: sqliteSchema.listings, state: sqliteSchema.repricingState })
+          .from(sqliteSchema.listings)
+          .leftJoin(
+            sqliteSchema.repricingState,
+            eq(sqliteSchema.repricingState.listingId, sqliteSchema.listings.id),
+          )
+          .where(where)
+          .orderBy(orderFn(orderCol))
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(sqliteSchema.listings)
+          .leftJoin(
+            sqliteSchema.repricingState,
+            eq(sqliteSchema.repricingState.listingId, sqliteSchema.listings.id),
+          )
+          .where(where),
+      ]);
+      return { rows: rows.map(joinToGridRow), total: Number(totalRow[0]?.count ?? 0) };
+    },
+    postgres: async (db) => {
+      const where = buildListingsWhere(postgresSchema, options);
+      const orderCol = sortColumn(postgresSchema.listings, options.sort);
+      const orderFn = options.sortDir === 'asc' ? asc : desc;
+      const [rows, totalRow] = await Promise.all([
+        db
+          .select({ listing: postgresSchema.listings, state: postgresSchema.repricingState })
+          .from(postgresSchema.listings)
+          .leftJoin(
+            postgresSchema.repricingState,
+            eq(postgresSchema.repricingState.listingId, postgresSchema.listings.id),
+          )
+          .where(where)
+          .orderBy(orderFn(orderCol))
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(postgresSchema.listings)
+          .leftJoin(
+            postgresSchema.repricingState,
+            eq(postgresSchema.repricingState.listingId, postgresSchema.listings.id),
+          )
+          .where(where),
+      ]);
+      return { rows: rows.map(joinToGridRow), total: Number(totalRow[0]?.count ?? 0) };
+    },
+    mysql: async (db) => {
+      const where = buildListingsWhere(mysqlSchema, options);
+      const orderCol = sortColumn(mysqlSchema.listings, options.sort);
+      const orderFn = options.sortDir === 'asc' ? asc : desc;
+      const [rows, totalRow] = await Promise.all([
+        db
+          .select({ listing: mysqlSchema.listings, state: mysqlSchema.repricingState })
+          .from(mysqlSchema.listings)
+          .leftJoin(
+            mysqlSchema.repricingState,
+            eq(mysqlSchema.repricingState.listingId, mysqlSchema.listings.id),
+          )
+          .where(where)
+          .orderBy(orderFn(orderCol))
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(mysqlSchema.listings)
+          .leftJoin(
+            mysqlSchema.repricingState,
+            eq(mysqlSchema.repricingState.listingId, mysqlSchema.listings.id),
+          )
+          .where(where),
+      ]);
+      return { rows: rows.map(joinToGridRow), total: Number(totalRow[0]?.count ?? 0) };
+    },
+  }) as Promise<{ rows: ListingGridRow[]; total: number }>;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- shared across three structurally-identical, dialect-specific schema modules
+function buildListingsWhere(schema: any, options: ListingQueryOptions) {
+  const conditions = [];
+  if (options.marketplaceCode) conditions.push(eq(schema.listings.marketplaceCode, options.marketplaceCode));
+  if (options.isSalable !== undefined) conditions.push(eq(schema.listings.isSalable, options.isSalable));
+  if (options.isLocked !== undefined) conditions.push(eq(schema.listings.isLocked, options.isLocked));
+  if (options.isSuspended !== undefined)
+    conditions.push(eq(schema.listings.isSuspended, options.isSuspended));
+  if (options.isBlacklisted !== undefined) {
+    conditions.push(eq(schema.listings.isBlacklisted, options.isBlacklisted));
+  }
+  if (options.repriceEnabled !== undefined) {
+    conditions.push(eq(schema.listings.repriceEnabled, options.repriceEnabled));
+  }
+  if (options.excludeArchived) conditions.push(eq(schema.listings.isArchived, false));
+  if (options.text) {
+    const term = `%${options.text}%`;
+    conditions.push(
+      sql`(${like(schema.listings.productName, term)} or ${like(schema.listings.sellerStockCode, term)} or ${like(schema.listings.baseStockCode, term)})`,
+    );
+  }
+  if (options.phases && options.phases.length > 0) {
+    conditions.push(sql`${schema.repricingState.phase} in ${options.phases}`);
+  }
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see buildListingsWhere
+function sortColumn(listingsTable: any, sort: ListingQueryOptions['sort']) {
+  if (sort === 'productName') return listingsTable.productName;
+  if (sort === 'price') return listingsTable.price;
+  return listingsTable.lastSeenAt;
+}
+
+function joinToGridRow(row: {
+  listing: ListingRow;
+  state: { phase: string; optimumPrice: bigint | null; lastGoodPrice: bigint | null } | null;
+}): ListingGridRow {
+  return {
+    ...row.listing,
+    phase: (row.state?.phase as RepricingPhase | undefined) ?? null,
+    optimumPrice: row.state?.optimumPrice ?? null,
+    lastGoodPrice: row.state?.lastGoodPrice ?? null,
+  };
+}
+
+/**
+ * Bulk variant of `setListingOverrides` for the grid's bulk actions (doc 06 §4.6): applies
+ * the same operator-owned override fields to every listing id in the current filtered
+ * selection, in one statement per dialect.
+ */
+export async function bulkSetListingOverrides(
+  appDb: AppDatabase,
+  ids: readonly string[],
+  overrides: Partial<
+    Pick<ListingRow, 'minPrice' | 'maxPrice' | 'allowIncrease' | 'allowDecrease' | 'repriceEnabled'>
+  >,
+  updatedAt: number,
+): Promise<void> {
+  if (ids.length === 0) return;
+  const set = { ...overrides, updatedAt };
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .update(sqliteSchema.listings)
+        .set(set)
+        .where(inArray(sqliteSchema.listings.id, [...ids])),
+    postgres: (db) =>
+      db
+        .update(postgresSchema.listings)
+        .set(set)
+        .where(inArray(postgresSchema.listings.id, [...ids])),
+    mysql: (db) =>
+      db
+        .update(mysqlSchema.listings)
+        .set(set)
+        .where(inArray(mysqlSchema.listings.id, [...ids])),
+  });
+}
+
+/** Per-marketplace `max(last_seen_at)` — the dashboard's "last successful import" proxy (doc 06 §2). */
+export async function lastImportByMarketplace(appDb: AppDatabase): Promise<Record<string, number>> {
+  const rows = await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({
+          marketplaceCode: sqliteSchema.listings.marketplaceCode,
+          lastSeenAt: sql<number>`max(${sqliteSchema.listings.lastSeenAt})`,
+        })
+        .from(sqliteSchema.listings)
+        .groupBy(sqliteSchema.listings.marketplaceCode),
+    postgres: (db) =>
+      db
+        .select({
+          marketplaceCode: postgresSchema.listings.marketplaceCode,
+          lastSeenAt: sql<number>`max(${postgresSchema.listings.lastSeenAt})`,
+        })
+        .from(postgresSchema.listings)
+        .groupBy(postgresSchema.listings.marketplaceCode),
+    mysql: (db) =>
+      db
+        .select({
+          marketplaceCode: mysqlSchema.listings.marketplaceCode,
+          lastSeenAt: sql<number>`max(${mysqlSchema.listings.lastSeenAt})`,
+        })
+        .from(mysqlSchema.listings)
+        .groupBy(mysqlSchema.listings.marketplaceCode),
+  });
+  return Object.fromEntries(rows.map((r) => [r.marketplaceCode, Number(r.lastSeenAt)]));
 }
 
 export async function getListing(appDb: AppDatabase, id: string): Promise<ListingRow | undefined> {
