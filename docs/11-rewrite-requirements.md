@@ -186,7 +186,8 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 
 | # | Question | Blocks |
 |---|----------|--------|
-| O-1 | Trendyol public product-data request shape for the reporting scrape | Phase 7 |
+| ~~O-1~~ | ~~Trendyol public product-data request shape for the reporting scrape~~ **Resolved 2026-08-13** — `docs/trendyol-merchants-scraping-guide.md`, api-references §1.6, implemented | ~~Phase 7~~ |
+| ~~O-7~~ | ~~Hepsiburada public product-page request shape for the reporting scrape~~ **Resolved 2026-08-13** — it is a public JSON endpoint, not a page scrape; verified by direct request and recorded in api-references §2.11, implemented as `HepsiburadaPublicListingsSource`. Note it stays dormant until O-2 lands, because it is keyed by the product SKU that `fetchListings` would supply | ~~Phase 7~~ |
 | O-2 | Hepsiburada 🔴 items in `api-references.md` §2.9 | Phase 4.4 |
 | O-3 | Is commission charged on the VAT-inclusive or the net price? (`commissionBase`) | Phase 8.3b only — ship a provisional default |
 | O-4 | Current cargo tariff bands and expenditure bands per marketplace | Phase 8.3b only — ship provisional defaults |

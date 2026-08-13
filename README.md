@@ -28,6 +28,7 @@ sufficient to build the system from scratch without reading the retired implemen
 | 02 | [Cost & Price Model](docs/02-cost-and-price-model.md) | Every pricing formula, VAT treatment, test vectors |
 | 03 | [Repricing Engine](docs/03-repricing-engines.md) | Decision state machine, budget, confirmation |
 | — | [**API Reference**](docs/api-references.md) | **Every marketplace endpoint + official doc links** |
+| — | [Trendyol Scraping Guide](docs/trendyol-merchants-scraping-guide.md) | The public product-page payload: extraction and normalisation rules (reporting only). Hepsiburada's equivalent is a JSON endpoint, documented in api-references §2.11 |
 | 05 | [Data Model](docs/05-data-model.md) | Target schema, portability rules, retention, migration map |
 | 06 | [User Interface](docs/06-user-interface.md) | Screens, grids, filters, highlighting |
 | 07 | [Processes & Jobs](docs/07-processes-and-jobs.md) | Jobs, scheduling, rate limits, failure semantics |
@@ -73,10 +74,14 @@ See [doc 02 §6.1](docs/02-cost-and-price-model.md).
 **10 × listing count** listing updates per day. A loop that reprices everything every cycle
 cannot function at all. See [doc 03 §8](docs/03-repricing-engines.md).
 
-**3. Scraping is not on the critical path.** Trendyol has an official buybox endpoint returning
-our rank plus the top three prices; Hepsiburada exposes buybox rank. Scraping exists only to
-build competitor history for reporting, and its failure must never stop repricing.
-See [doc 10 §5.1](docs/10-target-architecture.md).
+**3. Competitor collection is not on the critical path.** Trendyol has an official buybox
+endpoint returning our rank plus the top three prices; Hepsiburada exposes buybox rank. The
+public sources — Trendyol's product page and Hepsiburada's public listings endpoint — exist
+only to build competitor history for reporting, and their failure must never stop repricing.
+They ship **disabled**: turning them on is an explicit business decision, and declining costs
+nothing but competitor reporting. See [doc 10 §5.1](docs/10-target-architecture.md),
+[api-references §1.6 and §2.11](docs/api-references.md) and the
+[scraping guide](docs/trendyol-merchants-scraping-guide.md).
 
 **4. 📌 Settlement validation is deferred.** The cost model's *parameters* (commission base,
 cargo bands, expenditure bands) have not been confirmed against a real settlement statement.

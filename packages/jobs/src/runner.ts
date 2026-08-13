@@ -7,6 +7,7 @@ import { eventsRepo, jobsRepo, newId } from '@buybox/db';
 import type { AppDatabase } from '@buybox/db';
 import { computeBackoffMs } from '@buybox/adapters';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
+import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
 import type { Clock } from './clock.js';
 import { DEFAULT_MAX_ATTEMPTS, zeroResult, type JobDefinition, type JobResult } from './job.js';
 
@@ -18,6 +19,8 @@ export class JobRunner {
     private readonly clock: Clock,
     private readonly adapters: MarketplaceAdapterRegistry,
     private readonly definitions: ReadonlyMap<string, JobDefinition>,
+    /** Reporting-only (doc 07 §7); absent when scraping is not configured. */
+    private readonly competitorSources?: CompetitorSourceRegistry,
   ) {}
 
   /** Runs the handler for an already-claimed row and settles its terminal `job_queue` state. */
@@ -56,6 +59,7 @@ export class JobRunner {
         appDb: this.appDb,
         clock: this.clock,
         adapters: this.adapters,
+        competitorSources: this.competitorSources,
         correlationId,
         payload: claimed.payload,
       });

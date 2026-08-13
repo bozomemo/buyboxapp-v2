@@ -14,9 +14,17 @@
  */
 import type { MarketplaceCode } from '@buybox/core';
 import { checkSchemaVersion, configRepo, createDb, type AppDatabase } from '@buybox/db';
-import { HepsiburadaAdapter, TrendyolAdapter, type IMarketplaceAdapter } from '@buybox/adapters';
+import {
+  HepsiburadaAdapter,
+  HepsiburadaPublicListingsSource,
+  TrendyolAdapter,
+  TrendyolPublicPageSource,
+  type ICompetitorSource,
+  type IMarketplaceAdapter,
+} from '@buybox/adapters';
 import {
   buildAdapterRegistry,
+  buildCompetitorSourceRegistry,
   CONFIRM_SUBMISSIONS_JOB,
   confirmSubmissions,
   IMPORT_LISTINGS_JOB,
@@ -32,10 +40,14 @@ import {
   reprice,
   RESET_BUDGET_JOB,
   resetBudget,
+  SCRAPE_COMPETITORS_JOB,
+  SCRAPE_CYCLE_MS,
+  scrapeCompetitors,
   Scheduler,
   submitPriceChanges,
   SUBMIT_PRICE_CHANGES_JOB,
   systemClock,
+  type CompetitorSourceRegistry,
   type MarketplaceAdapterRegistry,
 } from '@buybox/jobs';
 import {
@@ -49,6 +61,7 @@ export interface WorkerHandle {
   readonly scheduler: Scheduler;
   readonly appDb: AppDatabase;
   readonly adapters: MarketplaceAdapterRegistry;
+  readonly competitorSources: CompetitorSourceRegistry;
   shutdown(): Promise<void>;
 }
 
@@ -65,6 +78,7 @@ const CADENCE_MS = {
   confirmSubmissions: 60_000,
   resetBudget: 60 * 60_000, // hourly check; ensureBudgetUsageRow is a no-op once today's row exists
   importStockItems: 24 * 60 * 60_000,
+  scrapeCompetitors: SCRAPE_CYCLE_MS,
 } as const;
 
 async function buildAdapter(
@@ -108,6 +122,38 @@ async function buildAdapters(
   return buildAdapterRegistry(entries);
 }
 
+/**
+ * Reporting-only competitor sources (doc 07 §7, api-references §1.6). Built for every enabled
+ * marketplace that has a scraper, independently of the marketplace adapters: this registry
+ * exists so competitor *history* can be collected, and nothing on the control path reads it.
+ *
+ * The `ScrapeCompetitors` job is off by default (`JOB_CATALOG.defaultEnabled: false`), so
+ * registering a source here does not start any scraping — an operator still has to switch the
+ * job on, which is the "explicit business decision" api-references §1.6 requires.
+ *
+ * Note that Hepsiburada's source is registered even though its *adapter* is blocked (doc 12
+ * Phase 4.4): the public listings endpoint needs no marketplace credential, so the two are
+ * genuinely independent. Until the adapter is unblocked there are no Hepsiburada listings to
+ * scrape, and this registry entry simply never gets asked for one.
+ *
+ * Each source is given the user agent its marketplace accepts — see `SCRAPER_BROWSER_USER_AGENT`
+ * in packages/shared for why exactly one of them is not the honest default.
+ */
+function buildCompetitorSources(
+  adapters: MarketplaceAdapterRegistry,
+  userAgent: string,
+  browserUserAgent: string,
+): CompetitorSourceRegistry {
+  const entries: [MarketplaceCode, ICompetitorSource][] = [];
+  if (adapters.has('trendyol')) {
+    entries.push(['trendyol', new TrendyolPublicPageSource({ userAgent })]);
+  }
+  if (adapters.has('hepsiburada')) {
+    entries.push(['hepsiburada', new HepsiburadaPublicListingsSource({ userAgent: browserUserAgent })]);
+  }
+  return buildCompetitorSourceRegistry(entries);
+}
+
 export interface StartWorkerOptions {
   readonly env?: Record<string, string | undefined>;
   /** Test/embedding hook: reuse an already-open database instead of opening one from env. */
@@ -130,11 +176,20 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
 
   const secretStore = new FileSecretStore(env.SECRET_STORE_PATH, env.SECRET_STORE_KEY);
   const adapters = await buildAdapters(appDb, secretStore);
+  // The first identifies this client honestly (doc 04 §1.5's "user-agent policy"); the second
+  // is the recorded exception for Hepsiburada, which refuses anything else (api-references
+  // §2.11). Both are deployment configuration, not constants.
+  const competitorSources = buildCompetitorSources(
+    adapters,
+    env.SCRAPER_USER_AGENT,
+    env.SCRAPER_BROWSER_USER_AGENT,
+  );
 
   const scheduler = new Scheduler({
     appDb,
     clock: systemClock,
     adapters,
+    competitorSources,
     instanceId: `worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
   });
 
@@ -146,6 +201,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   scheduler.register({ jobName: CONFIRM_SUBMISSIONS_JOB, handler: confirmSubmissions });
   scheduler.register({ jobName: RESET_BUDGET_JOB, handler: resetBudget });
   scheduler.register({ jobName: IMPORT_STOCK_ITEMS_JOB, handler: importStockItems });
+  scheduler.register({ jobName: SCRAPE_COMPETITORS_JOB, handler: scrapeCompetitors });
 
   scheduler.startLoop();
 
@@ -174,6 +230,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   everyMarketplace(SUBMIT_PRICE_CHANGES_JOB, CADENCE_MS.submitPriceChanges);
   everyMarketplace(CONFIRM_SUBMISSIONS_JOB, CADENCE_MS.confirmSubmissions);
   everyMarketplace(RESET_BUDGET_JOB, CADENCE_MS.resetBudget);
+  // Off unless the operator enabled it — `isJobEnabled` inside `everyMarketplace` gates this.
+  everyMarketplace(SCRAPE_COMPETITORS_JOB, CADENCE_MS.scrapeCompetitors, { cycleNumber: 0 });
 
   const importStockItemsTicker = setInterval(() => {
     void (async () => {
@@ -193,6 +251,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     scheduler,
     appDb,
     adapters,
+    competitorSources,
     async shutdown() {
       for (const ticker of tickers) clearInterval(ticker);
       await scheduler.shutdown();

@@ -182,3 +182,40 @@ Requirements:
 | **R-CFG-4** | Store identity must have exactly one source of truth per marketplace. |
 | **R-CFG-5** | Sentinel values must be replaced by explicit optional/result types; a missing cost must prevent trading, not produce a price. |
 | **R-CFG-6** | Configuration changes must be audited (who, when, old value, new value). |
+
+---
+
+## 12. Competitor-source constants (reporting only) — **added 2026-08-13**
+
+These govern `ScrapeCompetitors` (doc 07 §7) and the two competitor sources: Trendyol's public
+page (api-references §1.6) and Hepsiburada's public listings endpoint (§2.11). **None of them
+derives from a published marketplace figure** — neither source has a documented quota — so they
+are deliberately conservative defaults rather than measured limits, and are recorded here so
+nobody mistakes them for spec values. This is reporting: being slow costs nothing; being
+aggressive risks a block.
+
+| Constant | Default | Where | Why this value |
+|----------|---------|-------|----------------|
+| `SCRAPER_USER_AGENT` | `BuyBoxApp/1.0 (repricing; reporting-only)` | env (`packages/shared` bootstrap) | doc 04 §1.5 requires a user-agent policy. Identifies the client honestly. Used by Trendyol, which accepts it. Deployment config because it should carry real contact details. |
+| `SCRAPER_BROWSER_USER_AGENT` | a current Chrome UA | env (same) | **Hepsiburada only.** That endpoint returns 403 to an honest agent (§2.11 records the ablation); the product owner authorised the exception on 2026-08-13. Deployment config so it is visible, and because a UA naming a browser version that no longer exists is itself a bot signal and must be refreshed. |
+| requests/minute | 30 | `TRENDYOL_SCRAPE_DEFAULTS` | Well under any plausible threshold; the job has no deadline. |
+| burst | 5 | same | A full minute's allowance as burst would defeat the limit. |
+| cache TTL | 10 min | same | Variants of one product share a page; doc 07 §7 requires identical requests be cached. |
+| request timeout | 15 s | same | A hung page must not hold a worker slot. |
+| requests/minute | **10** | `HEPSIBURADA_SCRAPE_DEFAULTS` | Stricter than Trendyol for a measured reason: ~8 rapid requests tripped a temporary Akamai block on 2026-08-13 (§2.11). |
+| burst | 3 | same | Same measurement. |
+| cache TTL | 10 min | same | As Trendyol; several of our listings can share one marketplace SKU. |
+| request timeout | 15 s | same | As Trendyol. |
+| `SCRAPE_CYCLE_MS` | 1 h | `packages/jobs/scrape-config.ts` | The cycle the tier multipliers below are expressed in. |
+| `SCRAPE_WARM_EVERY_N_CYCLES` | 24 | same | doc 07 §4: Warm is scraped daily. |
+| `SCRAPE_COLD_EVERY_N_CYCLES` | 168 | same | doc 07 §4: Cold is scraped weekly. |
+| `SCRAPE_MAX_LISTINGS_PER_RUN` | 200 | same | Ceiling so one cycle can never crawl the whole catalogue — the legacy scraper's dominant cost (doc 04 §1.5). |
+| `SCRAPE_FAILURE_RATE_ALERT_THRESHOLD` | 0.25 | same | doc 07 §7: the failure *rate* alerts, not each failure. |
+| `SCRAPE_FAILURE_RATE_MIN_SAMPLE` | 10 | same | Below this a rate is noise; no alert is raised at all. |
+| `SELLER_IDENTITY_MAX_AGE_MS` | 48 h | same | Beyond it, `secondSellerId` is treated as unknown (doc 03 §6.5). Stale identity is worse than none: it re-probes against a competitor who has left. |
+| `job.ScrapeCompetitors.enabled` | **absent ⇒ off** | `app_settings` | api-references §1.6 and §2.11: reading either source needs an explicit business decision. The only job in doc 07 §1 that defaults to disabled. |
+
+R-CFG-2 applies: the tier multipliers and per-run ceiling are job payload fields, overridable
+per run without a rebuild. The rate limit, cache TTL and timeout are currently construction
+parameters of each source with the defaults above — promoting them to operator settings is a UI
+change only, and is deliberately not done while the job ships disabled.

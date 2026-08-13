@@ -5,11 +5,17 @@
 import type { AppDatabase } from '@buybox/db';
 import type { Clock } from './clock.js';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
+import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
 
 export interface JobContext {
   readonly appDb: AppDatabase;
   readonly clock: Clock;
   readonly adapters: MarketplaceAdapterRegistry;
+  /**
+   * Reporting-only competitor sources (doc 07 §7). Optional: a deployment that has not
+   * enabled scraping simply has none, and every other job is unaffected.
+   */
+  readonly competitorSources?: CompetitorSourceRegistry;
   /** Threaded through every log line for this run (doc 07 §1: "carries a correlation id"). */
   readonly correlationId: string;
   /** Raw JSON payload from the `job_queue` row, parsed by the handler itself. */

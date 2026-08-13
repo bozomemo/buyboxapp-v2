@@ -19,6 +19,16 @@ export type {
   SubmissionItemResult,
   SubmissionResult,
 } from './ports/marketplace.js';
+export {
+  CompetitorSourceError,
+  hasProductPageRef,
+  type CompetitorOffer,
+  type CompetitorPageSnapshot,
+  type CompetitorSourceFailureKind,
+  type ICompetitorSource,
+  type ProductPageRef,
+  type ScrapeDiagnostics,
+} from './ports/competitor-source.js';
 export type { IProductSource, ProductSourceCode, StockItemInput } from './ports/product-source.js';
 export { NotImplementedError } from './ports/product-source.js';
 
@@ -57,8 +67,44 @@ export {
   type TrendyolCredentials,
 } from './trendyol/config.js';
 
-// Hepsiburada — intentionally blocked, see hepsiburada/adapter.ts
+// Trendyol public-page scraper — reporting only, never the control path (api-references §1.6).
+export {
+  TrendyolPublicPageSource,
+  TRENDYOL_PUBLIC_BASE_URL,
+  TRENDYOL_SCRAPE_DEFAULTS,
+  type TrendyolPublicPageSourceConfig,
+} from './trendyol/public-page/source.js';
+export {
+  normalizeTrendyolPage,
+  TrendyolPageSchemaError,
+  TRENDYOL_PARSER_VERSION,
+  type TrendyolPageOffers,
+} from './trendyol/public-page/normalize.js';
+export {
+  extractSharedProps,
+  SharedPropsNotFoundError,
+  SHARED_PROPS_MARKER,
+} from './trendyol/public-page/shared-props.js';
+
+// Hepsiburada — the *adapter* (control path) is intentionally blocked, see hepsiburada/adapter.ts
 export { HepsiburadaAdapter, HepsiburadaBlockedError, HEPSIBURADA_HOSTS } from './hepsiburada/adapter.js';
+
+// Hepsiburada public listings — reporting only, never the control path (api-references §2.11).
+// Independent of the blocked adapter above: this endpoint needs no marketplace credential.
+export {
+  HepsiburadaPublicListingsSource,
+  buildHepsiburadaPublicHeaders,
+  HEPSIBURADA_PUBLIC_BASE_URL,
+  HEPSIBURADA_LISTINGS_PATH,
+  HEPSIBURADA_SCRAPE_DEFAULTS,
+  type HepsiburadaPublicListingsSourceConfig,
+} from './hepsiburada/public-listings/source.js';
+export {
+  normalizeHepsiburadaListings,
+  HepsiburadaListingsSchemaError,
+  HEPSIBURADA_PARSER_VERSION,
+  type HepsiburadaListingOffers,
+} from './hepsiburada/public-listings/normalize.js';
 
 // Product sources
 export { ManualProductSource, ManualEntrySchema, type ManualEntry } from './product-sources/manual.js';

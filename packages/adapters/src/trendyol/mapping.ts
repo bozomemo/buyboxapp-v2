@@ -27,11 +27,15 @@ export interface TrendyolVariant {
   readonly archived: boolean;
   readonly blacklisted: boolean;
   readonly deliveryOptions?: { readonly deliveryDuration?: number | null };
+  /** api-references §1.4: "Public product page URL (includes contentId and merchantId)". */
+  readonly productUrl?: string | null;
 }
 
 export interface TrendyolProduct {
   readonly title: string;
   readonly variants: readonly TrendyolVariant[];
+  /** Identifies the *product page*, shared with competitors (doc 01 §5) — the scrape key. */
+  readonly contentId?: number | string | null;
 }
 
 export interface TrendyolProductFilterResponse {
@@ -75,6 +79,13 @@ export function mapVariantToListingSnapshot(
     lockReasons: variant.locked && variant.lockReason ? [variant.lockReason] : [],
     // Same as isSuspended: Trendyol has no deactivation-reason list; nothing to map.
     deactivationReasons: [],
+    // Reporting only (api-references §1.6). Captured at import so the scrape job never has to
+    // call the Seller API just to learn where a product page lives.
+    productPage: {
+      url: variant.productUrl ?? null,
+      contentId:
+        product.contentId !== null && product.contentId !== undefined ? String(product.contentId) : null,
+    },
   };
 }
 

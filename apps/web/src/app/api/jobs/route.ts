@@ -22,7 +22,14 @@ export async function GET() {
   const jobs = await Promise.all(
     JOB_CATALOG.map(async (entry) => {
       const enabledSetting = await configRepo.getAppSetting(appDb, jobEnabledSettingKey(entry.jobName));
-      const enabled = enabledSetting?.value !== 'false';
+      // Same precedence as `isJobEnabled` in packages/jobs: a stored setting wins, otherwise
+      // the catalogue default — which is off for `ScrapeCompetitors` (api-references §1.6).
+      const enabled =
+        enabledSetting?.value === 'false'
+          ? false
+          : enabledSetting?.value === 'true'
+            ? true
+            : entry.defaultEnabled;
       const lastRun = latestByName.get(entry.jobName);
       const nextRunAt =
         entry.cadenceMs !== null && enabled

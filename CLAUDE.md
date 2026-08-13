@@ -39,6 +39,8 @@ Read the document that covers your task. Do not read all of them.
 | Any pricing formula | `docs/02-cost-and-price-model.md` |
 | The repricing decision logic | `docs/03-repricing-engines.md` |
 | **Any marketplace API call** | **`docs/api-references.md` (mandatory — see below)** |
+| **Trendyol competitor scraping** | **`docs/trendyol-merchants-scraping-guide.md` (mandatory — see below)** |
+| **Hepsiburada competitor data** | **`docs/api-references.md` §2.11 (mandatory — see below)** |
 | Database schema, migrations | `docs/05-data-model.md` |
 | UI, grids, columns | `docs/06-user-interface.md` |
 | Background jobs, scheduling | `docs/07-processes-and-jobs.md` |
@@ -62,6 +64,38 @@ When you change an integration:
 
 Never infer an endpoint's shape from existing code. The legacy implementation in this
 repository targets a **retired** Trendyol API host and is not a reference.
+
+## Rule: competitor sources (reporting only)
+
+Competitor collection is **reporting only**. It reads public, undocumented, unsupported
+endpoints to build competitor history; nothing in the pricing path may depend on it, and a
+failure is recorded and the run continues.
+
+Two sources exist, and they are **not** the same kind of thing:
+
+| Marketplace | What it reads | Read before changing it |
+|---|---|---|
+| Trendyol | HTML page with embedded `__envoy__SHARED_PROPS` state | `docs/trendyol-merchants-scraping-guide.md` + api-references §1.6 |
+| Hepsiburada | public JSON endpoint `/api/v1/product/listings/{sku}` | api-references §2.11 |
+
+**Before writing or changing any code under `packages/adapters/src/*/public-page/`,
+`packages/adapters/src/*/public-listings/` or `ScrapeCompetitors`, read the row above that
+applies.** Trendyol's payload in particular has traps that look like ordinary field access and
+silently produce wrong data — `merchantListing` is an object rather than an array, the buybox
+seller is stored apart from the other sellers and is lost if not joined, and price nodes carry
+both a numeric `value` and a locale-formatted `text` of which only the first is data.
+
+- Never derive a price, a rank or a seller identity from display text, a CSS class or a
+  Turkish label. Ids, enums, booleans and numeric fields only.
+- Never let a failure reach a pricing decision. It is recorded and the run continues.
+- Never map a value whose **unit** the payload does not state. Both normalisers leave
+  competitor dispatch time unknown rather than risk hours-for-days.
+- `docs/04-marketplace-integrations.md` §1.5 describes the **retired** scraper's page
+  structure. It is obsolete. Read the guide instead.
+- **Browser impersonation is Hepsiburada-only and is not a pattern to copy.** That endpoint
+  returns 403 to an honest user agent (api-references §2.11 records the measurements), so the
+  product owner authorised an exception on 2026-08-13. Trendyol identifies itself honestly and
+  must keep doing so. Any new source starts honest until measurement proves otherwise.
 
 ## Hard rules
 

@@ -12,7 +12,9 @@ import { OBSERVE_BUYBOX_JOB } from './pipeline/observe-buybox.js';
 import { PRUNE_HISTORY_JOB } from './pipeline/prune-history-job.js';
 import { REPRICE_JOB } from './pipeline/reprice.js';
 import { RESET_BUDGET_JOB } from './pipeline/reset-budget.js';
+import { SCRAPE_COMPETITORS_JOB } from './pipeline/scrape-competitors.js';
 import { SUBMIT_PRICE_CHANGES_JOB } from './pipeline/submit-price-changes.js';
+import { SCRAPE_CYCLE_MS } from './scrape-config.js';
 
 export interface JobCatalogEntry {
   readonly jobName: string;
@@ -24,6 +26,14 @@ export interface JobCatalogEntry {
   readonly perMarketplace: boolean;
   /** Sample/default payload shown pre-filled on a manual "run now". */
   readonly defaultPayload: Record<string, unknown>;
+  /**
+   * Whether the job fires when the operator has expressed no preference. `true` for every
+   * job the system needs to do its work; `false` only for `ScrapeCompetitors`, which
+   * api-references §1.6 and doc 04 §1.5 require an *explicit business decision* to run —
+   * scraping may conflict with Trendyol's terms of service, so it must be switched on
+   * deliberately and never start by default on a fresh install.
+   */
+  readonly defaultEnabled: boolean;
 }
 
 export const JOB_CATALOG: readonly JobCatalogEntry[] = [
@@ -33,6 +43,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: 30 * 60_000,
     perMarketplace: true,
     defaultPayload: {},
+    defaultEnabled: true,
   },
   {
     jobName: OBSERVE_BUYBOX_JOB,
@@ -40,6 +51,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: 60_000,
     perMarketplace: true,
     defaultPayload: { cycleNumber: 0 },
+    defaultEnabled: true,
   },
   {
     jobName: REPRICE_JOB,
@@ -47,6 +59,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: 5 * 60_000,
     perMarketplace: true,
     defaultPayload: { mode: 'live' },
+    defaultEnabled: true,
   },
   {
     jobName: SUBMIT_PRICE_CHANGES_JOB,
@@ -54,6 +67,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: 30_000,
     perMarketplace: true,
     defaultPayload: {},
+    defaultEnabled: true,
   },
   {
     jobName: CONFIRM_SUBMISSIONS_JOB,
@@ -61,6 +75,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: 60_000,
     perMarketplace: true,
     defaultPayload: {},
+    defaultEnabled: true,
   },
   {
     jobName: RESET_BUDGET_JOB,
@@ -68,6 +83,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: 60 * 60_000,
     perMarketplace: true,
     defaultPayload: {},
+    defaultEnabled: true,
   },
   {
     jobName: IMPORT_STOCK_ITEMS_JOB,
@@ -75,6 +91,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: 24 * 60 * 60_000,
     perMarketplace: false,
     defaultPayload: {},
+    defaultEnabled: true,
   },
   {
     jobName: PRUNE_HISTORY_JOB,
@@ -82,6 +99,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: 24 * 60 * 60_000,
     perMarketplace: false,
     defaultPayload: {},
+    defaultEnabled: true,
   },
   {
     // Deliberately no cadence (doc 10 §4 / Phase 5 note in apps/worker/src/index.ts): no bundle
@@ -91,10 +109,26 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     cadenceMs: null,
     perMarketplace: false,
     defaultPayload: { sourceCode: 'excel', sourceConfig: {} },
+    defaultEnabled: true,
+  },
+  {
+    jobName: SCRAPE_COMPETITORS_JOB,
+    label: 'Rakip Verisi Toplama (raporlama)',
+    cadenceMs: SCRAPE_CYCLE_MS,
+    perMarketplace: true,
+    defaultPayload: { cycleNumber: 0 },
+    // Off until an operator turns it on: scraping needs an explicit business decision
+    // (api-references §1.6, doc 04 §1.5), and nothing depends on it (doc 12 Phase 7 DoD).
+    defaultEnabled: false,
   },
 ];
 
-/** `app_settings` key gating whether a cadence-driven job fires (doc 12 6.9 "enable/disable"). Missing ⇒ enabled. */
+/** `app_settings` key gating whether a cadence-driven job fires (doc 12 6.9 "enable/disable"). */
 export function jobEnabledSettingKey(jobName: string): string {
   return `job.${jobName}.enabled`;
+}
+
+/** What "no setting stored" means for a job — see `JobCatalogEntry.defaultEnabled`. */
+export function jobDefaultEnabled(jobName: string): boolean {
+  return JOB_CATALOG.find((entry) => entry.jobName === jobName)?.defaultEnabled ?? true;
 }

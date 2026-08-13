@@ -17,7 +17,8 @@
           "lockReason": null,
           "archived": false,
           "blacklisted": false,
-          "deliveryOptions": { "deliveryDuration": 1 }
+          "deliveryOptions": { "deliveryDuration": 1 },
+          "productUrl": "https://www.trendyol.com/marka/kablosuz-kulaklik-p-111"
         }
       ]
     }

@@ -245,6 +245,15 @@ respect for robots/ToS considerations.
 **Action:** check whether Trendyol now exposes buybox data via its Seller API. If not, obtain an
 explicit business decision, and implement rate limiting, caching, and graceful degradation.
 
+> **Resolved in the rewrite (2026-08-13).** Trendyol does expose an official buybox endpoint
+> (api-references §1.4), so the control path no longer scrapes: this is no longer a single
+> point of failure but a reporting feature whose total loss costs only competitor history
+> (doc 12 Phase 7 DoD, asserted by test). The parser locates its payload by marker and reads a
+> balanced object rather than by `indexOf`; rate limiting, caching, tiering, an honest
+> user-agent and a per-run ceiling are all in place; and the business decision is honoured by
+> shipping the job **disabled**. See api-references §1.6 and
+> `docs/trendyol-merchants-scraping-guide.md`.
+
 ---
 
 ## 23. Unbounded tables and no pruning — **S3**

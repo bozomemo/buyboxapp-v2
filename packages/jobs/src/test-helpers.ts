@@ -108,6 +108,8 @@ export interface SeedListingOptions {
   readonly price?: bigint;
   readonly unitCost?: bigint;
   readonly repriceEnabled?: boolean;
+  /** `listings.extra` JSON — carries the public product-page ref the scrape job reads. */
+  readonly extra?: string | null;
 }
 
 /** A ready-to-reprice listing: stock item, marketplace prefs, and the listing row itself. */
@@ -166,7 +168,7 @@ export async function seedListing(appDb: AppDatabase, options: SeedListingOption
     allowIncrease: true,
     allowDecrease: true,
     repriceEnabled: options.repriceEnabled ?? true,
-    extra: null,
+    extra: options.extra ?? null,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
     updatedAt: NOW,

@@ -226,8 +226,13 @@ export async function recordScrapeRun(
   run: ScrapeRunRow,
   observations: readonly CompetitorObservationRow[],
 ): Promise<void> {
-  const previous = await latestScrapeRun(appDb, run.listingId);
-  const changed = previous?.payloadHash !== run.payloadHash;
+  // Comparison is against the last **successful** run, not the last run of any kind. A failed
+  // run carries no meaningful payload hash, so comparing against it would make the next good
+  // scrape look "changed" and rewrite an identical seller set — inflating the archive that
+  // doc 05 §10 retains indefinitely. A failed run is never itself "changed": it produced no
+  // observations, by definition.
+  const previous = await latestSuccessfulScrapeRun(appDb, run.listingId);
+  const changed = run.status === 'ok' && previous?.payloadHash !== run.payloadHash;
   const runToInsert = { ...run, changed };
   const observationsToInsert = [...observations];
 
@@ -257,6 +262,52 @@ export async function recordScrapeRun(
       });
     },
   });
+}
+
+/** The newest `status = 'ok'` run for a listing — the baseline for change detection. */
+export async function latestSuccessfulScrapeRun(
+  appDb: AppDatabase,
+  listingId: string,
+): Promise<ScrapeRunRow | undefined> {
+  const result = await withDialect(appDb, {
+    sqlite: async (db) =>
+      (
+        await db
+          .select()
+          .from(sqliteSchema.scrapeRuns)
+          .where(
+            and(eq(sqliteSchema.scrapeRuns.listingId, listingId), eq(sqliteSchema.scrapeRuns.status, 'ok')),
+          )
+          .orderBy(desc(sqliteSchema.scrapeRuns.observedAt))
+          .limit(1)
+      )[0],
+    postgres: async (db) =>
+      (
+        await db
+          .select()
+          .from(postgresSchema.scrapeRuns)
+          .where(
+            and(
+              eq(postgresSchema.scrapeRuns.listingId, listingId),
+              eq(postgresSchema.scrapeRuns.status, 'ok'),
+            ),
+          )
+          .orderBy(desc(postgresSchema.scrapeRuns.observedAt))
+          .limit(1)
+      )[0],
+    mysql: async (db) =>
+      (
+        await db
+          .select()
+          .from(mysqlSchema.scrapeRuns)
+          .where(
+            and(eq(mysqlSchema.scrapeRuns.listingId, listingId), eq(mysqlSchema.scrapeRuns.status, 'ok')),
+          )
+          .orderBy(desc(mysqlSchema.scrapeRuns.observedAt))
+          .limit(1)
+      )[0],
+  });
+  return result as ScrapeRunRow | undefined; // see the note in latestBuyboxObservation
 }
 
 export async function latestScrapeRun(

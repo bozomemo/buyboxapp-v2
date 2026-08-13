@@ -8,6 +8,7 @@ import { parseStockCode, type MarketplaceCode } from '@buybox/core';
 import { eventsRepo, listingsRepo, newId } from '@buybox/db';
 import { z } from 'zod';
 import type { JobContext, JobResult } from '../job.js';
+import { encodeListingExtra } from './listing-extra.js';
 
 export const IMPORT_LISTINGS_JOB = 'ImportListings';
 
@@ -85,7 +86,9 @@ export async function importListings(ctx: JobContext): Promise<JobResult> {
           allowIncrease: true,
           allowDecrease: true,
           repriceEnabled: false, // doc 10 §6 step 8: "everything starts DISABLED"
-          extra: null,
+          // doc 05 §5: marketplace-specific fields preserved verbatim. Today that is the
+          // public product-page reference the reporting scrape needs (doc 07 §7).
+          extra: encodeListingExtra(listing.productPage),
           firstSeenAt: existing?.firstSeenAt ?? runStartedAt,
           lastSeenAt: runStartedAt,
           updatedAt: runStartedAt,

@@ -16,7 +16,7 @@ identical either way.
 | `ImportBundles` | daily | Rebuild bundle definitions |
 | `ImportListings` | per marketplace, 30 min | Full listing sync: price, stock, commission, VAT, status |
 | `ObserveBuybox` | per marketplace, tiered (§4) | Official buybox API → `buybox_observations` |
-| `ScrapeCompetitors` | tiered, slower | Full seller detail → `scrape_runs` + `competitor_observations` |
+| `ScrapeCompetitors` | per marketplace, hourly, tiered (§4) — **disabled by default** | Full seller detail → `scrape_runs` + `competitor_observations` (reporting only, §7) |
 | `Reprice` | per marketplace, policy interval | Decide; enqueue `price_submissions` |
 | `SubmitPriceChanges` | continuous | Drain the outbox in marketplace-sized batches |
 | `ConfirmSubmissions` | continuous | Poll batch status to a terminal state |
@@ -204,8 +204,31 @@ Requirements:
   failure **rate** raises an alert, not each individual failure.
 - **A scrape failure never blocks a repricing decision.** The seller-identity invalidation
   trigger is simply skipped when data is unavailable (doc 03 §6.5).
-- The request shape for Trendyol's faster public endpoint is pending from the product owner
-  (doc api-references §1.6).
+- Change detection compares against the last **successful** run. A failed run writes its
+  proof-of-look row with `changed = 0` and no observations; comparing against it would make
+  the next good scrape look changed and rewrite an identical seller set into an archive that
+  is retained indefinitely (doc 05 §10).
+- A ceiling on pages fetched per run, so one cycle can never become an unbounded crawl of the
+  whole catalogue. Listings beyond it are picked up next cycle.
+- **The job is disabled by default.** Reading either public source needs an explicit business
+  decision (api-references §1.6, §2.11); an operator enables it from the Jobs screen. Every
+  other job in §1 defaults to enabled.
+- A listing with no public product reference is skipped, not failed — a reporting gap.
+- **A competitor's unit is never assumed.** A value whose unit the payload does not state is
+  left unknown rather than mapped; both sources leave competitor dispatch time null unless the
+  payload names the unit.
+
+**Marketplace coverage.** Both marketplaces have a competitor source, and they read different
+kinds of thing:
+
+| Marketplace | Source | Specified in | Status |
+|---|---|---|---|
+| Trendyol | product page with embedded state | api-references §1.6 + `trendyol-merchants-scraping-guide.md` | implemented, collects data |
+| Hepsiburada | public JSON listings endpoint | api-references §2.11 | implemented, **dormant** — it is keyed by product SKU, which `HepsiburadaAdapter.fetchListings` will supply once doc 12 Phase 4.4 is unblocked |
+
+Nothing in this job differs between them: tiering, change detection, failure-rate alerting and
+the per-run ceiling are all marketplace-agnostic, and a source that collects nothing is a
+supported state, not a failure.
 
 ---
 

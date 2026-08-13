@@ -242,19 +242,80 @@ Trendyol supports webhooks. Prefer them over polling for order events.
 | Full seller list beyond rank 3 | — | ❌ scrape |
 | Real commission/cargo charged | finance settlements | ✅ |
 
-## 1.6 Public product-page data (reporting only) ⚠️
+## 1.6 Public product-page data (reporting only) ⚠️ *(shape supplied 2026-08-13)*
 
 Used exclusively to build the competitor history required for reporting: seller names,
 ratings, stock and the full seller list. **It must never gate a pricing decision** — if it
 fails, repricing continues on official buybox data alone and an alert is raised.
 
-The product page URL is available as `productUrl` on each variant from the product filter, or
-can be built from `contentId`.
+> **Full extraction specification: [`trendyol-merchants-scraping-guide.md`](trendyol-merchants-scraping-guide.md).**
+> That document is the authority on the payload's structure, its field-level pitfalls and the
+> normalisation rules. This section records only the request shape and the operating
+> constraints. Read the guide before touching `packages/adapters/src/trendyol/public-page/`.
 
-> The exact request shape for the faster public endpoint is **to be supplied by the product
-> owner** and documented here when available. Until then, treat this section as unspecified.
-> Requirements that apply regardless: rate limiting, caching, tiered polling frequency by
-> listing importance, graceful degradation, and an explicit business decision to permit it.
+### Request
+
+```
+GET https://www.trendyol.com/marka/urun-p-{contentId}
+Accept: text/html
+User-Agent: <identifies this client; see "Operating constraints" below>
+```
+
+Redirects are followed; the final URL is the canonical product link. `productUrl` on each
+variant of the product filter (§1.4) is preferred when the import captured one — it is
+Trendyol's own canonical link. **This is a plain HTML GET; there is no JSON API and no
+browser automation is needed** — the whole application state is embedded in the response.
+
+### Response
+
+The data is the JSON assigned to `window["__envoy__SHARED_PROPS"]` inside a `<script>` in the
+initial HTML. Locate the script **by that marker**, then read a **balanced** `{…}` object
+honouring JSON string literals. (The legacy system took `/html/body/script[1]` and cut to the
+first `}};` — both break silently; see doc 04 §1.5 and doc 09 §22.)
+
+Structure actually consumed:
+
+| Path | Meaning |
+|------|---------|
+| `$.product.id`, `$.product.productCode` | Product page identity |
+| `$.product.merchantListing.merchant` | The **buybox seller's identity** — `id`, `name`, `sellerScore.value` |
+| `$.product.merchantListing.winnerVariant` | The buybox seller's **offer** — `listingId`, `barcode`, `price`, `quantity`, stock flags |
+| `$.product.merchantListing.promotions[]` | Buybox seller's promotions |
+| `$.product.merchantListing.otherMerchants[]` | Competing sellers; each carries `variants[]` with its own `listingId` and `price` |
+
+Four things the shape gets wrong if assumed rather than read:
+
+1. **`merchantListing` is an object, not an array.** Iterating it iterates keys. The legacy
+   `merchantListings[0]` / `[1..]` model no longer exists.
+2. **The buybox seller is stored separately from `otherMerchants` and must be joined** from
+   `merchant` + `winnerVariant`, or it is lost entirely — including from the seller count.
+3. **One merchant may expose several `variants[]`**, so merchant count and listing count are
+   different numbers.
+4. **Prices are `{ value, text }` and only `value` is data.** `text` is locale-formatted
+   (`"35.010 TL"` is 35 010 ₺ in tr-TR) and `rrp.text` is known to be `"NaN TL"` with no
+   numeric sibling, which must normalise to `null`.
+
+`value` is in **lira** and is converted to exact kuruş once, at the adapter boundary.
+
+### Operating constraints — all mandatory
+
+| Constraint | Where it lives |
+|---|---|
+| Rate limiting, independent of the Seller API limiters | `TrendyolPublicPageSource` (30 req/min, burst 5 — doc 08) |
+| Caching of identical requests | same, 10-minute TTL keyed by resolved URL |
+| Tiered polling by listing importance | `ScrapeCompetitors` (doc 07 §4, §7) |
+| Honest `User-Agent`, never a browser impersonation | `SCRAPER_USER_AGENT` (doc 08) |
+| Graceful degradation | typed `fetchFailed`/`parseFailed`; repricing unaffected (doc 12 Phase 7 DoD) |
+| **An explicit business decision to permit it** | `ScrapeCompetitors` is **off by default** and must be switched on by an operator |
+
+⚠️ **Terms of service.** Scraping may conflict with Trendyol's terms. That decision is the
+product owner's, and the system is built so that declining to make it costs nothing but
+competitor reporting: the job ships disabled, and nothing in the pricing path reads its output.
+
+⚠️ **This is an undocumented internal frontend payload, not a supported API.** It can change
+without notice. `packages/adapters` records `parserVersion` and per-field diagnostics on every
+scrape so a change surfaces as a metric, not as quietly empty reports. Re-verify this section
+whenever the parser's diagnostics show a drop in `winnerVariantFound` or `merchantCount`.
 
 ---
 
@@ -505,6 +566,120 @@ HepsiburadaAdapter
 └── OrdersClient      paid/open · packages · cancelled · shipped · delivered · undelivered
 ```
 
+## 2.11 Public product listings (reporting only) 🟡 — **verified 2026-08-13, undocumented endpoint**
+
+Unlike Trendyol (§1.6), this is **not a page scrape**: Hepsiburada's product page calls a public
+JSON endpoint, and that endpoint is what we read. It is nonetheless undocumented and
+unsupported — the same reporting-only rules apply in full, and nothing on the pricing path may
+depend on it.
+
+Verified by direct request on 2026-08-13 against SKU `BS1372` (an A4Tech XL-750BH mouse). The
+response is recorded verbatim as
+`packages/adapters/src/hepsiburada/fixtures/public-listings-BS1372.json` and every assertion in
+`public-listings/public-listings.test.ts` runs against it.
+
+### Request
+
+```
+GET https://www.hepsiburada.com/api/v1/product/listings/{sku}
+```
+
+`{sku}` is the **product** SKU (`BS1372`), shared with competitors — not our listing id. No
+credential, no cookie and no session are required: the verification request sent none and
+received a 200.
+
+The endpoint sits behind Akamai bot protection and answers only a browser-shaped request.
+Measured header by header — each row is a separate observed result, not an assumption:
+
+| Request | Result |
+|---|---|
+| `User-Agent: BuyBoxApp/1.0 …` (our honest agent) + every other header below | **403** |
+| Chrome `User-Agent` + `Accept` only | **403** |
+| Chrome `User-Agent` + `Accept` + `Referer` | **403** |
+| Chrome `User-Agent` + `Accept` + `Sec-Fetch-*` | **403** |
+| Chrome `User-Agent` + `Accept` + `Accept-Language` + `Sec-Fetch-Dest/Mode/Site` + `Referer` | **200** |
+| …the same set minus `Referer` | **403** |
+| …the same set minus `Accept-Language` | **403** |
+
+So the accepted set is exactly:
+
+```
+User-Agent:      <current browser UA>
+Accept:          application/json, text/plain, */*
+Accept-Language: tr-TR,tr;q=0.9
+Sec-Fetch-Dest:  empty
+Sec-Fetch-Mode:  cors
+Sec-Fetch-Site:  same-origin
+Referer:         <the product page on www.hepsiburada.com>
+```
+
+⚠️ **This is browser impersonation**, which doc 04 §1.5's user-agent policy otherwise forbids
+and which the Trendyol source does not do. It is an exception granted explicitly by the product
+owner on 2026-08-13 because the endpoint admits no honest alternative. It lives in
+`SCRAPER_BROWSER_USER_AGENT` (doc 08 §12) so it is visible in deployment configuration rather
+than buried in code, and `ScrapeCompetitors` still ships disabled.
+
+⚠️ **Rate.** Roughly eight requests in quick succession tripped a temporary block, after which
+even a previously-accepted request returned 403. The configured sustained rate is therefore
+10/min with a burst of 3 — well under the observed threshold, and far stricter than Trendyol's.
+
+### Response
+
+`{ statusCode, redirection: { url, type, message }, data: { listings: [...] } }` — 10 sellers
+for the verified SKU. `data.listings` is a **real array** and the buybox holder is inside it,
+marked `buyboxOrder: 1`; there is no separately-stored winner to join, and none of §1.6's traps
+apply here.
+
+| Field | Meaning | Mapped to |
+|---|---|---|
+| `buyboxOrder` | 1-based buybox position | `rank`, `isWinner` |
+| `merchantId` | merchant GUID — **the identity** | `sellerRef` |
+| `merchantName` | display name, e.g. `Nethouse` | `sellerName` (data, never a key) |
+| `listingId` | the seller's own offer id, a different GUID | `listingRef` |
+| `price.value` | selling price in **lira** | `price` (→ kuruş) |
+| `originalPrice.value` | list price before discount | — |
+| `quantity` | offered stock | `offeredStock` |
+| `isSalable` | false ⇒ zero stock regardless of `quantity` | `offeredStock` |
+| `shipmentDay` + `shipmentType` | dispatch time and **its unit** | `dispatchTime`, only when the unit is `businessDays` |
+| `ratingSummary.lifetimeRating` | seller score, 0–10 | `sellerRating` |
+| `campaignIds`, `discountRate` | structural promotion signals | `hasPromotion` |
+| `merchantInfo` | duplicate of id/name/rating | fallback only |
+
+**The price unit is not a judgement call here**, unlike §1.6: the payload carries
+`prices[0].formattedPrice: "1.379,00"` next to `price.value: 1379`, which in tr-TR fixes `value`
+as lira. Conversion to kuruş happens once, through a decimal string.
+
+`vatExcludedPrice` is present but is a *competitor's* VAT-excluded price and has no role in our
+cost model (doc 02) — it is not read.
+
+### Still unconfirmed — do not build on these without checking
+
+- **`minimumPrice` / `minimumPrices`.** Keyed `"10"`, `"30"`, `"non-segmented-price"`. Almost
+  certainly customer-segment pricing, but which audience each segment addresses is unknown, so
+  none of them is mapped to `finalPrice` — a competitor's final price is reported as unknown
+  rather than guessed.
+- **`quantity` may be capped.** Several sellers report exactly `100`. It is stored as reported
+  and used as a stock signal for nothing.
+- **`price.currency`.** Only ever observed as `0`. The enum is not read or acted on.
+- **Unknown or delisted SKU.** Not established: the attempt to test one coincided with the rate
+  block above, so the 403 received cannot be attributed. The parser treats a missing `listings`
+  as an honest zero rather than an error, which is safe either way.
+- **The `Referer` fallback.** When a listing carries no captured product URL the source uses
+  `https://www.hepsiburada.com/p-{sku}`. That form was **not** verified as an accepted referer
+  and is the first thing to check if 403s appear.
+- **Terms of service.** As with §1.6, this may conflict with them. `ScrapeCompetitors` defaults
+  to off for exactly that reason.
+
+### Blocked on §2.9, not on this
+
+The endpoint is keyed by SKU, and today nothing supplies one: `HepsiburadaAdapter.fetchListings`
+is still blocked (doc 12 Phase 4.4). When it is implemented it must record the product SKU as
+`ListingSnapshot.productPage.contentId`; the source deliberately refuses to derive a SKU from a
+product-page slug, since that would mean parsing display text. **Until then Hepsiburada
+competitor history is still not collected** — the source is registered and simply never asked
+for anything. Repricing on Hepsiburada is unaffected either way: it runs on the official buybox
+rank (§2.5), exactly as designed.
+
 ---
 
 # 3. Verification log
@@ -513,3 +688,5 @@ HepsiburadaAdapter
 |------|-------------|-------------------|-----|
 | 2026-08-12 | Trendyol | Base URLs, auth, rate limits, product filter V2 (incl. `commission`, `vatRate`, `priceSeenByCustomer`), inventory-and-price filter, buybox check (incl. `secondBuyboxPrice`/`thirdBuyboxPrice`), price-and-inventory update, batch request result | fetched from official docs |
 | 2026-08-12 | Hepsiburada | Hosts per domain, Basic auth + User-Agent, rate limits and the 10× daily update allowance, inventory upload flow, business error codes, commission/VAT sources, orders paging | product owner's portal research; endpoint schemas still 🔴 |
+| 2026-08-13 | Hepsiburada | §2.11 public listings endpoint `/api/v1/product/listings/{sku}`: 200 + 10 sellers for `BS1372`, the minimum accepted header set (measured by ablation), no credential required, ~8-request rate ceiling, `data.listings[]` field map, price unit fixed as lira by `formattedPrice` | direct request by the assistant, product owner supplied the endpoint and authorised browser headers; response recorded as a fixture |
+| 2026-08-13 | Trendyol | §1.6 public product-page payload: `__envoy__SHARED_PROPS` marker, `product.merchantListing` as an object, winner joined from `merchant` + `winnerVariant`, `otherMerchants[].variants[]`, `{value,text}` price nodes in lira, `"NaN TL"` rrp | product owner's extraction guide (`docs/trendyol-merchants-scraping-guide.md`), implemented and fixture-tested in `packages/adapters/src/trendyol/public-page/` |

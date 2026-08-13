@@ -61,13 +61,31 @@ export {
   type ResetBudgetPayload,
 } from './pipeline/reset-budget.js';
 export { PRUNE_HISTORY_JOB, pruneHistoryJob } from './pipeline/prune-history-job.js';
+export {
+  SCRAPE_COMPETITORS_JOB,
+  ScrapeCompetitorsPayloadSchema,
+  hashOffers,
+  isDueForScrape,
+  scrapeCompetitors,
+  type ScrapeCompetitorsPayload,
+} from './pipeline/scrape-competitors.js';
+export { decodeProductPageRef, encodeListingExtra } from './pipeline/listing-extra.js';
+export {
+  SCRAPE_COLD_EVERY_N_CYCLES,
+  SCRAPE_CYCLE_MS,
+  SCRAPE_FAILURE_RATE_ALERT_THRESHOLD,
+  SCRAPE_FAILURE_RATE_MIN_SAMPLE,
+  SCRAPE_MAX_LISTINGS_PER_RUN,
+  SCRAPE_WARM_EVERY_N_CYCLES,
+  SELLER_IDENTITY_MAX_AGE_MS,
+} from './scrape-config.js';
 
 export {
   CIRCUIT_BREAKER_FAILURE_THRESHOLD,
   CIRCUIT_BREAKER_OPEN_DURATION_MS,
 } from './circuit-breaker-config.js';
 
-export { JOB_CATALOG, jobEnabledSettingKey, type JobCatalogEntry } from './job-catalog.js';
+export { JOB_CATALOG, jobDefaultEnabled, jobEnabledSettingKey, type JobCatalogEntry } from './job-catalog.js';
 
 export {
   buildAdapterRegistry,
@@ -75,6 +93,11 @@ export {
   UnregisteredMarketplaceError,
   type MarketplaceAdapterRegistry,
 } from './adapter-registry.js';
+export {
+  buildCompetitorSourceRegistry,
+  getCompetitorSource,
+  type CompetitorSourceRegistry,
+} from './competitor-source-registry.js';
 
 // DB row ↔ core type mappings — shared with apps/web so the settings UI's "preview impact"
 // (doc 06 §9) builds the exact same `FeeSettings`/`RepricingPolicy` the engine actually uses.

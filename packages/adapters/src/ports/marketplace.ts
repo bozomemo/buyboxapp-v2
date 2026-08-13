@@ -11,6 +11,7 @@
  */
 import type { Money } from '@buybox/shared';
 import type { MarketplaceCode } from '@buybox/core';
+import type { ProductPageRef } from './competitor-source.js';
 
 /** Opaque credential bag. Each adapter validates the shape it needs with its own Zod schema. */
 export type Credentials = Readonly<Record<string, string>>;
@@ -56,6 +57,13 @@ export interface ListingSnapshot {
   readonly isBlacklisted: boolean;
   readonly lockReasons: readonly string[];
   readonly deactivationReasons: readonly string[];
+  /**
+   * How to reach this listing's **public** product page, for the reporting scrape
+   * (`ICompetitorSource`, api-references §1.6). Optional and nullable: a marketplace that
+   * exposes no such reference simply cannot be scraped, which is a reporting gap and never
+   * an error. Nothing on the control path reads it.
+   */
+  readonly productPage?: ProductPageRef | null;
 }
 
 /** The control-path buybox read (doc 10 §5.1) — never the reporting scrape. */

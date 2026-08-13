@@ -83,6 +83,13 @@ export class HepsiburadaAdapter implements IMarketplaceAdapter {
     };
   }
 
+  /**
+   * When §2.9 is resolved and this is implemented, each snapshot must carry
+   * `productPage: { url, contentId }` where `contentId` is the **product SKU** (`BS1372`) —
+   * that is the only key the public listings endpoint accepts (api-references §2.11), and
+   * `public-listings/source.ts` deliberately refuses to derive one from a page URL. Without it
+   * the competitor source is registered but can never be given anything to fetch.
+   */
   // eslint-disable-next-line require-yield -- intentionally throws before yielding; see class doc
   async *fetchListings(): AsyncIterable<ListingSnapshot> {
     throw new HepsiburadaBlockedError('fetchListings', 'Listing Information — full response JSON schema');

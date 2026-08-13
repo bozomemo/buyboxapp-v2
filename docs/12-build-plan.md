@@ -163,18 +163,39 @@ repricing without touching a config file or the database.
 
 ## Phase 7 — Scraping (reporting only)
 
-Specification: doc 07 §7, api-references §1.6.
+Specification: doc 07 §7, api-references §1.6 and §2.11,
+[`trendyol-merchants-scraping-guide.md`](trendyol-merchants-scraping-guide.md).
 
-Blocked until the product owner supplies the public Trendyol request shape.
+~~Blocked until the product owner supplies the public Trendyol request shape.~~ **Supplied
+2026-08-13** (the guide above). Hepsiburada's public listings endpoint was supplied and
+**verified by direct request the same day** (§2.11) — it is a JSON API rather than a scrape, so
+Hepsiburada has a competitor source too. Both are code-complete.
 
-| # | Task |
-|---|------|
-| 7.1 | `ScrapeCompetitors` job with rate limiting, caching, tiering |
-| 7.2 | `scrape_runs` written on every run; `competitor_observations` only on change (hash comparison) |
-| 7.3 | Failure-rate alerting; per-failure silence |
-| 7.4 | Seller-identity invalidation trigger wired into the engine, skipped when data is absent |
+| # | Task | Trendyol | Hepsiburada |
+|---|------|----------|-------------|
+| 7.1 | `ScrapeCompetitors` job with rate limiting, caching, tiering | ✅ | n/a — the job is marketplace-agnostic |
+| 7.2 | `scrape_runs` written on every run; `competitor_observations` only on change (hash comparison) | ✅ | n/a |
+| 7.3 | Failure-rate alerting; per-failure silence | ✅ | n/a |
+| 7.4 | Seller-identity invalidation trigger wired into the engine, skipped when data is absent | ✅ | n/a |
+| 7.5 | A marketplace's `ICompetitorSource` implementation | ✅ `TrendyolPublicPageSource` | ✅ `HepsiburadaPublicListingsSource` |
+
+⚠️ **Hepsiburada collects nothing yet, and that is a Phase 4 gap, not a Phase 7 one.** The
+endpoint is keyed by product SKU, and `HepsiburadaAdapter.fetchListings` is still blocked
+(4.4, api-references §2.9), so no listing carries one. The source is registered and never
+asked for anything. Repricing is unaffected on both marketplaces either way.
 
 **Definition of done:** disabling the scraper entirely leaves repricing fully functional.
+✅ Asserted, not assumed — see `packages/jobs/src/pipeline/scrape-competitors.test.ts`, which
+reprices to completion with no competitor source registered at all.
+
+Additional decisions taken in this phase, beyond the tasks above:
+
+- **`ScrapeCompetitors` ships disabled** and must be switched on by an operator, because
+  api-references §1.6, §2.11 and doc 04 §1.5 require an explicit business decision before any
+  of this runs. It is the only job in doc 07 §1 that defaults to off.
+- **Browser impersonation for Hepsiburada only.** Its endpoint returns 403 to the honest user
+  agent doc 04 §1.5's policy mandates; the ablation is recorded in §2.11 and the product owner
+  authorised the exception on 2026-08-13. Trendyol continues to identify itself honestly.
 
 ---
 

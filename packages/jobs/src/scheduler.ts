@@ -11,14 +11,17 @@ import { configRepo, jobsRepo, newId } from '@buybox/db';
 import type { AppDatabase } from '@buybox/db';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
 import type { Clock } from './clock.js';
-import { jobEnabledSettingKey } from './job-catalog.js';
+import { jobDefaultEnabled, jobEnabledSettingKey } from './job-catalog.js';
 import { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, type JobDefinition } from './job.js';
 import { JobRunner } from './runner.js';
+import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
 
 export interface SchedulerOptions {
   readonly appDb: AppDatabase;
   readonly clock: Clock;
   readonly adapters: MarketplaceAdapterRegistry;
+  /** Reporting-only competitor sources (doc 07 §7). Omit to run with scraping unconfigured. */
+  readonly competitorSources?: CompetitorSourceRegistry;
   readonly instanceId: string;
   readonly lockTtlMs?: number;
   /** How many ready jobs this instance claims and runs per `tick()`. */
@@ -31,10 +34,16 @@ export interface TickResult {
   readonly ran: readonly { jobName: string; ok: boolean }[];
 }
 
-/** doc 12 6.9 "enable/disable" — false only when the operator has explicitly disabled the job. */
+/**
+ * doc 12 6.9 "enable/disable". An explicit stored setting always wins; with none stored the
+ * job's catalogue default applies, which is `true` for everything except `ScrapeCompetitors`
+ * (api-references §1.6 requires an explicit decision before any scraping happens).
+ */
 export async function isJobEnabled(appDb: AppDatabase, jobName: string): Promise<boolean> {
   const setting = await configRepo.getAppSetting(appDb, jobEnabledSettingKey(jobName));
-  return setting?.value !== 'false';
+  if (setting?.value === 'false') return false;
+  if (setting?.value === 'true') return true;
+  return jobDefaultEnabled(jobName);
 }
 
 export class Scheduler {
@@ -55,7 +64,13 @@ export class Scheduler {
     this.instanceId = options.instanceId;
     this.lockTtlMs = options.lockTtlMs ?? 30_000;
     this.maxClaimsPerTick = options.maxClaimsPerTick ?? 5;
-    this.runner = new JobRunner(this.appDb, this.clock, options.adapters, this.definitions);
+    this.runner = new JobRunner(
+      this.appDb,
+      this.clock,
+      options.adapters,
+      this.definitions,
+      options.competitorSources,
+    );
   }
 
   register(def: JobDefinition): void {

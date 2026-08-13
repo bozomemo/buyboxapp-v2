@@ -161,6 +161,26 @@ is still present but commented out. It documents the previous page structure and
   owner, plus rate limiting, a user-agent policy, caching, and graceful degradation when
   scraping is unavailable.
 
+> ### ✅ Resolved in the rewrite (2026-08-13)
+>
+> Trendyol **does** now offer an official buybox endpoint (api-references §1.4), so the
+> control path no longer scrapes at all — that was the structural single point of failure in
+> doc 09 §22. Scraping survives only as **reporting**, and every risk listed above is
+> answered by construction:
+>
+> | Legacy failure above | Rewrite |
+> |---|---|
+> | one page load per listing per cycle, no rate limit, cache, retry or backoff | token-bucket limiter, response cache, tiered frequency, per-run ceiling |
+> | page-structure change breaks competitor data silently | balanced-brace parse of `__envoy__SHARED_PROPS` by marker, plus per-field diagnostics recorded on every run |
+> | parser throws, listing silently skipped | typed `fetchFailed` / `parseFailed`, both recorded in `scrape_runs`, failure **rate** alerts |
+> | terms-of-service question unanswered | the job ships **disabled**; an operator must switch it on |
+>
+> **The page structure documented above is obsolete.** `merchantListings[]` no longer exists;
+> the current payload is a `merchantListing` *object* with the buybox seller stored separately
+> from `otherMerchants[]`. Read
+> [`trendyol-merchants-scraping-guide.md`](trendyol-merchants-scraping-guide.md) and
+> api-references §1.6 — never this section — before changing the scraper.
+
 ---
 
 ## 2. Hepsiburada REST APIs

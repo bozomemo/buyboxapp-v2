@@ -10,3 +10,8 @@ apps/web/next-env.d.ts
 docs
 CLAUDE.md
 README.md
+
+# Recorded marketplace fixtures are kept byte-for-byte as the source delivered them; a
+# reformat would reflow the embedded page payload the parser is tested against.
+packages/adapters/src/trendyol/fixtures/public-page.html
+packages/adapters/src/hepsiburada/fixtures/public-listings-BS1372.json

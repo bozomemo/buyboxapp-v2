@@ -37,6 +37,7 @@ import { getAdapter } from '../adapter-registry.js';
 import type { JobContext, JobResult } from '../job.js';
 import { preloadCostDeps } from './cost-deps.js';
 import { mapFeeSettings, mapPolicy } from './mapping.js';
+import { SELLER_IDENTITY_MAX_AGE_MS } from '../scrape-config.js';
 
 export const REPRICE_JOB = 'Reprice';
 
@@ -106,6 +107,42 @@ async function loadState(
   };
 }
 
+/**
+ * doc 03 §6.5 / doc 12 7.4 — the runner-up's *identity*, which the official buybox APIs do not
+ * expose (api-references §1.4: "It does not return competitor names"). It comes from the
+ * reporting scrape, and this function is the whole of that dependency.
+ *
+ * Three rules, all of which exist so the scrape can never gate a decision (doc 07 §7):
+ *
+ * 1. **Absent ⇒ `null`.** No scrape data, no competitor source configured, or the scraper
+ *    switched off entirely: the trigger is skipped and the price-based triggers still fire
+ *    (doc 03 T-22). It is never an error and never a fallback guess.
+ * 2. **Stale ⇒ `null`.** Identity older than `SELLER_IDENTITY_MAX_AGE_MS` is worse than no
+ *    identity: it would fire a re-probe against a competitor who has since left the listing.
+ * 3. **The best offer that is not ours.** The engine evaluates this trigger only in `OPTIMUM`,
+ *    where we hold the buybox — so the runner-up whose price `observation.secondPrice` tracks
+ *    is the highest-ranked competitor on the page. Our own offer is removed by merchant id
+ *    (`marketplaces.merchant_ref`), never by seller name (guide §8). With no merchant id
+ *    configured, nothing is removed and the top competitor is still whoever the page ranks
+ *    first — at worst the trigger sees our own identity, which is stable and so never fires
+ *    a spurious re-probe.
+ */
+async function loadSecondSellerId(
+  appDb: Parameters<typeof competitionRepo.observationsAsOf>[0],
+  listingId: string,
+  ourSellerRef: string | null,
+  nowMs: number,
+): Promise<string | null> {
+  const latestRun = await competitionRepo.latestSuccessfulScrapeRun(appDb, listingId);
+  if (!latestRun || nowMs - latestRun.observedAt > SELLER_IDENTITY_MAX_AGE_MS) return null;
+
+  const offers = await competitionRepo.observationsAsOf(appDb, listingId, nowMs);
+  const competitors = offers
+    .filter((offer) => offer.sellerRef !== null && offer.sellerRef !== ourSellerRef)
+    .sort((a, b) => a.rank - b.rank);
+  return competitors[0]?.sellerRef ?? null;
+}
+
 function campaignRatioAt(
   currentPrice: Money,
   campaign: { finalPrice: Money; storeSharePct: number } | null,
@@ -135,6 +172,9 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
   const policy = mapPolicy(policyRow);
 
   const candidates = await listingsRepo.listRepriceableListings(ctx.appDb, marketplaceCode);
+  // Our own merchant id, so the scrape's offer list can be read from our point of view. Read
+  // once per run, not per listing. `null` when unconfigured — see loadSecondSellerId.
+  const ourSellerRef = (await configRepo.getMarketplace(ctx.appDb, marketplaceCode))?.merchantRef ?? null;
   const adapter = getAdapter(ctx.adapters, marketplaceCode);
   const dailyAllowance = adapter.capabilities.dailyUpdateAllowance(candidates.length);
   const usage = await repricingRepo.getBudgetUsage(ctx.appDb, marketplaceCode, usageDateKey(nowMs));
@@ -190,6 +230,11 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
         : null;
 
       const observationRow = await competitionRepo.latestBuyboxObservation(ctx.appDb, listing.id);
+      // doc 12 7.4: reporting data, joined in here and nowhere else. `null` whenever the
+      // scrape is off, absent or stale — the decision proceeds either way (doc 03 T-22).
+      const secondSellerId = policy.useSellerIdentityTrigger
+        ? await loadSecondSellerId(ctx.appDb, listing.id, ourSellerRef, nowMs)
+        : null;
       const observation = observationRow
         ? {
             rank: observationRow.rank,
@@ -200,7 +245,7 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
             thirdPrice:
               observationRow.thirdPrice !== null ? Money.fromKurus(observationRow.thirdPrice) : null,
             hasMultipleSeller: observationRow.hasMultipleSeller,
-            secondSellerId: null, // not on the control path (doc 10 §5.1) — identity is scrape-only
+            secondSellerId, // reporting-only input (doc 10 §5.1); never gates the decision
             competitorStock: null, // same — Trendyol only via scrape, Hepsiburada TBC
             observedAt: new Date(observationRow.observedAt),
           }
