@@ -1,0 +1,26 @@
+{
+  "content": [
+    {
+      "contentId": 111,
+      "productMainId": "MAIN-1",
+      "title": "Kablosuz Kulaklık Siyah",
+      "variants": [
+        {
+          "barcode": "1111111111111",
+          "stockCode": "SKU-1",
+          "commission": 7.83,
+          "vatRate": 20,
+          "price": { "salePrice": 149.9, "listPrice": 199.9, "priceSeenByCustomer": 139.9 },
+          "stock": { "quantity": 12 },
+          "onSale": true,
+          "locked": false,
+          "lockReason": null,
+          "archived": false,
+          "blacklisted": false,
+          "deliveryOptions": { "deliveryDuration": 1 }
+        }
+      ]
+    }
+  ],
+  "nextPageToken": "page-2-token"
+}

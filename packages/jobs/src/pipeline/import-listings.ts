@@ -1,0 +1,133 @@
+/**
+ * `ImportListings` (doc 07 §1, §2, §6) — full listing sync from the marketplace adapter:
+ * price, stock, commission, VAT, status. Idempotent upsert plus a stale sweep gated on full
+ * success, per doc 07 §6 exactly — never delete-then-reload (doc 09 §25).
+ */
+import { getAdapter } from '../adapter-registry.js';
+import { parseStockCode, type MarketplaceCode } from '@buybox/core';
+import { eventsRepo, listingsRepo, newId } from '@buybox/db';
+import { z } from 'zod';
+import type { JobContext, JobResult } from '../job.js';
+
+export const IMPORT_LISTINGS_JOB = 'ImportListings';
+
+export const ImportListingsPayloadSchema = z.object({
+  marketplaceCode: z.enum(['trendyol', 'hepsiburada']),
+});
+
+export type ImportListingsPayload = z.infer<typeof ImportListingsPayloadSchema>;
+
+export async function importListings(ctx: JobContext): Promise<JobResult> {
+  const payload = ImportListingsPayloadSchema.parse(JSON.parse(ctx.payload));
+  const marketplaceCode: MarketplaceCode = payload.marketplaceCode;
+  const adapter = getAdapter(ctx.adapters, marketplaceCode);
+  const runStartedAt = ctx.clock.nowMs();
+
+  let itemsTotal = 0;
+  let itemsOk = 0;
+  let itemsFailed = 0;
+
+  try {
+    for await (const listing of adapter.fetchListings()) {
+      itemsTotal += 1;
+      try {
+        const parsed = parseStockCode(listing.sellerStockCode);
+        const baseStockCode = parsed.ok ? parsed.value.baseCode : null;
+        if (!parsed.ok) {
+          await eventsRepo.logEvent(ctx.appDb, {
+            id: newId(),
+            at: runStartedAt,
+            level: 'warn',
+            marketplaceCode,
+            listingId: null,
+            jobRunId: ctx.correlationId,
+            code: 'UnparseableStockCode',
+            message: `Listing ${listing.marketplaceListingId}: seller SKU "${listing.sellerStockCode}" does not parse (doc 07 §2.1) — imported with baseStockCode = null, excluded from repricing`,
+            context: JSON.stringify({ marketplaceListingId: listing.marketplaceListingId }),
+          });
+        }
+
+        const existing = await listingsRepo.findListingByMarketplaceId(
+          ctx.appDb,
+          marketplaceCode,
+          listing.marketplaceListingId,
+        );
+
+        await listingsRepo.upsertListing(ctx.appDb, {
+          id: existing?.id ?? newId(),
+          marketplaceCode,
+          marketplaceListingId: listing.marketplaceListingId,
+          sellerStockCode: listing.sellerStockCode,
+          baseStockCode,
+          unitCount: parsed.ok ? parsed.value.unitCount : 1,
+          isBundle: parsed.ok ? parsed.value.isBundle : false,
+          productName: listing.productName,
+          price: listing.price.toKurus(),
+          listPrice: listing.listPrice?.toKurus() ?? null,
+          customerPrice: listing.customerPrice?.toKurus() ?? null,
+          offeredStock: listing.offeredStock,
+          commissionRate: listing.commissionRate,
+          vatRate: listing.vatRate,
+          dispatchTime: listing.dispatchTime,
+          isSalable: listing.isSalable,
+          isLocked: listing.isLocked,
+          isSuspended: listing.isSuspended,
+          isFrozen: false, // not exposed by either adapter today (doc 10 §3 port shape)
+          isArchived: listing.isArchived,
+          isBlacklisted: listing.isBlacklisted,
+          lockReasons: listing.lockReasons.length > 0 ? JSON.stringify(listing.lockReasons) : null,
+          deactivationReasons:
+            listing.deactivationReasons.length > 0 ? JSON.stringify(listing.deactivationReasons) : null,
+          // Operator-owned fields: only ever meaningful on first insert; upsertListing
+          // excludes them from the conflict update, so re-sending defaults here is safe.
+          minPrice: null,
+          maxPrice: null,
+          allowIncrease: true,
+          allowDecrease: true,
+          repriceEnabled: false, // doc 10 §6 step 8: "everything starts DISABLED"
+          extra: null,
+          firstSeenAt: existing?.firstSeenAt ?? runStartedAt,
+          lastSeenAt: runStartedAt,
+          updatedAt: runStartedAt,
+        });
+        itemsOk += 1;
+      } catch (error) {
+        itemsFailed += 1;
+        await eventsRepo.logEvent(ctx.appDb, {
+          id: newId(),
+          at: runStartedAt,
+          level: 'warn',
+          marketplaceCode,
+          listingId: null,
+          jobRunId: ctx.correlationId,
+          code: 'ListingImportFailed',
+          message: `Failed to upsert listing ${listing.marketplaceListingId}: ${error instanceof Error ? error.message : String(error)}`,
+          context: JSON.stringify({ marketplaceListingId: listing.marketplaceListingId }),
+        });
+      }
+    }
+  } catch (error) {
+    // A transport/adapter-level failure mid-stream: doc 07 §6 — the stale sweep must NOT run,
+    // since we don't know whether the pages we never reached would have kept more listings
+    // "seen". Surface the partial result; nothing already upserted is rolled back (each
+    // listing's own upsert already committed and is still correctly "seen" as of this run).
+    const message = error instanceof Error ? error.message : String(error);
+    await eventsRepo.logEvent(ctx.appDb, {
+      id: newId(),
+      at: runStartedAt,
+      level: 'error',
+      marketplaceCode,
+      listingId: null,
+      jobRunId: ctx.correlationId,
+      code: 'ImportListingsAborted',
+      message: `ImportListings for ${marketplaceCode} aborted mid-run, stale sweep skipped: ${message}`,
+      context: null,
+    });
+    return { itemsTotal, itemsOk, itemsFailed, error: message };
+  }
+
+  // Only reached on a fully successful pass (doc 07 §6).
+  await listingsRepo.sweepStaleListings(ctx.appDb, marketplaceCode, runStartedAt);
+
+  return { itemsTotal, itemsOk, itemsFailed };
+}

@@ -1,0 +1,21 @@
+# Local databases for packages/db's integration tests (doc 12 Phase 3: "full repository
+# test suite passes on SQLite, PostgreSQL and MySQL"). SQLite needs no service — it's a
+# file. CI provisions the same two engines as GitHub Actions service containers
+# (.github/workflows/ci.yml); this compose file is the equivalent for local development.
+#
+# Usage: docker compose -f docker-compose.test.yml up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: buybox_test
+    ports:
+      - '55432:5432'
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: test
+      MYSQL_DATABASE: buybox_test
+    ports:
+      - '53306:3306'

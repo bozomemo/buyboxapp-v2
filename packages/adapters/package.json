@@ -1,0 +1,25 @@
+{
+  "name": "@buybox/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@buybox/core": "*",
+    "@buybox/shared": "*",
+    "exceljs": "^4.4.0",
+    "zod": "^3.23.8"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "batchRequestId": "fa75dfd5-6ce6-4730-a09e-97563500000-1",
+  "status": "COMPLETED",
+  "items": [
+    {
+      "requestItem": { "barcode": "1111111111111" },
+      "status": "SUCCESS",
+      "failureReasons": []
+    },
+    {
+      "requestItem": { "barcode": "2222222222222" },
+      "status": "FAILED",
+      "failureReasons": ["Price below the minimum allowed for this category"]
+    }
+  ]
+}

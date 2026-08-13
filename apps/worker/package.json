@@ -1,0 +1,19 @@
+{
+  "name": "@buybox/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@buybox/adapters": "*",
+    "@buybox/core": "*",
+    "@buybox/db": "*",
+    "@buybox/jobs": "*",
+    "@buybox/shared": "*"
+  }
+}

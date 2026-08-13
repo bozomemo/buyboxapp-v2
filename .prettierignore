@@ -1,0 +1,10 @@
+dist
+node_modules
+reference
+package-lock.json
+
+# Specification and project docs are not reformatted — they are the authoritative
+# source of truth (CLAUDE.md) and hand-authored; leave their prose untouched.
+docs
+CLAUDE.md
+README.md

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "references": [
+    { "path": "../adapters" },
+    { "path": "../core" },
+    { "path": "../db" },
+    { "path": "../shared" }
+  ],
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "dist"]
+}

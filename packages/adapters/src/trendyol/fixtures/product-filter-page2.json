@@ -1,0 +1,25 @@
+{
+  "content": [
+    {
+      "contentId": 222,
+      "productMainId": "MAIN-2",
+      "title": "Kablosuz Kulaklık Beyaz",
+      "variants": [
+        {
+          "barcode": "2222222222222",
+          "stockCode": "SKU-2",
+          "commission": 8.5,
+          "vatRate": 20,
+          "price": { "salePrice": 179.9, "listPrice": null, "priceSeenByCustomer": null },
+          "stock": { "quantity": 0 },
+          "onSale": false,
+          "locked": true,
+          "lockReason": "SellerRequest",
+          "archived": false,
+          "blacklisted": false
+        }
+      ]
+    }
+  ],
+  "nextPageToken": null
+}

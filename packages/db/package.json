@@ -1,0 +1,36 @@
+{
+  "name": "@buybox/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate:sqlite": "drizzle-kit generate --config drizzle.config.sqlite.ts",
+    "db:generate:postgres": "drizzle-kit generate --config drizzle.config.postgres.ts",
+    "db:generate:mysql": "drizzle-kit generate --config drizzle.config.mysql.ts"
+  },
+  "dependencies": {
+    "@buybox/core": "*",
+    "@buybox/shared": "*",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.2",
+    "mysql2": "^3.23.3",
+    "pg": "^8.23.0",
+    "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/pg": "^8.21.0",
+    "drizzle-kit": "^0.31.10"
+  }
+}

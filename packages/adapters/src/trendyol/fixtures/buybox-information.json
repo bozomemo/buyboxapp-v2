@@ -1,0 +1,20 @@
+{
+  "buyboxInfo": [
+    {
+      "barcode": "1111111111111",
+      "buyboxOrder": 1,
+      "buyboxPrice": 149.9,
+      "hasMultipleSeller": true,
+      "secondBuyboxPrice": 154.9,
+      "thirdBuyboxPrice": 159.9
+    },
+    {
+      "barcode": "2222222222222",
+      "buyboxOrder": null,
+      "buyboxPrice": null,
+      "hasMultipleSeller": false,
+      "secondBuyboxPrice": null,
+      "thirdBuyboxPrice": null
+    }
+  ]
+}

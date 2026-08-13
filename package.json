@@ -1,0 +1,33 @@
+{
+  "name": "buybox-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Marketplace repricing and listing-management system for Trendyol and Hepsiburada.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "build:clean": "tsc -b tsconfig.json --clean",
+    "typecheck": "tsc -b tsconfig.json",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.15.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.15.0",
+    "vitest": "^4.1.10"
+  }
+}

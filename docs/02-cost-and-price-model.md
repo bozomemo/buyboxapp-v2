@@ -275,13 +275,20 @@ These are the acceptance tests for `packages/core`. Values in kuruş.
 
 | `v` | `c₀` | `vc` | deductible | `c_eff` | `D` |
 |-----|------|------|-----------|---------|-----|
-| 10 | 16.00 | 20 | false | 19.200 | 0.717071 |
+| 10 | 16.00 | 20 | false | 19.200 | 0.717091 |
 | 20 | 16.00 | 20 | false | 19.200 | 0.641333 |
-| 1  | 16.00 | 20 | false | 19.200 | 0.798218 |
+| 1  | 16.00 | 20 | false | 19.200 | 0.798099 |
 | 10 | 16.00 | 20 | **true** | 16.000 | 0.749091 |
-| 10 | 7.83  | 20 | false | 9.396  | 0.815095 |
+| 10 | 7.83  | 20 | false | 9.396  | 0.815131 |
 | 20 | 45.00 | 20 | false | 54.000 | 0.293333 |
 | 20 | 70.00 | 20 | false | 84.000 | **≤ 0 → error** |
+
+> **Correction (Phase 2 implementation, packages/core):** three `D` values above were
+> originally miscalculated — `0.717071`, `0.798218` and `0.815095` — apparently from a
+> rounded intermediate `c_eff`, which §1 itself says never to do ("never round
+> intermediate values"). Recomputed directly from `D = 1/(1+v/100) - c_eff/100` with
+> exact rational arithmetic: row 1 is `986/1375`, row 3 is `10076/12625`, row 5 is
+> `224161/275000`. The other four rows were already correct.
 
 ### 7.2 Floor price — no campaign
 
@@ -290,11 +297,21 @@ no expenditure, all VAT-inclusive, commission ex-VAT with `vc = 20`.
 
 | `U` | `v` | `c₀` | Expected floor | Selected cargo band |
 |-----|-----|------|----------------|---------------------|
-| 2000 | 10 | 16 | 3454 | 900 (settles: 3454 > 3000) |
-| 2000 | 20 | 16 | 3900 | 900 |
+| 2000 | 10 | 16 | 4045 | 900 (settles: 4045 > 3000) |
+| 2000 | 20 | 16 | 4522 | 900 |
 | 1000 | 10 | 16 | 2059 | 476 |
-| 5000 | 20 | 16 | 9510 | 1100 |
-| 500  | 1  | 7.83 | 1223 | 476 |
+| 5000 | 20 | 16 | 9512 | 1100 |
+| 500  | 1  | 7.83 | 1090 | 476 |
+
+> **Correction (Phase 2 implementation, packages/core):** four of the five floors above
+> were originally wrong — most visibly row 1, which claimed floor `3454` selecting the
+> `900` cargo band, but `3454` does not fall inside that band's range (`3000 < p ≤ 7500`
+> selects `900`; `3454` would only be reachable through the `476` band, whose range is
+> `p ≤ 3000` — a self-contradiction). Recomputed with the corrected `D` values above and
+> the exact fixed-point iteration in §5.3; each corrected value was checked for
+> self-consistency (the settled price actually falls inside the cargo band used to
+> compute it) and against the round-trip property in §7.4. Row 3 (`U = 1000`) was already
+> correct and is unchanged.
 
 > Implementers: compute these from the formula, assert equality, and treat any deviation as a
 > bug in the implementation — not in the table. If the table itself is wrong, fix it here and
