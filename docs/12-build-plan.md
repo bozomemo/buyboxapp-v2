@@ -107,13 +107,52 @@ Specification: `docs/api-references.md`, doc 10 §3, §4.
 | 4.1 | `IMarketplaceAdapter` port + `MarketplaceCapabilities` + a shared contract test suite | Contract suite exists and fails for an unimplemented adapter |
 | 4.2 | Rate limiter keyed by marketplace + API domain; retry with backoff; circuit breaker | Unit-tested with a fake clock |
 | 4.3 | Trendyol adapter — auth, `fetchListings` (approved V2, incl. `commission`, `vatRate`, `priceSeenByCustomer`), `fetchBuyboxObservations` | Contract suite passes against recorded fixtures |
-| 4.4 | Hepsiburada adapter — auth, per-domain hosts, `fetchListings`, buybox rank | Contract suite passes; 🔴 items in api-references §2.9 resolved first |
+| 4.4 | Hepsiburada adapter — auth, per-domain hosts, `fetchListings`, `submitPriceChanges`/`pollSubmission` via **`price-uploads`** | Contract suite passes against recorded fixtures. ✅ **Done 2026-08-14** — see below. `fetchBuyboxObservations` alone still throws (§2.5, no declared response schema) |
 | 4.5 | `IProductSource` port + `Manual`, `Excel` (configurable column mapping), `MarketplaceListing` | Each passes the source contract suite |
 | 4.6 | `ErpDatabase` and `ErpApi` registered stubs | Appear in the UI as "yakında"; `fetch()` throws `NotImplemented`; config schemas defined |
 
 **Definition of done:** no marketplace sentinel (`"< ? >"`, `-1`, `"Error"`, `"No Seller"`) and
 no formatted composite string appears anywhere outside `packages/adapters`. Adapters are tested
 only against fixtures, never live APIs.
+
+> ### 4.4 — unblocked and implemented, 2026-08-14
+>
+> The vendor's OpenAPI 3.0.1 document for the listing integration was retrieved from the
+> developer portal's public content API and is stored verbatim at
+> `docs/vendor/hepsiburada-listing-openapi-v1.json`. api-references §2.2/§2.4/§2.6/§2.10 are
+> written from it and §2.12 records how to re-fetch it.
+>
+> **Implemented:** `HepsiburadaAdapter` — `testConnection`, `fetchListings` (offset paging
+> against `totalCount`, active-campaign-window pricing), `submitPriceChanges`/`pollSubmission`
+> via `price-uploads`, all against fixtures shaped from the OpenAPI schema
+> (`packages/adapters/src/hepsiburada/`). Passes the shared marketplace contract suite.
+>
+> Three findings that changed the design, all handled in code, not just documented — submit
+> through `price-uploads` (3 fields), never `inventory-uploads` (18 mandatory fields that
+> overwrite live configuration; `submitPriceChanges` refuses a list price for this reason); a
+> `status: "Done"` response with a non-empty `priceValidations[]` is mapped to `status: 'failed'`
+> with the marketplace's price band on `item.lock`, never audited as applied
+> (`mapPriceUploadResult`); and `priceIncreaseDisabled` / `priceDecreaseDisabled` are carried on
+> every `ListingSnapshot` for the decision engine to enforce.
+>
+> Because Hepsiburada enumerates only failures in its poll response, `pollSubmission` names the
+> successes from the batch the adapter remembered at submission time (bounded, in-memory). If
+> that memo is lost — a process restart between submit and confirm — only the named failures
+> are reported and the rest stay unconfirmed until the job layer's timeout; a price that cannot
+> be proven applied is never recorded as applied.
+>
+> **Still deferred:** `fetchBuyboxObservations` still throws `HepsiburadaBlockedError` and the
+> commission lookup is not implemented. Both endpoints and their limits are confirmed, but the
+> OpenAPI declares their 200 responses with **no schema**. One SIT session closes both — call
+> each once and record the response as a fixture, exactly as §2.11 was done; writing a
+> normaliser against the guide's prose field list is what CLAUDE.md's "never infer an
+> endpoint's shape" forbids. Commission may also be where the pre-sale product VAT rate lives;
+> it is confirmed absent from the listing schema, and a wrong VAT rate produces a wrong floor
+> price (doc 02). The `HepsiburadaCredentials` schema's account question (§2.9: merchant login
+> vs. integrator service key) also needs that session to resolve.
+>
+> `fetchListings` supplies the SKUs Phase 7's `HepsiburadaPublicListingsSource` keys on, so that
+> competitor source is now live once real credentials are configured.
 
 ---
 
@@ -179,10 +218,11 @@ Hepsiburada has a competitor source too. Both are code-complete.
 | 7.4 | Seller-identity invalidation trigger wired into the engine, skipped when data is absent | ✅ | n/a |
 | 7.5 | A marketplace's `ICompetitorSource` implementation | ✅ `TrendyolPublicPageSource` | ✅ `HepsiburadaPublicListingsSource` |
 
-⚠️ **Hepsiburada collects nothing yet, and that is a Phase 4 gap, not a Phase 7 one.** The
-endpoint is keyed by product SKU, and `HepsiburadaAdapter.fetchListings` is still blocked
-(4.4, api-references §2.9), so no listing carries one. The source is registered and never
-asked for anything. Repricing is unaffected on both marketplaces either way.
+✅ **Hepsiburada's competitor source is live as of 4.4 (2026-08-14).** `fetchListings` now
+supplies `hepsiburadaSku` as `ProductPageRef.contentId` on every listing — the only key
+§2.11's endpoint accepts — so `HepsiburadaPublicListingsSource` has something to fetch once
+real merchant credentials are configured. Repricing is unaffected either way: this is a
+reporting source, never the control path (CLAUDE.md).
 
 **Definition of done:** disabling the scraper entirely leaves repricing fully functional.
 ✅ Asserted, not assumed — see `packages/jobs/src/pipeline/scrape-competitors.test.ts`, which
@@ -199,23 +239,42 @@ Additional decisions taken in this phase, beyond the tasks above:
 
 ---
 
-## Phase 8 — Migration and cutover
+## Phase 8 — Store onboarding and go-live
 
-Specification: doc 10 §11, doc 05 §9.
+> ⚠️ **Revised 2026-08-14.** This phase originally assumed a data migration from an operating
+> store's legacy MySQL database (doc 10 §11's "Migration plan", doc 05 §9's "Legacy migration
+> mapping"). **That does not apply here.** This deployment is for a **new store with no
+> existing catalogue, stock, prices or listings.** No row is backfilled from anywhere. The
+> catalogue starts genuinely empty and is populated only going forward, through the product
+> sources built in Phase 4.5 (Manual, Excel, `MarketplaceListing`).
+>
+> `reference/legacy-app/` and doc 05 §9 remain useful as **business-rule and schema-design
+> reference only** (why a column exists, what defect it fixes) — never as a source of rows to
+> import. This does not change CLAUDE.md's quarantine of that directory; if anything it
+> narrows further what it's for.
+>
+> One consequence: **8.3's original form (diff against live legacy decisions) has no legacy
+> system to diff against and is dropped.** 8.3b's original form (validate against a real
+> settlement statement) also has no statement to validate against yet — a brand-new store has
+> no sales history. It is replaced below with a same-intent, weaker-evidence check that a
+> genuine one supersedes the moment real sales exist.
 
 | # | Task | Done when |
 |---|------|-----------|
-| 8.1 | Backfill script from the legacy MySQL database | Row counts reconcile; spot checks match |
-| 8.2 | Seed `repricing_state` from the latest legacy price change per listing, phase `OPTIMUM` | The new engine does not re-probe the entire catalogue on first run |
-| 8.3 | **Shadow mode** against live data, submissions disabled | Every divergence from legacy behaviour is explained as a legacy bug or a porting error |
-| 8.3b | **GATE — settlement validation (deferred from 0.3)** | Cost model confirmed against a real settlement statement. **Do not proceed to 8.4 without this.** |
-| 8.4 | Enable writes for Hepsiburada only | One week with no price below floor and no budget exhaustion |
-| 8.5 | Enable writes for Trendyol | Same |
-| 8.6 | Decommission the legacy app, stored functions and dead tables | Legacy app read-only, then retired |
+| 8.1 | Register the store's marketplaces (Hepsiburada, Trendyol) and fee settings through the setup wizard | `testConnection` succeeds for each; `fee_settings` has a current row |
+| 8.2 | Add the first products through a product source (Manual entry or Excel to start) | Listings grid shows them; `repriceEnabled` still `false` for all (doc 10 §6 step 8) |
+| 8.3 | `ImportListings`/`ObserveBuybox` run against real marketplace listings with submissions still disabled | Prices, stock and buybox observations populate correctly; every listing starts phase `SEEKING` — there is no history to seed `OPTIMUM` from, and none should be invented |
+| 8.3b | **GATE — cost model sanity check, no settlement statement available yet** | Commission, VAT and cargo figures cross-checked line-by-line against the marketplace's own published fee schedule and `docs/api-references.md` (§2.7 for Hepsiburada; Trendyol's public rate card), not a real settlement — **do not proceed to 8.4 without this**, and treat its confidence as provisional |
+| 8.4 | Enable writes for Hepsiburada only, starting with a small, watched subset of listings | One to two weeks, tight kill switch, no price below floor, no budget exhaustion |
+| 8.5 | The moment the first real settlement statement exists, validate the cost model against it and correct forward if it diverges | Confirms or corrects 8.3b's estimate — this is the real gate 8.3b stood in for |
+| 8.6 | Enable writes for Trendyol | Same watch period as 8.4 |
+| 8.7 | Widen to the full catalogue | Same guardrails hold at scale |
 
-**Definition of done for 8.3 — do not skip this.** The floor prices *will* diverge
-substantially from the legacy system (doc 02 §6.1). That divergence is expected and is the
-point. What must not exist is an *unexplained* divergence.
+**Definition of done for 8.3b — do not skip this, even without settlement data.** A wrong
+commission or VAT figure produces a wrong floor price and a real loss on the very first sale.
+Cross-checking against the vendor's own documentation is weaker evidence than a settlement
+statement, which is exactly why 8.5 exists as a mandatory follow-up the moment real data is
+available, not an optional one.
 
 ---
 
@@ -235,7 +294,9 @@ Not in scope. Recorded so they are not forgotten.
 
 ## Definition of done for the whole project
 
-- [ ] Cost model validated against real settlement data (0.3 → gated at 8.3b) — **deferred; blocks live writes only**
+- [ ] Cost model cross-checked against the marketplaces' published fee schedules (8.3b), then
+      validated against a real settlement statement the moment one exists (8.5) — **deferred;
+      blocks full-scale live writes, not the initial watched rollout**
 - [ ] All doc 02 §7 vectors and doc 03 §11 scenarios pass
 - [ ] Migrations and repositories green on SQLite, PostgreSQL and MySQL
 - [ ] No credential in source, committed config, or a database column

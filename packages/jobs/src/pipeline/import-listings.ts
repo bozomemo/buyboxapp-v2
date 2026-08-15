@@ -62,7 +62,13 @@ export async function importListings(ctx: JobContext): Promise<JobResult> {
           baseStockCode,
           unitCount: parsed.ok ? parsed.value.unitCount : 1,
           isBundle: parsed.ok ? parsed.value.isBundle : false,
-          productName: listing.productName,
+          // doc 05: `product_name` is NOT NULL, but not every marketplace returns one —
+          // Hepsiburada's listing service carries no name field at all (api-references §2.4);
+          // the name is catalogue data on a different, still-unverified service. An existing
+          // name is never overwritten with a stand-in, and on first insert the seller stock
+          // code stands in until a product source or the catalogue integration supplies a real
+          // one. The adapter does not fabricate it, and this is the only place that decides.
+          productName: listing.productName ?? existing?.productName ?? listing.sellerStockCode,
           price: listing.price.toKurus(),
           listPrice: listing.listPrice?.toKurus() ?? null,
           customerPrice: listing.customerPrice?.toKurus() ?? null,
@@ -73,7 +79,10 @@ export async function importListings(ctx: JobContext): Promise<JobResult> {
           isSalable: listing.isSalable,
           isLocked: listing.isLocked,
           isSuspended: listing.isSuspended,
-          isFrozen: false, // not exposed by either adapter today (doc 10 §3 port shape)
+          // Optional on the port: absent means the marketplace does not report it, which is
+          // not the same as false — but the column is NOT NULL, so absence stores as false.
+          // Hepsiburada reports it (api-references §2.4); Trendyol has no such flag.
+          isFrozen: listing.isFrozen ?? false,
           isArchived: listing.isArchived,
           isBlacklisted: listing.isBlacklisted,
           lockReasons: listing.lockReasons.length > 0 ? JSON.stringify(listing.lockReasons) : null,

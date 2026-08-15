@@ -1,8 +1,33 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { configRepo, createDb, newId, runMigrations } from '@buybox/db';
+import { SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import { describe, expect, it } from 'vitest';
 import { FakeClock } from './clock.js';
 import type { JobDefinition } from './job.js';
 import { Scheduler } from './scheduler.js';
 import { createSqliteTestDb } from './test-helpers.js';
+
+/**
+ * `createSqliteTestDb` (test-helpers.ts) pre-disengages the system pause so the rest of this
+ * package's tests can assume an operational system. The tests below are specifically about the
+ * pause itself, so they need a database exactly as `runMigrations` leaves it — nothing written
+ * for `SYSTEM_PAUSE_SETTING_KEY` at all, the true state of a fresh install.
+ */
+async function createUntouchedSqliteTestDb() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'buybox-jobs-pause-test-'));
+  const file = path.join(dir, 'test.db');
+  const appDb = createDb(`file:${file}`, 'sqlite');
+  await runMigrations(appDb);
+  return {
+    appDb,
+    cleanup: () => {
+      appDb.close();
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
 
 const emptyAdapters = new Map();
 
@@ -144,5 +169,109 @@ describe('Scheduler', () => {
     } finally {
       cleanup();
     }
+  });
+
+  describe('system pause (doc 06 §2) — genuinely separate from the price-submission switch', () => {
+    it('fail-closed: a freshly migrated database with no row for it is paused by default', async () => {
+      const { appDb, cleanup } = await createUntouchedSqliteTestDb();
+      try {
+        const clock = new FakeClock(1000);
+        const runs: number[] = [];
+        const scheduler = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a' });
+        scheduler.register({
+          jobName: 'Heartbeat',
+          cadenceMs: 60_000,
+          handler: async () => {
+            runs.push(clock.nowMs());
+            return { itemsTotal: 1, itemsOk: 1, itemsFailed: 0 };
+          },
+        });
+
+        const result = await scheduler.tick();
+        expect(result).toEqual({ heldLock: true, paused: true, enqueued: [], ran: [] });
+        expect(runs).toHaveLength(0);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('while engaged, an already-queued on-demand job is not claimed either', async () => {
+      const { appDb, cleanup } = await createUntouchedSqliteTestDb();
+      try {
+        const clock = new FakeClock(1000);
+        const scheduler = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a' });
+        scheduler.register({
+          jobName: 'OneOff',
+          handler: async () => ({ itemsTotal: 1, itemsOk: 1, itemsFailed: 0 }),
+        });
+        await scheduler.enqueueNow('OneOff', '{}');
+
+        const result = await scheduler.tick();
+        expect(result.paused).toBe(true);
+        expect(result.ran).toHaveLength(0); // queued, but never claimed while paused
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('only an explicit "false" resumes — any other stored value stays paused', async () => {
+      const { appDb, cleanup } = await createUntouchedSqliteTestDb();
+      try {
+        await configRepo.setAppSetting(
+          appDb,
+          { key: SYSTEM_PAUSE_SETTING_KEY, value: 'engaged-but-not-the-literal-string', updatedBy: 'test', updatedAt: 0 },
+          newId(),
+        );
+        const clock = new FakeClock(1000);
+        const scheduler = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a' });
+        expect((await scheduler.tick()).paused).toBe(true);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('resumed (explicit "false"), cadence jobs enqueue and run again', async () => {
+      const { appDb, cleanup } = await createUntouchedSqliteTestDb();
+      try {
+        await configRepo.setAppSetting(
+          appDb,
+          { key: SYSTEM_PAUSE_SETTING_KEY, value: 'false', updatedBy: 'test', updatedAt: 0 },
+          newId(),
+        );
+        const clock = new FakeClock(1000);
+        const runs: number[] = [];
+        const scheduler = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a' });
+        scheduler.register({
+          jobName: 'Heartbeat',
+          cadenceMs: 60_000,
+          handler: async () => {
+            runs.push(clock.nowMs());
+            return { itemsTotal: 1, itemsOk: 1, itemsFailed: 0 };
+          },
+        });
+
+        const result = await scheduler.tick();
+        expect(result.paused).toBe(false);
+        expect(result.enqueued).toEqual(['Heartbeat']);
+        expect(runs).toHaveLength(1);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('is independent of the price-submission switch: pausing the system does not disengage it, and vice versa', async () => {
+      // `createSqliteTestDb` (test-helpers.ts) pre-disengages the system pause only — the
+      // price-submission switch (a different setting entirely, checked inside
+      // `SubmitPriceChanges` itself, not by the Scheduler) is untouched and stays fail-closed.
+      const { appDb, cleanup } = await createSqliteTestDb();
+      try {
+        const systemPause = await configRepo.getAppSetting(appDb, SYSTEM_PAUSE_SETTING_KEY);
+        const priceSwitch = await configRepo.getAppSetting(appDb, 'global.killSwitch');
+        expect(systemPause?.value).toBe('false'); // resumed by the test helper
+        expect(priceSwitch).toBeUndefined(); // never touched — still fail-closed by absence
+      } finally {
+        cleanup();
+      }
+    });
   });
 });

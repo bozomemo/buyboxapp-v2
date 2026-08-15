@@ -1,0 +1,42 @@
+{
+  "_comment": "Second page — proves offset paging terminates on totalCount. See listings-page1.json.",
+  "listings": [
+    {
+      "listingId": "aa11bb22-cc33-4d44-8e55-6f77aa88bb99",
+      "uniqueIdentifier": "HBCV00000KLMNO-1",
+      "hepsiburadaSku": "HBCV00000KLMNO",
+      "merchantSku": "ABC123",
+      "price": 59.5,
+      "availableStock": 42,
+      "dispatchTime": 1,
+      "cargoCompany1": "Aras Kargo Marketplace",
+      "cargoCompany2": null,
+      "cargoCompany3": null,
+      "shippingAddressLabel": "Merkez Depo",
+      "shippingProfileName": null,
+      "claimAddressLabel": "Merkez Depo",
+      "maximumPurchasableQuantity": 0,
+      "minimumPurchasableQuantity": 1,
+      "pricings": [],
+      "isSalable": true,
+      "customizableProperties": null,
+      "deactivationReasons": null,
+      "isSuspended": false,
+      "isLocked": false,
+      "lockReasons": null,
+      "isFrozen": false,
+      "freezeReasons": null,
+      "availableWarehouses": ["Merkez Depo"],
+      "isFulfilledByHB": true,
+      "priceIncreaseDisabled": false,
+      "priceDecreaseDisabled": true,
+      "stockDecreaseDisabled": false,
+      "skuAfterSuspension": null,
+      "productId": "1122abcd-3344-4e55-9f66-778899aabbcc",
+      "hasVariant": false
+    }
+  ],
+  "totalCount": 3,
+  "limit": 500,
+  "offset": 2
+}

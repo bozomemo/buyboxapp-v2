@@ -1,7 +1,8 @@
 /**
  * doc 12 Phase 5.6 DoD: "Budget test: exhausted budget admits priority 0 only."
  */
-import { circuitBreakerRepo, configRepo, repricingRepo } from '@buybox/db';
+import { circuitBreakerRepo, configRepo, newId, repricingRepo } from '@buybox/db';
+import { GLOBAL_KILL_SWITCH_SETTING_KEY } from '@buybox/shared';
 import { describe, expect, it } from 'vitest';
 import { FakeClock } from '../clock.js';
 import { Scheduler } from '../scheduler.js';
@@ -12,10 +13,27 @@ import {
   submitPriceChanges,
 } from './submit-price-changes.js';
 
+/**
+ * The global kill switch is fail-closed (`@buybox/shared`): every test in this file except the
+ * ones exercising the switch itself needs it explicitly disengaged first, exactly as a real
+ * operator would have to before *any* submission can happen.
+ */
+async function disengageGlobalKillSwitch(
+  appDb: Awaited<ReturnType<typeof createSqliteTestDb>>['appDb'],
+): Promise<void> {
+  await configRepo.setAppSetting(
+    appDb,
+    { key: GLOBAL_KILL_SWITCH_SETTING_KEY, value: 'false', updatedBy: 'test', updatedAt: NOW },
+    newId(),
+  );
+}
+
 async function run(
   appDb: Awaited<ReturnType<typeof createSqliteTestDb>>['appDb'],
   adapter: ReturnType<typeof createFakeAdapter>,
+  options: { keepGlobalKillSwitchEngaged?: boolean } = {},
 ) {
+  if (!options.keepGlobalKillSwitchEngaged) await disengageGlobalKillSwitch(appDb);
   const clock = new FakeClock(NOW);
   const scheduler = new Scheduler({
     appDb,
@@ -127,19 +145,16 @@ describe('submitPriceChanges', () => {
     }
   });
 
-  it('the global kill switch (doc 06 §2, R-UI-9) blocks all submissions, leaving them queued', async () => {
+  it('fail-closed: with NO kill switch setting ever written (a fresh install), submissions are blocked by default', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {
       await seedMarketplace(appDb);
       const listingId = await seedListing(appDb);
       await queueSubmission(appDb, listingId, 0, 'sub-a'); // even priority 0 is blocked
-      await configRepo.setAppSetting(
-        appDb,
-        { key: 'global.killSwitch', value: 'true', updatedBy: 'test', updatedAt: NOW },
-        'audit-1',
-      );
 
-      const tick = await run(appDb, createFakeAdapter());
+      // No configRepo.setAppSetting call at all — this is the state of a database that has
+      // never had the switch touched, which is exactly the state right after `runMigrations`.
+      const tick = await run(appDb, createFakeAdapter(), { keepGlobalKillSwitchEngaged: true });
       expect(tick.ran).toEqual([{ jobName: SUBMIT_PRICE_CHANGES_JOB, ok: true }]);
 
       const a = await repricingRepo.getPriceSubmission(appDb, 'sub-a');
@@ -149,7 +164,51 @@ describe('submitPriceChanges', () => {
     }
   });
 
-  it('the per-marketplace kill switch (doc 06 §2) blocks only that marketplace, leaving submissions queued', async () => {
+  it('the global kill switch (doc 06 §2, R-UI-9) blocks all submissions, leaving them queued', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      const listingId = await seedListing(appDb);
+      await queueSubmission(appDb, listingId, 0, 'sub-a'); // even priority 0 is blocked
+      await configRepo.setAppSetting(
+        appDb,
+        { key: GLOBAL_KILL_SWITCH_SETTING_KEY, value: 'true', updatedBy: 'test', updatedAt: NOW },
+        'audit-1',
+      );
+
+      const tick = await run(appDb, createFakeAdapter(), { keepGlobalKillSwitchEngaged: true });
+      expect(tick.ran).toEqual([{ jobName: SUBMIT_PRICE_CHANGES_JOB, ok: true }]);
+
+      const a = await repricingRepo.getPriceSubmission(appDb, 'sub-a');
+      expect(a?.state).toBe('queued');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('only an explicit "false" disengages the global switch — any other value stays blocked', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      const listingId = await seedListing(appDb);
+      await queueSubmission(appDb, listingId, 0, 'sub-a');
+      await configRepo.setAppSetting(
+        appDb,
+        { key: GLOBAL_KILL_SWITCH_SETTING_KEY, value: 'False', updatedBy: 'test', updatedAt: NOW },
+        'audit-1',
+      );
+
+      const tick = await run(appDb, createFakeAdapter(), { keepGlobalKillSwitchEngaged: true });
+      expect(tick.ran).toEqual([{ jobName: SUBMIT_PRICE_CHANGES_JOB, ok: true }]);
+
+      const a = await repricingRepo.getPriceSubmission(appDb, 'sub-a');
+      expect(a?.state).toBe('queued');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('the per-marketplace kill switch (doc 06 §2) blocks only that marketplace, leaving submissions queued, even with the global switch disengaged', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {
       await seedMarketplace(appDb);

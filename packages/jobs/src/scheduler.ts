@@ -9,6 +9,7 @@
  */
 import { configRepo, jobsRepo, newId } from '@buybox/db';
 import type { AppDatabase } from '@buybox/db';
+import { isKillSwitchEngaged, SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
 import type { Clock } from './clock.js';
 import { jobDefaultEnabled, jobEnabledSettingKey } from './job-catalog.js';
@@ -30,8 +31,24 @@ export interface SchedulerOptions {
 
 export interface TickResult {
   readonly heldLock: boolean;
+  /** True when this tick did nothing because the system pause (`SYSTEM_PAUSE_SETTING_KEY`) is
+   *  engaged — distinct from not holding the lock, so callers/tests can tell the two apart. */
+  readonly paused: boolean;
   readonly enqueued: readonly string[];
   readonly ran: readonly { jobName: string; ok: boolean }[];
+}
+
+/**
+ * doc 06 §2: the actual "stop everything" switch, genuinely separate from the narrower global
+ * price-submission switch in `submit-price-changes.ts` (see that file's doc comment for why
+ * they used to be — wrongly — the same setting). While engaged, no job of any kind is enqueued
+ * by cadence or claimed for running, including imports, buybox observation and decision-making,
+ * not just price submission. Fail-closed, like the price switch: absent or unrecognised means
+ * paused, so a fresh install starts with nothing running until an operator explicitly resumes it.
+ */
+export async function isSystemPaused(appDb: AppDatabase): Promise<boolean> {
+  const setting = await configRepo.getAppSetting(appDb, SYSTEM_PAUSE_SETTING_KEY);
+  return isKillSwitchEngaged(setting?.value);
 }
 
 /**
@@ -115,7 +132,15 @@ export class Scheduler {
     );
     this.holdsLock = heldLock;
     if (!heldLock) {
-      return { heldLock: false, enqueued: [], ran: [] };
+      return { heldLock: false, paused: false, enqueued: [], ran: [] };
+    }
+
+    // The real "stop everything" switch (doc 06 §2) — checked before anything is enqueued or
+    // claimed, so a paused system enqueues no new cadence-due jobs and runs nothing already
+    // queued, of any kind. Deliberately separate from `SubmitPriceChanges`'s own, narrower
+    // switch (see that job's doc comment): this one stops imports and observation too.
+    if (await isSystemPaused(this.appDb)) {
+      return { heldLock: true, paused: true, enqueued: [], ran: [] };
     }
 
     const enqueued: string[] = [];
@@ -155,7 +180,7 @@ export class Scheduler {
       await settled; // sequential within a tick — concurrency comes from calling tick() itself concurrently
     }
 
-    return { heldLock: true, enqueued, ran };
+    return { heldLock: true, paused: false, enqueued, ran };
   }
 
   /** Real-timer loop for `apps/worker`. Not exercised by unit tests (see file doc comment). */

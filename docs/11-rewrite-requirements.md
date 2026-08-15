@@ -98,7 +98,7 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | F-60 | M | Our price submissions retained 60 days | 05 §10 |
 | F-61 | M | `price_submissions` stores a decision-time snapshot sufficient to replay the decision | 05 §6 |
 | F-62 | M | Retention enforced nightly and configurable | 05 §10, 07 §1 |
-| F-63 | M | Backfill from the legacy database, seeding repricing state so the catalogue is not re-probed | 05 §9, 12 Phase 8 |
+| F-63 | ~~M~~ N/A | ~~Backfill from the legacy database, seeding repricing state so the catalogue is not re-probed~~ — **not applicable, revised 2026-08-14: this is a new store with no legacy data; every listing starts phase `SEEKING`** | 05 §9, 12 Phase 8 |
 
 ## 7. Jobs & operations
 
@@ -155,8 +155,8 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | N-9 | M | Property tests: floor round-trip, monotonicity, never-below-floor, bracket ordering | 02 §7, 03 §11 |
 | N-10 | M | Repository and migration suites green on all three engines in CI | 12 Phase 3 |
 | N-11 | M | Adapter contract suite passes against fixtures for every adapter | 12 Phase 4 |
-| N-12 | M | Cost model validated against real settlement statements **before enabling live writes**. 📌 Deferred — the product owner cannot do this yet; it does not block development, only Phase 8.4 | 12 Phase 0.3 / 8.3b |
-| N-13 | M | Shadow-mode divergence from legacy fully explained before enabling writes | 12 Phase 8.3 |
+| N-12 | M | Cost model validated against real settlement statements **before enabling live writes**. 📌 Deferred — this is a new store with no sales history yet, so no settlement statement exists to validate against; a cross-check against the marketplaces' published fee schedules stands in until one does (12 Phase 8.3b). Does not block development, only full-scale live writes | 12 Phase 0.3 / 8.3b |
+| N-13 | ~~M~~ N/A | ~~Shadow-mode divergence from legacy fully explained before enabling writes~~ — **not applicable, revised 2026-08-14: no legacy system operates this store, so there is nothing to diff against.** Real listings are still imported with submissions disabled first (12 Phase 8.3), just not compared to anything | 12 Phase 8.3 |
 | N-14 | M | `packages/core` is pure: no I/O, no clock, no randomness, no `any` | CLAUDE.md |
 
 ---

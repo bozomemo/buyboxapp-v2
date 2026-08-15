@@ -16,6 +16,7 @@ import type { MarketplaceCode } from '@buybox/core';
 import { checkSchemaVersion, configRepo, createDb, type AppDatabase } from '@buybox/db';
 import {
   HepsiburadaAdapter,
+  HepsiburadaCredentialsSchema,
   HepsiburadaPublicListingsSource,
   TrendyolAdapter,
   TrendyolPublicPageSource,
@@ -51,11 +52,14 @@ import {
   type MarketplaceAdapterRegistry,
 } from '@buybox/jobs';
 import {
+  createLogger,
   FileSecretStore,
   marketplaceCredentialsKey,
   parseBootstrapEnv,
   type ISecretStore,
 } from '@buybox/shared';
+
+const logger = createLogger({ name: 'worker' });
 
 export interface WorkerHandle {
   readonly scheduler: Scheduler;
@@ -99,9 +103,21 @@ async function buildAdapter(
     });
   }
   if (code === 'hepsiburada') {
-    // Intentionally blocked (doc 12 Phase 4.4, api-references §2.9) — registered so it appears
-    // in the UI and its (working) testConnection can honestly report why, not so it can trade.
-    return new HepsiburadaAdapter();
+    const parsed = HepsiburadaCredentialsSchema.safeParse(credentials);
+    // Malformed or incomplete credentials leave the marketplace unregistered rather than
+    // producing an adapter that fails on every call: an unregistered marketplace is visibly
+    // absent, while a registered broken one looks like a transient outage.
+    if (!parsed.success) return undefined;
+    return new HepsiburadaAdapter({
+      credentials: parsed.data,
+      environment: credentials.environment === 'sit' ? 'sit' : 'production',
+      // api-references §2.6: on a malformed submission no upload id is returned and this
+      // header is the only handle a merchant support ticket has, for 7 days.
+      onCorrelation: (correlation) => {
+        if (correlation.correlationId === null) return;
+        logger.info('hepsiburada.correlation', { ...correlation });
+      },
+    });
   }
   return undefined;
 }

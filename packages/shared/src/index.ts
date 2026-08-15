@@ -13,3 +13,10 @@ export {
   marketplaceCredentialsKey,
   productSourceSecretKey,
 } from './secrets/store.js';
+export {
+  GLOBAL_KILL_SWITCH_SETTING_KEY,
+  SYSTEM_PAUSE_SETTING_KEY,
+  isKillSwitchEngaged,
+  isMarketplaceKillSwitchEngaged,
+  marketplaceKillSwitchSettingKey,
+} from './kill-switch.js';

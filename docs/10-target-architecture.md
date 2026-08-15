@@ -359,6 +359,16 @@ with the rates that applied then.
 
 ## 11. Migration plan
 
+> ⚠️ **Not applicable to this deployment (revised 2026-08-14) — kept for reference only.**
+> This section describes a migration from an *operating* store's legacy database. The actual
+> deployment is a **new store with no existing catalogue, stock, prices or listings** — there
+> is nothing to migrate. `docs/12-build-plan.md` Phase 8 is the plan that actually applies:
+> register marketplaces, add products going forward through a product source, start every
+> listing at phase `SEEKING`, and validate the cost model against the marketplaces' published
+> fee schedules before the first live write (a real settlement statement doesn't exist yet for
+> a store with no sales history). The steps below remain here only because they explain design
+> decisions elsewhere in this document (e.g. why adapters were built read-only first).
+
 **Phase 0 — Safety**
 1. Rotate every credential in the legacy repository (doc 09 §1).
 2. Confirm current commission, VAT, cargo and expenditure figures against real settlement

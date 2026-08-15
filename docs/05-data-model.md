@@ -355,6 +355,13 @@ immutable identifiers. Never delete-then-reload (doc 09 §14).
 
 ## 9. Legacy migration mapping
 
+> ⚠️ **Not applicable to this deployment (revised 2026-08-14) — kept as schema-design
+> reference only.** This deployment is a new store with no legacy data of its own; nothing
+> below is actually backfilled. The table stays because it explains *why* several columns and
+> tables in this document look the way they do (e.g. `min_price`/`max_price` "now actually
+> enforced" only makes sense next to what the legacy column failed to do). See
+> `docs/12-build-plan.md` Phase 8 for the plan that actually applies.
+
 | Legacy | Target | Note |
 |--------|--------|------|
 | `stock_table` | `stock_items` + `stock_marketplace_prefs` | multipliers and switches split out per marketplace |

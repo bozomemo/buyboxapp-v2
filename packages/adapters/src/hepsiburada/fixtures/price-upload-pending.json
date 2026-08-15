@@ -1,0 +1,9 @@
+{
+  "_comment": "The vendor declares `status` as a free string with no enum and documents only \"Done\" and \"Failed\" (api-references §2.6). Anything else — including this — must be treated as not yet confirmed, never as success.",
+  "id": "ffffffff-1111-4222-8333-444444444444",
+  "status": "Processing",
+  "createdAt": "2026-08-14T09:25:00Z",
+  "total": 2,
+  "errors": null,
+  "priceValidations": null
+}

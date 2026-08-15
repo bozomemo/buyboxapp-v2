@@ -6,7 +6,13 @@
  */
 import type { MarketplaceCode } from '@buybox/core';
 import { circuitBreakerRepo, configRepo, eventsRepo, listingsRepo, newId, repricingRepo } from '@buybox/db';
-import { Money } from '@buybox/shared';
+import {
+  GLOBAL_KILL_SWITCH_SETTING_KEY,
+  isKillSwitchEngaged,
+  isMarketplaceKillSwitchEngaged,
+  marketplaceKillSwitchSettingKey,
+  Money,
+} from '@buybox/shared';
 import { z } from 'zod';
 import { admitByPriority } from '../budget.js';
 import { getAdapter } from '../adapter-registry.js';
@@ -36,13 +42,23 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
   return out;
 }
 
-/** doc 06 §2, R-UI-9: a global kill switch reachable from any screen, checked before every drain
- *  so it "stops submissions within one poll interval" of being flipped — this is that gate. */
-const GLOBAL_KILL_SWITCH_SETTING = 'global.killSwitch';
-
-/** doc 06 §2: "Kill switches — global **and per marketplace**" — same gate, scoped to one marketplace. */
+/**
+ * doc 06 §2, R-UI-9: a global kill switch reachable from any screen, checked before every drain
+ * so it "stops submissions within one poll interval" of being flipped — this is that gate.
+ * Kept under its original name so existing call sites (the dashboard and kill-switch API
+ * routes) are unaffected; it now re-exports the fail-closed version from `@buybox/shared`,
+ * which is the single source of truth both the job and the UI read (`isKillSwitchEngaged` for
+ * the semantics — a missing or unexpected value always means "blocked").
+ *
+ * ⚠️ Note what this switch does *not* do: it does not stop `ImportListings`, `ObserveBuybox`,
+ * `Reprice` or anything else — only this job. Stopping the whole system, including those, is a
+ * genuinely different, wider control: `Scheduler.tick()`'s system-pause check
+ * (`SYSTEM_PAUSE_SETTING_KEY`). The two were conflated under one setting until 2026-08-14; they
+ * are deliberately separate now and must stay that way — this function must never read or
+ * write `SYSTEM_PAUSE_SETTING_KEY`, and the reverse.
+ */
 export function marketplaceKillSwitchSetting(marketplaceCode: string): string {
-  return `marketplace.${marketplaceCode}.killSwitch`;
+  return marketplaceKillSwitchSettingKey(marketplaceCode);
 }
 
 export async function submitPriceChanges(ctx: JobContext): Promise<JobResult> {
@@ -51,15 +67,19 @@ export async function submitPriceChanges(ctx: JobContext): Promise<JobResult> {
   const nowMs = ctx.clock.nowMs();
   const adapter = getAdapter(ctx.adapters, marketplaceCode);
 
-  const killSwitch = await configRepo.getAppSetting(ctx.appDb, GLOBAL_KILL_SWITCH_SETTING);
-  if (killSwitch?.value === 'true') {
+  // Fail-closed (@buybox/shared): absent, corrupted, or unrecognised counts as engaged. This is
+  // the price-submission master switch — nothing below this line runs until an operator has
+  // explicitly written "false" here at least once. (The system-pause switch, checked earlier by
+  // Scheduler.tick() before this job is even claimed, is separate — see the doc comment above.)
+  const killSwitch = await configRepo.getAppSetting(ctx.appDb, GLOBAL_KILL_SWITCH_SETTING_KEY);
+  if (isKillSwitchEngaged(killSwitch?.value)) {
     return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
   }
   const marketplaceKillSwitch = await configRepo.getAppSetting(
     ctx.appDb,
-    marketplaceKillSwitchSetting(marketplaceCode),
+    marketplaceKillSwitchSettingKey(marketplaceCode),
   );
-  if (marketplaceKillSwitch?.value === 'true') {
+  if (isMarketplaceKillSwitchEngaged(marketplaceKillSwitch?.value)) {
     return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
   }
 

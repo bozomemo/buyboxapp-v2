@@ -40,7 +40,12 @@ export interface MarketplaceCapabilities {
 export interface ListingSnapshot {
   readonly marketplaceListingId: string; // Trendyol: barcode. Hepsiburada: hepsiburadaSku.
   readonly sellerStockCode: string;
-  readonly productName: string;
+  /**
+   * `null` where the marketplace's listing service does not carry one. Hepsiburada's
+   * `Listing` schema has no name field at all (api-references §2.4) — the name is catalogue
+   * data, on a different service. Not faked: the persistence layer decides what to display.
+   */
+  readonly productName: string | null;
   readonly price: Money;
   readonly listPrice: Money | null;
   /** Final checkout price after campaigns/coupons, when the marketplace exposes it. */
@@ -57,6 +62,23 @@ export interface ListingSnapshot {
   readonly isBlacklisted: boolean;
   readonly lockReasons: readonly string[];
   readonly deactivationReasons: readonly string[];
+  /**
+   * Optional because only some marketplaces expose them. Absent means "this marketplace does
+   * not report it", never "false" — a consumer must not read absence as a negative.
+   *
+   * `isFrozen` / `freezeReasons`: Hepsiburada's own off-sale state, distinct from `isLocked`
+   * (api-references §2.4). A frozen listing rejects updates with `ListingFrozen` (§2.6).
+   */
+  readonly isFrozen?: boolean;
+  readonly freezeReasons?: readonly string[];
+  /**
+   * Per-listing marketplace kill switches (Hepsiburada, api-references §2.4). Submitting
+   * against one is rejected *and* consumes the daily update allowance (§2.3), so the decision
+   * engine must treat them as a hard constraint alongside our own floor and the operator's
+   * `allowIncrease` / `allowDecrease`. Distinct from those: these are the marketplace's.
+   */
+  readonly priceIncreaseDisabled?: boolean;
+  readonly priceDecreaseDisabled?: boolean;
   /**
    * How to reach this listing's **public** product page, for the reporting scrape
    * (`ICompetitorSource`, api-references §1.6). Optional and nullable: a marketplace that
@@ -106,6 +128,18 @@ export interface SubmissionItemResult {
   readonly status: 'success' | 'failed';
   /** Raw marketplace failure code/message, retained for diagnosis — never reformatted or hidden. */
   readonly failureReason: string | null;
+  /**
+   * Set when the marketplace rejected the price by **locking the listing** rather than merely
+   * refusing it (Hepsiburada `MinLock` / `MaxLock`, api-references §2.6). The listing is off
+   * sale until a human unlocks it, and `minPrice`/`maxPrice` are the band the marketplace will
+   * accept — to be intersected with our own floor on the next decision, never resubmitted as-is.
+   */
+  readonly lock?: {
+    readonly type: string;
+    readonly minPrice: Money | null;
+    readonly maxPrice: Money | null;
+    readonly categoryName: string | null;
+  } | null;
 }
 
 export type SubmissionResult =

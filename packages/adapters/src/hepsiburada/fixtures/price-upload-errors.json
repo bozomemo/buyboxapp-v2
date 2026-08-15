@@ -1,0 +1,16 @@
+{
+  "_comment": "Item-level hard rejections. Error codes are the ones the guide documents (api-references §2.6); `elementNo` is 1-based into the submitted array.",
+  "id": "c1d2e3f4-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+  "status": "Failed",
+  "createdAt": "2026-08-14T09:20:01Z",
+  "total": 2,
+  "errors": [
+    {
+      "elementNo": 2,
+      "hepsiburadaSku": "HBCV00000FGHIJ",
+      "merchantSku": "XYZ999",
+      "errors": ["OutOfPriceRange", "DiscountedListingPriceIncrease"]
+    }
+  ],
+  "priceValidations": null
+}

@@ -43,6 +43,9 @@ interface Decision {
 }
 
 interface DashboardData {
+  /** The "stop everything" control — genuinely separate from `globalKillSwitchEngaged` below. */
+  systemPaused: boolean;
+  /** The narrower price-submission-only control. Neither state is derived from the other. */
   globalKillSwitchEngaged: boolean;
   marketplaces: MarketplaceInfo[];
   phaseDistribution: Record<string, number>;
@@ -66,6 +69,147 @@ function budgetBarColor(consumed: number, allowance: number, reservePct: number)
   if (remaining <= 0) return 'bg-[var(--color-danger)]';
   if (remaining <= reserve) return 'bg-[var(--color-warning)]';
   return 'bg-[var(--color-success)]';
+}
+
+/**
+ * The **system pause** (doc 06 §2) — the actual "stop everything" control. While engaged, no
+ * job runs at all: no imports, no buybox observation, no decision-making, no submissions.
+ * Genuinely separate from `PriceSubmissionSwitch` below — see both routes' doc comments for why
+ * they must never share a setting, and `packages/jobs/src/scheduler.ts`'s `isSystemPaused`.
+ *
+ * Fail-closed at the API level: a fresh install reports `engaged: true` with no setting ever
+ * written, so this renders "Duraklatıldı" by default — nothing runs until an operator explicitly
+ * resumes it.
+ */
+function SystemPauseSwitch({ engaged, onChanged }: { engaged: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function setEngaged(next: boolean) {
+    setBusy(true);
+    try {
+      await fetch('/api/system-pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engaged: next }),
+      });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+  function toggle() {
+    if (engaged) {
+      // Resuming starts every job — imports, observation, decisions and (subject to its own,
+      // separate switch below) submissions.
+      if (
+        !window.confirm(
+          'Sistemi devam ettirmek üzeresiniz. İçe aktarma, buybox gözlemi ve karar hesaplama işleri yeniden başlayacak. (Fiyat gönderimi bundan ayrı bir anahtarla kontrol edilir.) Emin misiniz?',
+        )
+      ) {
+        return;
+      }
+    }
+    void setEngaged(!engaged);
+  }
+  return (
+    <div
+      className={`flex items-center justify-between rounded border p-4 ${
+        engaged
+          ? 'border-[var(--color-border)] bg-[var(--color-surface)]'
+          : 'border-[var(--color-success)] bg-green-50'
+      }`}
+    >
+      <div>
+        <div className="font-semibold">Genel Durdurma: {engaged ? 'Duraklatıldı' : 'Çalışıyor'}</div>
+        <p className="text-sm text-[var(--color-muted)]">
+          {engaged
+            ? 'Hiçbir iş çalışmıyor — içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi dahil. Sistemin varsayılan güvenli durumudur.'
+            : 'İşler normal şekilde çalışıyor. Fiyat gönderimi ayrı bir anahtarla kontrol edilir — aşağıya bakın.'}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        className={`rounded px-3 py-2 text-sm font-semibold ${
+          engaged
+            ? 'bg-[var(--color-success)] text-white'
+            : 'border border-[var(--color-border)] bg-white'
+        }`}
+      >
+        {engaged ? 'Devam Ettir' : 'Duraklat'}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The **price-submission** switch (doc 06 §2, R-UI-9) — narrower than `SystemPauseSwitch`
+ * above, and deliberately so: while engaged, every *other* job keeps running (imports, buybox
+ * observation, decisions) but `SubmitPriceChanges` never calls a marketplace adapter.
+ *
+ * Fail-closed at the API level (`@buybox/shared`): a fresh install reports `engaged: true` with
+ * no setting ever written, so this control renders "Durduruldu" by default, not "Aktif" — there
+ * is nothing to disengage accidentally. Disengaging (letting price submissions run) is the one
+ * direction that asks for confirmation; re-engaging is always one click.
+ */
+function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function setEngaged(next: boolean) {
+    setBusy(true);
+    try {
+      await fetch('/api/kill-switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engaged: next }),
+      });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+  function toggle() {
+    if (engaged) {
+      // Disengaging is what lets SubmitPriceChanges start sending real prices to marketplaces.
+      if (
+        !window.confirm(
+          'Fiyat gönderimini açmak üzeresiniz. Bundan sonra uygun ilanlar için gerçek fiyat güncellemeleri pazaryerlerine gönderilebilir. Emin misiniz?',
+        )
+      ) {
+        return;
+      }
+    }
+    void setEngaged(!engaged);
+  }
+  return (
+    <div
+      className={`flex items-center justify-between rounded border p-4 ${
+        engaged
+          ? 'border-[var(--color-border)] bg-[var(--color-surface)]'
+          : 'border-[var(--color-danger)] bg-red-50'
+      }`}
+    >
+      <div>
+        <div className="font-semibold">
+          Fiyat Gönderimi: {engaged ? 'Durduruldu' : 'AKTİF — fiyat gönderiliyor'}
+        </div>
+        <p className="text-sm text-[var(--color-muted)]">
+          {engaged
+            ? 'Hiçbir pazaryerine fiyat güncellemesi gönderilmiyor. Bu, sistemin varsayılan güvenli durumudur.'
+            : 'Sistem, uygun listing ve pazaryeri ayarlarına sahip ürünler için gerçek fiyat güncellemeleri gönderebilir.'}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        className={`rounded px-3 py-2 text-sm font-semibold ${
+          engaged ? 'bg-[var(--color-danger)] text-white' : 'border border-[var(--color-border)] bg-white'
+        }`}
+      >
+        {engaged ? 'Fiyat Gönderimini Aç' : 'Fiyat Gönderimini Durdur'}
+      </button>
+    </div>
+  );
 }
 
 function MarketplaceKillSwitch({
@@ -130,6 +274,11 @@ export function DashboardClient() {
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Panel</h1>
+
+      <div className="space-y-3">
+        <SystemPauseSwitch engaged={data.systemPaused} onChanged={load} />
+        <PriceSubmissionSwitch engaged={data.globalKillSwitchEngaged} onChanged={load} />
+      </div>
 
       <section>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">

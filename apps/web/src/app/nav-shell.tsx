@@ -14,13 +14,27 @@ const NAV_ITEMS: { href: string; label: string }[] = [
   { href: '/settings', label: 'Ayarlar' },
 ];
 
-function KillSwitch() {
+/**
+ * The header's one-click-from-anywhere control (doc 06 §2, R-UI-9: "Kill switches are reachable
+ * within one click from any screen"). This is the **system pause** — `/api/system-pause`, not
+ * `/api/kill-switch`. It used to point at the price-submission switch under this same "Genel
+ * Durdurma" name, which was the bug: the label promised "stop everything" but the control only
+ * ever stopped price submission, so an operator engaging it (thinking it paused imports and
+ * observation too) was, without realising it, only ever touching the narrower switch — and its
+ * "AKTİF" state was shown in the alarm colour, red, which is backwards: **red should mean "the
+ * risky thing is happening now"**, not "the system is safely stopped". Fixed 2026-08-14: this
+ * button now controls the setting its name actually describes, and the colour follows risk —
+ * muted while paused (the safe default), a plain "running" indicator once resumed. The
+ * price-submission switch itself lives on the dashboard (`PriceSubmissionSwitch`), correctly
+ * coloured the other way around, because *that* one's "on" state is the one worth alarming on.
+ */
+function SystemPauseButton() {
   const [engaged, setEngaged] = useState<boolean | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/kill-switch')
+    fetch('/api/system-pause')
       .then((res) => (res.ok ? res.json() : undefined))
       .then((data: { engaged: boolean } | undefined) => {
         if (!cancelled && data) setEngaged(data.engaged);
@@ -34,10 +48,21 @@ function KillSwitch() {
   if (engaged === undefined) return null;
 
   async function toggle() {
+    if (engaged) {
+      // Resuming starts every job again — imports, buybox observation, decisions, and
+      // (subject to its own separate switch) submissions.
+      if (
+        !window.confirm(
+          'Sistemi devam ettirmek üzeresiniz. Tüm işler yeniden başlayacak. Emin misiniz?',
+        )
+      ) {
+        return;
+      }
+    }
     setBusy(true);
     try {
       const next = !engaged;
-      const res = await fetch('/api/kill-switch', {
+      const res = await fetch('/api/system-pause', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ engaged: next }),
@@ -53,14 +78,14 @@ function KillSwitch() {
       type="button"
       onClick={() => void toggle()}
       disabled={busy}
-      title="Tüm marketyerlerinde fiyat gönderimini anında durdurur"
+      title="Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur."
       className={`rounded px-3 py-1.5 text-sm font-semibold transition ${
         engaged
-          ? 'bg-[var(--color-danger)] text-white hover:opacity-90'
-          : 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-slate-50'
+          ? 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-slate-50'
+          : 'bg-[var(--color-success)] text-white hover:opacity-90'
       }`}
     >
-      {engaged ? 'Genel Durdurma: AKTİF' : 'Genel Durdurma'}
+      {engaged ? 'Genel Durdurma: Duraklatıldı' : 'Sistem Çalışıyor'}
     </button>
   );
 }
@@ -99,7 +124,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-end gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-3">
-          <KillSwitch />
+          <SystemPauseButton />
         </header>
         <main className="flex-1 overflow-x-auto p-6">{children}</main>
       </div>

@@ -323,11 +323,25 @@ whenever the parser's diagnostics show a drop in `winnerVariantFound` or `mercha
 
 Official documentation: <https://developers.hepsiburada.com/>
 
-⚠️ **Partially verified.** The developer portal rejects automated access (HTTP 403). This
-section is compiled from the product owner's portal research
-(`Hepsiburada Marketplace Integration — Required Developer Portal Information.md`) plus the
-legacy implementation. Items marked 🔴 must be copied from the live portal before the schema
-is frozen — see §2.9.
+✅ **Listing integration verified 2026-08-14 against the vendor's own OpenAPI document.**
+
+The developer portal is a single-page app whose content comes from a public JSON API on the
+same host. It answers a browser-shaped request (the same Akamai fingerprint check as §2.11 —
+an honest user agent gets 403), and the accepted request is recorded in §2.12. Two artefacts
+were retrieved and are **stored verbatim in the repository**:
+
+| File | What it is |
+|------|-----------|
+| `docs/vendor/hepsiburada-listing-openapi-v1.json` | `HEPSIBURADA - LISTELEME ENTEGRASYONU` v1, OpenAPI 3.0.1, 18 operations / 25 schemas, published 2026-04-30 |
+| `docs/vendor/hepsiburada-listing-guide.json` | The portal guide *Listeleme Entegrasyonu Önemli Bilgiler* — limits, error catalogue, field meanings |
+
+**These files are the source of truth for §2.4–§2.7.** They are recorded, not transcribed: if
+this prose and the OpenAPI document disagree, the OpenAPI document wins and this prose is the
+bug. Re-fetch them (§2.12) rather than editing them by hand.
+
+⚠️ Still compiled from the product owner's portal research plus the legacy implementation, and
+therefore **not** verified: catalogue (mpop) and orders (oms). Those keep their 🔴 marks — the
+OpenAPI document retrieved covers the *listing* integration only.
 
 ## 2.1 Hosts — one per integration domain ✅
 
@@ -353,7 +367,22 @@ independently (§2.2).
   integration configuration / the Merchant Portal.
 - Test credentials are issued by Hepsiburada during onboarding and differ from production.
 
-🔴 Exact `User-Agent` convention and the service-key ownership model still need confirmation.
+Confirmed 2026-08-14 from the OpenAPI document and the guide:
+
+- The only security scheme declared is `basic` (`type: http`, `scheme: basic`). There is no
+  bearer token, no API-key header, and no OAuth flow on the listing integration.
+- **`User-Agent` is a declared, `required: true` header parameter on every one of the 18
+  listing operations.** It is part of the contract, not a convention — a request without it is
+  malformed. The vendor documents no required *format*, so the adapter sends its own
+  identifying agent (`SCRAPER_USER_AGENT` is a different setting and must not be reused here).
+- The SIT host becomes production by removing `-sit`, and **production has its own
+  user/password** — SIT credentials do not work against production.
+- The guide states the authentication structure of all services was changed and integrators
+  must migrate; a service key is added/viewed per integrator from the merchant panel.
+
+🔴 Remaining: whether the Basic username is the merchant's own login or an integrator-scoped
+service key, and who owns it. This is an account question for the merchant, not a schema
+question — it cannot be answered from the documentation.
 
 ## 2.3 Rate limits and quotas ✅ — **these constrain the repricing design**
 
@@ -364,6 +393,9 @@ independently (§2.2).
 | Listing inventory update — batch size | **≤ 4,000 listings per request** |
 | Listing inventory update — concurrency | **≤ 5 simultaneous pending/processing uploads** |
 | Listing inventory update — daily allowance | **10 × the merchant's listing count, per day** |
+| Commission lookup — batch size | ≤ 50 SKUs per request ✅ *(2026-08-14)* |
+| Commission lookup — rate | ~240 requests / minute / merchant ✅ *(2026-08-14)* |
+| Buybox rank — batch size | ≤ 10 SKUs per request ✅ *(2026-08-14)* |
 
 Orders responses carry rate-limit metadata that the adapter **must** honour in preference to a
 static client-side limit:
@@ -393,53 +425,160 @@ There are too many ongoing/waiting inventory uploads at the moment. Please try a
 > The worker must track daily consumed updates per marketplace, reserve headroom, and
 > prioritise listings by expected value when the budget runs low.
 
-## 2.4 Listing service — list / filter listings 🔴
+## 2.4 Listing service — list / filter listings ✅ *(verified 2026-08-14)*
 
 Portal path: **Listing ve Satışa Açma → Listeleme → Listing Bilgilerini Sorgulama**
 
 This is the authoritative source for the merchant's **commercial listing state** (price,
-stock, sale state, merchant SKU, commission), as distinct from the Catalogue API which carries
-product master data.
-
-Legacy call (unverified, likely still valid in shape):
+stock, sale state, merchant SKU), as distinct from the Catalogue API which carries product
+master data.
 
 ```
-GET {listing-host}/listings/merchantid/{merchantId}?offset={n}&limit={size}
-GET {listing-host}/listings/merchantid/{merchantId}?hbskulist=sku1,sku2,...
+GET {listing-host}/listings/merchantid/{merchantId}
+Auth: Basic · Required header: User-Agent
 ```
 
-Legacy response fields consumed: `hepsiburadaSku`, `merchantSku`, `price`, `availableStock`,
-`dispatchTime`, `cargoCompany1..3`, `shippingAddressLabel`, `claimAddressLabel`,
-`maximumPurchasableQuantity`, `minimumPurchasableQuantity`, `isSalable`, `isSuspended`,
-`isLocked`, `isFrozen`, `isFulfilledByHB`, `deactivationReasons[]`, `lockReasons[]`,
-`commissionRate`, `pricings[]` (`finalPrice`, `startDate`, `endDate`,
-`debtors[{debtor, amount}]`).
+Query parameters — the complete declared set:
 
-🔴 **The complete query parameter set and response schema must be copied from the portal and
-must not be inferred from the list above.** Persist every field returned, not only the ones
-the pricing model needs today.
+| Name | Type | Required | Notes |
+|------|------|----------|-------|
+| `offset` | int32 | **yes** | default `0`. Paging is mandatory when listing everything. |
+| `limit` | int32 | **yes** | default `10` |
+| `hbSkuList` | string | no | comma-separated |
+| `merchantSkuList` | string | no | comma-separated |
+| `salable-listings` | boolean | no | note the hyphens — not camelCase |
+| `notsalable-listings` | boolean | no | |
+| `updateStartDate` | date-time | no | enables watermark-based incremental sync |
+| `updateEndDate` | date-time | no | |
+| `productId` | string | no | |
 
-## 2.5 Buybox rank 🔴
-
-Portal path: **Buybox Sırasını Getirme**
-
-Important correction to earlier assumptions: Hepsiburada documents a **buybox ranking**
-capability, not a service canonically named "Buybox Orders". The legacy endpoint
+Response `ExternalListingsRepresentation`:
 
 ```
-GET {listing-host}/buybox-orders/merchantid/{merchantId}?skuList=a,b,c     ⚠️ legacy, max 10 SKUs
+{ listings: Listing[] | null, totalCount: int32, limit: int32, offset: int32 }
 ```
 
-returned a ranked `buyboxOrders[]` with `merchantName`, `merchantRating`, `price`,
-`dispatchTime` per competitor. Whether this endpoint still exists under that name, and what
-its current response is, 🔴 must be confirmed.
+`Listing` — every declared property, `additionalProperties: false`:
 
-If it does still return competitor names and ratings, Hepsiburada gives **richer competitor
-data than Trendyol**, and no scraping is required on this marketplace.
+| Field | Type | Notes |
+|-------|------|-------|
+| `listingId` | uuid | |
+| `uniqueIdentifier` | string? | |
+| `hepsiburadaSku` | string? | Hepsiburada's listing id |
+| `merchantSku` | string? | our id |
+| `price` | double | **lira, not kuruş.** Convert at the adapter boundary. |
+| `availableStock` | int32 | |
+| `dispatchTime` | int32 | days |
+| `cargoCompany1..3` | string? | see the accepted carrier names in the guide |
+| `shippingAddressLabel`, `claimAddressLabel` | string? | |
+| `shippingProfileName` | string? | |
+| `maximumPurchasableQuantity`, `minimumPurchasableQuantity` | int32 | `0` on max means unlimited |
+| `pricings[]` | `ListingPricingRepresentation`? | `finalPrice` (double), `startDate`, `endDate`, `debtors[]` |
+| `isSalable` | bool | |
+| `customizableProperties[]` | | |
+| `deactivationReasons[]` | string[]? | |
+| `isSuspended`, `isLocked`, `isFrozen` | bool | |
+| `lockReasons[]`, `freezeReasons[]` | string[]? | |
+| `availableWarehouses[]` | string[]? | |
+| `isFulfilledByHB` | bool | |
+| `priceIncreaseDisabled` | bool | **read this before submitting an increase** |
+| `priceDecreaseDisabled` | bool | **read this before submitting a decrease** |
+| `stockDecreaseDisabled` | bool | |
+| `skuAfterSuspension` | string? | |
+| `productId` | string? | |
+| `hasVariant` | bool | |
 
-## 2.6 Inventory & price update ✅ flow, 🔴 schema
+> ⚠️ **`commissionRate` is not on this schema.** The legacy field list claimed it was. Commission
+> comes from the dedicated service in §2.7 — do not expect it here.
+
+> ⚠️ **No `productPage` / SKU-to-URL field exists either.** The competitor source in §2.11 keys
+> on `hepsiburadaSku`; that is the field `fetchListings` must carry into
+> `ProductPageRef.contentId`.
+
+Two engine-facing consequences, both new:
+
+- `priceIncreaseDisabled` / `priceDecreaseDisabled` are per-listing marketplace kill switches.
+  Submitting against them wastes daily budget (§2.3) and will be rejected. The decision engine
+  must treat them as a hard constraint, alongside our own floor.
+- `isLocked` with `lockReasons[]` is how a rejected price manifests *after* the fact — see the
+  `MinLock`/`MaxLock` flow in §2.6.
+
+The response is also offered as `application/xml`. Request JSON explicitly with
+`Accept: application/json`; the guide is explicit that the content type is negotiated.
+
+## 2.5 Buybox rank 🟡 — **endpoint confirmed 2026-08-14, response schema not declared**
+
+Portal path: **Buybox Sıralama Sorgulama** (tag `Buybox`)
+
+The endpoint the legacy app used **still exists, under that exact name**:
+
+```
+GET {listing-host}/buybox-orders/merchantid/{merchantId}?skuList=a,b,c
+Auth: Basic · Required header: User-Agent
+```
+
+Confirmed from the OpenAPI document and the guide:
+
+- `merchantId` is a path `uuid`; `skuList` is a single comma-separated string query parameter.
+- **Maximum 10 SKUs per request** (guide) — the legacy limit was right.
+- Only SKUs whose listing has `isSalable = true` (§2.4) may be queried.
+
+Fields the guide documents on the response: `SKU`, `Rank`, `Price`, `DispatchTime`,
+`MerchantRating`.
+
+🔴 **The OpenAPI document declares the 200 response as bare `Success` with no schema.** The
+field *names* above come from the guide's prose table, so their casing, nesting and JSON types
+are unknown, and the guide does not say whether a competitor's *identity* (`merchantName`) is
+returned — the legacy app believed it was, the current guide does not list it.
+
+Do not write a normaliser against the five names above. Capture one real SIT response first
+and record it as a fixture, exactly as §2.11 was done.
+
+> Note the asymmetry this creates. This endpoint is a **control-path** source (authenticated,
+> merchant-scoped, our own listings) and may feed pricing. The §2.11 public endpoint is a
+> **reporting** source and may not. They must not be merged behind one port just because both
+> mention competitors.
+
+## 2.6 Inventory & price update ✅ *(verified 2026-08-14)*
 
 Portal path: **Listing Envanter Güncelleme** → **Listing Envanter Güncelleme Sorgulama**
+
+### Use `price-uploads`, not `inventory-uploads` ✅ — **decision**
+
+The OpenAPI document declares four parallel upload families, each with its own POST and its
+own status GET:
+
+| Endpoint | Body item | Use for |
+|----------|-----------|---------|
+| `.../price-uploads` | `PriceUploadRequestModel` | **repricing — this is ours** |
+| `.../stock-uploads` | `StockUploadRequestModel` | stock only |
+| `.../inventory-uploads` | `InventoryUploadRequestModel` | full listing state |
+| `.../shipping-info-uploads`, `.../additional-info-uploads` | | not used |
+
+`InventoryUploadRequestModel` carries 18 fields — carriers, warehouses, addresses, shipping
+profile — and the guide states that **every field except `ProductName`, `ShippingProfileName`
+and `MaximumPurchasableQuantity` is mandatory**. Submitting a price through it therefore means
+re-sending the listing's entire configuration on every price change, and any field we get
+wrong silently overwrites live data.
+
+`PriceUploadRequestModel` is three fields:
+
+```
+{ hepsiburadaSku: string?, merchantSku: string?, price: double? }
+```
+
+**The adapter must use `price-uploads`.** This is the narrowest endpoint that does the job, it
+cannot clobber a field we did not intend to change, and it has a dedicated status endpoint
+returning price-specific validation results. The legacy app used the inventory endpoint; that
+is one more reason not to copy it.
+
+The guide confirms `hepsiburadaSku` and `merchantSku` may each appear alone or together.
+
+> ⚠️ Price is `number/double` **in lira**, and the guide's `InvalidPrice` error states a price
+> written with a **dot** is rejected. Our money is `bigint` kuruş; the conversion to the wire
+> value happens in the adapter, at the boundary, and nowhere else.
+
+### The flow
 
 Asynchronous, batch-oriented. Mandatory flow:
 
@@ -455,24 +594,84 @@ Asynchronous, batch-oriented. Mandatory flow:
 **An accepted HTTP response is not proof that the listings were updated.** Changes stay
 `pending` until the status endpoint confirms them.
 
-Legacy submission (XML body, unverified — 🔴 confirm whether JSON is now expected):
+Submission ✅ — **JSON is accepted**; the legacy XML body is one of seven offered content
+types (`application/json`, `application/json-patch+json`, `text/json`, `application/*+json`,
+`application/xml`, `text/xml`, `application/*+xml`), not a requirement. Send JSON.
 
 ```
-POST {listing-host}/listings/merchantid/{merchantId}/inventory-uploads
-→ { "id": "<inventoryUploadId>" }
+POST {listing-host}/listings/merchantid/{merchantId}/price-uploads
+Auth: Basic · Required header: User-Agent · Accept: application/json
+Body: PriceUploadRequestModel[]          ← a bare array, not an envelope
+→ 200 { "id": "<uuid>" }                 ← PriceUploadRepresentation: one field
 ```
 
-Status check ✅:
+An accepted response carries **only** the id. There is no per-item acknowledgement at
+submission time, which is exactly why the audit record may not be written here (CLAUDE.md:
+"write a price-change audit record only after the marketplace confirms the submission").
+
+If the request is malformed no id is returned; the guide notes the response header
+`x-correlation-id` identifies the attempt for up to 7 days via a merchant support ticket.
+**Log `x-correlation-id` on every submission** — it is the only handle on a failure that
+produced no id.
+
+Status check ✅ — `PriceUploadResultRepresentation`:
 
 ```
-GET {listing-host}/listings/merchantid/{merchantId}/inventory-uploads/id/{inventoryUploadId}
+GET {listing-host}/listings/merchantid/{merchantId}/price-uploads/id/{id}
 Auth: Basic · Required header: User-Agent
+
+{ id: uuid,
+  status: string?,                 // "Done" | "Failed" (guide); treat as an open set
+  createdAt: date-time,
+  total: int32,                    // items in the submitted batch
+  errors: Error[]?,                // hard rejections
+  priceValidations: PriceValidation[]? }   // ← price-uploads only
+
+Error            { elementNo: int32, hepsiburadaSku: string?, merchantSku: string?, errors: string[]? }
+PriceValidation  { elementNo: int32, hepsiburadaSku: string?, merchantSku: string?,
+                   type: string?,                  // "MinLock" | "MaxLock" observed
+                   minPrice: double, maxPrice: double,
+                   regulativePriceDetail: { minAmount: double?, maxAmount: double?, categoryName: string? },
+                   description: string? }
 ```
 
-🔴 The canonical batch status enum and the item-level failure schema are **not** publicly
-indexed. Do not hard-code status names until they are copied from the portal or observed in
-SIT. The connector's own state machine should distinguish at least: `submitted`, `pending`,
-`processing`, `completed`, `partiallyFailed`, `failed`.
+`elementNo` is **1-based** and indexes the submitted array, which is how a per-item result is
+matched back to the price change that produced it.
+
+🟡 The guide documents only `Done` and `Failed` for `status`, and the OpenAPI declares it as a
+free string with no enum. Treat any unrecognised value as "not yet confirmed" and keep polling
+— never as success. The connector's own state machine still distinguishes `submitted`,
+`pending`, `processing`, `completed`, `partiallyFailed`, `failed`.
+
+### Price locks — `MinLock` / `MaxLock` ⚠️ *(new; this changes the engine)*
+
+Hepsiburada now applies **category-based price thresholds**. A price outside the threshold
+does not merely fail: **the SKU is locked**, and stays locked until the merchant unlocks it.
+The batch reports `status: "Done"` with a `priceValidations[]` entry — a successful-looking
+response that has taken the listing off sale.
+
+```json
+{ "id": "715bae7f-…", "status": "Done", "total": 1, "errors": null,
+  "priceValidations": [
+    { "elementNo": 1, "hepsiburadaSku": "HBCV00002LJ9YU", "merchantSku": "…",
+      "type": "MaxLock", "minPrice": 899.8, "maxPrice": 13767.0,
+      "description": "Yüksek fiyat sebebiyle kilitlendi. …" } ] }
+```
+
+Required handling — none of this is optional:
+
+1. **A non-empty `priceValidations[]` is a failure, regardless of `status`.** Never write a
+   successful price-change audit record for an element that appears there.
+2. Persist `minPrice` / `maxPrice` as a marketplace-imposed price band for that listing and
+   intersect it with our own floor/ceiling on the next decision. Resubmitting the same price
+   locks the listing again and burns daily budget (§2.3).
+3. Surface the lock to the operator. `POST .../bulk-unlock` (`BulkUnlockRequestModel`) exists
+   and unlocks *at the price we submitted* — so it must never be automatic. Unlocking is a
+   deliberate human decision to sell at that price.
+4. `isLocked` / `lockReasons[]` on §2.4 is the same condition observed later.
+
+This is a stronger constraint than the `OutOfPriceRange` rejection below, and it did not exist
+when the legacy app was written.
 
 ### Business validation failures — do not retry blindly ✅
 
@@ -488,6 +687,34 @@ SIT. The connector's own state machine should distinguish at least: `submitted`,
 to the operator, and must feed back into the engine as a constraint on that listing's price
 range — not retried. Retain the raw code and message for diagnosis.
 
+The guide states the rule concretely ✅ *(2026-08-14)*: the mean of the listed prices is taken
+**excluding the lowest and the highest**, and the maximum submittable price is that mean times
+
+| Mean price band | Maximum |
+|---|---|
+| 0 – 50 TL | 250 % |
+| 50 – 100 TL | 150 % |
+| 100 – 200 TL | 120 % |
+| 200 – 500 TL | 100 % |
+| 500 – 2 000 TL | 90 % |
+| over 2 000 TL | 80 % |
+
+⚠️ Recorded for diagnosis, **not to be reimplemented**. The bands are the marketplace's, they
+change without notice, and the trimmed mean is over prices we cannot see. Predicting the
+rejection locally would produce a second, silently-wrong ceiling. The engine's ceiling stays
+ours; `OutOfPriceRange` and `MaxLock` are observed, not forecast.
+
+Other item-level errors documented by the guide, all as `Error.errors[]` strings:
+`ProductNotFound`, `MismatchingSkusSpecified`, `DuplicateHepsiburadaSkuSpecified`,
+`DuplicateMerchantSkuSpecified`, `MissingHeaders`, `InvalidPrice`, `InvalidAvailableStock`,
+`InvalidDispatchTime`, `InvalidMaximumPurchasableQuantity`, `DiscountedListingPriceIncrease`,
+`MerchantAlreadyListedAgainstProduct`, `ListingDeletedRecently`, `ListingFrozen`,
+`MissingStandardCargoCompany`, `restrictedProductBrand`.
+
+`ListingFrozen` and `ListingDeletedRecently` are permanent for that listing until a human acts.
+`DiscountedListingPriceIncrease` means the listing is in a campaign — the engine must not
+retry an increase against it.
+
 ## 2.7 Commission and VAT ✅
 
 Two distinct sources:
@@ -497,9 +724,25 @@ Two distinct sources:
 | **Listing integration** — `commissionRate`, plus the dedicated **Komisyon Bilgisi Sorgulama** service (introduced October 2025) | Commission *before* a sale — what the pricing model needs |
 | **Orders integration** — `commission.amount`, `commission.currency`, `commissionRate`, `vat`, `vatRate` | Actual commission and VAT charged *on a real sale* — the ground truth for validating the cost model |
 
-🔴 Obtain the Komisyon Bilgisi Sorgulama request/response schema. Confirm whether product VAT
-rate is exposed on listings, or only on orders — the pricing model needs it pre-sale
-(see `docs/02-cost-and-price-model.md`).
+Komisyon Bilgisi Sorgulama 🟡 *(endpoint verified 2026-08-14, response schema not declared)*:
+
+```
+GET {listing-host}/commissions/merchantid/{merchantId}?skuList=a,b,c
+Auth: Basic · Required header: User-Agent
+```
+
+- **Maximum 50 SKUs per request** (guide).
+- **~240 requests per minute per merchant**; exceeding it returns `429 Too Many Request`.
+  This is the only per-minute figure the vendor states for the listing host — add it to §2.3.
+
+🔴 As with §2.5, the OpenAPI declares the 200 response as bare `Success` with no schema.
+Record a real SIT response before writing a normaliser.
+
+🔴 **Product VAT rate is confirmed absent from the listing schema** (§2.4 lists every declared
+property and there is no VAT field). So it is either on this commission response or only on
+orders. The pricing model needs it pre-sale
+(see `docs/02-cost-and-price-model.md`) — this is now the single most important unknown left
+on Hepsiburada, because a wrong VAT rate produces a wrong floor price.
 
 ## 2.8 Orders 🔴 *(MAY-ADD-LATER — see doc 11 Q-10)*
 
@@ -529,29 +772,58 @@ Hepsiburada's immutable order/line identifiers. Never re-import full history.
 > The legacy implementation sent **no date filter and did no paging**, while deleting all
 > stored orders before each import (doc 09 §14). Do not reproduce this.
 
-## 2.9 Outstanding confirmations 🔴
+## 2.9 Outstanding confirmations — *revised 2026-08-14*
 
-Copy from the live portal before freezing the adapter schema:
+### Resolved ✅ — Phase 4.4 is no longer blocked
 
-- [ ] Production URLs for every API group used
-- [ ] Authentication username / service-key ownership model
-- [ ] Exact required `User-Agent` convention
-- [ ] Listing Information — full query parameters
-- [ ] **Listing Information — full response JSON schema**
-- [ ] Inventory/price update — exact request schema (JSON or XML?)
-- [ ] Inventory batch accepted-response schema
-- [ ] **Inventory upload status — canonical enum values**
-- [ ] **Batch item-level failure schema**
-- [ ] Komisyon Bilgisi Sorgulama — request/response schema
-- [ ] Buybox Sırasını Getirme — endpoint, limits, response schema; does it return competitor
-      names and ratings?
-- [ ] Whether product VAT rate is available pre-sale on listings
-- [ ] Orders — full response schema, and the merchant's automatic-packaging mode
+| Was | Now |
+|-----|-----|
+| Authentication scheme | Basic only, no bearer/API-key — §2.2 |
+| Exact required `User-Agent` convention | Declared `required: true` on all 18 operations; no format imposed — §2.2 |
+| Listing Information — full query parameters | All 9 declared — §2.4 |
+| **Listing Information — full response JSON schema** | `ExternalListingsRepresentation` / `Listing`, every property — §2.4 |
+| Inventory/price update — JSON or XML? | **JSON**; XML is one of seven offered types — §2.6 |
+| Inventory batch accepted-response schema | `{ id: uuid }` and nothing else — §2.6 |
+| **Upload status — canonical enum values** | `Done` / `Failed` documented; declared as a free string, so treated as an open set — §2.6 |
+| **Batch item-level failure schema** | `Error` + `PriceValidation`, with 1-based `elementNo` — §2.6 |
+| Buybox — endpoint and limits | `/buybox-orders/…`, ≤ 10 SKUs, salable listings only — §2.5 |
+| Commission — endpoint and limits | `/commissions/…`, ≤ 50 SKUs, ~240 req/min — §2.7 |
+| Production URLs | SIT host minus `-sit`, with separate production credentials — §2.1, §2.2 |
 
-Portal pages to attach: Başlarken · API Authentication · Listing Bilgilerini Sorgulama ·
-Listing Envanter Güncelleme · Listing Envanter Güncelleme Sorgulama · Buybox Sırasını Getirme ·
-Sipariş Entegrasyonu Önemli Bilgiler · Ödemesi Tamamlanmış Siparişleri Listeleme ·
-Paket Bilgilerini Listeleme · Komisyon Bilgisi Sorgulama · Changelog.
+Two things that were not on this list and should have been, both now in §2.6:
+**`MinLock`/`MaxLock` price locking**, and the fact that
+**`priceIncreaseDisabled`/`priceDecreaseDisabled` are per-listing marketplace kill switches**.
+
+### Still open 🔴
+
+Ordered by what they block.
+
+- [ ] **Product VAT rate pre-sale** — confirmed *not* on the listing schema (§2.4). Blocks a
+      correct floor price. Either the commission response carries it or it exists only on
+      orders. **The most important one.**
+- [ ] **Buybox response schema** (§2.5) — field names known from prose, JSON shape unknown.
+      Record a SIT response. Blocks the buybox client, not repricing.
+- [ ] **Commission response schema** (§2.7) — same situation, and it may answer the VAT
+      question at the same time.
+- [ ] Who owns the Basic username / service key (§2.2) — an account question for the merchant,
+      not answerable from documentation.
+- [ ] Orders — full response schema, and the merchant's automatic-packaging mode. Only affects
+      §2.8, which is MAY-ADD-LATER.
+- [ ] Catalogue (mpop) integration — untouched by this verification.
+
+**The three schema items above are all answerable from one SIT session.** Once credentials
+exist, call listings / buybox / commissions once each, record the responses as fixtures in
+`packages/adapters/src/hepsiburada/fixtures/`, and close them together.
+
+### What is *not* required to start 4.4
+
+Listing retrieval and price submission — the entire repricing control path — are fully
+specified. Building them does not depend on any open item, provided the adapter records the
+buybox and commission responses rather than parsing them.
+
+✅ **Built 2026-08-14** (`packages/adapters/src/hepsiburada/`): `fetchListings`,
+`submitPriceChanges`, `pollSubmission`, tested against fixtures shaped from the OpenAPI schema.
+`fetchBuyboxObservations` still throws — see §2.5.
 
 ## 2.10 Adapter structure
 
@@ -561,10 +833,75 @@ Rate-limit and configure each client independently:
 HepsiburadaAdapter
 ├── auth
 ├── CatalogueClient   product master data            (180 req/min/IP)
-├── ListingClient     list · inventory update · poll · commission lookup
-├── BuyboxClient      buybox rank
+├── ListingClient     list · price upload · poll · commission lookup
+├── BuyboxClient      buybox rank                    (≤ 10 SKUs/request)
 └── OrdersClient      paid/open · packages · cancelled · shipped · delivered · undelivered
 ```
+
+### All 18 listing operations ✅ *(2026-08-14)*
+
+Recorded so the adapter is written against the real surface, not a subset. Every one is Basic
+auth with a required `User-Agent`; `{m}` is the merchant `uuid`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/listings/merchantid/{m}` | list / filter listings (§2.4) |
+| POST | `/listings/merchantid/{m}/price-uploads` | **price update (ours, §2.6)** |
+| GET | `/listings/merchantid/{m}/price-uploads/id/{id}` | **price batch status (§2.6)** |
+| POST | `/listings/merchantid/{m}/stock-uploads` | stock update |
+| GET | `/listings/merchantid/{m}/stock-uploads/id/{id}` | stock batch status |
+| POST | `/listings/merchantid/{m}/inventory-uploads` | full listing update — **avoid, §2.6** |
+| GET | `/listings/merchantid/{m}/inventory-uploads/id/{id}` | inventory batch status |
+| POST | `/listings/merchantid/{m}/shipping-info-uploads` | dispatch/carrier update |
+| GET | `/listings/merchantid/{m}/shipping-info-uploads/id/{id}` | status |
+| POST | `/listings/merchantid/{m}/additional-info-uploads` | extra attributes |
+| GET | `/listings/merchantid/{m}/additional-info-uploads/id/{id}` | status |
+| POST | `/listings/merchantid/{m}/sku/{sku}/activate` | put on sale |
+| POST | `/listings/merchantid/{m}/sku/{sku}/deactivate` | take off sale |
+| POST | `/listings/merchantid/{m}/sku/{sku}/merchantsku/{msku}` | single price/stock update |
+| DELETE | `/listings/merchantid/{m}/sku/{sku}/merchantsku/{msku}` | delete listing |
+| POST | `/listings/merchantid/{m}/bulk-unlock` | clear `MinLock`/`MaxLock` — **never automatic (§2.6)** |
+| GET | `/buybox-orders/merchantid/{m}` | buybox rank (§2.5) |
+| GET | `/commissions/merchantid/{m}` | commission (§2.7) |
+
+⚠️ `activate` / `deactivate` / `DELETE` are **destructive and out of scope for repricing.** The
+adapter may not expose them; a repricing system has no business deleting a listing. Recorded
+here only so nobody rediscovers them and assumes they were forgotten.
+
+## 2.12 Re-fetching the vendor documentation
+
+The portal SPA reads a public JSON API on its own host. The request must be browser-shaped or
+Akamai returns 403 — the same condition as §2.11, and the same
+authorised-exception reasoning applies (CLAUDE.md). Verified 2026-08-14:
+
+```
+Base   https://developers.hepsiburada.com/api/v1
+Headers  User-Agent: <SCRAPER_BROWSER_USER_AGENT>
+         Accept: application/json, text/plain, */*
+         Accept-Language: tr-TR,tr;q=0.9
+         Sec-Fetch-Dest: empty · Sec-Fetch-Mode: cors · Sec-Fetch-Site: same-origin
+         Referer: https://developers.hepsiburada.com/en/companies/hepsiburada
+```
+
+| Path | Returns |
+|---|---|
+| `/public/companies/hepsiburada/categories` | the 11 documentation categories |
+| `/public/companies/hepsiburada/categories/{slug}/products` | products in a category |
+| `/public/companies/hepsiburada/products/{p}/versions` | versions, with `operationCount` |
+| **`/public/docs/hepsiburada/{p}/{v}/openapi`** | **the full OpenAPI document** |
+| `/public/docs/hepsiburada/{p}/guides` · `/guides/{slug}` | prose guides |
+
+The listing integration is `{p} = listeleme`, `{v} = v1`. Other categories worth retrieving
+when their phase arrives: `siparis-yonetimi` (orders, §2.8),
+`katalog-urun-entegrasyonu` (catalogue), `muhasebe-entegrasyonu` (accounting — relevant to the
+Phase 8.3b settlement gate).
+
+⚠️ **Rate**: roughly 4–5 requests in quick succession trips a temporary block, after which a
+previously-accepted request returns 403 — measured, same behaviour as §2.11. Space requests
+~10 seconds apart. This is a manual, occasional operation; **do not automate it.**
+
+Static assets (`/assets/*.js`) need `Sec-Fetch-Dest: script`; the API paths were found in the
+SPA bundle rather than being guessed.
 
 ## 2.11 Public product listings (reporting only) 🟡 — **verified 2026-08-13, undocumented endpoint**
 
@@ -690,3 +1027,4 @@ rank (§2.5), exactly as designed.
 | 2026-08-12 | Hepsiburada | Hosts per domain, Basic auth + User-Agent, rate limits and the 10× daily update allowance, inventory upload flow, business error codes, commission/VAT sources, orders paging | product owner's portal research; endpoint schemas still 🔴 |
 | 2026-08-13 | Hepsiburada | §2.11 public listings endpoint `/api/v1/product/listings/{sku}`: 200 + 10 sellers for `BS1372`, the minimum accepted header set (measured by ablation), no credential required, ~8-request rate ceiling, `data.listings[]` field map, price unit fixed as lira by `formattedPrice` | direct request by the assistant, product owner supplied the endpoint and authorised browser headers; response recorded as a fixture |
 | 2026-08-13 | Trendyol | §1.6 public product-page payload: `__envoy__SHARED_PROPS` marker, `product.merchantListing` as an object, winner joined from `merchant` + `winnerVariant`, `otherMerchants[].variants[]`, `{value,text}` price nodes in lira, `"NaN TL"` rrp | product owner's extraction guide (`docs/trendyol-merchants-scraping-guide.md`), implemented and fixture-tested in `packages/adapters/src/trendyol/public-page/` |
+| 2026-08-14 | Hepsiburada | **§2.2, §2.4, §2.6, §2.10 — the whole listing integration.** Basic-only auth with a mandatory `User-Agent`; all 9 listing query parameters and the complete `Listing` schema; JSON accepted on uploads; `price-uploads` chosen over `inventory-uploads`; `{id}`-only accepted response; `Error` + `PriceValidation` item-level schema with 1-based `elementNo`; **`MinLock`/`MaxLock` price locking**; `priceIncrease/DecreaseDisabled` kill switches; the full 18-operation surface; commission ≤50 SKU / ~240 req-min and buybox ≤10 SKU limits; the `OutOfPriceRange` bands | assistant, from the vendor's own OpenAPI 3.0.1 document and portal guide, retrieved via the portal's public content API (§2.12) after the product owner suggested applying the §2.11 browser-header technique; both artefacts stored verbatim in `docs/vendor/` |

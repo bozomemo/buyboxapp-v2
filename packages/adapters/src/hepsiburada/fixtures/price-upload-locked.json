@@ -1,0 +1,24 @@
+{
+  "_comment": "The MinLock/MaxLock case, transcribed from the vendor guide's own worked example (api-references §2.6). status is \"Done\" and errors is null, yet the SKU has been locked off sale — the response that must never be read as success.",
+  "id": "715bae7f-0a2c-4a19-9c0e-3b8f1d2e4a55",
+  "status": "Done",
+  "createdAt": "2026-08-14T09:12:33Z",
+  "total": 2,
+  "errors": null,
+  "priceValidations": [
+    {
+      "elementNo": 1,
+      "hepsiburadaSku": "HBCV00000ABCDE",
+      "merchantSku": "ABC123-2",
+      "type": "MaxLock",
+      "minPrice": 899.8,
+      "maxPrice": 13767.0,
+      "regulativePriceDetail": {
+        "minAmount": null,
+        "maxAmount": null,
+        "categoryName": "Kahve Makineleri"
+      },
+      "description": "Yüksek fiyat sebebiyle kilitlendi."
+    }
+  ]
+}

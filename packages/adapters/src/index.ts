@@ -86,11 +86,29 @@ export {
   SHARED_PROPS_MARKER,
 } from './trendyol/public-page/shared-props.js';
 
-// Hepsiburada — the *adapter* (control path) is intentionally blocked, see hepsiburada/adapter.ts
-export { HepsiburadaAdapter, HepsiburadaBlockedError, HEPSIBURADA_HOSTS } from './hepsiburada/adapter.js';
+// Hepsiburada — the control path (list / submit / poll), built against the vendor's own
+// OpenAPI document, verified 2026-08-14 (api-references §2.4, §2.6). `fetchBuyboxObservations`
+// alone still throws: §2.5 declares no response schema. See hepsiburada/adapter.ts.
+export { HepsiburadaAdapter, HepsiburadaApiError, HepsiburadaBlockedError } from './hepsiburada/adapter.js';
+export {
+  HepsiburadaCredentialsSchema,
+  HEPSIBURADA_HOSTS,
+  type HepsiburadaAdapterConfig,
+  type HepsiburadaCorrelation,
+  type HepsiburadaCredentials,
+  type HepsiburadaEnvironment,
+} from './hepsiburada/config.js';
+export {
+  mapListingToSnapshot,
+  mapPriceUploadResult,
+  HepsiburadaMappingError,
+  type HepsiburadaListing,
+  type HepsiburadaPriceUploadResult,
+} from './hepsiburada/mapping.js';
 
 // Hepsiburada public listings — reporting only, never the control path (api-references §2.11).
-// Independent of the blocked adapter above: this endpoint needs no marketplace credential.
+// Independent of the adapter above and must stay that way: that one is authenticated and
+// merchant-scoped and may feed pricing; this one is public and may not (§2.5).
 export {
   HepsiburadaPublicListingsSource,
   buildHepsiburadaPublicHeaders,

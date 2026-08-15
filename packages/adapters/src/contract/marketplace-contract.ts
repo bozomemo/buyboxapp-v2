@@ -26,8 +26,10 @@ export interface MarketplaceContractFixture {
   readonly priceChanges: readonly PriceChange[];
 }
 
-function assertNoSentinelString(value: string, path: string): void {
-  if (SENTINEL_STRINGS.has(value)) {
+function assertNoSentinelString(value: string | null, path: string): void {
+  // `null` is the port's honest "this marketplace does not report it" and is always allowed;
+  // the check exists to catch a *value* standing in for missing data, which is the opposite.
+  if (value !== null && SENTINEL_STRINGS.has(value)) {
     throw new Error(`contract violation: sentinel value ${JSON.stringify(value)} escaped at ${path}`);
   }
 }

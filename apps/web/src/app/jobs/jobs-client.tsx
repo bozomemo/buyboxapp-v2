@@ -123,7 +123,15 @@ export function JobsClient() {
     setBusy(job.jobName);
     setError(null);
     try {
-      const marketplaceCode = job.perMarketplace ? selectedMarketplace[job.jobName] : undefined;
+      // Must mirror the <select>'s own fallback exactly (`marketplaces[0]?.code`) — the
+      // dropdown shows a marketplace pre-selected before the operator ever touches it, and
+      // `selectedMarketplace` state only gets an entry on `onChange`. Reading the state alone
+      // here would send `marketplaceCode: undefined` for a job whose row visibly has a
+      // marketplace selected, and the API correctly rejects that (`run-now/route.ts`) — but the
+      // rejection would look like a bug in the operator's own selection, not in this fallback.
+      const marketplaceCode = job.perMarketplace
+        ? (selectedMarketplace[job.jobName] ?? marketplaces[0]?.code)
+        : undefined;
       const res = await fetch('/api/jobs/run-now', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

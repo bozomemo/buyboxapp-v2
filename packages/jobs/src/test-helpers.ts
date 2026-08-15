@@ -18,17 +18,30 @@ import {
   type AppDatabase,
 } from '@buybox/db';
 import type { MarketplaceCode } from '@buybox/core';
+import { SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 
 export interface TestDb {
   readonly appDb: AppDatabase;
   cleanup(): void;
 }
 
+/**
+ * The system pause (`SYSTEM_PAUSE_SETTING_KEY`, `Scheduler.tick()`) is fail-closed: a database
+ * with no row for it is paused, matching a fresh, un-onboarded install. Every test in this
+ * package except the ones in `scheduler.test.ts` that test the pause itself is testing *job*
+ * behaviour and implicitly assumes an operational system, so `createSqliteTestDb` disengages it
+ * once here — the single place, rather than every test file repeating the same setup write.
+ */
 export async function createSqliteTestDb(): Promise<TestDb> {
   const dir = mkdtempSync(path.join(tmpdir(), 'buybox-jobs-test-'));
   const file = path.join(dir, 'test.db');
   const appDb = createDb(`file:${file}`, 'sqlite');
   await runMigrations(appDb);
+  await configRepo.setAppSetting(
+    appDb,
+    { key: SYSTEM_PAUSE_SETTING_KEY, value: 'false', updatedBy: 'test', updatedAt: 0 },
+    newId(),
+  );
   return {
     appDb,
     cleanup: () => {
