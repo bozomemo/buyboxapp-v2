@@ -6,6 +6,7 @@ import { Button, Field, StatusBanner, TextInput } from '../../setup/ui';
 interface Windows {
   priceSubmissionsDays: number;
   buyboxObservationsDays: number;
+  competitorObservationsDays: number;
   appEventsInfoDebugDays: number;
   appEventsWarnErrorDays: number;
   jobRunsDays: number;
@@ -15,6 +16,7 @@ interface Windows {
 const LABELS: { key: keyof Windows; label: string }[] = [
   { key: 'priceSubmissionsDays', label: 'Fiyat gönderimleri (gün)' },
   { key: 'buyboxObservationsDays', label: 'Buybox gözlemleri (gün)' },
+  { key: 'competitorObservationsDays', label: 'Rakip teklif kayıtları (gün)' },
   { key: 'appEventsInfoDebugDays', label: 'Bilgi/debug olayları (gün)' },
   { key: 'appEventsWarnErrorDays', label: 'Uyarı/hata olayları (gün)' },
   { key: 'jobRunsDays', label: 'İş çalıştırma geçmişi (gün)' },

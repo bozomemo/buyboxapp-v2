@@ -196,9 +196,13 @@ export const listings = sqliteTable(
       .references(() => marketplaces.code, { onDelete: 'cascade' }),
     marketplaceListingId: text('marketplace_listing_id').notNull(),
     sellerStockCode: text('seller_stock_code').notNull(),
-    baseStockCode: text('base_stock_code').references(() => stockItems.baseStockCode, {
-      onDelete: 'set null',
-    }),
+    // Deliberately NOT a foreign key to stock_items. Doc 05 §4 defines this as "parsed; null
+    // when unparseable" — nothing conditions it on stock_items already having a row for that
+    // code. Doc 07 §2 imports listings independently of cost data; a stock item is typically
+    // entered (manually, or via ImportStockItems) *after* the listings that use it already
+    // exist. An FK here made every ImportListings insert fail with a constraint violation
+    // whenever the product source hadn't been populated yet — i.e. on every first run.
+    baseStockCode: text('base_stock_code'),
     unitCount: integer('unit_count').notNull(),
     isBundle: bool('is_bundle').notNull(),
     productName: text('product_name').notNull(),
@@ -222,6 +226,10 @@ export const listings = sqliteTable(
     allowIncrease: bool('allow_increase').notNull(),
     allowDecrease: bool('allow_decrease').notNull(),
     repriceEnabled: bool('reprice_enabled').notNull(),
+    // Independent of repriceEnabled: lets an operator watch buybox rank / competitors on a
+    // listing without opting it into the pricing engine. Same operator-owned, starts-disabled
+    // treatment as repriceEnabled — see the comment on `upsertListing` below.
+    observationEnabled: bool('observation_enabled').notNull(),
     extra: json('extra'),
     firstSeenAt: timestampMs('first_seen_at').notNull(),
     lastSeenAt: timestampMs('last_seen_at').notNull(),
@@ -311,6 +319,52 @@ export const competitorObservations = sqliteTable(
   (t) => [
     index('competitor_observations_listing_observed').on(t.listingId, t.observedAt),
     index('competitor_observations_seller_observed').on(t.sellerRef, t.observedAt),
+  ],
+);
+
+/**
+ * An operator's assertion that two marketplace seller identities are the same company
+ * (doc 05 §5). Marketplaces issue their own ids in their own namespaces — Trendyol's
+ * merchant `12345` and Hepsiburada's `12345` are unrelated — so nothing but a person can
+ * know that they are one firm. Never inferred from a matching name: a wrong merge makes a
+ * competitor alert fire on the wrong company while still looking like it works.
+ */
+export const competitorSellerGroups = sqliteTable('competitor_seller_groups', {
+  id: text('id').primaryKey(),
+  displayName: text('display_name').notNull(),
+  note: text('note'),
+  createdAt: timestampMs('created_at').notNull(),
+  updatedAt: timestampMs('updated_at').notNull(),
+});
+
+/**
+ * A competitor seller as a durable entity, keyed by the identity the marketplace issues
+ * (doc 05 §5). `competitor_observations` records what a seller did at a moment; this records
+ * that the seller *exists*, so an alert rule can name one and still mean the same company
+ * after it renames itself.
+ *
+ * Only sellers the payload identifies get a row: `competitor_observations.seller_ref` is
+ * nullable, and a seller with no id has no identity to be durable about — matching one by
+ * display name is exactly the mistake `competitor_seller_groups` refuses to make.
+ */
+export const competitorSellers = sqliteTable(
+  'competitor_sellers',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    sellerRef: text('seller_ref').notNull(),
+    /** Last seen. Display data that changes under a stable `sellerRef`, never a key. */
+    sellerName: text('seller_name').notNull(),
+    groupId: text('group_id').references(() => competitorSellerGroups.id, { onDelete: 'set null' }),
+    operatorNote: text('operator_note'),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('competitor_sellers_marketplace_ref').on(t.marketplaceCode, t.sellerRef),
+    index('competitor_sellers_group').on(t.groupId),
   ],
 );
 
@@ -427,6 +481,24 @@ export const jobRuns = sqliteTable('job_runs', {
   itemsFailed: integer('items_failed').notNull(),
   error: text('error'),
   correlationId: text('correlation_id').notNull(),
+  // Nullable: rows written before this column existed have none, and a run started outside a
+  // claimed queue row (there is none today, but nothing enforces it) would too. Lets
+  // `requeueExpiredJobs` close out exactly the orphaned run for an expired claim — by id,
+  // never by jobName+time — so a still-legitimately-running instance of the same per-marketplace
+  // job (doc 07 §8: multiple marketplaces can run the same job name concurrently) is never
+  // mistakenly marked failed alongside it.
+  jobQueueId: text('job_queue_id'),
+  // Live progress for the Jobs screen's run detail panel (doc 06 §7). The worker and the web
+  // app are separate processes, so `job_runs` is the only channel by which the browser can
+  // watch a run — the handler heartbeats these three columns through `ctx.reportProgress`.
+  // `items_done` is the *attempted* count and only ever grows; `items_ok`/`items_failed` are
+  // still written once at the end by `finishJobRun`, so a detail panel showing progress must
+  // read `items_done`, not their sum, while the run is in flight.
+  itemsDone: integer('items_done').notNull().default(0),
+  /** Human-readable label of the item in flight, e.g. a stock code. Never a price or money value. */
+  currentItem: text('current_item'),
+  /** When progress was last heartbeated — lets the UI tell "slow" from "stalled". */
+  progressAt: timestampMs('progress_at'),
 });
 
 export const appEvents = sqliteTable(
@@ -466,3 +538,103 @@ export const circuitBreakerState = sqliteTable('circuit_breaker_state', {
   lastError: text('last_error'),
   updatedAt: timestampMs('updated_at').notNull(),
 });
+
+/**
+ * Competitor alert rules (doc 06 §6.2, doc 12 Phase 10C).
+ *
+ * One generic predicate — scope × subject × comparison — rather than one table per alert kind,
+ * so a new alert type is an enum value rather than a migration. Thresholds are `bigint` kuruş
+ * like every other money column; a fixed threshold is money too.
+ */
+export const alertRules = sqliteTable('alert_rules', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  scopeType: text('scope_type').notNull(), // 'listing' | 'baseStockCode' | 'marketplace' | 'all'
+  scopeValue: text('scope_value'),
+  subjectType: text('subject_type').notNull(), // 'seller' | 'sellerGroup' | 'any'
+  subjectValue: text('subject_value'),
+  predicate: text('predicate').notNull(), // 'sellerPresent' | 'priceBelow'
+  thresholdType: text('threshold_type').notNull(), // 'fixed' | 'belowOurPrice' | 'belowFloor' | 'pctBelowOurs'
+  thresholdValue: money('threshold_value'),
+  thresholdPct: integer('threshold_pct'),
+  /**
+   * How long after resolving this rule stays silent for the same target. A competitor
+   * oscillating around the threshold would otherwise open and close an alert every hour until
+   * the operator stops reading the screen.
+   */
+  quietPeriodMs: integer('quiet_period_ms').notNull(),
+  enabled: bool('enabled').notNull(),
+  createdAt: timestampMs('created_at').notNull(),
+  updatedAt: timestampMs('updated_at').notNull(),
+});
+
+/**
+ * A **state**, not a log line (doc 12 Phase 10C).
+ *
+ * "Seller X appeared" is an event; "seller X is still there" is a condition, and the second is
+ * what an operator needs on a dashboard. Modelling this as an append-only log would make "how
+ * many alerts are open right now" unanswerable without reconstructing state from history, and
+ * would make the eventual notification hook ("tell me when one *opens*") impossible to place.
+ *
+ * `alert_key` is deliberately **not** unique: a condition that clears and returns later is two
+ * spans, and collapsing them would erase that it happened twice. At most one row per key is
+ * `open` at a time, which the repository enforces when reconciling.
+ *
+ * `snapshot` is the evidence — the offers, prices and threshold as they stood when it fired.
+ * Held here rather than looked up later because `competitor_observations` is pruned at 90 days
+ * (doc 05 §10) and the offers behind an old alert would otherwise simply vanish.
+ */
+export const alerts = sqliteTable(
+  'alerts',
+  {
+    id: text('id').primaryKey(),
+    ruleId: text('rule_id')
+      .notNull()
+      .references(() => alertRules.id, { onDelete: 'cascade' }),
+    alertKey: text('alert_key').notNull(),
+    listingId: text('listing_id')
+      .notNull()
+      .references(() => listings.id, { onDelete: 'cascade' }),
+    /** Set for a rule targeting one seller; null for an "any seller" rule, whose offenders are children. */
+    sellerRef: text('seller_ref'),
+    state: text('state').notNull(), // 'open' | 'resolved'
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    resolvedAt: timestampMs('resolved_at'),
+    thresholdApplied: money('threshold_applied'),
+    snapshot: json('snapshot'),
+  },
+  (t) => [
+    index('alerts_key_state').on(t.alertKey, t.state),
+    index('alerts_state_last_seen').on(t.state, t.lastSeenAt),
+    index('alerts_listing').on(t.listingId),
+  ],
+);
+
+/**
+ * The sellers currently breaching an open alert, each with its own span.
+ *
+ * This is what lets one "anyone below 400 ₺" alert be a single dashboard row while still
+ * answering who and since when. A seller joining an already-open breach updates this table
+ * rather than opening a second alert — but it is a change worth notifying on, which is why the
+ * join is timestamped rather than merely present.
+ */
+export const alertSellers = sqliteTable(
+  'alert_sellers',
+  {
+    id: text('id').primaryKey(),
+    alertId: text('alert_id')
+      .notNull()
+      .references(() => alerts.id, { onDelete: 'cascade' }),
+    sellerRef: text('seller_ref'),
+    sellerName: text('seller_name').notNull(),
+    observedPrice: money('observed_price'),
+    /** Which price field the comparison used — 'finalPrice' or 'price' (api-references §1.6, §2.11). */
+    priceSource: text('price_source').notNull(),
+    rank: integer('rank').notNull(),
+    promotionText: text('promotion_text'),
+    joinedAt: timestampMs('joined_at').notNull(),
+    leftAt: timestampMs('left_at'),
+  },
+  (t) => [index('alert_sellers_alert').on(t.alertId)],
+);

@@ -160,6 +160,21 @@ export interface OrderSnapshot {
 export interface IMarketplaceAdapter {
   readonly code: MarketplaceCode;
   readonly capabilities: MarketplaceCapabilities;
+  /**
+   * **Our own** seller id at this marketplace, as the marketplace itself publishes it in offer
+   * lists — Trendyol's `sellerId`/`merchantId`, Hepsiburada's `merchantId`.
+   *
+   * It comes from the credentials the adapter authenticates with, so it is a fact about this
+   * installation rather than a setting anyone has to keep in step. That matters because it is
+   * the *only* thing that distinguishes our own offer from a competitor's: the repricer's
+   * own-offer filter (doc 03 §6.5), the exclusion of our store from competitor reports and the
+   * alert engine's refusal to fire on us all key on it, and every one of them fails **silently**
+   * when it is wrong — nothing errors, we simply become our own biggest rival.
+   *
+   * Never a store name. Names are not identity (scraping guide §8), and ours can be renamed in
+   * the seller panel without anything here noticing.
+   */
+  readonly merchantRef: string;
 
   testConnection(creds: Credentials): Promise<ConnectionTestResult>;
 

@@ -18,6 +18,24 @@ export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
+export function Select(
+  props: React.SelectHTMLAttributes<HTMLSelectElement> & { options: { value: string; label: string }[] },
+) {
+  const { options, ...rest } = props;
+  return (
+    <select
+      {...rest}
+      className={`rounded border border-[var(--color-border)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)] ${rest.className ?? ''}`}
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function Button({
   variant = 'primary',
   ...props

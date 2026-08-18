@@ -15,6 +15,48 @@
       "when": 1786573524128,
       "tag": "0001_conscious_puppet_master",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786964617000,
+      "tag": "0002_bouncy_supernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1786966625217,
+      "tag": "0003_left_lilith",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1786972064561,
+      "tag": "0004_overconfident_switch",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1786987636610,
+      "tag": "0005_silky_bug",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787004201545,
+      "tag": "0006_stiff_talos",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787037017103,
+      "tag": "0007_mushy_harry_osborn",
+      "breakpoints": true
     }
   ]
 }

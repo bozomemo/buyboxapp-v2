@@ -117,6 +117,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       allowIncrease: listing.allowIncrease,
       allowDecrease: listing.allowDecrease,
       repriceEnabled: listing.repriceEnabled,
+      observationEnabled: listing.observationEnabled,
       firstSeenAt: listing.firstSeenAt,
       lastSeenAt: listing.lastSeenAt,
     },

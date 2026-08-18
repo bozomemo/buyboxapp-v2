@@ -3,6 +3,13 @@ import { NextResponse } from 'next/server';
 import { jobsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 
+/**
+ * How many of the newest matching runs one response carries. Sent to the browser with the rows so
+ * the screen's pager can say the list is capped rather than presenting the newest 200 runs as the
+ * whole history.
+ */
+const RUN_HISTORY_LIMIT = 200;
+
 export async function GET(request: Request) {
   const appDb = getAppDb();
   const url = new URL(request.url);
@@ -13,9 +20,10 @@ export async function GET(request: Request) {
   const runs = await jobsRepo.listJobRuns(
     appDb,
     { jobName, state, sinceMs: sinceMs ? Number(sinceMs) : undefined },
-    200,
+    RUN_HISTORY_LIMIT,
   );
   return NextResponse.json({
+    limit: RUN_HISTORY_LIMIT,
     runs: runs.map((r) => ({
       id: r.id,
       jobName: r.jobName,

@@ -8,6 +8,7 @@ import { parseStockCode, type MarketplaceCode } from '@buybox/core';
 import { eventsRepo, listingsRepo, newId } from '@buybox/db';
 import { z } from 'zod';
 import type { JobContext, JobResult } from '../job.js';
+import { syncMerchantRef } from '../merchant-ref.js';
 import { encodeListingExtra } from './listing-extra.js';
 
 export const IMPORT_LISTINGS_JOB = 'ImportListings';
@@ -23,6 +24,10 @@ export async function importListings(ctx: JobContext): Promise<JobResult> {
   const marketplaceCode: MarketplaceCode = payload.marketplaceCode;
   const adapter = getAdapter(ctx.adapters, marketplaceCode);
   const runStartedAt = ctx.clock.nowMs();
+
+  // Picks up a credential change without waiting for a restart; the guarantee is at
+  // worker startup (see `syncMerchantRef`).
+  await syncMerchantRef(ctx.appDb, marketplaceCode, adapter.merchantRef, runStartedAt, ctx.correlationId);
 
   let itemsTotal = 0;
   let itemsOk = 0;
@@ -94,7 +99,12 @@ export async function importListings(ctx: JobContext): Promise<JobResult> {
           maxPrice: null,
           allowIncrease: true,
           allowDecrease: true,
-          repriceEnabled: false, // doc 10 §6 step 8: "everything starts DISABLED"
+          // doc 10 §6 step 8: "everything starts DISABLED" — applies to both the pricing
+          // engine (repriceEnabled) and buybox/competitor observation (observationEnabled),
+          // which are independent operator opt-ins (docs/07 §2.1 vs the ObserveBuybox/
+          // ScrapeCompetitors candidate query).
+          repriceEnabled: false,
+          observationEnabled: false,
           // doc 05 §5: marketplace-specific fields preserved verbatim. Today that is the
           // public product-page reference the reporting scrape needs (doc 07 §7).
           extra: encodeListingExtra(listing.productPage),

@@ -74,7 +74,7 @@ export async function observeBuybox(ctx: JobContext): Promise<JobResult> {
   const adapter = getAdapter(ctx.adapters, marketplaceCode);
   const nowMs = ctx.clock.nowMs();
 
-  const candidates = await listingsRepo.listRepriceableListings(ctx.appDb, marketplaceCode);
+  const candidates = await listingsRepo.listObservableListings(ctx.appDb, marketplaceCode);
 
   const dueListingIds: string[] = [];
   const listingByMarketplaceId = new Map<string, string>();

@@ -9,7 +9,13 @@ const SETTING_KEY = 'retention.windows';
 export async function GET() {
   const appDb = getAppDb();
   const setting = await configRepo.getAppSetting(appDb, SETTING_KEY);
-  const windows: RetentionWindows = setting ? JSON.parse(setting.value) : DEFAULT_RETENTION_WINDOWS;
+  // Merged over the defaults rather than used as-is: a setting stored before a window was
+  // added carries no key for it, and passing `undefined` through to `pruneHistory` turns that
+  // window's cutoff into `NaN`. Spreading the defaults first means a new window arrives at its
+  // documented value instead of disabling itself on every install that already had this row.
+  const windows: RetentionWindows = setting
+    ? { ...DEFAULT_RETENTION_WINDOWS, ...(JSON.parse(setting.value) as Partial<RetentionWindows>) }
+    : DEFAULT_RETENTION_WINDOWS;
   return NextResponse.json({ windows, isDefault: !setting });
 }
 

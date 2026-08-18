@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatDate, formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { formatDate, formatDateTime, formatDuration, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { CoverageBadge, type Coverage } from './coverage-badge';
 
 interface ListingOption {
   id: string;
@@ -29,6 +31,14 @@ interface Report {
     observationCount: number;
   }[];
   buyboxShare: { sellerRef: string | null; sellerName: string; count: number; sharePct: number }[];
+  timeWeightedBuyboxShare: {
+    sellerRef: string | null;
+    sellerName: string;
+    heldMs: number;
+    sharePct: number;
+  }[];
+  uncoveredMs: number;
+  coverage: Coverage;
   sellerProfile: {
     sellerName: string;
     listingCount: number;
@@ -66,6 +76,9 @@ function daysAgo(n: number): number {
   return Date.now() - n * 24 * 60 * 60 * 1000;
 }
 
+/** Stable identity for "the report has not arrived yet", shared by every table on the screen. */
+const NO_ROWS: never[] = [];
+
 export function CompetitorsClient() {
   const [sinceMs, setSinceMs] = useState(daysAgo(30));
   const [untilMs, setUntilMs] = useState(Date.now());
@@ -77,6 +90,24 @@ export function CompetitorsClient() {
   const [listingId, setListingId] = useState('');
   const [listingLabel, setListingLabel] = useState('');
   const [report, setReport] = useState<Report | null>(null);
+
+  // Every table here is paged against the same filter set, so they share one reset key: changing
+  // the window or the product starts all of them at page 1.
+  const filterKey = [sinceMs, untilMs, marketplaceCode, baseStockCode, sellerRef, listingId].join('|');
+  const pagedTimeline = usePagedRows(report?.priceTimeline?.buybox ?? NO_ROWS, { resetKey: filterKey });
+  const pagedPresence = usePagedRows(report?.sellerPresence ?? NO_ROWS, { resetKey: filterKey });
+  const pagedTimeShare = usePagedRows(report?.timeWeightedBuyboxShare ?? NO_ROWS, {
+    pageSize: 25,
+    resetKey: filterKey,
+  });
+  const pagedCountShare = usePagedRows(report?.buyboxShare ?? NO_ROWS, {
+    pageSize: 25,
+    resetKey: filterKey,
+  });
+  const pagedCoverage = usePagedRows(report?.observationCoverage ?? NO_ROWS, {
+    pageSize: 25,
+    resetKey: filterKey,
+  });
 
   useEffect(() => {
     if (!listingQuery) {
@@ -222,24 +253,29 @@ export function CompetitorsClient() {
               CSV İndir
             </button>
           </div>
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-left uppercase text-[var(--color-muted)]">
-              <tr>
-                <th className="px-2 py-1">Zaman</th>
-                <th className="px-2 py-1">Buybox Fiyatı</th>
-                <th className="px-2 py-1">Sıra</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
-              {report.priceTimeline.buybox.map((h, i) => (
-                <tr key={i}>
-                  <td className="px-2 py-1">{formatDateTime(h.observedAt)}</td>
-                  <td className="px-2 py-1">{formatMoney(h.buyboxPrice ? BigInt(h.buyboxPrice) : null)}</td>
-                  <td className="px-2 py-1">{h.rank ?? '—'}</td>
+          <TableFrame maxHeight="50vh">
+            <table className="w-full text-xs">
+              <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
+                <tr>
+                  <th className="px-2 py-1">Zaman</th>
+                  <th className="px-2 py-1">Buybox Fiyatı</th>
+                  <th className="px-2 py-1">Sıra</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)]">
+                {pagedTimeline.rows.map((h, i) => (
+                  <tr key={i}>
+                    <td className="px-2 py-1">{formatDateTime(h.observedAt)}</td>
+                    <td className="px-2 py-1">{formatMoney(h.buyboxPrice ? BigInt(h.buyboxPrice) : null)}</td>
+                    <td className="px-2 py-1">{h.rank ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableFrame>
+          <div className="mt-2">
+            <Pagination state={pagedTimeline} label="gözlem" />
+          </div>
           {report.priceTimeline.ourChanges.length > 0 && (
             <p className="mt-2 text-xs text-[var(--color-muted)]">
               Fiyat değişikliklerimiz:{' '}
@@ -253,6 +289,8 @@ export function CompetitorsClient() {
         </section>
       )}
 
+      {report && <CoverageBadge coverage={report.coverage} sinceMs={report.filters.sinceMs} />}
+
       <section className="rounded border border-[var(--color-border)] p-4">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-lg font-medium">Satıcı Varlığı (Giriş/Çıkış)</h2>
@@ -264,19 +302,19 @@ export function CompetitorsClient() {
             CSV İndir
           </button>
         </div>
-        <div className="overflow-x-auto">
+        <TableFrame maxHeight="50vh">
           <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-left uppercase text-[var(--color-muted)]">
+            <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
               <tr>
                 <th className="px-2 py-1">Ürün</th>
                 <th className="px-2 py-1">Satıcı</th>
-                <th className="px-2 py-1">İlk Görülme</th>
+                <th className="px-2 py-1">İlk Görülme (≥)</th>
                 <th className="px-2 py-1">Son Görülme</th>
                 <th className="px-2 py-1">Gözlem</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
-              {(report?.sellerPresence ?? []).map((p, i) => (
+              {pagedPresence.rows.map((p, i) => (
                 <tr key={i}>
                   <td className="px-2 py-1">{p.productName}</td>
                   <td className="px-2 py-1">{p.sellerName}</td>
@@ -294,6 +332,9 @@ export function CompetitorsClient() {
               )}
             </tbody>
           </table>
+        </TableFrame>
+        <div className="mt-2">
+          <Pagination state={pagedPresence} label="satıcı-ürün kaydı" />
         </div>
       </section>
 
@@ -302,30 +343,86 @@ export function CompetitorsClient() {
           <h2 className="text-lg font-medium">Buybox Payı</h2>
           <button
             type="button"
-            onClick={() => report && downloadCsv('buybox-payi.csv', report.buyboxShare)}
+            onClick={() =>
+              report &&
+              downloadCsv(
+                'buybox-payi.csv',
+                listingId ? report.timeWeightedBuyboxShare : report.buyboxShare,
+              )
+            }
             className="rounded border px-2 py-1 text-xs"
           >
             CSV İndir
           </button>
         </div>
-        <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-left uppercase text-[var(--color-muted)]">
-            <tr>
-              <th className="px-2 py-1">Satıcı</th>
-              <th className="px-2 py-1">Buybox Anı</th>
-              <th className="px-2 py-1">Pay</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
-            {(report?.buyboxShare ?? []).map((s, i) => (
-              <tr key={i}>
-                <td className="px-2 py-1">{s.sellerName}</td>
-                <td className="px-2 py-1">{formatNumber(s.count)}</td>
-                <td className="px-2 py-1">{formatPercent(s.sharePct)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {listingId ? (
+          <>
+            <p className="mb-2 text-xs text-[var(--color-muted)]">
+              Zaman ağırlıklı: her gözlem, bir sonraki gözleme kadar geçen süre kadar sayılır.
+              Tarama yapılmayan boşluklar paydaya <strong>dahil edilmez</strong> — o aralıkta
+              buybox&apos;ı kimin tuttuğunu bilmiyoruz.
+            </p>
+            <TableFrame maxHeight="50vh">
+              <table className="w-full text-xs">
+                <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
+                  <tr>
+                    <th className="px-2 py-1">Satıcı</th>
+                    <th className="px-2 py-1">Tuttuğu Süre</th>
+                    <th className="px-2 py-1">Pay</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]">
+                  {pagedTimeShare.rows.map((s, i) => (
+                    <tr key={i}>
+                      <td className="px-2 py-1">{s.sellerName}</td>
+                      <td className="px-2 py-1">{formatDuration(s.heldMs)}</td>
+                      <td className="px-2 py-1">{formatPercent(s.sharePct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableFrame>
+            <div className="mt-2">
+              <Pagination state={pagedTimeShare} label="satıcı" />
+            </div>
+            {report && report.uncoveredMs > 0 && (
+              <p className="mt-2 text-xs text-[var(--color-muted)]">
+                Bu dönemin <strong>{formatDuration(report.uncoveredMs)}</strong> kadarında hiç
+                gözlem yok; yukarıdaki yüzdeler yalnızca gözlenen süreye aittir.
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="mb-2 text-xs text-[var(--color-muted)]">
+              Bu tabloda her satıcının kaç <em>gözlemde</em> buybox&apos;ta olduğu sayılır, ne
+              kadar <em>süre</em> tuttuğu değil. Süreye göre pay için tek bir ilan seçin.
+            </p>
+            <TableFrame maxHeight="50vh">
+              <table className="w-full text-xs">
+                <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
+                  <tr>
+                    <th className="px-2 py-1">Satıcı</th>
+                    <th className="px-2 py-1">Buybox Anı</th>
+                    <th className="px-2 py-1">Pay</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]">
+                  {pagedCountShare.rows.map((s, i) => (
+                    <tr key={i}>
+                      <td className="px-2 py-1">{s.sellerName}</td>
+                      <td className="px-2 py-1">{formatNumber(s.count)}</td>
+                      <td className="px-2 py-1">{formatPercent(s.sharePct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableFrame>
+            <div className="mt-2">
+              <Pagination state={pagedCountShare} label="satıcı" />
+            </div>
+          </>
+        )}
       </section>
 
       {report?.sellerProfile && (
@@ -365,8 +462,9 @@ export function CompetitorsClient() {
             CSV İndir
           </button>
         </div>
+        <TableFrame maxHeight="50vh">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-left uppercase text-[var(--color-muted)]">
+          <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
             <tr>
               <th className="px-2 py-1">Tarih</th>
               <th className="px-2 py-1">Başarılı</th>
@@ -375,7 +473,7 @@ export function CompetitorsClient() {
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
-            {(report?.observationCoverage ?? []).map((c) => (
+            {pagedCoverage.rows.map((c) => (
               <tr key={c.date}>
                 <td className="px-2 py-1">{c.date}</td>
                 <td className="px-2 py-1">{formatNumber(c.ok)}</td>
@@ -396,6 +494,10 @@ export function CompetitorsClient() {
             )}
           </tbody>
         </table>
+        </TableFrame>
+        <div className="mt-2">
+          <Pagination state={pagedCoverage} label="gün" />
+        </div>
       </section>
     </div>
   );

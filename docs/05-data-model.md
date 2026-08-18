@@ -25,6 +25,12 @@ old shape onto the new one. Do not carry the old shape forward.
 Migrations are **forward-only and idempotent**. On boot the app compares schema version and
 refuses to start on mismatch, offering to migrate. All three dialects run migrations in CI.
 
+Two ways to apply them: the setup wizard's database step (interactive, doc 10 §6 step 1), and
+`npm run migrate` (`scripts/migrate.mjs`) for an already-configured database that has fallen
+behind — typically after a `git pull` that brought a new migration. The worker refuses to boot
+on a stale schema and says which; the **web** process does not check, so its first request that
+touches a new column fails with a raw driver error instead. Migrate before starting either.
+
 ---
 
 ## 2. Reference and configuration
@@ -35,10 +41,27 @@ refuses to start on mismatch, offering to migrate. All three dialects run migrat
 | `code` | text PK | `TY`, `HB`, … |
 | `display_name` | text | |
 | `enabled` | int | master switch |
-| `merchant_ref` | text | seller/merchant id at the marketplace |
+| `merchant_ref` | text | **Our own** seller id at the marketplace, exactly as that marketplace publishes it in its offer lists. **Derived, never entered** — see below. |
 | `created_at`, `updated_at` | bigint | |
 
 Credentials live in the secret store, keyed by `marketplace.code`. **Never in this table.**
+
+**`merchant_ref` is derived from those credentials, not typed by an operator.** It is the seller
+id the adapter authenticates as — Trendyol's `sellerId` (which the storefront calls `merchantId`;
+same value), Hepsiburada's `merchantId` — surfaced as `IMarketplaceAdapter.merchantRef` and
+written here at **worker startup** for every adapter that is constructed, and again by
+`ImportListings` on each run, with a settings-audit row whenever it changes. Startup is the
+guarantee: `ImportListings` can be disabled while `ScrapeCompetitors` — which needs the value —
+runs on, so a job-only trigger would leave the column stale exactly when it matters.
+
+It has to be derived, because it is the only thing that distinguishes our own offer from a
+competitor's, and everything that reads it fails **silently** when it is wrong: the repricer's
+own-offer filter (doc 03 §6.5), our exclusion from competitor reports (doc 06 §6.1) and the
+alert engine's refusal to fire on us (doc 06 §6.2) all simply match nothing. Nothing errors; we
+just become our own biggest competitor in every report. Asking for it a second time in a form —
+as this system did until 2026-08-18, when a live install was found holding an unrelated UUID
+here while its credentials held the correct id — creates two copies of one fact and no way to
+notice when they disagree. Never a store name: names are not identity (scraping guide §8).
 
 ### `fee_settings` — effective-dated
 | Column | Type | Notes |
@@ -128,7 +151,7 @@ could not express quantity (doc 09 §28).
 | `marketplace_code` | text FK | |
 | `marketplace_listing_id` | text | Trendyol barcode / Hepsiburada SKU |
 | `seller_stock_code` | text | raw, as returned |
-| `base_stock_code` | text FK nullable | parsed; null when unparseable |
+| `base_stock_code` | text nullable | parsed; null when unparseable. **Not a foreign key** — `ImportListings` runs independently of cost data (§2), so a listing routinely exists before `stock_items` has a row for its code |
 | `unit_count` | int | parsed pack size |
 | `is_bundle` | int | |
 | `product_name` | text | |
@@ -143,7 +166,8 @@ could not express quantity (doc 09 §28).
 | `lock_reasons`, `deactivation_reasons` | text nullable | JSON array |
 | `min_price`, `max_price` | bigint nullable | **operator bounds — enforced by the engine** |
 | `allow_increase`, `allow_decrease` | int, default 1 | operator switches |
-| `reprice_enabled` | int, default 1 | per-listing override |
+| `reprice_enabled` | int | per-listing override — starts DISABLED on import (doc 10 §6 step 8) |
+| `observation_enabled` | int | independent of `reprice_enabled` — lets an operator watch buybox rank / competitors on a listing without opting it into the pricing engine; also starts DISABLED on import. Drives `ObserveBuybox` / `ScrapeCompetitors`'s own candidate query, separate from `Reprice`'s (doc 07 §2.1) |
 | `extra` | text (JSON) | marketplace-specific fields preserved verbatim |
 | `first_seen_at`, `last_seen_at`, `updated_at` | bigint | |
 
@@ -229,11 +253,64 @@ Written **only when the observed seller set differs** from the previous scrape.
 | `promotion_text` | text nullable |
 
 Indexes `(listing_id, observed_at DESC)`, `(seller_ref, observed_at DESC)`.
-**Retained indefinitely.**
+**Retained 90 days** (§10 — this was *indefinite* until 2026-08-18; see the note there).
+
+"Differs" is decided by a hash over `(rank, seller_ref, price, final_price)` only. The other
+columns are still stored on every written row; they simply do not by themselves prove that
+anything competitive happened. Measured over the live archive on 2026-08-18 (1,799
+observations, 64 listings, 124 batch transitions): `offered_stock` alone caused 53 of them — a
+single unit selling rewrote a whole 20-seller batch — while `rank` caused 55, **all of which
+were genuine buybox hand-overs between equally-priced sellers** and so must keep triggering a
+write. See `hashOffers` in `packages/jobs/src/pipeline/scrape-competitors.ts`.
 
 > Reconstructing the state at time T: take the `scrape_runs` row nearest at-or-before T
 > (proving observation), then the `competitor_observations` rows with the greatest
 > `observed_at` ≤ T for that listing.
+
+### `competitor_seller_groups` — operator-asserted identity
+
+| Column | Type |
+|--------|------|
+| `id` | text PK |
+| `display_name` | text |
+| `note` | text nullable |
+| `created_at` | bigint |
+| `updated_at` | bigint |
+
+An operator's assertion that two marketplace seller identities are the same company.
+Marketplaces issue ids in their own namespaces — Trendyol's merchant `12345` and
+Hepsiburada's `12345` are unrelated — so only a person can know this. **Never inferred from a
+matching name**: a wrong merge makes an alert fire on the wrong company while still appearing
+to work. Name similarity may at most be offered as a suggestion. Retained indefinitely; edits
+are audited like any other operator setting (doc 06 §9).
+
+### `competitor_sellers` — durable seller identity
+
+| Column | Type |
+|--------|------|
+| `id` | text PK |
+| `marketplace_code` | text FK |
+| `seller_ref` | text | the marketplace's own merchant id |
+| `seller_name` | text | last seen; display data, never a key |
+| `group_id` | text nullable FK | operator-owned |
+| `operator_note` | text nullable | operator-owned |
+| `first_seen_at` | bigint |
+| `last_seen_at` | bigint |
+
+Unique `(marketplace_code, seller_ref)`; index `(group_id)`. Retained indefinitely.
+
+`competitor_observations` records what a seller did at a moment; this records that the seller
+*exists*, so a rule naming a competitor still means the same company after it renames itself
+and after the observations that introduced it have aged out.
+
+Written by `ScrapeCompetitors` as an `ensure`/`update` split, not a plain upsert: `group_id`
+and `operator_note` are **operator-owned** and a scrape must never clobber them (the same rule
+`upsert_listing` follows for `reprice_enabled`). `first_seen_at` never moves forward, and
+`last_seen_at` never moves backwards — a retried older cycle can land after a newer one.
+
+Only sellers the payload identified get a row. `competitor_observations.seller_ref` is
+nullable, and a seller with no id has no identity to be durable about; matching it by display
+name is exactly the mistake `competitor_seller_groups` refuses to make.
 
 ---
 
@@ -318,7 +395,20 @@ Index `(state, priority, run_after)`. Claim semantics per doc 10 §1.2.
 
 ### `job_runs`
 `id`, `job_name`, `started_at`, `finished_at`, `state`, `items_total`, `items_ok`,
-`items_failed`, `error`, `correlation_id`.
+`items_failed`, `error`, `correlation_id`, `job_queue_id` nullable.
+
+Live progress (doc 06 §7.2), heartbeated by the running handler so the **web process can watch
+a run the worker process is executing** — the two share no memory, so this table is the channel:
+
+| Column | Type | |
+|---|---|---|
+| `items_done` | int not null default 0 | Items **attempted** so far. Monotonic. |
+| `current_item` | text nullable | Display label of the item in flight (a stock code, a product name). Never money, never a price — formatting is a display concern and must not enter storage. |
+| `progress_at` | bigint nullable | Last heartbeat, so a stalled run can be told from a slow one. |
+
+`items_ok`/`items_failed` are written **once, at the end**, by the finish path; `items_done` is
+the only counter that moves during a run. A reader showing progress must use it, not their sum.
+The finish path also settles `items_done` to `items_total` and clears `current_item`.
 
 ### `app_events`
 Replaces the legacy `log_table` and the transient UI text box.
@@ -387,7 +477,9 @@ re-probe the entire catalogue).
 
 | Table | Retention |
 |-------|-----------|
-| `competitor_observations`, `scrape_runs` | **indefinite** |
+| `scrape_runs` | **indefinite** |
+| `competitor_sellers`, `competitor_seller_groups` | **indefinite** |
+| `competitor_observations` | 90 days |
 | `price_submissions` | 60 days |
 | `buybox_observations` | 90 days |
 | `app_events` info/debug | 90 days |
@@ -396,3 +488,16 @@ re-probe the entire catalogue).
 | `job_queue` done/failed | 7 days |
 
 A `PruneHistory` job enforces these nightly. Every retention window is configurable.
+
+> **`competitor_observations` was indefinite until 2026-08-18.** That policy was written for a
+> 64-listing catalogue. Measured against the live archive, the 2,000-listing target produces
+> roughly 32,000 offer rows a day (~12M/year), and the reports that justified keeping them
+> forever read summaries rather than raw rows. Raw offers now age out on a window like
+> everything else; the long-term memory becomes the daily rollup, to be built when the
+> observed-listing count approaches ~500.
+>
+> `scrape_runs` deliberately stays indefinite even though its rows outlive the offers they
+> describe. It is one row per scrape rather than one per seller, and it is the **coverage
+> denominator**: without it, "no sellers were observed" becomes indistinguishable from "we no
+> longer keep who they were", which is the difference between an honest report and a
+> misleading one.

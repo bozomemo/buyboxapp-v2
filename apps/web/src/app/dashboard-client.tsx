@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 
 interface MarketplaceInfo {
@@ -49,6 +50,11 @@ interface DashboardData {
   globalKillSwitchEngaged: boolean;
   marketplaces: MarketplaceInfo[];
   phaseDistribution: Record<string, number>;
+  competitorAlerts: {
+    open: number;
+    coverage: { marketplaceCode: string; displayName: string; lastOkAt: number | null; stale: boolean }[];
+    staleMarketplaces: string[];
+  };
   alerts: Alert[];
   recentDecisions: Decision[];
 }
@@ -249,9 +255,15 @@ function MarketplaceKillSwitch({
   );
 }
 
+/** Stable identity for "nothing loaded yet", so paging does not re-slice on every render. */
+const NO_ROWS: never[] = [];
+
 export function DashboardClient() {
   const [data, setData] = useState<DashboardData | undefined>();
   const [error, setError] = useState<string | undefined>();
+  // Before the early returns below: hook order has to be the same on every render.
+  const pagedAlerts = usePagedRows(data?.alerts ?? NO_ROWS, { pageSize: 25 });
+  const pagedDecisions = usePagedRows(data?.recentDecisions ?? NO_ROWS, { pageSize: 25 });
 
   function load() {
     fetch('/api/dashboard')
@@ -342,6 +354,49 @@ export function DashboardClient() {
 
       <section>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+          Rakip Alarmları
+        </h2>
+        {/* The count is never shown on its own. A zero beside a scraper that has not succeeded
+            in a day means "we have not looked", and that reads as "nothing is wrong" unless
+            the tile says so itself. */}
+        <div
+          className={`rounded border p-4 ${
+            data.competitorAlerts.staleMarketplaces.length > 0
+              ? 'border-red-400 bg-red-50'
+              : data.competitorAlerts.open > 0
+                ? 'border-amber-300 bg-amber-50'
+                : 'border-[var(--color-border)]'
+          }`}
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <div>
+              <span className="text-2xl font-bold">{formatNumber(data.competitorAlerts.open)}</span>
+              <span className="ml-2 text-sm text-[var(--color-muted)]">açık alarm</span>
+            </div>
+            <Link className="text-sm text-[var(--color-accent)] hover:underline" href="/alerts">
+              Alarmları görüntüle →
+            </Link>
+          </div>
+          <div className="mt-2 space-y-1 text-xs">
+            {data.competitorAlerts.coverage.map((c) => (
+              <div key={c.marketplaceCode} className={c.stale ? 'font-medium text-red-800' : 'text-[var(--color-muted)]'}>
+                {c.displayName}:{' '}
+                {c.lastOkAt === null
+                  ? 'son 7 günde başarılı tarama yok'
+                  : `son başarılı tarama ${formatDateTime(c.lastOkAt)}`}
+              </div>
+            ))}
+          </div>
+          {data.competitorAlerts.staleMarketplaces.length > 0 && (
+            <p className="mt-2 text-xs font-medium text-red-800">
+              Tarama verisi bayat — alarm görünmemesi &ldquo;sorun yok&rdquo; anlamına gelmez.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
           Faz Dağılımı
         </h2>
         <div className="flex gap-4">
@@ -366,8 +421,9 @@ export function DashboardClient() {
         {data.alerts.length === 0 ? (
           <p className="text-sm text-[var(--color-muted)]">Uyarı yok.</p>
         ) : (
-          <ul className="divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)]">
-            {data.alerts.map((a) => (
+          <div className="space-y-2">
+          <ul className="table-frame max-h-[50vh] divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)]">
+            {pagedAlerts.rows.map((a) => (
               <li key={a.id} className="flex items-center justify-between px-3 py-2 text-sm">
                 <div>
                   <span
@@ -395,6 +451,8 @@ export function DashboardClient() {
               </li>
             ))}
           </ul>
+          <Pagination state={pagedAlerts} label="uyarı" />
+          </div>
         )}
       </section>
 
@@ -405,9 +463,10 @@ export function DashboardClient() {
         {data.recentDecisions.length === 0 ? (
           <p className="text-sm text-[var(--color-muted)]">Henüz karar yok.</p>
         ) : (
-          <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+          <div className="space-y-2">
+          <TableFrame maxHeight="60vh">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase text-[var(--color-muted)]">
+              <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
                 <tr>
                   <th className="px-3 py-2">Ürün</th>
                   <th className="px-3 py-2">Eski → Yeni</th>
@@ -417,7 +476,7 @@ export function DashboardClient() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
-                {data.recentDecisions.map((d) => (
+                {pagedDecisions.rows.map((d) => (
                   <tr key={d.id}>
                     <td className="px-3 py-2">
                       <Link
@@ -437,6 +496,8 @@ export function DashboardClient() {
                 ))}
               </tbody>
             </table>
+          </TableFrame>
+          <Pagination state={pagedDecisions} label="karar" />
           </div>
         )}
       </section>

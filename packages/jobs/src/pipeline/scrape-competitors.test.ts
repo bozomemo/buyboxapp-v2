@@ -11,13 +11,14 @@ import {
   type ICompetitorSource,
   type ProductPageRef,
 } from '@buybox/adapters';
-import { competitionRepo, configRepo, eventsRepo, repricingRepo } from '@buybox/db';
+import { competitionRepo, competitorSellersRepo, configRepo, eventsRepo, repricingRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
+import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildAdapterRegistry } from '../adapter-registry.js';
 import { buildCompetitorSourceRegistry } from '../competitor-source-registry.js';
 import { FakeClock } from '../clock.js';
-import type { JobResult } from '../job.js';
+import type { JobProgress, JobResult } from '../job.js';
 import { Scheduler } from '../scheduler.js';
 import {
   createFakeAdapter,
@@ -117,6 +118,8 @@ describe('ScrapeCompetitors', () => {
     source: ICompetitorSource | undefined,
     payload: Record<string, unknown> = {},
     nowMs: number = NOW,
+    /** Taps the live progress the job reports to the Jobs screen (doc 06 §7), without the throttle. */
+    onProgress?: (progress: JobProgress) => void,
   ): Promise<JobResult> {
     const scheduler = new Scheduler({
       appDb: db.appDb,
@@ -129,7 +132,17 @@ describe('ScrapeCompetitors', () => {
     scheduler.register({
       jobName: SCRAPE_COMPETITORS_JOB,
       handler: async (ctx) => {
-        result = await scrapeCompetitors(ctx);
+        result = await scrapeCompetitors(
+          onProgress
+            ? {
+                ...ctx,
+                reportProgress: (progress) => {
+                  onProgress(progress);
+                  ctx.reportProgress(progress);
+                },
+              }
+            : ctx,
+        );
         return result;
       },
     });
@@ -171,6 +184,26 @@ describe('ScrapeCompetitors', () => {
     expect(observations[0]).toMatchObject({ rank: 1, sellerRef: 'seller-a', price: 150_000n, rating: 9.2 });
   });
 
+  it('doc 06 §7: reports which listing is in flight, before fetching it', async () => {
+    await seedListing(db.appDb, { extra: PAGE_EXTRA, baseStockCode: 'ABC-1' });
+    await seedListing(db.appDb, {
+      extra: PAGE_EXTRA,
+      baseStockCode: 'ABC-2',
+      marketplaceListingId: 'barcode-2',
+    });
+    const { source } = fakeSource(() => [offer()]);
+
+    const progress: JobProgress[] = [];
+    await run(source, {}, NOW, (p) => progress.push(p));
+
+    expect(progress).toHaveLength(2);
+    // `done` is the count *completed*, so the first report is 0 — the operator sees an empty
+    // bar with the first product named, not a bar already claiming one item done.
+    expect(progress[0]).toMatchObject({ done: 0, total: 2 });
+    expect(progress[1]).toMatchObject({ done: 1, total: 2 });
+    expect(progress.map((p) => p.currentItem)).toEqual(['ABC-1 · Widget', 'ABC-2 · Widget']);
+  });
+
   it('doc 07 §7: an unchanged seller set writes the proof-of-look row but no new observations', async () => {
     const listingId = await seedListing(db.appDb, { extra: PAGE_EXTRA });
     const { source } = fakeSource(() => [offer()]);
@@ -208,6 +241,82 @@ describe('ScrapeCompetitors', () => {
   it('hashes normalised offers, not the page, so identical sellers hash identically', () => {
     expect(hashOffers([offer()])).toBe(hashOffers([offer()]));
     expect(hashOffers([offer()])).not.toBe(hashOffers([offer({ price: Money.fromKurus(1n) })]));
+  });
+
+  // The measured churn (see `hashOffers`): stock, rating and promotion text moved on most
+  // scrapes without any competitive event, rewriting whole batches for nothing.
+  it.each([
+    ['offeredStock', { offeredStock: 99 }],
+    ['sellerRating', { sellerRating: 1.1 }],
+    ['promotionText', { promotionText: '3 Adet ve Üzeri 150 TL İndirim' }],
+    ['hasPromotion', { hasPromotion: true }],
+    ['sellerName', { sellerName: 'Satıcı A (yeni unvan)' }],
+    ['listingRef', { listingRef: 'listing-b' }],
+    ['dispatchTime', { dispatchTime: 3 }],
+  ])('does not treat a change in %s as a new seller set', (_field, override) => {
+    expect(hashOffers([offer(override)])).toBe(hashOffers([offer()]));
+  });
+
+  // The other half of the same decision: ranking is data, not churn. Every rank-only
+  // transition in the measured sample was a real buybox hand-over at an unchanged price,
+  // which is exactly what doc 06 §6's buybox-share report counts.
+  it.each([
+    ['rank', { rank: 2, isWinner: false }],
+    ['sellerRef', { sellerRef: 'seller-b' }],
+    ['price', { price: Money.fromKurus(149_900n) }],
+    ['finalPrice', { finalPrice: Money.fromKurus(149_900n) }],
+  ])('treats a change in %s as a new seller set', (_field, override) => {
+    expect(hashOffers([offer(override)])).not.toBe(hashOffers([offer()]));
+  });
+
+  it('records a buybox hand-over between two equally-priced sellers', () => {
+    const before = [offer({ rank: 1, sellerRef: 'a' }), offer({ rank: 2, sellerRef: 'b', isWinner: false })];
+    const after = [offer({ rank: 2, sellerRef: 'a', isWinner: false }), offer({ rank: 1, sellerRef: 'b' })];
+    expect(hashOffers(after)).not.toBe(hashOffers(before));
+  });
+
+  it('records seller identities, skipping the ones the payload never identified', async () => {
+    await seedListing(db.appDb, { extra: PAGE_EXTRA });
+    const { source } = fakeSource(() => [
+      offer({ rank: 1, sellerRef: 'm-1', sellerName: 'The Olympus' }),
+      offer({ rank: 2, sellerRef: 'm-2', sellerName: 'TurnaStore', isWinner: false }),
+      // No id on the page: nothing durable to record, and matching it by display name is the
+      // mistake the table exists to avoid.
+      offer({ rank: 3, sellerRef: null, sellerName: 'İsimsiz', isWinner: false }),
+    ]);
+
+    await run(source);
+
+    const sellers = await competitorSellersRepo.listCompetitorSellers(db.appDb);
+    expect(sellers.map((s) => s.sellerRef).sort()).toEqual(['m-1', 'm-2']);
+    expect(sellers.every((s) => s.marketplaceCode === 'trendyol')).toBe(true);
+    expect(sellers.find((s) => s.sellerRef === 'm-1')?.sellerName).toBe('The Olympus');
+  });
+
+  it('a failure to record seller identities never fails the scrape', async () => {
+    const listingId = await seedListing(db.appDb, { extra: PAGE_EXTRA });
+    const { source } = fakeSource(() => [offer({ sellerRef: 'm-1' })]);
+
+    // Fault injection by removing the table outright, rather than by feeding it a bad value:
+    // an over-long ref would be rejected by MySQL/Postgres but silently accepted by SQLite,
+    // which is the only dialect this file runs on — the test would then assert nothing.
+    if (db.appDb.dialect !== 'sqlite') throw new Error('this fault injection assumes the sqlite test db');
+    db.appDb.db.run(sql`DROP TABLE competitor_sellers`);
+
+    const result = await run(source);
+
+    // The scrape's own output is what matters and it is untouched.
+    expect(result).toMatchObject({ itemsOk: 1, itemsFailed: 0 });
+    expect(result.error).toBeUndefined();
+    const scrapeRun = await competitionRepo.latestScrapeRun(db.appDb, listingId);
+    expect(scrapeRun?.status).toBe('ok');
+    expect(await competitionRepo.observationsAsOf(db.appDb, listingId, NOW)).toHaveLength(1);
+
+    // Recorded, not swallowed silently: this one is a real defect, unlike a single page 404.
+    const events = await eventsRepo.listRecentEvents(db.appDb, 50);
+    expect(events.filter((e) => e.code === 'CompetitorSellerUpsertFailed').map((e) => e.level)).toEqual([
+      'warn',
+    ]);
   });
 
   it('records fetchFailed and parseFailed distinctly, and stays silent per failure', async () => {
@@ -273,6 +382,31 @@ describe('ScrapeCompetitors', () => {
     expect(result).toMatchObject({ itemsOk: 0, itemsFailed: 0 });
     const events = await eventsRepo.listRecentEvents(db.appDb, 50);
     expect(events.filter((e) => e.code === 'ScrapeSkippedNoProductPage')).toHaveLength(1);
+  });
+
+  it('scrape candidates are gated on observationEnabled, independent of repriceEnabled', async () => {
+    // Watched, but not opted into the pricing engine — must still be scraped.
+    await seedListing(db.appDb, {
+      marketplaceListingId: 'watched-only',
+      baseStockCode: '20001',
+      extra: PAGE_EXTRA,
+      repriceEnabled: false,
+      observationEnabled: true,
+    });
+    // Opted into the pricing engine, but not watched — must NOT be scraped.
+    await seedListing(db.appDb, {
+      marketplaceListingId: 'reprice-only',
+      baseStockCode: '20002',
+      extra: PAGE_EXTRA,
+      repriceEnabled: true,
+      observationEnabled: false,
+    });
+    const { source, calls } = fakeSource(() => [offer()]);
+
+    const result = await run(source);
+
+    expect(calls).toHaveLength(1);
+    expect(result.itemsTotal).toBe(1);
   });
 
   it('with no competitor source registered, reports a no-op instead of throwing', async () => {

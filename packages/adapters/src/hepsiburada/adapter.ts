@@ -137,6 +137,8 @@ export class HepsiburadaAdapter implements IMarketplaceAdapter {
   private readonly fetchFn: typeof fetch;
   private readonly rateLimiter = buildRateLimiter();
   private readonly merchantId: string;
+  /** The same id every listing path is keyed on, and the one the public listings API returns. */
+  readonly merchantRef: string;
   private readonly authHeader: string;
   private readonly userAgent: string;
   private readonly onCorrelation?: (correlation: HepsiburadaCorrelation) => void;
@@ -149,6 +151,7 @@ export class HepsiburadaAdapter implements IMarketplaceAdapter {
     this.listingBaseUrl = config.listingBaseUrl ?? hosts.listing;
     this.fetchFn = config.fetchFn ?? globalThis.fetch;
     this.merchantId = config.credentials.merchantId;
+    this.merchantRef = config.credentials.merchantId;
     this.authHeader = `Basic ${Buffer.from(`${config.credentials.username}:${config.credentials.password}`).toString('base64')}`;
     this.userAgent = config.credentials.userAgent;
     this.onCorrelation = config.onCorrelation;

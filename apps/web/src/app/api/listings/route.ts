@@ -82,6 +82,7 @@ export async function GET(request: Request) {
     isSuspended: parseTriState(params.get('isSuspended')),
     isBlacklisted: parseTriState(params.get('isBlacklisted')),
     repriceEnabled: parseTriState(params.get('repriceEnabled')),
+    observationEnabled: parseTriState(params.get('observationEnabled')),
   };
 
   const { rows, total } = await listingsRepo.queryListings(appDb, options);
@@ -115,6 +116,7 @@ export async function GET(request: Request) {
       isSuspended: r.isSuspended,
       isBlacklisted: r.isBlacklisted,
       repriceEnabled: r.repriceEnabled,
+      observationEnabled: r.observationEnabled,
       minPrice: r.minPrice?.toString() ?? null,
       maxPrice: r.maxPrice?.toString() ?? null,
       allowIncrease: r.allowIncrease,

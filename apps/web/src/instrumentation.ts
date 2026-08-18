@@ -5,13 +5,20 @@
  * (`acquireOrRenewSchedulerLock`, packages/db) guarantees only one scheduler instance is ever
  * active, even if an embedded and a standalone worker both end up running against the same
  * database.
+ *
+ * This file is bundled for both the Node.js and Edge runtimes (Next's instrumentation.js doc,
+ * "Specifying the runtime"), so it must contain no Node-only API itself — only the
+ * `NEXT_RUNTIME === 'nodejs'` guard and dynamic imports. The actual Node-only shutdown wiring
+ * lives in `instrumentation-shutdown.ts`, reached only via `import()` below.
  */
 export async function register(): Promise<void> {
   if (process.env.SINGLE_PROCESS === '1' && process.env.NEXT_RUNTIME === 'nodejs') {
     const { startWorker } = await import('@buybox/worker');
     try {
-      await startWorker();
+      const handle = await startWorker();
       console.log('[buybox] embedded worker started (SINGLE_PROCESS=1)');
+      const { registerShutdown } = await import('./instrumentation-shutdown');
+      registerShutdown(handle);
     } catch (error) {
       // Setup not finished yet (no DATABASE_URL, or schema not migrated) — this is expected on
       // a fresh install before the wizard runs. The web UI still boots so /setup is reachable.

@@ -182,13 +182,19 @@ describe('TrendyolPublicPageSource (doc 07 §7)', () => {
   function createSource(options: {
     readonly html?: string;
     readonly status?: number;
+    /** Overrides `status`: one status per call, in order; the last entry repeats past the end. */
+    readonly statuses?: readonly number[];
     readonly nowMs?: () => number;
     readonly cacheTtlMs?: number;
+    readonly retryOn403MaxAttempts?: number;
   }) {
     const calls: string[] = [];
     const fetchFn: typeof fetch = async (input) => {
       calls.push(typeof input === 'string' ? input : input.toString());
-      return htmlResponse(options.html ?? pageHtml, options.status ?? 200);
+      const status = options.statuses
+        ? (options.statuses[Math.min(calls.length - 1, options.statuses.length - 1)] ?? 200)
+        : (options.status ?? 200);
+      return htmlResponse(options.html ?? pageHtml, status);
     };
     const source = new TrendyolPublicPageSource({
       fetchFn,
@@ -199,6 +205,9 @@ describe('TrendyolPublicPageSource (doc 07 §7)', () => {
       burst: 100,
       cacheTtlMs: options.cacheTtlMs,
       nowMs: options.nowMs,
+      retryOn403MaxAttempts: options.retryOn403MaxAttempts,
+      // Retries would otherwise wait on a real timer (doc 08 §12 measurement backoff).
+      sleep: async () => {},
     });
     return { source, calls };
   }
@@ -218,6 +227,16 @@ describe('TrendyolPublicPageSource (doc 07 §7)', () => {
     expect(source.buildUrl({ url: '/dyson/v12-p-757251065', contentId: null })).toBe(
       'https://www.trendyol.com/dyson/v12-p-757251065',
     );
+  });
+
+  it('strips merchantId from a captured productUrl, keeping other query params (2026-08-17)', () => {
+    const { source } = build({});
+    expect(
+      source.buildUrl({
+        url: 'https://www.trendyol.com/abc/xyz-p-1149754544?&merchantId=722974&filterOverPriceListings=false',
+        contentId: null,
+      }),
+    ).toBe('https://www.trendyol.com/abc/xyz-p-1149754544?filterOverPriceListings=false');
   });
 
   it('fails typed, not silently, when a listing has no page reference at all', () => {
@@ -251,11 +270,31 @@ describe('TrendyolPublicPageSource (doc 07 §7)', () => {
   });
 
   it('raises fetchFailed on a non-2xx response (doc 05 §5 status)', async () => {
-    const { source } = build({ status: 503 });
+    const { source, calls } = build({ status: 503 });
     await expect(source.fetchProductOffers({ url: null, contentId: '1' })).rejects.toMatchObject({
       name: 'CompetitorSourceError',
       kind: 'fetchFailed',
+      httpStatus: 503,
     });
+    // 503 is not known to be the per-request-flaky status 403 is (2026-08-17 measurement) — no retry.
+    expect(calls).toHaveLength(1);
+  });
+
+  it('retries a 403 and returns the offers once a later attempt succeeds (2026-08-17 measurement)', async () => {
+    const { source, calls } = build({ statuses: [403, 200] });
+    const snapshot = await source.fetchProductOffers({ url: null, contentId: '1' });
+    expect(snapshot.offers).toHaveLength(5);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('gives up after the configured number of consecutive 403s', async () => {
+    const { source, calls } = build({ status: 403, retryOn403MaxAttempts: 2 });
+    await expect(source.fetchProductOffers({ url: null, contentId: '1' })).rejects.toMatchObject({
+      name: 'CompetitorSourceError',
+      kind: 'fetchFailed',
+      httpStatus: 403,
+    });
+    expect(calls).toHaveLength(2);
   });
 
   it('raises parseFailed — distinct from fetchFailed — when the page shape changed', async () => {

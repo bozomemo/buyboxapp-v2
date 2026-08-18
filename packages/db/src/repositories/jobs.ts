@@ -78,6 +78,26 @@ export async function countActiveJobs(appDb: AppDatabase, jobName: string): Prom
   });
 }
 
+/**
+ * All non-terminal (`ready` or `locked`) rows, for the Jobs screen. `listClaimedJobs` only
+ * sees `locked`, which leaves a manual "run now" invisible for the up-to-one scheduler tick
+ * between the enqueue and the claim — precisely the window in which the operator has clicked
+ * and is waiting for the UI to acknowledge it.
+ */
+export async function listActiveJobs(appDb: AppDatabase): Promise<JobQueueRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db.select().from(sqliteSchema.jobQueue).where(inArray(sqliteSchema.jobQueue.state, ['ready', 'locked'])),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.jobQueue)
+        .where(inArray(postgresSchema.jobQueue.state, ['ready', 'locked'])),
+    mysql: (db) =>
+      db.select().from(mysqlSchema.jobQueue).where(inArray(mysqlSchema.jobQueue.state, ['ready', 'locked'])),
+  }) as Promise<JobQueueRow[]>;
+}
+
 export async function getJob(appDb: AppDatabase, id: string): Promise<JobQueueRow | undefined> {
   return withDialect(appDb, {
     sqlite: async (db) =>
@@ -382,9 +402,26 @@ export async function claimNextJob(
  * worker that claimed it crashed or hung — is returned to `ready` so another worker can
  * pick it up. Bounded retries: a job already at `maxAttempts` is moved to `failed` instead.
  */
+/**
+ * doc 06 §7's run history must never show a permanently-stuck `running` row: once the heartbeat
+ * fix above is in place, a lock can only genuinely expire when the worker that held it stopped
+ * renewing it — i.e. it crashed or was killed mid-handler, before it ever reached `finish()`
+ * (`runner.ts`). That leaves the corresponding `job_runs` row stuck at `running` forever with no
+ * other code path that will ever close it. Reconciling it here, keyed by the exact
+ * `job_queue.id` (`jobRuns.jobQueueId`), is what lets this be precise even when the same job
+ * name is legitimately running concurrently for a different marketplace.
+ */
+const INTERRUPTED_ERROR = 'worker stopped responding (visibility timeout expired) — run interrupted';
+
 export async function requeueExpiredJobs(appDb: AppDatabase, nowMs: number): Promise<void> {
   await runDialect(appDb, {
     sqlite: (db) => {
+      const expiredIds = db
+        .select({ id: sqliteSchema.jobQueue.id })
+        .from(sqliteSchema.jobQueue)
+        .where(and(eq(sqliteSchema.jobQueue.state, 'locked'), lte(sqliteSchema.jobQueue.lockedUntil, nowMs)))
+        .all()
+        .map((r) => r.id);
       db.update(sqliteSchema.jobQueue)
         .set({ state: 'ready', lockedBy: null, lockedUntil: null, updatedAt: nowMs })
         .where(
@@ -403,8 +440,27 @@ export async function requeueExpiredJobs(appDb: AppDatabase, nowMs: number): Pro
         })
         .where(and(eq(sqliteSchema.jobQueue.state, 'locked'), lte(sqliteSchema.jobQueue.lockedUntil, nowMs)))
         .run();
+      if (expiredIds.length > 0) {
+        db.update(sqliteSchema.jobRuns)
+          .set({ state: 'failed', finishedAt: nowMs, error: INTERRUPTED_ERROR })
+          .where(
+            and(
+              inArray(sqliteSchema.jobRuns.jobQueueId, expiredIds),
+              eq(sqliteSchema.jobRuns.state, 'running'),
+            ),
+          )
+          .run();
+      }
     },
     postgres: async (db) => {
+      const expiredIds = (
+        await db
+          .select({ id: postgresSchema.jobQueue.id })
+          .from(postgresSchema.jobQueue)
+          .where(
+            and(eq(postgresSchema.jobQueue.state, 'locked'), lte(postgresSchema.jobQueue.lockedUntil, nowMs)),
+          )
+      ).map((r) => r.id);
       await db
         .update(postgresSchema.jobQueue)
         .set({ state: 'ready', lockedBy: null, lockedUntil: null, updatedAt: nowMs })
@@ -425,8 +481,25 @@ export async function requeueExpiredJobs(appDb: AppDatabase, nowMs: number): Pro
         .where(
           and(eq(postgresSchema.jobQueue.state, 'locked'), lte(postgresSchema.jobQueue.lockedUntil, nowMs)),
         );
+      if (expiredIds.length > 0) {
+        await db
+          .update(postgresSchema.jobRuns)
+          .set({ state: 'failed', finishedAt: nowMs, error: INTERRUPTED_ERROR })
+          .where(
+            and(
+              inArray(postgresSchema.jobRuns.jobQueueId, expiredIds),
+              eq(postgresSchema.jobRuns.state, 'running'),
+            ),
+          );
+      }
     },
     mysql: async (db) => {
+      const expiredIds = (
+        await db
+          .select({ id: mysqlSchema.jobQueue.id })
+          .from(mysqlSchema.jobQueue)
+          .where(and(eq(mysqlSchema.jobQueue.state, 'locked'), lte(mysqlSchema.jobQueue.lockedUntil, nowMs)))
+      ).map((r) => r.id);
       await db
         .update(mysqlSchema.jobQueue)
         .set({ state: 'ready', lockedBy: null, lockedUntil: null, updatedAt: nowMs })
@@ -445,7 +518,73 @@ export async function requeueExpiredJobs(appDb: AppDatabase, nowMs: number): Pro
           updatedAt: nowMs,
         })
         .where(and(eq(mysqlSchema.jobQueue.state, 'locked'), lte(mysqlSchema.jobQueue.lockedUntil, nowMs)));
+      if (expiredIds.length > 0) {
+        await db
+          .update(mysqlSchema.jobRuns)
+          .set({ state: 'failed', finishedAt: nowMs, error: INTERRUPTED_ERROR })
+          .where(
+            and(inArray(mysqlSchema.jobRuns.jobQueueId, expiredIds), eq(mysqlSchema.jobRuns.state, 'running')),
+          );
+      }
     },
+  });
+}
+
+/**
+ * Extends a still-running claim's `lockedUntil` so a handler that legitimately runs longer
+ * than the claim's original visibility timeout is not mistaken for a crashed worker and
+ * requeued out from under itself. Without this, `requeueExpiredJobs` returns a row to `ready`
+ * purely on wall-clock expiry with no way to know the original claimant is still working it —
+ * a second worker then claims and runs the *same* job concurrently. For `ScrapeCompetitors`
+ * (doc 07 §7) this is not just wasted work: two overlapping sweeps hit the same public pages
+ * at once, which is exactly the "aggressive" traffic pattern api-references §1.6 warns risks a
+ * block. Only renews while the row is still `locked` and owned by `workerId` — a row already
+ * reclaimed by someone else (or finished) is left alone, so a heartbeat that fires just after
+ * the visibility timeout already lapsed cannot resurrect a lock that has moved on.
+ */
+export async function renewJobLock(
+  appDb: AppDatabase,
+  id: string,
+  workerId: string,
+  nowMs: number,
+  visibilityTimeoutMs: number,
+): Promise<void> {
+  const lockedUntil = nowMs + visibilityTimeoutMs;
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .update(sqliteSchema.jobQueue)
+        .set({ lockedUntil, updatedAt: nowMs })
+        .where(
+          and(
+            eq(sqliteSchema.jobQueue.id, id),
+            eq(sqliteSchema.jobQueue.state, 'locked'),
+            eq(sqliteSchema.jobQueue.lockedBy, workerId),
+          ),
+        )
+        .run(),
+    postgres: (db) =>
+      db
+        .update(postgresSchema.jobQueue)
+        .set({ lockedUntil, updatedAt: nowMs })
+        .where(
+          and(
+            eq(postgresSchema.jobQueue.id, id),
+            eq(postgresSchema.jobQueue.state, 'locked'),
+            eq(postgresSchema.jobQueue.lockedBy, workerId),
+          ),
+        ),
+    mysql: (db) =>
+      db
+        .update(mysqlSchema.jobQueue)
+        .set({ lockedUntil, updatedAt: nowMs })
+        .where(
+          and(
+            eq(mysqlSchema.jobQueue.id, id),
+            eq(mysqlSchema.jobQueue.state, 'locked'),
+            eq(mysqlSchema.jobQueue.lockedBy, workerId),
+          ),
+        ),
   });
 }
 
@@ -623,6 +762,15 @@ export interface JobRunRow {
   readonly itemsFailed: number;
   readonly error: string | null;
   readonly correlationId: string;
+  /** The `job_queue.id` this run executes, so an expired claim can close out exactly this row. */
+  readonly jobQueueId: string | null;
+  /**
+   * Live progress (doc 06 §7's run detail panel). Optional on the way *in* — `startJobRun`
+   * relies on the column defaults — but always present on rows read back.
+   */
+  readonly itemsDone?: number;
+  readonly currentItem?: string | null;
+  readonly progressAt?: number | null;
 }
 
 export async function startJobRun(appDb: AppDatabase, row: JobRunRow): Promise<void> {
@@ -643,6 +791,9 @@ export async function finishJobRun(
     itemsOk: number;
     itemsFailed: number;
     error: string | null;
+    itemsDone?: number;
+    currentItem?: string | null;
+    progressAt?: number | null;
   },
 ): Promise<void> {
   await runDialect(appDb, {
@@ -650,6 +801,55 @@ export async function finishJobRun(
     postgres: (db) => db.update(postgresSchema.jobRuns).set(set).where(eq(postgresSchema.jobRuns.id, id)),
     mysql: (db) => db.update(mysqlSchema.jobRuns).set(set).where(eq(mysqlSchema.jobRuns.id, id)),
   });
+}
+
+/**
+ * Heartbeats a running job's progress so the Jobs screen can watch it from the *other*
+ * process (doc 06 §7). Deliberately a bare `UPDATE` of three columns and nothing else: it
+ * fires repeatedly mid-run, so it must never touch `state`, the item counters that
+ * `finishJobRun` settles, or the error — a progress write racing the finish write would
+ * otherwise be able to resurrect a completed run as running.
+ */
+export async function updateJobRunProgress(
+  appDb: AppDatabase,
+  id: string,
+  progress: { itemsDone: number; itemsTotal: number; currentItem: string | null; progressAt: number },
+): Promise<void> {
+  const set = {
+    itemsDone: progress.itemsDone,
+    itemsTotal: progress.itemsTotal,
+    currentItem: progress.currentItem,
+    progressAt: progress.progressAt,
+  };
+  await runDialect(appDb, {
+    sqlite: (db) => db.update(sqliteSchema.jobRuns).set(set).where(eq(sqliteSchema.jobRuns.id, id)),
+    postgres: (db) => db.update(postgresSchema.jobRuns).set(set).where(eq(postgresSchema.jobRuns.id, id)),
+    mysql: (db) => db.update(mysqlSchema.jobRuns).set(set).where(eq(mysqlSchema.jobRuns.id, id)),
+  });
+}
+
+/** One run by id — the detail panel's poll target once the UI knows which run it is watching. */
+export async function getJobRun(appDb: AppDatabase, id: string): Promise<JobRunRow | undefined> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => db.select().from(sqliteSchema.jobRuns).where(eq(sqliteSchema.jobRuns.id, id)).limit(1),
+    postgres: (db) =>
+      db.select().from(postgresSchema.jobRuns).where(eq(postgresSchema.jobRuns.id, id)).limit(1),
+    mysql: (db) => db.select().from(mysqlSchema.jobRuns).where(eq(mysqlSchema.jobRuns.id, id)).limit(1),
+  })) as JobRunRow[];
+  return rows[0];
+}
+
+/**
+ * Every run currently in `running` state. This is what makes the Run button's disabled state
+ * survive a page refresh and cover cadence-triggered runs, not just ones this browser started.
+ */
+export async function listRunningJobRuns(appDb: AppDatabase): Promise<JobRunRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) => db.select().from(sqliteSchema.jobRuns).where(eq(sqliteSchema.jobRuns.state, 'running')),
+    postgres: (db) =>
+      db.select().from(postgresSchema.jobRuns).where(eq(postgresSchema.jobRuns.state, 'running')),
+    mysql: (db) => db.select().from(mysqlSchema.jobRuns).where(eq(mysqlSchema.jobRuns.state, 'running')),
+  }) as Promise<JobRunRow[]>;
 }
 
 export interface JobRunFilters {

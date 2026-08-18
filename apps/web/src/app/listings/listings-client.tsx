@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { DEFAULT_PAGE_SIZE, Pagination, STICKY_HEAD, TableFrame } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 
 interface Row {
@@ -20,6 +21,7 @@ interface Row {
   isSuspended: boolean;
   isBlacklisted: boolean;
   repriceEnabled: boolean;
+  observationEnabled: boolean;
   minPrice: string | null;
   maxPrice: string | null;
   allowIncrease: boolean;
@@ -35,7 +37,6 @@ interface Row {
 }
 
 const PHASES = ['SEEKING', 'CLIMBING', 'REFINING', 'OPTIMUM', 'BLOCKED'] as const;
-const PAGE_SIZE = 50;
 
 interface Filters {
   marketplaceCode: string;
@@ -44,6 +45,7 @@ interface Filters {
   isSalable?: boolean;
   isLocked?: boolean;
   repriceEnabled?: boolean;
+  observationEnabled?: boolean;
 }
 
 /** Row highlighting (doc 06 §4.2). */
@@ -221,6 +223,7 @@ export function ListingsClient() {
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [filters, setFilters] = useState<Filters>({ marketplaceCode: '', phases: [], text: '' });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -234,8 +237,11 @@ export function ListingsClient() {
     if (filters.isSalable !== undefined) params.set('isSalable', String(filters.isSalable));
     if (filters.isLocked !== undefined) params.set('isLocked', String(filters.isLocked));
     if (filters.repriceEnabled !== undefined) params.set('repriceEnabled', String(filters.repriceEnabled));
-    params.set('limit', String(PAGE_SIZE));
-    params.set('offset', String(page * PAGE_SIZE));
+    if (filters.observationEnabled !== undefined) {
+      params.set('observationEnabled', String(filters.observationEnabled));
+    }
+    params.set('limit', String(pageSize));
+    params.set('offset', String(page * pageSize));
     fetch(`/api/listings?${params.toString()}`)
       .then((r) => r.json())
       .then((d: { rows: Row[]; total: number }) => {
@@ -245,7 +251,7 @@ export function ListingsClient() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, [filters, page]);
+  useEffect(load, [filters, page, pageSize]);
 
   function togglePhase(phase: string) {
     setPage(0);
@@ -264,7 +270,14 @@ export function ListingsClient() {
     });
   }
 
-  async function bulkAction(action: 'enableAutomation' | 'disableAutomation' | 'forceReoptimize') {
+  async function bulkAction(
+    action:
+      | 'enableAutomation'
+      | 'disableAutomation'
+      | 'enableObservation'
+      | 'disableObservation'
+      | 'forceReoptimize',
+  ) {
     if (selected.size === 0) return;
     if (!confirm(`${selected.size} ilan için bu işlem uygulanacak. Onaylıyor musunuz?`)) return;
     await fetch('/api/listings/bulk', {
@@ -275,8 +288,6 @@ export function ListingsClient() {
     setSelected(new Set());
     load();
   }
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-4">
@@ -349,6 +360,14 @@ export function ListingsClient() {
             setFilters((f) => ({ ...f, repriceEnabled: v }));
           }}
         />
+        <TriState
+          label="Gözlem"
+          value={filters.observationEnabled}
+          onChange={(v) => {
+            setPage(0);
+            setFilters((f) => ({ ...f, observationEnabled: v }));
+          }}
+        />
       </div>
 
       {selected.size > 0 && (
@@ -370,6 +389,20 @@ export function ListingsClient() {
           </button>
           <button
             type="button"
+            onClick={() => void bulkAction('enableObservation')}
+            className="rounded border px-2 py-1"
+          >
+            Gözlemi Aç
+          </button>
+          <button
+            type="button"
+            onClick={() => void bulkAction('disableObservation')}
+            className="rounded border px-2 py-1"
+          >
+            Gözlemi Kapat
+          </button>
+          <button
+            type="button"
             onClick={() => void bulkAction('forceReoptimize')}
             className="rounded border px-2 py-1"
           >
@@ -378,9 +411,9 @@ export function ListingsClient() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+      <TableFrame>
         <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-left uppercase text-[var(--color-muted)]">
+          <thead className={`${STICKY_HEAD} bg-slate-50 text-left uppercase text-[var(--color-muted)]`}>
             <tr>
               <th className="px-2 py-2">
                 <input
@@ -400,6 +433,7 @@ export function ListingsClient() {
               <th className="px-2 py-2">Satış Stok</th>
               <th className="px-2 py-2">Min/Max</th>
               <th className="px-2 py-2">Oto BB</th>
+              <th className="px-2 py-2">Gözlem</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
@@ -446,43 +480,38 @@ export function ListingsClient() {
                     }}
                   />
                 </td>
+                <td className="px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={row.observationEnabled}
+                    onChange={(e) => {
+                      void fetch('/api/listings/bulk', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          action: e.target.checked ? 'enableObservation' : 'disableObservation',
+                          ids: [row.id],
+                        }),
+                      }).then(load);
+                    }}
+                  />
+                </td>
               </tr>
             ))}
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={12} className="px-2 py-6 text-center text-[var(--color-muted)]">
+                <td colSpan={13} className="px-2 py-6 text-center text-[var(--color-muted)]">
                   Filtreyle eşleşen ilan yok.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-      </div>
+      </TableFrame>
 
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-[var(--color-muted)]">
-          {formatNumber(total)} ilan — sayfa {page + 1}/{totalPages}, son görülme:{' '}
-          {formatDateTime(rows[0]?.lastSeenAt)}
-        </span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={page === 0}
-            onClick={() => setPage((p) => p - 1)}
-            className="rounded border px-3 py-1 disabled:opacity-50"
-          >
-            Önceki
-          </button>
-          <button
-            type="button"
-            disabled={page + 1 >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-            className="rounded border px-3 py-1 disabled:opacity-50"
-          >
-            Sonraki
-          </button>
-        </div>
-      </div>
+      <Pagination state={{ page, pageSize, total, setPage, setPageSize }} label="ilan">
+        {rows.length > 0 && <> — son görülme: {formatDateTime(rows[0]?.lastSeenAt)}</>}
+      </Pagination>
     </div>
   );
 }

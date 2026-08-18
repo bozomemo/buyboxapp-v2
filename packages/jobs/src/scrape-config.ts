@@ -33,3 +33,30 @@ export const SCRAPE_FAILURE_RATE_MIN_SAMPLE = 10;
  * it would re-probe a converged listing against a competitor who has since left).
  */
 export const SELLER_IDENTITY_MAX_AGE_MS = 48 * 60 * 60_000;
+
+/**
+ * How long a marketplace's competitor data may go without a **successful** scrape before the
+ * alert surface says so (doc 06 §6.2, doc 12 Phase 10C).
+ *
+ * This exists because the most likely failure of an alerting system is not a false alarm but a
+ * silent one: the scraper is off, blocked or crashed, the dashboard shows zero open alerts, and
+ * that reads as good news. The live archive made the point — 128 consecutive failures in a
+ * single hour, and a 52% failure rate overall before Playwright landed.
+ *
+ * Measured from `scrape_runs.status = 'ok'` only. A job failing every hour is not fresh data.
+ */
+export const ALERT_STALE_AFTER_MS = 24 * 60 * 60_000;
+
+/**
+ * Default silence window for a newly created alert rule (doc 08).
+ *
+ * Applies only to **re-opening**: once an alert resolves, the same condition on the same
+ * listing will not open a fresh alert until this has passed. It does not suppress an alert
+ * that is still open, and it never suppresses the first one.
+ *
+ * Six hours is a compromise the operator can override per rule. Zero would let a competitor
+ * oscillating around a threshold generate a new alert row on every scrape cycle — hourly on a
+ * hot listing — and bury the alerts that matter. Much longer, and a genuine second incursion
+ * the day after the first would go unrecorded.
+ */
+export const ALERT_DEFAULT_QUIET_PERIOD_MS = 6 * 60 * 60_000;

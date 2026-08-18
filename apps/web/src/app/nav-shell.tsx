@@ -9,6 +9,8 @@ const NAV_ITEMS: { href: string; label: string }[] = [
   { href: '/stock', label: 'Stok' },
   { href: '/listings', label: 'İlanlar' },
   { href: '/competitors', label: 'Rakip Geçmişi' },
+  { href: '/competitors/sellers', label: 'Rakip Satıcılar' },
+  { href: '/alerts', label: 'Alarmlar' },
   { href: '/jobs', label: 'İşler' },
   { href: '/events', label: 'Olaylar' },
   { href: '/settings', label: 'Ayarlar' },
@@ -93,6 +95,14 @@ function SystemPauseButton() {
 export function NavShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isSetup = pathname?.startsWith('/setup');
+  // Longest prefix wins, rather than every prefix matching. `/competitors/sellers` is a child
+  // path of `/competitors`, so a plain `startsWith` per item lights up both rows at once and
+  // the sidebar stops telling you where you are.
+  const activeHref =
+    pathname === '/'
+      ? '/'
+      : NAV_ITEMS.filter((item) => item.href !== '/' && pathname?.startsWith(item.href))
+          .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   if (isSetup) {
     // The wizard is a full-bleed flow, not embedded in the operator's working shell.
@@ -105,7 +115,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
         <div className="mb-6 text-lg font-bold">BuyBoxApp</div>
         <nav className="flex flex-col gap-1">
           {NAV_ITEMS.map((item) => {
-            const active = item.href === '/' ? pathname === '/' : pathname?.startsWith(item.href);
+            const active = item.href === activeHref;
             return (
               <Link
                 key={item.href}

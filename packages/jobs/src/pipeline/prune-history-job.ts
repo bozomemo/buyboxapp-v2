@@ -11,6 +11,12 @@ export const PRUNE_HISTORY_JOB = 'PruneHistory';
 const RetentionWindowsSchema = z.object({
   priceSubmissionsDays: z.number().int().min(1),
   buyboxObservationsDays: z.number().int().min(1),
+  // Defaulted, not required, unlike its neighbours: this window was added after installs were
+  // already storing a `retention.windows` setting, and a stored object written before it
+  // existed must keep parsing. Without the default such a payload fails validation and the
+  // nightly prune stops running altogether — every window silently unenforced, which is a far
+  // worse outcome than one window falling back to its documented default.
+  competitorObservationsDays: z.number().int().min(1).default(90),
   appEventsInfoDebugDays: z.number().int().min(1),
   appEventsWarnErrorDays: z.number().int().min(1),
   jobRunsDays: z.number().int().min(1),

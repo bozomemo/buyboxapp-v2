@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 
 const PHASE_LABELS: Record<string, string> = {
@@ -154,6 +155,9 @@ function PriceSparkline({
   );
 }
 
+/** Stable identity for "the detail has not arrived yet". */
+const NO_ROWS: never[] = [];
+
 export function ListingDetailClient({ id }: { id: string }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | undefined>();
@@ -161,6 +165,8 @@ export function ListingDetailClient({ id }: { id: string }) {
   const [minInput, setMinInput] = useState('');
   const [maxInput, setMaxInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const pagedOffers = usePagedRows(detail?.competition.offers ?? NO_ROWS, { pageSize: 25 });
+  const pagedHistory = usePagedRows(detail?.history ?? NO_ROWS, { pageSize: 25 });
 
   function load() {
     fetch(`/api/listings/${id}`)
@@ -351,9 +357,9 @@ export function ListingDetailClient({ id }: { id: string }) {
           </p>
         )}
         <PriceSparkline history={competition.priceHistory} ourPrice={listing.price} />
-        <div className="mt-3 overflow-x-auto">
+        <TableFrame className="mt-3" maxHeight="50vh">
           <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-left uppercase text-[var(--color-muted)]">
+            <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
               <tr>
                 <th className="px-2 py-1">Sıra</th>
                 <th className="px-2 py-1">Satıcı</th>
@@ -365,7 +371,7 @@ export function ListingDetailClient({ id }: { id: string }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
-              {competition.offers.map((o, i) => (
+              {pagedOffers.rows.map((o, i) => (
                 <tr key={i}>
                   <td className="px-2 py-1">{o.rank}</td>
                   <td className="px-2 py-1">{o.sellerName}</td>
@@ -385,6 +391,9 @@ export function ListingDetailClient({ id }: { id: string }) {
               )}
             </tbody>
           </table>
+        </TableFrame>
+        <div className="mt-2">
+          <Pagination state={pagedOffers} label="teklif" />
         </div>
       </section>
 
@@ -491,9 +500,9 @@ export function ListingDetailClient({ id }: { id: string }) {
       {/* History */}
       <section className="rounded border border-[var(--color-border)] p-4">
         <h2 className="mb-3 text-lg font-medium">Fiyat Geçmişi</h2>
-        <div className="overflow-x-auto">
+        <TableFrame maxHeight="50vh">
           <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-left uppercase text-[var(--color-muted)]">
+            <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
               <tr>
                 <th className="px-2 py-1">Karar Zamanı</th>
                 <th className="px-2 py-1">Eski → Yeni</th>
@@ -506,7 +515,7 @@ export function ListingDetailClient({ id }: { id: string }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
-              {history.map((h) => (
+              {pagedHistory.rows.map((h) => (
                 <tr key={h.id}>
                   <td className="px-2 py-1">{formatDateTime(h.decidedAt)}</td>
                   <td className="px-2 py-1">
@@ -533,6 +542,9 @@ export function ListingDetailClient({ id }: { id: string }) {
               )}
             </tbody>
           </table>
+        </TableFrame>
+        <div className="mt-2">
+          <Pagination state={pagedHistory} label="karar" />
         </div>
       </section>
     </div>

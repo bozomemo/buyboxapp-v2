@@ -25,7 +25,6 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     code: 'trendyol' | 'hepsiburada';
     enabled: boolean;
-    merchantRef: string;
     credentials?: Record<string, string>;
   };
   const appDb = getAppDb();
@@ -36,7 +35,11 @@ export async function POST(request: Request) {
     code: body.code,
     displayName: TITLES[body.code] ?? body.code,
     enabled: body.enabled,
-    merchantRef: body.merchantRef || null,
+    // Never taken from the request. Our own seller id is derived from the credentials the
+    // adapter authenticates with and refreshed by `ImportListings` (doc 05 §3): accepting it
+    // here would reopen the drift this screen used to cause, where a hand-typed value silently
+    // disabled every own-offer filter downstream.
+    merchantRef: previous?.merchantRef ?? null,
     createdAt: previous?.createdAt ?? nowMs,
     updatedAt: nowMs,
   });
@@ -45,20 +48,25 @@ export async function POST(request: Request) {
     id: newId(),
     entity: 'marketplaces',
     entityId: body.code,
-    field: 'enabled,merchantRef',
-    oldValue: previous
-      ? JSON.stringify({ enabled: previous.enabled, merchantRef: previous.merchantRef })
-      : null,
-    newValue: JSON.stringify({ enabled: body.enabled, merchantRef: body.merchantRef || null }),
+    field: 'enabled',
+    oldValue: previous ? JSON.stringify({ enabled: previous.enabled }) : null,
+    newValue: JSON.stringify({ enabled: body.enabled }),
     changedBy: 'operator',
     changedAt: nowMs,
   });
 
   // Credentials never touch the app database (CLAUDE.md hard rule) — secret store only, and
-  // only rewritten when the operator actually entered something (an empty submit keeps the
-  // existing secret rather than blanking it).
-  if (body.credentials && Object.values(body.credentials).some((v) => v)) {
-    await getSecretStore().set(marketplaceCredentialsKey(body.code), JSON.stringify(body.credentials));
+  // only rewritten when the operator actually entered something. Merged field-by-field with
+  // whatever is already stored: an empty field (e.g. leaving password blank while only
+  // switching environment) must keep its existing value, not blank it — a blind overwrite of
+  // the whole blob would silently destroy credentials nobody meant to touch.
+  const changedEntries = Object.entries(body.credentials ?? {}).filter(([, v]) => v);
+  if (changedEntries.length > 0) {
+    const secretStore = getSecretStore();
+    const existingRaw = await secretStore.get(marketplaceCredentialsKey(body.code));
+    const existing = existingRaw ? (JSON.parse(existingRaw) as Record<string, string>) : {};
+    const merged = { ...existing, ...Object.fromEntries(changedEntries) };
+    await secretStore.set(marketplaceCredentialsKey(body.code), JSON.stringify(merged));
   }
 
   return NextResponse.json({ ok: true });

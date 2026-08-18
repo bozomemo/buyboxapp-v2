@@ -121,6 +121,7 @@ export interface SeedListingOptions {
   readonly price?: bigint;
   readonly unitCost?: bigint;
   readonly repriceEnabled?: boolean;
+  readonly observationEnabled?: boolean;
   /** `listings.extra` JSON — carries the public product-page ref the scrape job reads. */
   readonly extra?: string | null;
 }
@@ -181,6 +182,7 @@ export async function seedListing(appDb: AppDatabase, options: SeedListingOption
     allowIncrease: true,
     allowDecrease: true,
     repriceEnabled: options.repriceEnabled ?? true,
+    observationEnabled: options.observationEnabled ?? true,
     extra: options.extra ?? null,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
@@ -203,6 +205,9 @@ export function createFakeAdapter(overrides: Partial<IMarketplaceAdapter> = {}):
   return {
     code: 'trendyol' as MarketplaceCode,
     capabilities,
+    // Matches `seedMarketplace`'s `merchant_ref`, so a fake adapter and a seeded marketplace
+    // agree on which offers are ours without every test having to say so.
+    merchantRef: 'merchant-1',
     async testConnection() {
       return { ok: true, detail: 'fake' };
     },

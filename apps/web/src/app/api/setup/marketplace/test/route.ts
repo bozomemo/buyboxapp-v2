@@ -3,6 +3,7 @@ import {
   HepsiburadaAdapter,
   HepsiburadaCredentialsSchema,
   TrendyolAdapter,
+  TRENDYOL_STAGE_BASE_URL,
   type Credentials,
 } from '@buybox/adapters';
 
@@ -21,6 +22,9 @@ export async function POST(request: Request) {
           sellerId: body.credentials.sellerId ?? '',
           userAgentSuffix: body.credentials.userAgentSuffix || 'SelfIntegration',
         },
+        // Stage is the same host swap the worker's buildAdapter applies (api-references §1.1);
+        // `environment` rides along in the credentials blob, same as Hepsiburada below.
+        baseUrl: body.credentials.environment === 'stage' ? TRENDYOL_STAGE_BASE_URL : undefined,
       });
       const result = await adapter.testConnection(body.credentials as unknown as Credentials);
       return NextResponse.json({
@@ -40,7 +44,10 @@ export async function POST(request: Request) {
         message: `Eksik veya geçersiz alan: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`,
       });
     }
-    const adapter = new HepsiburadaAdapter({ credentials: parsed.data, environment: 'production' });
+    const adapter = new HepsiburadaAdapter({
+      credentials: parsed.data,
+      environment: body.credentials.environment === 'sit' ? 'sit' : 'production',
+    });
     const result = await adapter.testConnection(parsed.data as unknown as Credentials);
     return NextResponse.json({ ok: result.ok, message: result.ok ? 'Bağlantı başarılı.' : result.error });
   } catch (error) {

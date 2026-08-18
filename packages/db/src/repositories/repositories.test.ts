@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AppDatabase } from '../client.js';
 import { newId } from '../id.js';
 import { ALL_DIALECTS, createTestDb, type TestDb } from '../test-helpers.js';
+import * as alertsRepo from './alerts.js';
 import * as circuitBreakerRepo from './circuit-breaker.js';
 import * as competitionRepo from './competition.js';
+import * as competitorReportsRepo from './competitor-reports.js';
+import * as competitorSellersRepo from './competitor-sellers.js';
 import * as configRepo from './config.js';
 import * as eventsRepo from './events.js';
 import * as jobsRepo from './jobs.js';
@@ -69,6 +72,7 @@ async function seed(
     allowIncrease: true,
     allowDecrease: true,
     repriceEnabled: true,
+    observationEnabled: true,
     extra: null,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
@@ -336,6 +340,7 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
       allowIncrease: true,
       allowDecrease: true,
       repriceEnabled: false,
+      observationEnabled: false,
       extra: null,
       firstSeenAt: NOW,
       lastSeenAt: NOW + 1,
@@ -589,7 +594,7 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
   it('competition: bounded reporting fetches for competitor-history (doc 06 §6, doc 12 6.8)', async () => {
     testDb = await createTestDb(dialect);
     const { appDb } = testDb;
-    const { marketplaceCode, listingId } = await seed(appDb);
+    const { marketplaceCode, baseStockCode, listingId } = await seed(appDb);
 
     await competitionRepo.insertBuyboxObservation(appDb, {
       id: newId(),
@@ -699,6 +704,24 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     expect(onlySeller1).toHaveLength(1);
     expect(onlySeller1[0]?.sellerName).toBe('Farmaucuz');
 
+    // baseStockCode narrows in SQL, not after the fetch. Applied afterwards it would be
+    // filtering whatever slice of the archive fit under the row cap, which on a large
+    // catalogue silently answers a stock-code question from unrelated rows.
+    expect(
+      await competitionRepo.competitorObservationsInRange(appDb, {
+        sinceMs: NOW - 1000,
+        untilMs: NOW + 7200_000,
+        baseStockCode,
+      }),
+    ).toHaveLength(2);
+    expect(
+      await competitionRepo.competitorObservationsInRange(appDb, {
+        sinceMs: NOW - 1000,
+        untilMs: NOW + 7200_000,
+        baseStockCode: 'no-such-stock-code',
+      }),
+    ).toEqual([]);
+
     // A second *changed* batch, later, with a different seller set (seller-2 dropped out,
     // seller-3 appeared). `observationsAsOf` at "now" must return only this latest batch —
     // not the union of every changed batch ever written (the bug the listing detail page's
@@ -762,6 +785,417 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     });
     expect(runs).toHaveLength(3); // run1, run2 (fetch-failed), run3
     expect(runs.find((r) => r.id === run2)?.status).toBe('fetchFailed'); // observation-coverage gap
+  }, 30_000);
+
+  it('competitor sellers: durable identity, operator-owned grouping, cross-marketplace expansion', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    const { marketplaceCode } = await seed(appDb);
+
+    const hbCode = 'HB';
+    await configRepo.upsertMarketplace(appDb, {
+      code: hbCode,
+      displayName: 'Hepsiburada',
+      enabled: true,
+      merchantRef: 'merchant-2',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    // One scrape's worth of sightings, including the same merchant twice — one offer set can
+    // list a merchant once per variant, and the unique key would reject the batch untouched.
+    await competitorSellersRepo.recordSeenSellers(appDb, [
+      { id: newId(), marketplaceCode, sellerRef: 'm-1', sellerName: 'The Olympus', seenAt: NOW },
+      { id: newId(), marketplaceCode, sellerRef: 'm-1', sellerName: 'The Olympus', seenAt: NOW },
+      { id: newId(), marketplaceCode, sellerRef: 'm-2', sellerName: 'TurnaStore', seenAt: NOW },
+    ]);
+    const afterFirst = await competitorSellersRepo.listCompetitorSellers(appDb, { marketplaceCode });
+    expect(afterFirst).toHaveLength(2);
+
+    const olympus = afterFirst.find((s) => s.sellerRef === 'm-1')!;
+    await competitorSellersRepo.setSellerNote(appDb, olympus.id, 'ana rakip');
+
+    const group = { id: newId(), displayName: 'Olympus Grup', note: null, createdAt: NOW, updatedAt: NOW };
+    await competitorSellersRepo.upsertSellerGroup(appDb, group);
+    await competitorSellersRepo.setSellerGroup(appDb, olympus.id, group.id);
+
+    // A later scrape sees the same merchant under a new trading name. The name follows, but
+    // the operator's grouping and note must survive — they are the one thing here no automatic
+    // process can reconstruct — and `first_seen_at` must not drift forward.
+    await competitorSellersRepo.recordSeenSellers(appDb, [
+      {
+        id: newId(),
+        marketplaceCode,
+        sellerRef: 'm-1',
+        sellerName: 'The Olympus Mağaza',
+        seenAt: NOW + 3600_000,
+      },
+    ]);
+    const renamed = (await competitorSellersRepo.getCompetitorSeller(appDb, marketplaceCode, 'm-1'))!;
+    expect(renamed.sellerName).toBe('The Olympus Mağaza');
+    expect(renamed.firstSeenAt).toBe(NOW);
+    expect(renamed.lastSeenAt).toBe(NOW + 3600_000);
+    expect(renamed.groupId).toBe(group.id);
+    expect(renamed.operatorNote).toBe('ana rakip');
+
+    // An out-of-order sighting (a retried older cycle landing after a newer one) must not drag
+    // "last seen" backwards.
+    await competitorSellersRepo.recordSeenSellers(appDb, [
+      { id: newId(), marketplaceCode, sellerRef: 'm-1', sellerName: 'Eski Ad', seenAt: NOW - 3600_000 },
+    ]);
+    expect((await competitorSellersRepo.getCompetitorSeller(appDb, marketplaceCode, 'm-1'))?.lastSeenAt).toBe(
+      NOW + 3600_000,
+    );
+
+    // The same company on the other marketplace, linked by hand into the same group. Ids live
+    // in per-marketplace namespaces, so this link is the only thing that makes them one.
+    await competitorSellersRepo.recordSeenSellers(appDb, [
+      { id: newId(), marketplaceCode: hbCode, sellerRef: 'm-1', sellerName: 'Olympus HB', seenAt: NOW },
+    ]);
+    const hbSeller = (await competitorSellersRepo.getCompetitorSeller(appDb, hbCode, 'm-1'))!;
+    expect(hbSeller.groupId).toBeNull(); // never inferred from the matching ref or a similar name
+    await competitorSellersRepo.setSellerGroup(appDb, hbSeller.id, group.id);
+
+    const expanded = await competitorSellersRepo.expandSellerGroup(appDb, marketplaceCode, 'm-1');
+    expect(expanded.map((e) => `${e.marketplaceCode}:${e.sellerRef}`).sort()).toEqual([
+      'HB:m-1',
+      'TY:m-1',
+    ]);
+    // An ungrouped seller expands to itself, so callers need no special case.
+    expect(await competitorSellersRepo.expandSellerGroup(appDb, marketplaceCode, 'm-2')).toEqual([
+      { marketplaceCode, sellerRef: 'm-2' },
+    ]);
+
+    // Withdrawing the opinion must not erase the evidence.
+    await competitorSellersRepo.deleteSellerGroup(appDb, group.id);
+    expect((await competitorSellersRepo.getCompetitorSeller(appDb, marketplaceCode, 'm-1'))?.groupId).toBeNull();
+    expect(await competitorSellersRepo.listCompetitorSellers(appDb)).toHaveLength(3);
+  }, 30_000);
+
+  it('alerts: open/resolve lifecycle, seller children, quiet period — on every engine', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    const { listingId } = await seed(appDb);
+    const HOUR = 3600_000;
+
+    const ruleId = newId();
+    await alertsRepo.upsertAlertRule(appDb, {
+      id: ruleId,
+      name: 'Piyasa altı',
+      scopeType: 'all',
+      scopeValue: null,
+      subjectType: 'any',
+      subjectValue: null,
+      predicate: 'priceBelow',
+      thresholdType: 'fixed',
+      thresholdValue: 40_000n,
+      thresholdPct: null,
+      quietPeriodMs: 6 * HOUR,
+      enabled: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(await alertsRepo.listAlertRules(appDb, true)).toHaveLength(1);
+
+    const outcome = (matched: boolean, sellers: { ref: string; price: bigint }[]) => ({
+      ruleId,
+      alertKey: `${ruleId}::${listingId}`,
+      listingId,
+      sellerRef: null,
+      quietPeriodMs: 6 * HOUR,
+      matched,
+      thresholdApplied: 40_000n,
+      snapshot: matched
+        ? JSON.stringify({ sellers: sellers.map((x) => ({ ...x, price: x.price.toString() })) })
+        : null,
+      sellers: sellers.map((s) => ({
+        sellerRef: s.ref,
+        sellerName: `Satici ${s.ref}`,
+        observedPrice: s.price,
+        priceSource: 'price',
+        rank: 1,
+        promotionText: null,
+      })),
+    });
+
+    // Opens.
+    let result = await alertsRepo.reconcileAlerts(appDb, [outcome(true, [{ ref: 's-1', price: 39_000n }])], NOW);
+    expect(result).toMatchObject({ opened: 1, resolved: 0 });
+
+    // Still breaching, and a second seller joins: one alert, two children — not two alerts.
+    result = await alertsRepo.reconcileAlerts(
+      appDb,
+      [outcome(true, [{ ref: 's-1', price: 38_000n }, { ref: 's-2', price: 37_000n }])],
+      NOW + HOUR,
+    );
+    expect(result).toMatchObject({ opened: 0, stillOpen: 1, sellersJoined: 1 });
+
+    const open = await alertsRepo.listAlerts(appDb, 'open');
+    expect(open).toHaveLength(1);
+    expect(open[0]!.firstSeenAt).toBe(NOW);
+    expect(open[0]!.lastSeenAt).toBe(NOW + HOUR);
+    expect(open[0]!.sellers.filter((s) => s.leftAt === null)).toHaveLength(2);
+    // Money round-trips as exact kuruş on all three engines, SQLite's sortable text included.
+    expect(open[0]!.sellers.find((s) => s.sellerRef === 's-1')!.observedPrice).toBe(38_000n);
+    expect(open[0]!.thresholdApplied).toBe(40_000n);
+    expect(await alertsRepo.countOpenAlerts(appDb)).toBe(1);
+
+    // Clears: resolved, and every still-active child is stamped as departed.
+    result = await alertsRepo.reconcileAlerts(appDb, [outcome(false, [])], NOW + 2 * HOUR);
+    expect(result).toMatchObject({ resolved: 1 });
+    expect(await alertsRepo.countOpenAlerts(appDb)).toBe(0);
+    const resolved = await alertsRepo.listAlerts(appDb, 'resolved');
+    expect(resolved[0]!.resolvedAt).toBe(NOW + 2 * HOUR);
+    expect(resolved[0]!.sellers.every((s) => s.leftAt === NOW + 2 * HOUR)).toBe(true);
+
+    // Inside the quiet period a returning breach is suppressed, so a competitor oscillating
+    // around the threshold cannot reopen this every cycle.
+    result = await alertsRepo.reconcileAlerts(
+      appDb,
+      [outcome(true, [{ ref: 's-1', price: 39_000n }])],
+      NOW + 3 * HOUR,
+    );
+    expect(result).toMatchObject({ opened: 0, suppressedByQuietPeriod: 1 });
+
+    // Past it, a genuinely new episode gets its own row rather than reusing the old span.
+    result = await alertsRepo.reconcileAlerts(
+      appDb,
+      [outcome(true, [{ ref: 's-1', price: 39_000n }])],
+      NOW + 9 * HOUR,
+    );
+    expect(result).toMatchObject({ opened: 1 });
+    expect(await alertsRepo.listAlerts(appDb, 'all')).toHaveLength(2);
+
+    // Deleting the rule takes its alerts with it: an alert whose rule is gone can never be
+    // explained or resolved by anything.
+    await alertsRepo.deleteAlertRule(appDb, ruleId);
+    expect(await alertsRepo.listAlerts(appDb, 'all')).toHaveLength(0);
+  }, 30_000);
+
+  it('competitor reports: seller aggregates counted in SQL, identically on every engine', async () => {
+    testDb = await createTestDb(dialect);
+    const { appDb } = testDb;
+    const { marketplaceCode, baseStockCode, listingId } = await seed(appDb);
+
+    // A second listing, so "on how many of our products" is a real count rather than 1.
+    const listingId2 = newId();
+    await listingsRepo.upsertListing(appDb, {
+      id: listingId2,
+      marketplaceCode,
+      marketplaceListingId: 'barcode-2',
+      sellerStockCode: baseStockCode,
+      baseStockCode,
+      unitCount: 1,
+      isBundle: false,
+      productName: 'Widget II',
+      price: 3000n,
+      listPrice: null,
+      customerPrice: null,
+      offeredStock: 4,
+      commissionRate: 16,
+      vatRate: 10,
+      dispatchTime: null,
+      isSalable: true,
+      isLocked: false,
+      isSuspended: false,
+      isFrozen: false,
+      isArchived: false,
+      isBlacklisted: false,
+      lockReasons: null,
+      deactivationReasons: null,
+      minPrice: null,
+      maxPrice: null,
+      allowIncrease: true,
+      allowDecrease: true,
+      repriceEnabled: false,
+      observationEnabled: true,
+      extra: null,
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+      updatedAt: NOW,
+    });
+
+    const obs = (
+      scrapeRunId: string,
+      lid: string,
+      at: number,
+      rank: number,
+      sellerRef: string | null,
+      price: bigint,
+    ) => ({
+      id: newId(),
+      listingId: lid,
+      scrapeRunId,
+      observedAt: at,
+      rank,
+      sellerName: sellerRef === null ? 'Kimliksiz' : `Satici ${sellerRef}`,
+      sellerRef,
+      price,
+      finalPrice: null,
+      rating: null,
+      dispatchTime: null,
+      offeredStock: null,
+      hasPromotion: false,
+      promotionText: null,
+    });
+
+    // Listing 1: s-1 holds the buybox at 1900, s-2 second at 2000, plus an unidentified offer.
+    const r1 = newId();
+    await competitionRepo.recordScrapeRun(
+      appDb,
+      {
+        id: r1,
+        listingId,
+        observedAt: NOW,
+        source: 'publicPage',
+        sellerCount: 3,
+        payloadHash: 'h1',
+        status: 'ok',
+        changed: false,
+      },
+      [
+        obs(r1, listingId, NOW, 1, 's-1', 1900n),
+        obs(r1, listingId, NOW, 2, 's-2', 2000n),
+        obs(r1, listingId, NOW, 3, null, 2200n),
+      ],
+    );
+
+    // Listing 2, an hour later: the buybox changes hands to s-2; s-1 drops to rank 2 cheaper.
+    const r2 = newId();
+    await competitionRepo.recordScrapeRun(
+      appDb,
+      {
+        id: r2,
+        listingId: listingId2,
+        observedAt: NOW + 3600_000,
+        source: 'publicPage',
+        sellerCount: 2,
+        payloadHash: 'h2',
+        status: 'ok',
+        changed: false,
+      },
+      [obs(r2, listingId2, NOW + 3600_000, 1, 's-2', 2900n), obs(r2, listingId2, NOW + 3600_000, 2, 's-1', 1500n)],
+    );
+
+    // A failed look on listing 2: proof we tried, and it must not read as fresh coverage.
+    const r3 = newId();
+    await competitionRepo.recordScrapeRun(
+      appDb,
+      {
+        id: r3,
+        listingId: listingId2,
+        observedAt: NOW + 7200_000,
+        source: 'publicPage',
+        sellerCount: 0,
+        payloadHash: '',
+        status: 'fetchFailed',
+        changed: false,
+      },
+      [],
+    );
+
+    const window = { sinceMs: NOW - 1000, untilMs: NOW + 8000_000 };
+    const aggregates = await competitorReportsRepo.sellerAggregatesInRange(appDb, window);
+
+    // Only identified sellers, ordered by how much of our catalogue they overlap.
+    expect(aggregates.map((a) => a.sellerRef)).toEqual(['s-1', 's-2']);
+
+    const s1 = aggregates.find((a) => a.sellerRef === 's-1')!;
+    expect(s1.listingCount).toBe(2);
+    expect(s1.observationCount).toBe(2);
+    expect(s1.buyboxCount).toBe(1);
+    expect(s1.avgRank).toBeCloseTo(1.5, 5);
+    // Money survives as exact kuruş on all three engines, including SQLite's sortable-text
+    // encoding, where min/max run over the encoding rather than a native integer.
+    expect(s1.minPrice).toBe(1500n);
+    expect(s1.maxPrice).toBe(1900n);
+    expect(s1.firstSeenAt).toBe(NOW);
+    expect(s1.lastSeenAt).toBe(NOW + 3600_000);
+
+    const s2 = aggregates.find((a) => a.sellerRef === 's-2')!;
+    expect(s2.buyboxCount).toBe(1);
+    expect(s2.minPrice).toBe(2000n);
+    expect(s2.maxPrice).toBe(2900n);
+
+    // The blind spot is reported, not silently dropped.
+    expect(await competitorReportsRepo.countUnidentifiedObservations(appDb, window)).toBe(1);
+
+    // Passing several refs is how a seller *group* is viewed as one company.
+    const breakdown = await competitorReportsRepo.sellerListingBreakdown(appDb, window, ['s-1']);
+    expect(breakdown).toHaveLength(2);
+    const onListing1 = breakdown.find((b) => b.listingId === listingId)!;
+    expect(onListing1.productName).toBe('Widget');
+    expect(onListing1.ourPrice).toBe(2000n);
+    expect(onListing1.buyboxCount).toBe(1);
+    expect(onListing1.minPrice).toBe(1900n);
+
+    const combined = await competitorReportsRepo.sellerListingBreakdown(appDb, window, ['s-1', 's-2']);
+    expect(combined.reduce((n, b) => n + b.observationCount, 0)).toBe(4);
+
+    const coverage = await competitorReportsRepo.coverageInRange(appDb, window);
+    expect(coverage).toMatchObject({ ok: 2, fetchFailed: 1, parseFailed: 0 });
+    // Freshness comes from successful looks only: the newest run here failed, and reporting
+    // its timestamp would present a broken scraper as an up-to-date one.
+    expect(coverage.lastOkAt).toBe(NOW + 3600_000);
+
+    // The marketplace filter is a predicate in SQL, not a post-filter over a capped fetch.
+    expect(
+      await competitorReportsRepo.sellerAggregatesInRange(appDb, { ...window, marketplaceCode: 'NOPE' }),
+    ).toEqual([]);
+
+    // Our own store is in the archive on purpose — a rank is meaningless without the offers it
+    // ranks among — but a *competitor* report that counts it puts us at the top of our own
+    // overlap list on every listing we sell. Treating `s-1` as ours here:
+    const ours = [{ marketplaceCode, sellerRef: 's-1' }];
+    const competitors = await competitorReportsRepo.sellerAggregatesInRange(appDb, {
+      ...window,
+      excludeSellers: ours,
+    });
+    expect(competitors.map((a) => a.sellerRef)).toEqual(['s-2']);
+
+    // Excluded from the report, not from the archive: the observations are untouched.
+    expect(await competitorReportsRepo.countUnidentifiedObservations(appDb, window)).toBe(1);
+
+    // The mirror filter, which is how the same screen reports "and here is how *we* are doing"
+    // from the identical aggregation rather than a second, divergent one.
+    const own = await competitorReportsRepo.sellerAggregatesInRange(appDb, {
+      ...window,
+      onlySellers: ours,
+    });
+    expect(own.map((a) => a.sellerRef)).toEqual(['s-1']);
+    expect(own[0]!.listingCount).toBe(2);
+
+    // The two filters partition the sellers: nothing is counted twice and nothing is lost.
+    expect(competitors.length + own.length).toBe(aggregates.length);
+
+    // A ref is a marketplace's own id and repeats across marketplaces, so exclusion is keyed on
+    // the pair. The same ref under a different marketplace must not remove anything.
+    expect(
+      (
+        await competitorReportsRepo.sellerAggregatesInRange(appDb, {
+          ...window,
+          excludeSellers: [{ marketplaceCode: 'other-marketplace', sellerRef: 's-1' }],
+        })
+      ).map((a) => a.sellerRef),
+    ).toEqual(['s-1', 's-2']);
+
+    // "Restrict to none of them" must return nothing, not everything — the difference between
+    // an empty list and `undefined`. Getting this backwards would silently report our own
+    // stores as the entire competitor set whenever no merchant id is configured.
+    expect(
+      await competitorReportsRepo.sellerAggregatesInRange(appDb, { ...window, onlySellers: [] }),
+    ).toEqual([]);
+    expect(
+      await competitorReportsRepo.sellerAggregatesInRange(appDb, { ...window, excludeSellers: [] }),
+    ).toHaveLength(aggregates.length);
+
+    // The cross-marketplace overlap export excludes us too, on the same key.
+    const tuples = await competitorReportsRepo.productSellerTuplesInRange(appDb, {
+      ...window,
+      excludeSellers: ours,
+    });
+    expect(tuples.every((t) => t.sellerRef !== 's-1')).toBe(true);
+    expect(tuples.some((t) => t.sellerRef === 's-2')).toBe(true);
   }, 30_000);
 
   it('repricing: state, price submissions outbox + confirmation, budget usage increments', async () => {
@@ -883,6 +1317,7 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
       itemsFailed: 0,
       error: null,
       correlationId: 'corr-1',
+      jobQueueId: null,
     });
     await jobsRepo.finishJobRun(appDb, runId, {
       state: 'success',
@@ -910,6 +1345,7 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
       itemsFailed: 0,
       error: null,
       correlationId: 'corr-a',
+      jobQueueId: null,
     });
     const laterRunId = newId();
     await jobsRepo.startJobRun(appDb, {
@@ -923,6 +1359,7 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
       itemsFailed: 1,
       error: 'boom',
       correlationId: 'corr-b',
+      jobQueueId: null,
     });
     await jobsRepo.startJobRun(appDb, {
       id: newId(),
@@ -935,6 +1372,7 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
       itemsFailed: 0,
       error: null,
       correlationId: 'corr-c',
+      jobQueueId: null,
     });
 
     const allRuns = await jobsRepo.listJobRuns(appDb, {});
@@ -1105,6 +1543,7 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
       itemsFailed: 0,
       error: null,
       correlationId: 'corr-x',
+      jobQueueId: null,
     });
 
     const matchId = newId();

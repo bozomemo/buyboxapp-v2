@@ -278,6 +278,74 @@ available, not an optional one.
 
 ---
 
+## Phase 10 — Competitor intelligence and alerting
+
+> Listed here, ahead of Phase 9, because this document is ordered by **execution**, not by
+> number: Phase 9 is the never-scheduled parking lot and stays last.
+
+Specification: doc 05 §5 and §10, doc 06 §6, doc 07 §1.1, doc 08.
+
+`/competitors` already reports five things, but all of them are **listing-centric** — "who is on
+this product". This phase adds the second axis, **seller-centric** — "which of our products is
+this seller on, since when, how aggressively" — and a genuinely new capability, **alerting**.
+
+Alerting is **reporting**. It writes an outcome and can never enter a pricing decision; Phase 7's
+isolation rules apply unchanged.
+
+Sized against a 2,000-active-listing target. Storage is bounded by the scrape budget, not by
+catalogue size: `SCRAPE_MAX_LISTINGS_PER_RUN` caps fetches at 200/hour, so tiering spreads a
+larger catalogue over longer intervals rather than writing proportionally more.
+
+### 10A — Foundation
+
+| # | Task | Status |
+|---|------|--------|
+| 10A.1 | Narrow the change-detection hash to `(rank, seller_ref, price, final_price)` | ✅ |
+| 10A.2 | `competitor_sellers` + `competitor_seller_groups`, all three dialects; upsert from `ScrapeCompetitors` | ✅ |
+| 10A.3 | `competitor_observations` retention: indefinite → 90 days, operator-configurable | ✅ |
+| 10A.4 | doc 05, doc 07, api-references §1.6/§2.11 and this table | ✅ |
+
+Definition of done: identity survives a seller renaming itself; an operator's cross-marketplace
+link is never overwritten by a scrape; deleting a group unlinks members without deleting them;
+a failure to record identities cannot fail a scrape.
+
+### 10B — Seller-centric reports
+
+| # | Task | Status |
+|---|------|--------|
+| 10B.1 | Aggregate seller reports in SQL (`GROUP BY`) instead of fetching rows and counting in JS; move the `baseStockCode` filter into the repository so it is applied **before** the 20,000-row cap, not after | ✅ |
+| 10B.2 | `/competitors/sellers` and `/competitors/sellers/[marketplace]/[ref]`; cross-marketplace overlap CSV; group-linking UI | ✅ |
+| 10B.3 | Coverage badges beside every metric; time-weighted buybox share with gaps excluded from the denominator; `≥` framing on first/last seen; "listed at", never "sold at" | ✅ |
+
+Definition of done: a seller profile over any window returns a figure computed from the whole
+window, not from the first 20,000 rows of it; every metric shows the coverage it rests on.
+
+### 10C — Alerting
+
+| # | Task | Status |
+|---|------|--------|
+| 10C.1 | `alert_rules`, `alerts`, `alert_sellers` — alerts modelled as **state** (open/resolved, first/last seen, evidence snapshot), not as an append-only log | ✅ |
+| 10C.2 | Evaluation inside `ScrapeCompetitors` on the fresh snapshot, independent of whether observations were written; pure decision logic in `packages/core` | ✅ |
+| 10C.3 | `/alerts`, dashboard card, per-marketplace staleness banner | ✅ |
+
+Rule shape: scope (listing / stock code / marketplace / all) × subject (seller / seller group /
+any) × predicate (`sellerPresent` | `priceBelow`) × threshold type (`fixed` | `belowOurPrice` |
+`belowFloor` | `pctBelowOurs`). Thresholds are `bigint` kuruş — a fixed threshold is money too.
+
+Dedup key follows the rule type: a specific-seller rule keys on `(rule, listing, seller)`; an
+any-seller rule keys on `(rule, listing)` and carries the offending sellers as children, so a
+market-wide breach is one dashboard row rather than twenty.
+
+Definition of done: a rule created today fires on a product whose seller set has not changed in
+days; **zero open alerts alongside a stale scrape reads as a warning, not as good news**; turning
+the scraper off entirely leaves repricing untouched and the alert tables empty.
+
+Deferred to when observed listings approach ~500: the daily rollup table and its nightly job
+(doc 05 §10). Deferred indefinitely: SMS/e-mail/screenshot notification — the transition into
+`open` is the hook, and Playwright is already in the stack for evidence capture.
+
+---
+
 ## Phase 9 — MAY-ADD-LATER
 
 Not in scope. Recorded so they are not forgotten.

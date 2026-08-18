@@ -222,7 +222,8 @@ export function PolicyClient() {
               </p>
             )}
             {preview.sample.length > 0 && (
-              <table className="mt-3 w-full text-xs">
+              <div className="mt-3 max-h-64 overflow-auto">
+              <table className="w-full text-xs">
                 <thead className="text-left text-[var(--color-muted)]">
                   <tr>
                     <th className="py-1">Ürün</th>
@@ -242,6 +243,7 @@ export function PolicyClient() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         )}

@@ -12,7 +12,7 @@ import type { AppDatabase } from '@buybox/db';
 import { isKillSwitchEngaged, SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
 import type { Clock } from './clock.js';
-import { jobDefaultEnabled, jobEnabledSettingKey } from './job-catalog.js';
+import { isJobEnabled } from './job-catalog.js';
 import { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, type JobDefinition } from './job.js';
 import { JobRunner } from './runner.js';
 import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
@@ -51,17 +51,9 @@ export async function isSystemPaused(appDb: AppDatabase): Promise<boolean> {
   return isKillSwitchEngaged(setting?.value);
 }
 
-/**
- * doc 12 6.9 "enable/disable". An explicit stored setting always wins; with none stored the
- * job's catalogue default applies, which is `true` for everything except `ScrapeCompetitors`
- * (api-references §1.6 requires an explicit decision before any scraping happens).
- */
-export async function isJobEnabled(appDb: AppDatabase, jobName: string): Promise<boolean> {
-  const setting = await configRepo.getAppSetting(appDb, jobEnabledSettingKey(jobName));
-  if (setting?.value === 'false') return false;
-  if (setting?.value === 'true') return true;
-  return jobDefaultEnabled(jobName);
-}
+/** Re-exported for the existing public API (`@buybox/jobs`) — moved to `job-catalog.ts` so
+ *  `runner.ts` can use it too without a `scheduler.ts` ⇄ `runner.ts` import cycle. */
+export { isJobEnabled } from './job-catalog.js';
 
 export class Scheduler {
   private readonly appDb: AppDatabase;

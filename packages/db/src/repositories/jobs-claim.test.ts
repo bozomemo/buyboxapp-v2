@@ -193,3 +193,71 @@ describe.each(ALL_DIALECTS)('requeueExpiredJobs (%s)', (dialect) => {
     }
   }, 30_000);
 });
+
+describe.each(ALL_DIALECTS)('renewJobLock (%s)', (dialect) => {
+  it("extends a still-owned claim's lockedUntil, keeping it out of requeueExpiredJobs", async () => {
+    const { appDb, cleanup } = await createTestDb(dialect);
+    try {
+      const id = newId();
+      await jobsRepo.enqueueJob(appDb, {
+        id,
+        jobName: 'Job',
+        payload: '{}',
+        priority: 0,
+        state: 'locked',
+        runAfter: 0,
+        lockedBy: 'worker-a',
+        lockedUntil: 500, // would already be expired at nowMs 1000 without a heartbeat
+        attempts: 1,
+        maxAttempts: 3,
+        lastError: null,
+        createdAt: 0,
+        updatedAt: 0,
+      });
+
+      // The heartbeat a long-running handler sends before the original timeout lapses.
+      await jobsRepo.renewJobLock(appDb, id, 'worker-a', 400, 60_000);
+
+      // Without the renewal this row's lockedUntil (500) would be <= 1000 and get swept.
+      await jobsRepo.requeueExpiredJobs(appDb, 1000);
+
+      const row = await jobsRepo.getJob(appDb, id);
+      expect(row?.state).toBe('locked');
+      expect(row?.lockedBy).toBe('worker-a');
+      expect(row?.lockedUntil).toBe(400 + 60_000);
+    } finally {
+      await cleanup();
+    }
+  }, 30_000);
+
+  it('is a no-op once the row has been reclaimed by a different worker', async () => {
+    const { appDb, cleanup } = await createTestDb(dialect);
+    try {
+      const id = newId();
+      await jobsRepo.enqueueJob(appDb, {
+        id,
+        jobName: 'Job',
+        payload: '{}',
+        priority: 0,
+        state: 'locked',
+        runAfter: 0,
+        lockedBy: 'worker-b', // a second worker already reclaimed it
+        lockedUntil: 9_999,
+        attempts: 2,
+        maxAttempts: 3,
+        lastError: null,
+        createdAt: 0,
+        updatedAt: 0,
+      });
+
+      // A stale heartbeat from the original (now-superseded) claimant must not resurrect it.
+      await jobsRepo.renewJobLock(appDb, id, 'worker-a', 1000, 60_000);
+
+      const row = await jobsRepo.getJob(appDb, id);
+      expect(row?.lockedBy).toBe('worker-b');
+      expect(row?.lockedUntil).toBe(9_999);
+    } finally {
+      await cleanup();
+    }
+  }, 30_000);
+});

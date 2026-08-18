@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { formatDateTime } from '@/lib/format';
 
 interface EventRow {
@@ -42,6 +43,10 @@ export function EventsClient() {
   const [listingOptions, setListingOptions] = useState<ListingOption[]>([]);
   const [selectedListing, setSelectedListing] = useState<ListingOption | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [serverLimit, setServerLimit] = useState<number | null>(null);
+  const paged = usePagedRows(events, {
+    resetKey: [minLevel, marketplaceCode, code, sinceMs, untilMs, selectedListing?.id].join('|'),
+  });
 
   const load = () => {
     const params = new URLSearchParams();
@@ -53,7 +58,10 @@ export function EventsClient() {
     if (selectedListing) params.set('listingId', selectedListing.id);
     fetch(`/api/events?${params.toString()}`)
       .then((r) => r.json())
-      .then((data: { events: EventRow[] }) => setEvents(data.events))
+      .then((data: { events: EventRow[]; limit: number }) => {
+        setEvents(data.events);
+        setServerLimit(data.limit);
+      })
       .catch((e) => setError(String(e)));
   };
 
@@ -165,9 +173,9 @@ export function EventsClient() {
         </label>
       </div>
 
-      <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+      <TableFrame>
         <table className="w-full text-sm">
-          <thead className="bg-[var(--color-surface)] text-left text-xs uppercase text-[var(--color-muted)]">
+          <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
             <tr>
               <th className="px-3 py-2">Zaman</th>
               <th className="px-3 py-2">Seviye</th>
@@ -178,7 +186,7 @@ export function EventsClient() {
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
-            {events.map((e) => (
+            {paged.rows.map((e) => (
               <tr key={e.id}>
                 <td className="whitespace-nowrap px-3 py-2 text-[var(--color-muted)]">
                   {formatDateTime(e.at)}
@@ -205,7 +213,15 @@ export function EventsClient() {
             )}
           </tbody>
         </table>
-      </div>
+      </TableFrame>
+
+      <Pagination state={paged} label="kayıt">
+        {/* The server sends the newest N; without this the pager would present a truncated
+            result as the whole of it. */}
+        {serverLimit !== null && events.length >= serverLimit && (
+          <> — en yeni {serverLimit} kayıt gösteriliyor, daha eskisi için aralığı daraltın</>
+        )}
+      </Pagination>
     </div>
   );
 }

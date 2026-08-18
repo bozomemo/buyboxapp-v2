@@ -534,6 +534,9 @@ export async function competitorObservationsInRange(
             filters.sellerRef
               ? eq(sqliteSchema.competitorObservations.sellerRef, filters.sellerRef)
               : undefined,
+            filters.baseStockCode
+              ? eq(sqliteSchema.listings.baseStockCode, filters.baseStockCode)
+              : undefined,
           ),
         )
         .orderBy(asc(sqliteSchema.competitorObservations.observedAt))
@@ -568,6 +571,9 @@ export async function competitorObservationsInRange(
             filters.sellerRef
               ? eq(postgresSchema.competitorObservations.sellerRef, filters.sellerRef)
               : undefined,
+            filters.baseStockCode
+              ? eq(postgresSchema.listings.baseStockCode, filters.baseStockCode)
+              : undefined,
           ),
         )
         .orderBy(asc(postgresSchema.competitorObservations.observedAt))
@@ -601,6 +607,9 @@ export async function competitorObservationsInRange(
               : undefined,
             filters.sellerRef
               ? eq(mysqlSchema.competitorObservations.sellerRef, filters.sellerRef)
+              : undefined,
+            filters.baseStockCode
+              ? eq(mysqlSchema.listings.baseStockCode, filters.baseStockCode)
               : undefined,
           ),
         )
@@ -709,4 +718,26 @@ export async function scrapeRunsInRange(
   }) as Promise<ScrapeRunReportRow[]>;
 }
 
-// scrape_runs and competitor_observations are retained indefinitely (doc 05 §10) — no prune function.
+/**
+ * Retention for the raw offer rows (doc 05 §10). `scrape_runs` is deliberately **not** pruned
+ * alongside them: it is the proof-of-look row, it is one row per scrape rather than one per
+ * seller, and dropping it would erase the coverage denominator that makes a buybox-share or
+ * seller-presence figure honest — leaving reports that quietly read as "nobody was selling"
+ * where the truth is "we stopped holding the detail".
+ */
+export async function pruneCompetitorObservations(appDb: AppDatabase, cutoffMs: number): Promise<void> {
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .delete(sqliteSchema.competitorObservations)
+        .where(lte(sqliteSchema.competitorObservations.observedAt, cutoffMs)),
+    postgres: (db) =>
+      db
+        .delete(postgresSchema.competitorObservations)
+        .where(lte(postgresSchema.competitorObservations.observedAt, cutoffMs)),
+    mysql: (db) =>
+      db
+        .delete(mysqlSchema.competitorObservations)
+        .where(lte(mysqlSchema.competitorObservations.observedAt, cutoffMs)),
+  });
+}

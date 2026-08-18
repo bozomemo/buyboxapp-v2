@@ -1500,6 +1500,14 @@ Operating constraints (rate limit, cache, tiering, user agent, off-by-default) a
 - **`merchantListing` arriving as an array (§32)** raises a typed schema error and is recorded
   as `scrape_runs.status = 'parseFailed'`. It is never processed with the current rules, since
   plausible-looking wrong data is worse than a recorded failure.
+- **`merchantId` is stripped from the request URL (found 2026-08-17).** The captured
+  `productUrl` (api-references §1.4) carries `merchantId=<our own seller id>` in its query
+  string. Fetching the public page with that query present is not neutral: the embedded state
+  comes back reporting our own offer as `winnerVariant` on every row regardless of the real
+  buybox order — observed live where the official buybox endpoint reported rank 8 for a product
+  the scraped page reported us 1st on. `TrendyolPublicPageSource.buildUrl` (`source.ts`) always
+  removes `merchantId` before requesting; `filterOverPriceListings` and any other query param
+  are left as-is. Covered by a test in `public-page.test.ts`.
 
 ## 37.4 What would tell us the payload changed
 

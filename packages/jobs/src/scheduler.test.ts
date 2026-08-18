@@ -148,6 +148,49 @@ describe('Scheduler', () => {
     }
   });
 
+  it('a job disabled after being claimed fails outright instead of retrying (doc 12 6.9)', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      const clock = new FakeClock(1000);
+      let attempts = 0;
+      const scheduler = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a' });
+      scheduler.register({
+        jobName: 'ScrapeCompetitors',
+        maxAttempts: 3,
+        handler: async () => {
+          attempts += 1;
+          throw new Error('403');
+        },
+      });
+
+      await scheduler.enqueueNow('ScrapeCompetitors', '{}');
+      const first = await scheduler.tick();
+      expect(first.ran).toEqual([{ jobName: 'ScrapeCompetitors', ok: false }]);
+      expect(attempts).toBe(1);
+
+      // The operator disables it in the UI right after seeing the failure — a stored "false"
+      // setting, same as `POST /api/jobs/enabled`.
+      await configRepo.setAppSetting(
+        appDb,
+        {
+          key: 'job.ScrapeCompetitors.enabled',
+          value: 'false',
+          updatedBy: 'operator',
+          updatedAt: clock.nowMs(),
+        },
+        newId(),
+      );
+
+      clock.advance(60_000);
+      const afterDisable = await scheduler.tick();
+      // No further attempt: retryJob is skipped in favour of an immediate, permanent failure.
+      expect(afterDisable.ran).toHaveLength(0);
+      expect(attempts).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
   it('shutdown drains in-flight work before releasing the lock (doc 12 Phase 5.9 DoD)', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {

@@ -150,11 +150,25 @@ async function assertValidSubmissionRoundTrip(
 }
 
 /** Runs every contract check. Throws (does not return a report) on the first violation. */
+/**
+ * Every adapter must be able to say which seller it *is*. Downstream, this is the only thing
+ * separating our own offer from a competitor's, and it fails silently when absent — the filters
+ * match nothing, no error is raised, and we become our own biggest competitor in every report.
+ * A missing merchant ref is therefore a contract violation, not a tolerated gap.
+ */
+function assertKnowsOwnMerchantRef(adapter: IMarketplaceAdapter): void {
+  if (typeof adapter.merchantRef !== 'string' || adapter.merchantRef.trim() === '') {
+    throw new Error('contract violation: adapter.merchantRef must be a non-empty string');
+  }
+  assertNoSentinelString(adapter.merchantRef, 'adapter.merchantRef');
+}
+
 export async function runMarketplaceContractChecks(
   adapter: IMarketplaceAdapter,
   fixture: MarketplaceContractFixture,
 ): Promise<void> {
   assertValidCapabilities(adapter);
+  assertKnowsOwnMerchantRef(adapter);
   await assertValidConnectionTest(adapter, fixture);
   await assertValidFetchListings(adapter);
   await assertValidFetchBuyboxObservations(adapter, fixture);

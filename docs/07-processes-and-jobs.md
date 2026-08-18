@@ -26,6 +26,135 @@ identical either way.
 
 Every run writes a `job_runs` row and carries a correlation id through every log line.
 
+A long-running handler MAY also heartbeat its progress through `JobContext.reportProgress`
+(`{done, total, currentItem}`), which the runner throttles to at most one `job_runs` write per
+second and settles before the run's terminal write. This is what makes a run watchable from the
+web process (doc 06 §7.2, doc 05 §7). It is **reporting only** on exactly the terms §7 sets for
+competitor data: not reporting is fully supported, a failed progress write never fails the run,
+and no decision may branch on it. `ScrapeCompetitors` reports; the other jobs do not yet.
+
+### 1.1 What each job actually does
+
+One entry per row in `JOB_CATALOG` (`packages/jobs/src/job-catalog.ts`), which is the single
+source of truth the Jobs screen (doc 06 §7) reads its schedule/enabled-state/default-payload
+from — this table must never drift from that file.
+
+**`ImportStockItems`** (`pipeline/import-stock-items.ts`) — reads the configured
+`IProductSource` (manual / Excel / marketplace-listing-derived / ERP) and upserts `stock_items`
+by `baseStockCode`. Plain upsert, no `ensure`/`update` split: `stock_items` itself holds no
+operator-owned fields (those live on `stock_marketplace_prefs`), so re-running it can never
+clobber an operator's choice. Global, not per marketplace. On-demand by default (no dedicated
+cadence config surfaced beyond doc 07 §1's "on demand + daily").
+
+**`ImportBundles`** (`pipeline/import-bundles.ts`) — rebuilds bundle definitions from a
+resolved bundle list (`{bundleStockCode, name, members[]}`) given directly in the payload, via
+`replaceBundle`'s upsert-bundle + delete-old-members + insert-new-members transaction (doc 01
+§6). Has **no cadence** (`cadenceMs: null` in the catalog): no bundle-source port exists yet
+(doc 10 §4), so today this only ever runs from an explicit "run now" with a payload someone
+supplies by hand, never on a ticker.
+
+**`ImportListings`** (`pipeline/import-listings.ts`) — full per-marketplace listing sync: price,
+stock, commission, VAT rate, campaigns, sale/lock/archive status. Idempotent upsert plus a stale
+sweep gated on full success (doc 07 §6): every page from the adapter is upserted with
+`last_seen_at = runStartedAt`; only after the *entire* run succeeds are listings with a stale
+`last_seen_at` marked inactive — a partial import never marks live listings inactive
+(doc 09 §25's legacy delete-first bug, deliberately not repeated). A listing whose seller SKU
+doesn't parse to a `baseStockCode` is skipped and logged, not failed. Never touches the
+operator-owned override fields (`minPrice`/`maxPrice`/`allowIncrease`/`allowDecrease`/
+`repriceEnabled`/`observationEnabled`) on an existing row — those are set only by an explicit
+UI action (§2.2 below). Per marketplace, every 30 min by default.
+
+It also refreshes `marketplaces.merchant_ref` from `IMarketplaceAdapter.merchantRef` — our own
+seller id at that marketplace, taken from the credentials the adapter authenticates with. Only a
+real difference is written, and a change is audited.
+
+This is the *second* of two triggers, not the guarantee. The guarantee is at **worker startup**,
+where every adapter is constructed (`buildAdapters`, `apps/worker`): that runs whatever the
+operator has enabled, and this job can be switched off while `ScrapeCompetitors` — which needs
+the value to tell our own offer from a competitor's — keeps running. That combination is not
+hypothetical; it was the live configuration on 2026-08-18. Doing it here as well means a
+credential change is picked up on the next import rather than only on the next restart.
+
+**`ObserveBuybox`** (`pipeline/observe-buybox.ts`) — the **control-path read**: calls the
+marketplace's official buybox API and writes `buybox_observations` (rank, buybox/2nd/3rd
+price). Candidates come from `listObservableListings` (`observation_enabled = 1`, §2.2) —
+**not** `Reprice`'s eligibility query. Each candidate is assigned an observation tier (Hot /
+Warm / Cold / Frozen, doc 07 §4) from its repricing phase, lock state, offered stock and
+whether it recently lost the buybox; only listings due this tier on the current `cycleNumber`
+are actually polled. Skips outbound calls entirely while the marketplace's circuit breaker is
+open (doc 07 §3). Per marketplace, ticked every 60 s by default (the tiering, not the tick
+rate, is what keeps this cheap).
+
+**`ScrapeCompetitors`** (`pipeline/scrape-competitors.ts`) — the **reporting-only** read:
+fetches each candidate listing's public product page/endpoint and writes `scrape_runs` (always)
+plus `competitor_observations` (only when the payload hash changed since the last successful
+run). Candidates also come from `listObservableListings`, same tiering shape as `ObserveBuybox`
+but on its own cadence/config (`scrape-config.ts`). Deliberately isolated from the control path:
+reads a separate `ctx.competitorSources` registry (never the marketplace adapter), never trips
+the marketplace circuit breaker, never returns a job-level error for one bad page (failures are
+counted and the **rate** alerts, not each failure), and writes only `scrape_runs` /
+`competitor_observations` / `competitor_sellers` — never `repricing_state`, `price_submissions`
+or `buybox_observations`. **Disabled by default** (`defaultEnabled: false` — the only job in the
+catalog that is); an operator must turn it on explicitly per doc 04 §1.5 / api-references §1.6.
+Per marketplace, hourly by default when enabled.
+
+Two details of the write path matter (doc 05 §5 records both in full):
+
+- **The change-detection hash covers `(rank, seller_ref, price, final_price)` only.** Narrowing
+  it changes *when* a batch is written, never *what* — the rows still carry every field, so
+  point-in-time reconstruction is unaffected. Measured 2026-08-18: `offered_stock` alone drove
+  53 of 124 batch rewrites with no competitive event behind them, while every one of the 55
+  rank-only transitions was a real buybox hand-over and so still triggers a write.
+- **Seller identities are upserted into `competitor_sellers` once per run**, after the loop,
+  under their own `try`/`catch`. The same merchants recur across most of a catalogue, so one
+  deduplicated batch replaces thousands of writes; and because this table is a convenience for
+  reporting rather than the scrape's actual output, a failure here logs `warn` and is
+  swallowed. It must never fail a page, a run, or the queue.
+
+**`Reprice`** (`pipeline/reprice.ts`) — the decision engine. For each listing eligible under
+§2.1 (`reprice_enabled = 1` and `stock_marketplace_prefs.auto_reprice_enabled = 1`), loads cost
+(`CostCalculator.unitCost`), effective fees, current `repricing_state` and today's
+`update_budget_usage`, calls `packages/core`'s pure `decide()`, persists the resulting state,
+and — only if the decision is `submit` — inserts a `price_submissions` row with
+`state: 'queued'`. **This job never writes a price itself**; it only ever populates the outbox.
+Supports `mode: 'shadow'` (doc 07 §10): decisions are computed and persisted exactly as in live
+mode, but the row is written `state: 'cancelled'` with a shadow marker instead of `queued`, so
+`SubmitPriceChanges` never drains it — used for policy-change previews and reproducing a past
+decision. Per marketplace, on the policy's configured interval (5 min by default).
+
+**`SubmitPriceChanges`** (`pipeline/submit-price-changes.ts`) — drains `price_submissions` in
+`queued` state, admitting by priority (doc 03 §8) against **remaining** budget
+(`allowance − consumed`, budget is not touched here — only on confirmation), batches up to the
+marketplace's maximum, and calls the adapter's price-submit endpoint. Honours global and
+per-marketplace kill switches (doc 07 §9) and the circuit breaker. On success, rows move to
+`state: 'submitted'` with the marketplace's batch handle stored for `ConfirmSubmissions` to
+poll. Per marketplace, continuous — ticked every 30 s by default.
+
+**`ConfirmSubmissions`** (`pipeline/confirm-submissions.ts`) — polls each pending marketplace
+batch handle to a terminal state. Confirmed rows move to `state: 'confirmed'`, `settle_until` is
+set, and **only here** is budget consumed (CLAUDE.md hard rule: the audit record — and the
+budget spend — advance only after the marketplace confirms). Failed/rejected rows are
+classified via `classifyRejection` (priceRange / campaign / quota / validation, doc 03 §7.1)
+against the marketplace's raw failure text. A batch stuck pending past
+`confirmationTimeoutMs` (3 h default — shorter than Trendyol's 4-hour result-retention window)
+is marked `failed` and alerted rather than left stuck forever. Per marketplace, continuous —
+ticked every 60 s by default.
+
+**`ResetBudget`** (`pipeline/reset-budget.ts`) — ensures today's `update_budget_usage` row
+exists with `consumed: 0` and an allowance computed from the marketplace's current repriceable
+listing count (`adapter.capabilities.dailyUpdateAllowance`). Actual midnight rollover is free
+(usage is keyed by `(marketplaceCode, usageDate)`, so a new date is automatically a fresh row
+the moment anything increments it) — this job only makes the day's allowance visible in the UI
+*before* the first confirmation lands. Per marketplace, hourly (idempotent — cheap to over-run,
+`ensureBudgetUsageRow` is a no-op once the row for the day exists).
+
+**`PruneHistory`** (`pipeline/prune-history-job.ts`) — thin wrapper around `packages/db`'s
+`pruneHistory`, which applies every retention window from doc 05 §10 (price submissions, buybox
+observations, app events by level, job runs, finished job-queue rows). Global, nightly by
+default.
+
+**`ImportOrders`** — **MAY-ADD-LATER** (doc 12), not implemented; no file exists yet.
+
 ---
 
 ## 2. The repricing pipeline
@@ -86,6 +215,16 @@ WHERE l.marketplace_code = ?
 ```
 
 Listings whose `base_stock_code` is null (unparseable seller SKU) are excluded and reported.
+
+### 2.2 Eligibility for `ObserveBuybox` and `ScrapeCompetitors`
+
+Both read their candidate listings from `l.marketplace_code = ? AND l.is_salable = 1 AND
+l.observation_enabled = 1` — deliberately **not** the §2.1 query above. `observation_enabled`
+is a separate per-listing flag from `reprice_enabled`: an operator can watch buybox rank and
+competitor activity on a listing that is not, and may never be, opted into the pricing engine
+(and vice versa — a repriceable listing is not automatically observed). Like
+`reprice_enabled`, it starts disabled on import and is only ever changed by an explicit
+operator action (doc 06 §4.6's bulk actions, or the per-row grid toggle).
 
 ---
 
@@ -239,8 +378,17 @@ The scheduler is DB-backed (doc 10 §1.2). Guarantees:
 - **One scheduler at a time.** A lock row with a heartbeat; a second instance waits.
 - **One run per job at a time**, unless the job declares itself parallel-safe.
 - **Per-marketplace concurrency limits** from `repricing_policies.concurrency`.
-- **Visibility timeout**: a claimed job whose lock expires is returned to `ready`.
-- **Bounded retries** with backoff; exhausted jobs move to `failed` and alert.
+- **Visibility timeout**: a claimed job whose lock expires is returned to `ready`. A running
+  handler heartbeats its own claim (`jobsRepo.renewJobLock`, every half of the timeout) so a
+  legitimately long run — e.g. `ScrapeCompetitors` walking up to `SCRAPE_MAX_LISTINGS_PER_RUN`
+  pages one at a time — is never mistaken for a crashed worker and reclaimed by a second run
+  while the first is still going. Only a worker that has actually stopped heartbeating (crashed
+  or killed) ever has its claim expire and get requeued.
+- **Bounded retries** with backoff; exhausted jobs move to `failed` and alert. A retry is also
+  skipped — the job moves straight to `failed` — if the operator disabled the job (doc 12 6.9)
+  since it was claimed, so switching a job off stops its own in-flight retry chain immediately
+  rather than only preventing the *next* cadence-driven enqueue. A manual "run now" is
+  unaffected: disabling only gates cadence enqueueing and retries, never an explicit trigger.
 - **Graceful shutdown**: stop claiming, finish in-flight work, flush pending batches, release
   locks. Never drop a queued submission on shutdown (doc 09 §6).
 

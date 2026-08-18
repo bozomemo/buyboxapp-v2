@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Pagination, usePagedRows } from '@/components/table';
 import { formatDate } from '@/lib/format';
 import { Button, Field, StatusBanner, TextInput } from '../../setup/ui';
 
@@ -117,6 +118,8 @@ export function FeesClient() {
   const [preview, setPreview] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  // One row per fee revision — short today, unbounded over the life of the store.
+  const pagedHistory = usePagedRows(history, { pageSize: 25, resetKey: marketplaceCode });
 
   useEffect(() => {
     setSaved(false);
@@ -260,8 +263,8 @@ export function FeesClient() {
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
           Geçmiş
         </h3>
-        <ul className="divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)] text-sm">
-          {history.map((h) => (
+        <ul className="table-frame max-h-[50vh] divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)] text-sm">
+          {pagedHistory.rows.map((h) => (
             <li key={h.id} className="flex justify-between px-3 py-2">
               <span>{formatDate(h.effectiveFrom)}</span>
               <span className="text-[var(--color-muted)]">Komisyon: %{h.defaultCommissionRate}</span>
@@ -269,6 +272,11 @@ export function FeesClient() {
           ))}
           {history.length === 0 && <li className="px-3 py-2 text-[var(--color-muted)]">Kayıt yok.</li>}
         </ul>
+        {history.length > 0 && (
+          <div className="mt-2">
+            <Pagination state={pagedHistory} label="kayıt" />
+          </div>
+        )}
       </div>
     </div>
   );

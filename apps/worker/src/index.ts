@@ -19,15 +19,18 @@ import {
   HepsiburadaCredentialsSchema,
   HepsiburadaPublicListingsSource,
   TrendyolAdapter,
+  TRENDYOL_STAGE_BASE_URL,
   TrendyolPublicPageSource,
   type ICompetitorSource,
   type IMarketplaceAdapter,
 } from '@buybox/adapters';
 import {
   buildAdapterRegistry,
+  syncMerchantRef,
   buildCompetitorSourceRegistry,
   CONFIRM_SUBMISSIONS_JOB,
   confirmSubmissions,
+  getScrapeRateLimit,
   IMPORT_LISTINGS_JOB,
   IMPORT_STOCK_ITEMS_JOB,
   importListings,
@@ -100,6 +103,9 @@ async function buildAdapter(
         sellerId: credentials.sellerId ?? '',
         userAgentSuffix: credentials.userAgentSuffix ?? 'SelfIntegration',
       },
+      // api-references §1.1: stage becomes production by swapping host; `environment` rides
+      // along in the stored credentials blob, same as Hepsiburada below.
+      baseUrl: credentials.environment === 'stage' ? TRENDYOL_STAGE_BASE_URL : undefined,
     });
   }
   if (code === 'hepsiburada') {
@@ -133,7 +139,14 @@ async function buildAdapters(
     if (!marketplace.enabled) continue;
     const code = marketplace.code as MarketplaceCode;
     const adapter = await buildAdapter(code, secretStore);
-    if (adapter) entries.push([code, adapter]);
+    if (!adapter) continue;
+    entries.push([code, adapter]);
+    // Our own seller id, recorded from the credentials this adapter just authenticated with.
+    // Done here rather than only in `ImportListings` because this runs on every boot whatever
+    // the operator has enabled — and `ImportListings` can be switched off while
+    // `ScrapeCompetitors`, which needs the value to tell our offer from a competitor's, keeps
+    // running. See `syncMerchantRef` for why a stale value is silent rather than loud.
+    await syncMerchantRef(appDb, code, adapter.merchantRef, Date.now());
   }
   return buildAdapterRegistry(entries);
 }
@@ -152,20 +165,47 @@ async function buildAdapters(
  * genuinely independent. Until the adapter is unblocked there are no Hepsiburada listings to
  * scrape, and this registry entry simply never gets asked for one.
  *
- * Each source is given the user agent its marketplace accepts — see `SCRAPER_BROWSER_USER_AGENT`
- * in packages/shared for why exactly one of them is not the honest default.
+ * Both sources are given `SCRAPER_BROWSER_USER_AGENT` (doc 08 §12, api-references §1.6/§2.11):
+ * an honest `SCRAPER_USER_AGENT` gets a 403 from both marketplaces' bot detection even at a
+ * conservative request rate — confirmed 2026-08-17 by the operator's own browser reaching the
+ * same Trendyol product page without incident from the same network while the honest agent was
+ * blocked. The product owner authorised the same reporting-only exception already in place for
+ * Hepsiburada (2026-08-13) for Trendyol on 2026-08-17. `SCRAPER_USER_AGENT` is currently unused
+ * by any scraper as a result; it stays in the config schema for a future honest source.
+ *
+ * Rate/burst are read from `app_settings` (`getScrapeRateLimit`, doc 08 §12) so an operator who
+ * hits a run of 403s (doc 06 §7/§8) can slow a scraper down without a code change — falling
+ * back to each source's own conservative compiled default when nothing has been stored. This is
+ * a startup-time read, same as the credentials above: a changed rate limit takes effect on the
+ * next worker restart, not mid-process.
  */
-function buildCompetitorSources(
+async function buildCompetitorSources(
+  appDb: AppDatabase,
   adapters: MarketplaceAdapterRegistry,
-  userAgent: string,
   browserUserAgent: string,
-): CompetitorSourceRegistry {
+): Promise<CompetitorSourceRegistry> {
   const entries: [MarketplaceCode, ICompetitorSource][] = [];
   if (adapters.has('trendyol')) {
-    entries.push(['trendyol', new TrendyolPublicPageSource({ userAgent })]);
+    const rateLimit = await getScrapeRateLimit(appDb, 'trendyol');
+    entries.push([
+      'trendyol',
+      new TrendyolPublicPageSource({
+        userAgent: browserUserAgent,
+        requestsPerMinute: rateLimit?.requestsPerMinute,
+        burst: rateLimit?.burst,
+      }),
+    ]);
   }
   if (adapters.has('hepsiburada')) {
-    entries.push(['hepsiburada', new HepsiburadaPublicListingsSource({ userAgent: browserUserAgent })]);
+    const rateLimit = await getScrapeRateLimit(appDb, 'hepsiburada');
+    entries.push([
+      'hepsiburada',
+      new HepsiburadaPublicListingsSource({
+        userAgent: browserUserAgent,
+        requestsPerMinute: rateLimit?.requestsPerMinute,
+        burst: rateLimit?.burst,
+      }),
+    ]);
   }
   return buildCompetitorSourceRegistry(entries);
 }
@@ -192,14 +232,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
 
   const secretStore = new FileSecretStore(env.SECRET_STORE_PATH, env.SECRET_STORE_KEY);
   const adapters = await buildAdapters(appDb, secretStore);
-  // The first identifies this client honestly (doc 04 §1.5's "user-agent policy"); the second
-  // is the recorded exception for Hepsiburada, which refuses anything else (api-references
-  // §2.11). Both are deployment configuration, not constants.
-  const competitorSources = buildCompetitorSources(
-    adapters,
-    env.SCRAPER_USER_AGENT,
-    env.SCRAPER_BROWSER_USER_AGENT,
-  );
+  // `SCRAPER_BROWSER_USER_AGENT` is the recorded exception for both reporting-only scrapers
+  // (api-references §1.6, §2.11) — deployment configuration, not a constant.
+  const competitorSources = await buildCompetitorSources(appDb, adapters, env.SCRAPER_BROWSER_USER_AGENT);
 
   const scheduler = new Scheduler({
     appDb,
@@ -271,6 +306,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     async shutdown() {
       for (const ticker of tickers) clearInterval(ticker);
       await scheduler.shutdown();
+      // Releases TrendyolPublicPageSource's Playwright browser (2026-08-17) and any other
+      // source-owned resource; a no-op for sources that hold nothing (competitor-source.ts).
+      await Promise.all([...competitorSources.values()].map((source) => source.close?.()));
     },
   };
 }

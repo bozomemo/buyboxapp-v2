@@ -37,6 +37,7 @@ export interface ListingRow {
   readonly allowIncrease: boolean;
   readonly allowDecrease: boolean;
   readonly repriceEnabled: boolean;
+  readonly observationEnabled: boolean;
   readonly extra: string | null;
   readonly firstSeenAt: number;
   readonly lastSeenAt: number;
@@ -47,8 +48,8 @@ export interface ListingRow {
  * Idempotent import upsert keyed on `(marketplaceCode, marketplaceListingId)`. Never touches
  * `id` (the primary key every FK — campaigns, repricing_state, price_submissions — points
  * at; the caller generates a fresh one for `values()` but an existing row must keep its own)
- * or `minPrice`/`maxPrice`/`allowIncrease`/`allowDecrease`/`repriceEnabled` — those are
- * operator-owned overrides an import must not clobber (doc 03 §3).
+ * or `minPrice`/`maxPrice`/`allowIncrease`/`allowDecrease`/`repriceEnabled`/`observationEnabled`
+ * — those are operator-owned overrides an import must not clobber (doc 03 §3).
  */
 export async function upsertListing(appDb: AppDatabase, row: ListingRow): Promise<void> {
   const {
@@ -61,6 +62,7 @@ export async function upsertListing(appDb: AppDatabase, row: ListingRow): Promis
     allowIncrease: _allowIncrease,
     allowDecrease: _allowDecrease,
     repriceEnabled: _repriceEnabled,
+    observationEnabled: _observationEnabled,
     ...set
   } = row;
   await runDialect(appDb, {
@@ -86,15 +88,18 @@ export async function upsertListing(appDb: AppDatabase, row: ListingRow): Promis
 
 /**
  * The only path that may change the operator-owned override fields (doc 03 §3:
- * `minPrice`/`maxPrice`/`allowIncrease`/`allowDecrease`) and `repriceEnabled` — an
- * explicit UI/settings action, never an import. `upsertListing` deliberately excludes
- * these from its conflict update for exactly this reason.
+ * `minPrice`/`maxPrice`/`allowIncrease`/`allowDecrease`) and `repriceEnabled`/
+ * `observationEnabled` — an explicit UI/settings action, never an import. `upsertListing`
+ * deliberately excludes these from its conflict update for exactly this reason.
  */
 export async function setListingOverrides(
   appDb: AppDatabase,
   id: string,
   overrides: Partial<
-    Pick<ListingRow, 'minPrice' | 'maxPrice' | 'allowIncrease' | 'allowDecrease' | 'repriceEnabled'>
+    Pick<
+      ListingRow,
+      'minPrice' | 'maxPrice' | 'allowIncrease' | 'allowDecrease' | 'repriceEnabled' | 'observationEnabled'
+    >
   >,
   updatedAt: number,
 ): Promise<void> {
@@ -131,6 +136,7 @@ export interface ListingQueryOptions {
   readonly isSuspended?: boolean;
   readonly isBlacklisted?: boolean;
   readonly repriceEnabled?: boolean;
+  readonly observationEnabled?: boolean;
   readonly excludeArchived?: boolean;
   readonly sort?: 'lastSeenAt' | 'productName' | 'price';
   readonly sortDir?: 'asc' | 'desc';
@@ -248,6 +254,9 @@ function buildListingsWhere(schema: any, options: ListingQueryOptions) {
   if (options.repriceEnabled !== undefined) {
     conditions.push(eq(schema.listings.repriceEnabled, options.repriceEnabled));
   }
+  if (options.observationEnabled !== undefined) {
+    conditions.push(eq(schema.listings.observationEnabled, options.observationEnabled));
+  }
   if (options.excludeArchived) conditions.push(eq(schema.listings.isArchived, false));
   if (options.text) {
     const term = `%${options.text}%`;
@@ -289,7 +298,10 @@ export async function bulkSetListingOverrides(
   appDb: AppDatabase,
   ids: readonly string[],
   overrides: Partial<
-    Pick<ListingRow, 'minPrice' | 'maxPrice' | 'allowIncrease' | 'allowDecrease' | 'repriceEnabled'>
+    Pick<
+      ListingRow,
+      'minPrice' | 'maxPrice' | 'allowIncrease' | 'allowDecrease' | 'repriceEnabled' | 'observationEnabled'
+    >
   >,
   updatedAt: number,
 ): Promise<void> {
@@ -437,6 +449,54 @@ export async function listRepriceableListings(
             eq(mysqlSchema.listings.marketplaceCode, marketplaceCode),
             eq(mysqlSchema.listings.isSalable, true),
             eq(mysqlSchema.listings.repriceEnabled, true),
+          ),
+        ),
+  });
+}
+
+/**
+ * Candidate listings for `ObserveBuybox` / `ScrapeCompetitors` — deliberately a *different*
+ * flag from `listRepriceableListings`. `observationEnabled` lets an operator watch buybox
+ * rank and competitors on a listing without opting it into the pricing engine at all; the
+ * two are independent operator decisions (docs/07 §2.1 covers `Reprice`'s own eligibility,
+ * which still reads `repriceEnabled` alone and is untouched by this).
+ */
+export async function listObservableListings(
+  appDb: AppDatabase,
+  marketplaceCode: string,
+): Promise<ListingRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.listings)
+        .where(
+          and(
+            eq(sqliteSchema.listings.marketplaceCode, marketplaceCode),
+            eq(sqliteSchema.listings.isSalable, true),
+            eq(sqliteSchema.listings.observationEnabled, true),
+          ),
+        ),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.listings)
+        .where(
+          and(
+            eq(postgresSchema.listings.marketplaceCode, marketplaceCode),
+            eq(postgresSchema.listings.isSalable, true),
+            eq(postgresSchema.listings.observationEnabled, true),
+          ),
+        ),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.listings)
+        .where(
+          and(
+            eq(mysqlSchema.listings.marketplaceCode, marketplaceCode),
+            eq(mysqlSchema.listings.isSalable, true),
+            eq(mysqlSchema.listings.observationEnabled, true),
           ),
         ),
   });

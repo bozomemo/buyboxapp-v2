@@ -85,6 +85,12 @@ export class TrendyolAdapter implements IMarketplaceAdapter {
   private readonly fetchFn: typeof fetch;
   private readonly rateLimiter = buildRateLimiter();
   private readonly sellerId: string;
+  /**
+   * The public storefront calls this `merchantId` and the integration API calls it `sellerId`;
+   * they are the same number. Confirmed 2026-08-18 against this installation: every stored
+   * product URL from the product filter (api-references §1.4) carries `merchantId=<sellerId>`.
+   */
+  readonly merchantRef: string;
   private readonly authHeader: string;
   private readonly userAgent: string;
 
@@ -92,6 +98,7 @@ export class TrendyolAdapter implements IMarketplaceAdapter {
     this.baseUrl = config.baseUrl ?? TRENDYOL_PRODUCTION_BASE_URL;
     this.fetchFn = config.fetchFn ?? globalThis.fetch;
     this.sellerId = config.credentials.sellerId;
+    this.merchantRef = config.credentials.sellerId;
     this.authHeader = `Basic ${Buffer.from(`${config.credentials.apiKey}:${config.credentials.apiSecret}`).toString('base64')}`;
     // api-references §1.2: "{sellerId} - SelfIntegration" or "{sellerId} - {IntegratorName}".
     this.userAgent = `${config.credentials.sellerId} - ${config.credentials.userAgentSuffix}`;

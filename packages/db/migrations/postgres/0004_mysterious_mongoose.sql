@@ -1,0 +1,1 @@
+ALTER TABLE "job_runs" ADD COLUMN "job_queue_id" text;

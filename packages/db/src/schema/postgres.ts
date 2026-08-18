@@ -183,9 +183,13 @@ export const listings = pgTable(
       .references(() => marketplaces.code, { onDelete: 'cascade' }),
     marketplaceListingId: text('marketplace_listing_id').notNull(),
     sellerStockCode: text('seller_stock_code').notNull(),
-    baseStockCode: text('base_stock_code').references(() => stockItems.baseStockCode, {
-      onDelete: 'set null',
-    }),
+    // Deliberately NOT a foreign key to stock_items. Doc 05 §4 defines this as "parsed; null
+    // when unparseable" — nothing conditions it on stock_items already having a row for that
+    // code. Doc 07 §2 imports listings independently of cost data; a stock item is typically
+    // entered (manually, or via ImportStockItems) *after* the listings that use it already
+    // exist. An FK here made every ImportListings insert fail with a constraint violation
+    // whenever the product source hadn't been populated yet — i.e. on every first run.
+    baseStockCode: text('base_stock_code'),
     unitCount: integer('unit_count').notNull(),
     isBundle: bool('is_bundle').notNull(),
     productName: text('product_name').notNull(),
@@ -209,6 +213,10 @@ export const listings = pgTable(
     allowIncrease: bool('allow_increase').notNull(),
     allowDecrease: bool('allow_decrease').notNull(),
     repriceEnabled: bool('reprice_enabled').notNull(),
+    // Independent of repriceEnabled: lets an operator watch buybox rank / competitors on a
+    // listing without opting it into the pricing engine. Same operator-owned, starts-disabled
+    // treatment as repriceEnabled — see the comment on `upsertListing` below.
+    observationEnabled: bool('observation_enabled').notNull(),
     extra: json('extra'),
     firstSeenAt: timestampMs('first_seen_at').notNull(),
     lastSeenAt: timestampMs('last_seen_at').notNull(),
@@ -298,6 +306,36 @@ export const competitorObservations = pgTable(
   (t) => [
     index('competitor_observations_listing_observed').on(t.listingId, t.observedAt),
     index('competitor_observations_seller_observed').on(t.sellerRef, t.observedAt),
+  ],
+);
+
+/** See the note on this table in `schema/sqlite.ts`. */
+export const competitorSellerGroups = pgTable('competitor_seller_groups', {
+  id: text('id').primaryKey(),
+  displayName: text('display_name').notNull(),
+  note: text('note'),
+  createdAt: timestampMs('created_at').notNull(),
+  updatedAt: timestampMs('updated_at').notNull(),
+});
+
+/** See the note on this table in `schema/sqlite.ts`. */
+export const competitorSellers = pgTable(
+  'competitor_sellers',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    sellerRef: text('seller_ref').notNull(),
+    sellerName: text('seller_name').notNull(),
+    groupId: text('group_id').references(() => competitorSellerGroups.id, { onDelete: 'set null' }),
+    operatorNote: text('operator_note'),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('competitor_sellers_marketplace_ref').on(t.marketplaceCode, t.sellerRef),
+    index('competitor_sellers_group').on(t.groupId),
   ],
 );
 
@@ -413,6 +451,24 @@ export const jobRuns = pgTable('job_runs', {
   itemsFailed: integer('items_failed').notNull(),
   error: text('error'),
   correlationId: text('correlation_id').notNull(),
+  // Nullable: rows written before this column existed have none, and a run started outside a
+  // claimed queue row (there is none today, but nothing enforces it) would too. Lets
+  // `requeueExpiredJobs` close out exactly the orphaned run for an expired claim — by id,
+  // never by jobName+time — so a still-legitimately-running instance of the same per-marketplace
+  // job (doc 07 §8: multiple marketplaces can run the same job name concurrently) is never
+  // mistakenly marked failed alongside it.
+  jobQueueId: text('job_queue_id'),
+  // Live progress for the Jobs screen's run detail panel (doc 06 §7). The worker and the web
+  // app are separate processes, so `job_runs` is the only channel by which the browser can
+  // watch a run — the handler heartbeats these three columns through `ctx.reportProgress`.
+  // `items_done` is the *attempted* count and only ever grows; `items_ok`/`items_failed` are
+  // still written once at the end by `finishJobRun`, so a detail panel showing progress must
+  // read `items_done`, not their sum, while the run is in flight.
+  itemsDone: integer('items_done').notNull().default(0),
+  /** Human-readable label of the item in flight, e.g. a stock code. Never a price or money value. */
+  currentItem: text('current_item'),
+  /** When progress was last heartbeated — lets the UI tell "slow" from "stalled". */
+  progressAt: timestampMs('progress_at'),
 });
 
 export const appEvents = pgTable(
@@ -452,3 +508,66 @@ export const circuitBreakerState = pgTable('circuit_breaker_state', {
   lastError: text('last_error'),
   updatedAt: timestampMs('updated_at').notNull(),
 });
+
+/** See the notes on these three tables in `schema/sqlite.ts`. */
+export const alertRules = pgTable('alert_rules', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  scopeType: text('scope_type').notNull(),
+  scopeValue: text('scope_value'),
+  subjectType: text('subject_type').notNull(),
+  subjectValue: text('subject_value'),
+  predicate: text('predicate').notNull(),
+  thresholdType: text('threshold_type').notNull(),
+  thresholdValue: money('threshold_value'),
+  thresholdPct: integer('threshold_pct'),
+  quietPeriodMs: integer('quiet_period_ms').notNull(),
+  enabled: bool('enabled').notNull(),
+  createdAt: timestampMs('created_at').notNull(),
+  updatedAt: timestampMs('updated_at').notNull(),
+});
+
+export const alerts = pgTable(
+  'alerts',
+  {
+    id: text('id').primaryKey(),
+    ruleId: text('rule_id')
+      .notNull()
+      .references(() => alertRules.id, { onDelete: 'cascade' }),
+    alertKey: text('alert_key').notNull(),
+    listingId: text('listing_id')
+      .notNull()
+      .references(() => listings.id, { onDelete: 'cascade' }),
+    sellerRef: text('seller_ref'),
+    state: text('state').notNull(),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    resolvedAt: timestampMs('resolved_at'),
+    thresholdApplied: money('threshold_applied'),
+    snapshot: json('snapshot'),
+  },
+  (t) => [
+    index('alerts_key_state').on(t.alertKey, t.state),
+    index('alerts_state_last_seen').on(t.state, t.lastSeenAt),
+    index('alerts_listing').on(t.listingId),
+  ],
+);
+
+export const alertSellers = pgTable(
+  'alert_sellers',
+  {
+    id: text('id').primaryKey(),
+    alertId: text('alert_id')
+      .notNull()
+      .references(() => alerts.id, { onDelete: 'cascade' }),
+    sellerRef: text('seller_ref'),
+    sellerName: text('seller_name').notNull(),
+    observedPrice: money('observed_price'),
+    priceSource: text('price_source').notNull(),
+    rank: integer('rank').notNull(),
+    promotionText: text('promotion_text'),
+    joinedAt: timestampMs('joined_at').notNull(),
+    leftAt: timestampMs('left_at'),
+  },
+  (t) => [index('alert_sellers_alert').on(t.alertId)],
+);

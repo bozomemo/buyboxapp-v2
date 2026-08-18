@@ -33,6 +33,7 @@ const validListing: ListingSnapshot = {
 function compliantAdapter(): IMarketplaceAdapter {
   return {
     code: 'trendyol',
+    merchantRef: '722974',
     capabilities: {
       maxBatchSize: 100,
       competitorPriceDepth: 3,
@@ -99,6 +100,13 @@ describe('runMarketplaceContractChecks', () => {
       capabilities: { ...compliantAdapter().capabilities, maxBatchSize: 0 },
     };
     await expect(runMarketplaceContractChecks(broken, fixture)).rejects.toThrow(/maxBatchSize/i);
+  });
+
+  it('fails for an adapter that cannot say which seller it is', async () => {
+    // Silent everywhere else: with no merchant ref the own-offer filters match nothing and we
+    // are reported as our own competitor, with no error anywhere to explain it.
+    const broken: IMarketplaceAdapter = { ...compliantAdapter(), merchantRef: '  ' };
+    await expect(runMarketplaceContractChecks(broken, fixture)).rejects.toThrow(/merchantRef/i);
   });
 
   it('fails for an adapter returning the -1 rank sentinel instead of null', async () => {

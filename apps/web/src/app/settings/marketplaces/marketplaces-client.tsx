@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatDateTime } from '@/lib/format';
-import { Button, Field, StatusBanner, TextInput } from '../../setup/ui';
+import { Button, Field, Select, StatusBanner, TextInput } from '../../setup/ui';
 
 interface MarketplaceRow {
   code: string;
@@ -38,6 +38,22 @@ const CREDENTIAL_FIELDS: Record<Form['code'], { key: string; label: string }[]> 
 };
 
 const TITLES: Record<Form['code'], string> = { trendyol: 'Trendyol', hepsiburada: 'Hepsiburada' };
+
+/**
+ * Environment lives inside the same credentials record that already goes straight to the
+ * secret store (never the DB) — no schema change needed. The worker's `buildAdapter` and the
+ * connection-test route both read `credentials.environment` off the raw object.
+ */
+const ENV_OPTIONS: Record<Form['code'], { value: string; label: string }[]> = {
+  trendyol: [
+    { value: 'production', label: 'Prod (apigw.trendyol.com)' },
+    { value: 'stage', label: 'Test (stageapigw.trendyol.com)' },
+  ],
+  hepsiburada: [
+    { value: 'production', label: 'Prod' },
+    { value: 'sit', label: 'Test (SIT)' },
+  ],
+};
 
 export function MarketplacesClient() {
   const [forms, setForms] = useState<Form[]>([
@@ -95,7 +111,6 @@ export function MarketplacesClient() {
         body: JSON.stringify({
           code: form.code,
           enabled: form.enabled,
-          merchantRef: form.merchantRef,
           credentials: form.credentials,
         }),
       });
@@ -128,16 +143,34 @@ export function MarketplacesClient() {
             </div>
           </div>
           <div className="flex flex-col gap-3">
+            {/* Derived, not entered. It used to be a text field, which made it a second copy of
+                the seller id already in the credentials — free to drift from it, and silent when
+                it did: every own-offer filter simply matched nothing and our own store was
+                reported as our biggest competitor. */}
             <Field label="Satıcı Referansı (merchantRef)">
-              <TextInput
-                value={form.merchantRef}
-                onChange={(e) => update(form.code, { merchantRef: e.target.value })}
-              />
+              <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm">
+                {form.merchantRef || '— henüz belirlenmedi —'}
+              </div>
             </Field>
+            <p className="text-xs text-[var(--color-muted)]">
+              Bu alan elle girilmez: kimlik bilgilerindeki satıcı kodundan (Trendyol{' '}
+              <code>sellerId</code>, Hepsiburada <code>merchantId</code>) otomatik belirlenir ve her
+              ürün içe aktarımında doğrulanır. Kendi teklifimizi rakiplerinkinden ayıran tek veri
+              budur; yanlış olduğunda hata vermez, sadece kendi mağazamızı rakip sayardık.
+            </p>
             <p className="text-xs text-[var(--color-muted)]">
               Kimlik bilgileri güvenlik nedeniyle görüntülenmez — yalnızca doldurduğunuz alanlar kaydedilir,
               boş bırakılanlar mevcut değeri korur.
             </p>
+            <Field label="Ortam (Environment)">
+              <Select
+                options={ENV_OPTIONS[form.code]}
+                value={form.credentials.environment ?? 'production'}
+                onChange={(e) =>
+                  update(form.code, { credentials: { ...form.credentials, environment: e.target.value } })
+                }
+              />
+            </Field>
             {CREDENTIAL_FIELDS[form.code].map((f) => (
               <Field key={f.key} label={f.label}>
                 <TextInput

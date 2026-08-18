@@ -15,6 +15,48 @@
       "when": 1786573522682,
       "tag": "0001_chief_scorpion",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786964616000,
+      "tag": "0002_curvy_guardsmen",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786966623852,
+      "tag": "0003_flat_prodigy",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786972063337,
+      "tag": "0004_mysterious_mongoose",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786987635480,
+      "tag": "0005_puzzling_lester",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787004200464,
+      "tag": "0006_stormy_raider",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787037016013,
+      "tag": "0007_charming_black_crow",
+      "breakpoints": true
     }
   ]
 }

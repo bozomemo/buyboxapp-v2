@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { formatMoney, formatNumber } from '@/lib/format';
 
 interface MarketplaceOption {
@@ -319,6 +320,7 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
 
 function BundleEditor({ onChanged }: { onChanged: () => void }) {
   const [bundles, setBundles] = useState<BundleSummary[]>([]);
+  const pagedBundles = usePagedRows(bundles, { pageSize: 25 });
   const [editing, setEditing] = useState<string | undefined>();
   const [name, setName] = useState('');
   const [members, setMembers] = useState<{ memberStockCode: string; quantity: number }[]>([]);
@@ -365,8 +367,8 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
           Yeni Paket
         </button>
       </div>
-      <ul className="mb-3 space-y-1">
-        {bundles.map((b) => (
+      <ul className="mb-2 max-h-64 space-y-1 overflow-auto">
+        {pagedBundles.rows.map((b) => (
           <li key={b.bundleStockCode} className="flex items-center justify-between">
             <button
               type="button"
@@ -380,6 +382,11 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
         ))}
         {bundles.length === 0 && <li className="text-xs text-[var(--color-muted)]">Henüz paket yok.</li>}
       </ul>
+      {bundles.length > 0 && (
+        <div className="mb-3">
+          <Pagination state={pagedBundles} label="paket" />
+        </div>
+      )}
       {editing !== undefined && (
         <div className="space-y-2 border-t border-[var(--color-border)] pt-2">
           <input
@@ -388,6 +395,9 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
             placeholder="Paket adı"
             className="w-full rounded border border-[var(--color-border)] px-2 py-1 text-xs"
           />
+          {/* Bounded: there is no cap on how many members a bundle may have (doc 06 §3), and the
+              save button has to stay reachable. */}
+          <div className="max-h-64 space-y-2 overflow-auto">
           {members.map((m, i) => (
             <div key={i} className="flex items-center gap-2">
               <input
@@ -420,6 +430,7 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
               </button>
             </div>
           ))}
+          </div>
           <button
             type="button"
             onClick={() => setMembers([...members, { memberStockCode: '', quantity: 1 }])}
@@ -453,6 +464,7 @@ export function StockClient() {
   const [items, setItems] = useState<StockItem[]>([]);
   const [marketplaces, setMarketplaces] = useState<MarketplaceOption[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const paged = usePagedRows(items);
 
   function load() {
     fetch('/api/stock')
@@ -475,9 +487,10 @@ export function StockClient() {
       <BundleEditor onChanged={load} />
 
       {loaded && (
-        <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+        <div className="space-y-2">
+        <TableFrame>
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-[var(--color-muted)]">
+            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
               <tr>
                 <th className="px-2 py-2">Stok Kodu</th>
                 <th className="px-2 py-2">Ürün İsmi</th>
@@ -492,7 +505,7 @@ export function StockClient() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
-              {items.map((item) => (
+              {paged.rows.map((item) => (
                 <tr key={item.baseStockCode} className={rowClass(item, marketplaces)}>
                   <td className="px-2 py-1">{item.baseStockCode}</td>
                   <td className="px-2 py-1">{item.name}</td>
@@ -518,6 +531,8 @@ export function StockClient() {
               )}
             </tbody>
           </table>
+        </TableFrame>
+        <Pagination state={paged} label="stok kalemi" />
         </div>
       )}
     </div>

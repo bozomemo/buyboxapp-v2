@@ -20,6 +20,32 @@ export interface JobContext {
   readonly correlationId: string;
   /** Raw JSON payload from the `job_queue` row, parsed by the handler itself. */
   readonly payload: string;
+  /**
+   * Reports how far along this run is, for the Jobs screen's live detail panel (doc 06 §7).
+   *
+   * The worker and the web app are separate processes, so a handler that stays silent until
+   * it returns is genuinely unobservable from the UI — this is the only channel. Call it once
+   * per item; the runner throttles the actual `UPDATE` (see `PROGRESS_THROTTLE_MS`), so a
+   * per-item call is cheap and handlers need no throttling of their own.
+   *
+   * Progress is **reporting only**, on exactly the terms doc 07 §7 sets for competitor data:
+   * a failure to record it never fails the run, and nothing may branch on it. Handlers that
+   * do not call it are unaffected — the panel then shows counters without a bar.
+   */
+  readonly reportProgress: (progress: JobProgress) => void;
+}
+
+export interface JobProgress {
+  /** Items attempted so far. Monotonic; the runner ignores a value that would move it backwards. */
+  readonly done: number;
+  /** Total the run expects to attempt, if known at this point. */
+  readonly total: number;
+  /**
+   * What is in flight, for a human — a stock code, a product name. Never money and never a
+   * price: this string is written to `job_runs.current_item` and rendered verbatim, and
+   * formatted money is a display concern that must not enter storage (CLAUDE.md hard rules).
+   */
+  readonly currentItem?: string | null;
 }
 
 export interface JobResult {

@@ -11,8 +11,16 @@
  * circuit-breaker transitions as `app_events` rows so the web process can read them back.
  */
 import { NextResponse } from 'next/server';
-import { competitionRepo, configRepo, eventsRepo, listingsRepo, repricingRepo } from '@buybox/db';
-import { marketplaceKillSwitchSetting } from '@buybox/jobs';
+import {
+  alertsRepo,
+  competitionRepo,
+  competitorReportsRepo,
+  configRepo,
+  eventsRepo,
+  listingsRepo,
+  repricingRepo,
+} from '@buybox/db';
+import { ALERT_STALE_AFTER_MS, marketplaceKillSwitchSetting } from '@buybox/jobs';
 import {
   GLOBAL_KILL_SWITCH_SETTING_KEY,
   isKillSwitchEngaged,
@@ -40,6 +48,26 @@ export async function GET() {
       listingsRepo.lastImportByMarketplace(appDb),
       competitionRepo.lastBuyboxObservationByMarketplace(appDb),
     ]);
+
+  // The competitor-alert tile. The open count travels with the freshness of the scrape behind
+  // it, and never alone: zero open alerts on a scraper that has not succeeded in a day is
+  // "we have not looked", which reads as "nothing is wrong" unless the tile says otherwise.
+  const openCompetitorAlerts = await alertsRepo.countOpenAlerts(appDb);
+  const competitorCoverage = await Promise.all(
+    marketplaces.map(async (m) => {
+      const coverage = await competitorReportsRepo.coverageInRange(appDb, {
+        sinceMs: nowMs - 7 * 24 * 60 * 60 * 1000,
+        untilMs: nowMs,
+        marketplaceCode: m.code,
+      });
+      return {
+        marketplaceCode: m.code,
+        displayName: m.displayName,
+        lastOkAt: coverage.lastOkAt,
+        stale: coverage.lastOkAt === null || nowMs - coverage.lastOkAt > ALERT_STALE_AFTER_MS,
+      };
+    }),
+  );
 
   const marketplaceInfo = await Promise.all(
     marketplaces.map(async (m) => {
@@ -78,6 +106,11 @@ export async function GET() {
     systemPaused: isKillSwitchEngaged(systemPause?.value),
     globalKillSwitchEngaged: isKillSwitchEngaged(globalKillSwitch?.value),
     marketplaces: marketplaceInfo,
+    competitorAlerts: {
+      open: openCompetitorAlerts,
+      coverage: competitorCoverage,
+      staleMarketplaces: competitorCoverage.filter((c) => c.stale).map((c) => c.displayName),
+    },
     phaseDistribution,
     alerts: alerts.map((a) => ({
       id: a.id,

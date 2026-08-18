@@ -4,6 +4,8 @@
  * enable/disable, run-now"), so the UI's displayed schedule can never drift from what
  * actually fires.
  */
+import type { AppDatabase } from '@buybox/db';
+import { configRepo } from '@buybox/db';
 import { CONFIRM_SUBMISSIONS_JOB } from './pipeline/confirm-submissions.js';
 import { IMPORT_BUNDLES_JOB } from './pipeline/import-bundles.js';
 import { IMPORT_LISTINGS_JOB } from './pipeline/import-listings.js';
@@ -131,4 +133,20 @@ export function jobEnabledSettingKey(jobName: string): string {
 /** What "no setting stored" means for a job — see `JobCatalogEntry.defaultEnabled`. */
 export function jobDefaultEnabled(jobName: string): boolean {
   return JOB_CATALOG.find((entry) => entry.jobName === jobName)?.defaultEnabled ?? true;
+}
+
+/**
+ * doc 12 6.9 "enable/disable". An explicit stored setting always wins; with none stored the
+ * job's catalogue default applies, which is `true` for everything except `ScrapeCompetitors`
+ * (api-references §1.6 requires an explicit decision before any scraping happens).
+ *
+ * Lives here rather than in `scheduler.ts` (which re-exports it for the existing public API)
+ * so `runner.ts` can also read it — for the retry-vs-give-up decision in `handleFailure` —
+ * without creating a `scheduler.ts` ⇄ `runner.ts` import cycle.
+ */
+export async function isJobEnabled(appDb: AppDatabase, jobName: string): Promise<boolean> {
+  const setting = await configRepo.getAppSetting(appDb, jobEnabledSettingKey(jobName));
+  if (setting?.value === 'false') return false;
+  if (setting?.value === 'true') return true;
+  return jobDefaultEnabled(jobName);
 }

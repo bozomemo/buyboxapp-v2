@@ -118,6 +118,12 @@ export class CompetitorSourceError extends Error {
     message: string,
     readonly kind: CompetitorSourceFailureKind,
     override readonly cause?: unknown,
+    /**
+     * The response's HTTP status, when `kind` is `fetchFailed` and a response was received at
+     * all (absent on a network-level failure, e.g. a timeout). Lets a caller decide which
+     * statuses are worth retrying without parsing the message string.
+     */
+    readonly httpStatus?: number,
   ) {
     super(message);
     this.name = 'CompetitorSourceError';
@@ -131,4 +137,10 @@ export interface ICompetitorSource {
    * records the failure and moves on; it must never propagate into a pricing decision.
    */
   fetchProductOffers(ref: ProductPageRef): Promise<CompetitorPageSnapshot>;
+  /**
+   * Releases any resource the implementation owns (e.g. `TrendyolPublicPageSource`'s Playwright
+   * browser, 2026-08-17). Optional: most implementations hold nothing to release. The worker
+   * calls this on every registered source at shutdown.
+   */
+  close?(): Promise<void>;
 }

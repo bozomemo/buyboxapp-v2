@@ -9,9 +9,27 @@ import { computeBackoffMs } from '@buybox/adapters';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
 import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
 import type { Clock } from './clock.js';
-import { DEFAULT_MAX_ATTEMPTS, zeroResult, type JobDefinition, type JobResult } from './job.js';
+import { isJobEnabled } from './job-catalog.js';
+import {
+  DEFAULT_MAX_ATTEMPTS,
+  DEFAULT_VISIBILITY_TIMEOUT_MS,
+  zeroResult,
+  type JobDefinition,
+  type JobProgress,
+  type JobResult,
+} from './job.js';
 
 const RETRY_BACKOFF = { baseMs: 5_000, factor: 2, maxDelayMs: 5 * 60_000 };
+
+/**
+ * How often a handler's `reportProgress` calls are actually flushed to `job_runs`.
+ *
+ * `ScrapeCompetitors` reports once per listing and may walk `SCRAPE_MAX_LISTINGS_PER_RUN`
+ * of them, so an unthrottled write would add one `UPDATE` per page fetch to a job whose whole
+ * design goal is to stay light. One second is well under the UI's own poll interval, so the
+ * operator still sees every item on a slow scrape and loses nothing on a fast one.
+ */
+const PROGRESS_THROTTLE_MS = 1_000;
 
 export class JobRunner {
   constructor(
@@ -44,6 +62,7 @@ export class JobRunner {
       itemsFailed: 0,
       error: null,
       correlationId,
+      jobQueueId: claimed.id,
     });
 
     if (!def) {
@@ -54,6 +73,31 @@ export class JobRunner {
       return { ...zeroResult(), error };
     }
 
+    // Heartbeat the claim's lock while the handler runs. Without this, a handler that
+    // legitimately takes longer than its visibility timeout (e.g. `ScrapeCompetitors` walking
+    // up to `SCRAPE_MAX_LISTINGS_PER_RUN` pages one at a time) has its row's `lockedUntil`
+    // lapse mid-run, `requeueExpiredJobs` returns it to `ready` on wall-clock expiry alone, and
+    // the *next* tick claims and runs the same job again while the first run is still going —
+    // two concurrent sweeps hammering the same public pages, which is exactly the "aggressive"
+    // pattern that risks a block (doc 07 §7, api-references §1.6). `claimed.lockedBy` is this
+    // worker's own instance id, stamped by `claimNextJob`; renewal only succeeds while the row
+    // is still `locked` and owned by it, so a heartbeat that fires after the row has genuinely
+    // moved on (reclaimed, or already finished) is a harmless no-op. `unref()` so a lingering
+    // interval never keeps the process alive on its own — `finally` clears it regardless.
+    const visibilityTimeoutMs = def.visibilityTimeoutMs ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
+    const heartbeat = setInterval(() => {
+      void jobsRepo.renewJobLock(
+        this.appDb,
+        claimed.id,
+        claimed.lockedBy ?? '',
+        this.clock.nowMs(),
+        visibilityTimeoutMs,
+      );
+    }, Math.max(1000, Math.floor(visibilityTimeoutMs / 2)));
+    heartbeat.unref?.();
+
+    const progress = this.createProgressReporter(runId);
+
     try {
       const result = await def.handler({
         appDb: this.appDb,
@@ -62,7 +106,9 @@ export class JobRunner {
         competitorSources: this.competitorSources,
         correlationId,
         payload: claimed.payload,
+        reportProgress: progress.report,
       });
+      await progress.settle();
       await this.finish(runId, result, result.error);
       if (result.error) {
         await this.handleFailure(claimed, def, result.error, correlationId);
@@ -72,9 +118,12 @@ export class JobRunner {
       return result;
     } catch (thrown) {
       const message = thrown instanceof Error ? thrown.message : String(thrown);
+      await progress.settle();
       await this.finish(runId, zeroResult(), message);
       await this.handleFailure(claimed, def, message, correlationId);
       return { ...zeroResult(), error: message };
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 
@@ -87,7 +136,72 @@ export class JobRunner {
       itemsOk: result.itemsOk,
       itemsFailed: result.itemsFailed,
       error: error ?? null,
+      // The run is over: no item is in flight any more, and `items_done` is settled to the
+      // authoritative total so a detail panel opened on a finished run shows a full bar rather
+      // than whatever the last mid-run heartbeat happened to catch.
+      itemsDone: result.itemsTotal,
+      currentItem: null,
+      progressAt: finishedAt,
     });
+  }
+
+  /**
+   * Builds the throttled, fire-and-forget `reportProgress` handed to a handler.
+   *
+   * Three properties matter, and all three are about not letting a *reporting* feature harm
+   * the run it reports on:
+   *
+   * - **Non-blocking.** `report` returns `void`; the write is queued. A handler that awaited a
+   *   database round-trip per item would slow down exactly the long jobs this exists for.
+   * - **Serialised and failure-swallowing.** Writes are chained so two heartbeats cannot
+   *   interleave, and a failed one is discarded. Progress is never worth failing a run over.
+   * - **Settled before `finish`.** `settle()` drains the chain and drops any unflushed
+   *   heartbeat, so a late progress `UPDATE` can never land after — and partially overwrite —
+   *   the terminal row written by `finish`.
+   */
+  private createProgressReporter(runId: string): {
+    report: (progress: JobProgress) => void;
+    settle: () => Promise<void>;
+  } {
+    let pending: JobProgress | undefined;
+    let lastFlushMs = 0;
+    let maxDone = 0;
+    let closed = false;
+    let chain: Promise<void> = Promise.resolve();
+
+    const flush = () => {
+      const snapshot = pending;
+      if (!snapshot) return;
+      pending = undefined;
+      lastFlushMs = this.clock.nowMs();
+      const at = lastFlushMs;
+      chain = chain.then(() =>
+        jobsRepo
+          .updateJobRunProgress(this.appDb, runId, {
+            itemsDone: snapshot.done,
+            itemsTotal: snapshot.total,
+            currentItem: snapshot.currentItem ?? null,
+            progressAt: at,
+          })
+          .catch(() => undefined),
+      );
+    };
+
+    return {
+      report: (progress) => {
+        if (closed) return;
+        // Monotonic: a handler that reports out of order (or restarts a counter) must never
+        // make the operator's progress bar jump backwards.
+        maxDone = Math.max(maxDone, progress.done);
+        pending = { ...progress, done: maxDone };
+        if (this.clock.nowMs() - lastFlushMs >= PROGRESS_THROTTLE_MS) flush();
+      },
+      settle: async () => {
+        closed = true;
+        pending = undefined;
+        await chain;
+      },
+    };
   }
 
   private async handleFailure(
@@ -99,7 +213,13 @@ export class JobRunner {
     await this.logFailure(claimed, error, correlationId);
     const maxAttempts = def.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     const nowMs = this.clock.nowMs();
-    if (claimed.attempts < maxAttempts) {
+    // doc 12 6.9: an operator disabling a job (e.g. after `ScrapeCompetitors` starts drawing
+    // 403s) is a stop request. Without this check a failure already in flight keeps retrying on
+    // its own backoff regardless of the toggle — cadence enqueueing is the only thing gated on
+    // `isJobEnabled` today (scheduler.tick's enqueue loop), so a claimed job's own retry chain
+    // would otherwise ignore "Devre dışı" entirely and keep reappearing in the run history.
+    const stillEnabled = await isJobEnabled(this.appDb, claimed.jobName);
+    if (claimed.attempts < maxAttempts && stillEnabled) {
       const delay = computeBackoffMs(claimed.attempts + 1, { maxAttempts, ...RETRY_BACKOFF });
       await jobsRepo.retryJob(this.appDb, claimed.id, nowMs + delay, error, nowMs);
     } else {

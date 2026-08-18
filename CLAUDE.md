@@ -92,10 +92,20 @@ both a numeric `value` and a locale-formatted `text` of which only the first is 
   competitor dispatch time unknown rather than risk hours-for-days.
 - `docs/04-marketplace-integrations.md` §1.5 describes the **retired** scraper's page
   structure. It is obsolete. Read the guide instead.
-- **Browser impersonation is Hepsiburada-only and is not a pattern to copy.** That endpoint
-  returns 403 to an honest user agent (api-references §2.11 records the measurements), so the
-  product owner authorised an exception on 2026-08-13. Trendyol identifies itself honestly and
-  must keep doing so. Any new source starts honest until measurement proves otherwise.
+- **Browser impersonation is an explicit, per-source, product-owner-authorised exception — not
+  a default to reach for.** Hepsiburada's public endpoint returns 403 to an honest user agent
+  (api-references §2.11 records the measurements); the product owner authorised an exception on
+  2026-08-13. Trendyol's public page was found to do the same even at a conservative request
+  rate — confirmed 2026-08-17 when the operator's own browser reached the same product page
+  without incident from the same network while the honest agent was blocked — and the product
+  owner authorised the identical exception for Trendyol on 2026-08-17 (api-references §1.6). Any
+  new source still starts honest until measurement proves otherwise, and the exception is
+  recorded here and in `docs/08-configuration-and-constants.md`/`docs/api-references.md` when
+  granted — never assumed. For Trendyol specifically the exception is implemented as a real
+  headless browser (Playwright), not a header spoofed on a plain HTTP client — a header alone
+  was measured 2026-08-17 to not be enough, because Trendyol's bot detection fingerprints the
+  TLS handshake, which only a real browser reproduces credibly. See `playwright-fetch.ts`'s doc
+  comment.
 
 ## Hard rules
 

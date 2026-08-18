@@ -12,6 +12,10 @@ import { getAppDb } from '@/lib/server/db';
 const BulkActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('enableAutomation'), ids: z.array(z.string()) }),
   z.object({ action: z.literal('disableAutomation'), ids: z.array(z.string()) }), // also covers "exclude from automation"
+  // Independent of automation (repriceEnabled): lets an operator watch buybox rank /
+  // competitors on a listing without opting it into the pricing engine.
+  z.object({ action: z.literal('enableObservation'), ids: z.array(z.string()) }),
+  z.object({ action: z.literal('disableObservation'), ids: z.array(z.string()) }),
   z.object({
     action: z.literal('setMinMax'),
     ids: z.array(z.string()),
@@ -30,6 +34,10 @@ export async function POST(request: Request) {
     await listingsRepo.bulkSetListingOverrides(appDb, body.ids, { repriceEnabled: true }, nowMs);
   } else if (body.action === 'disableAutomation') {
     await listingsRepo.bulkSetListingOverrides(appDb, body.ids, { repriceEnabled: false }, nowMs);
+  } else if (body.action === 'enableObservation') {
+    await listingsRepo.bulkSetListingOverrides(appDb, body.ids, { observationEnabled: true }, nowMs);
+  } else if (body.action === 'disableObservation') {
+    await listingsRepo.bulkSetListingOverrides(appDb, body.ids, { observationEnabled: false }, nowMs);
   } else if (body.action === 'setMinMax') {
     await listingsRepo.bulkSetListingOverrides(
       appDb,

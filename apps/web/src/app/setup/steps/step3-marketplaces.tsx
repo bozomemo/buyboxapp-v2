@@ -1,13 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Field, StatusBanner, StepFooter, TextInput } from '../ui';
+import { Button, Field, Select, StatusBanner, StepFooter, TextInput } from '../ui';
 
 interface MarketplaceForm {
   code: 'trendyol' | 'hepsiburada';
   title: string;
   enabled: boolean;
-  merchantRef: string;
   credentials: Record<string, string>;
   testResult?: { ok: boolean; message: string };
   saved?: boolean;
@@ -27,9 +26,25 @@ const CREDENTIAL_FIELDS: Record<MarketplaceForm['code'], { key: string; label: s
   ],
 };
 
+/**
+ * Environment lives inside the same credentials record that already goes straight to the
+ * secret store (never the DB) — no schema change needed. The worker's `buildAdapter` and the
+ * connection-test route both read `credentials.environment` off the raw object.
+ */
+const ENV_OPTIONS: Record<MarketplaceForm['code'], { value: string; label: string }[]> = {
+  trendyol: [
+    { value: 'production', label: 'Prod (apigw.trendyol.com)' },
+    { value: 'stage', label: 'Test (stageapigw.trendyol.com)' },
+  ],
+  hepsiburada: [
+    { value: 'production', label: 'Prod' },
+    { value: 'sit', label: 'Test (SIT)' },
+  ],
+};
+
 const INITIAL: MarketplaceForm[] = [
-  { code: 'trendyol', title: 'Trendyol', enabled: true, merchantRef: '', credentials: {} },
-  { code: 'hepsiburada', title: 'Hepsiburada', enabled: false, merchantRef: '', credentials: {} },
+  { code: 'trendyol', title: 'Trendyol', enabled: true, credentials: {} },
+  { code: 'hepsiburada', title: 'Hepsiburada', enabled: false, credentials: {} },
 ];
 
 export function Step3Marketplaces({
@@ -99,10 +114,16 @@ export function Step3Marketplaces({
 
           {form.enabled && (
             <div className="flex flex-col gap-3">
-              <Field label="Satıcı Referansı (merchantRef)">
-                <TextInput
-                  value={form.merchantRef}
-                  onChange={(e) => update(form.code, { merchantRef: e.target.value })}
+              {/* Deliberately not asked for: it is the seller id already entered below, and a
+                  second copy is free to drift from the first — silently, because nothing errors
+                  when it is wrong; our own store simply starts counting as a competitor. */}
+              <Field label="Ortam (Environment)">
+                <Select
+                  options={ENV_OPTIONS[form.code]}
+                  value={form.credentials.environment ?? 'production'}
+                  onChange={(e) =>
+                    update(form.code, { credentials: { ...form.credentials, environment: e.target.value } })
+                  }
                 />
               </Field>
               {CREDENTIAL_FIELDS[form.code].map((f) => (

@@ -51,3 +51,17 @@ export type {
 } from './repricing/types.js';
 
 export { decide } from './repricing/engine.js';
+
+export type {
+  AlertEvaluation,
+  AlertListingContext,
+  AlertMatch,
+  AlertOffer,
+  AlertPredicate,
+  AlertRule,
+  AlertScopeType,
+  AlertSubjectType,
+  AlertThresholdType,
+  PriceSource,
+} from './alerts/rules.js';
+export { alertKey, evaluateAlertRules } from './alerts/rules.js';

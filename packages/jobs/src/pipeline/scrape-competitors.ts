@@ -20,13 +20,22 @@
  * - never returns `JobResult.error` for individual page failures, so the queue does not retry
  *   a whole catalogue because one page 404'd; failures are counted and the **rate** alerts
  *   (doc 07 §7: "per-failure silence");
- * - writes only `scrape_runs` and `competitor_observations`, never `repricing_state`,
- *   `price_submissions` or `buybox_observations`.
+ * - writes only `scrape_runs`, `competitor_observations` and `competitor_sellers`, never
+ *   `repricing_state`, `price_submissions` or `buybox_observations`.
  */
 import { createHash } from 'node:crypto';
 import { CompetitorSourceError, type CompetitorOffer, type CompetitorPageSnapshot } from '@buybox/adapters';
 import type { MarketplaceCode } from '@buybox/core';
-import { competitionRepo, eventsRepo, listingsRepo, newId, repricingRepo } from '@buybox/db';
+import {
+  alertsRepo,
+  competitionRepo,
+  competitorSellersRepo,
+  configRepo,
+  eventsRepo,
+  listingsRepo,
+  newId,
+  repricingRepo,
+} from '@buybox/db';
 import { z } from 'zod';
 import { getCompetitorSource } from '../competitor-source-registry.js';
 import type { JobContext, JobResult } from '../job.js';
@@ -37,6 +46,7 @@ import {
   SCRAPE_MAX_LISTINGS_PER_RUN,
   SCRAPE_WARM_EVERY_N_CYCLES,
 } from '../scrape-config.js';
+import { evaluateAlertsForListing, toListingContext } from './evaluate-alerts.js';
 import { decodeProductPageRef } from './listing-extra.js';
 import { computeObservationTier, type ObservationTier } from './observe-buybox.js';
 
@@ -76,21 +86,32 @@ export function isDueForScrape(
  * A/B flags and recommendation blocks that change on every load, so hashing the response body
  * would mark every scrape as changed and defeat the whole point of the two-tier design
  * (doc 10 §5). Money is hashed as exact kuruş, never as a formatted string.
+ *
+ * **Only four fields are keyed on: `rank`, `sellerRef`, `price`, `finalPrice`.** The offer rows
+ * themselves still carry every field — narrowing this key changes *when* a batch is written,
+ * never *what* is written, so `observationsAsOf`'s whole-batch reconstruction is unaffected.
+ *
+ * The excluded fields were measured against the live archive (1,799 observations over 64
+ * listings, 124 batch transitions, 2026-08-18):
+ *
+ * - `offeredStock` alone drove 53 of 124 rewrites. A single unit selling changes one seller's
+ *   stock and rewrites the whole 20-seller batch, with no price or ranking movement at all.
+ *   `sellerRating`, `promotionText`, `sellerName`, `listingRef` and `dispatchTime` are the same
+ *   kind of churn at a lower rate.
+ * - `rank` is **not** churn and stays in the key, though it was initially assumed to be: all 55
+ *   rank-only transitions in the sample turned out to be genuine buybox hand-overs between
+ *   equally-priced sellers, which the buybox-share report (doc 06 §6) exists to count. Dropping
+ *   it would have saved a further ~30% of writes by discarding exactly the signal being stored.
+ * - `isWinner` is redundant once `rank` is keyed on — it is `rank === 1`.
+ *
+ * Net effect on the sample: 1,799 rows → 1,300 (−28%).
  */
 export function hashOffers(offers: readonly CompetitorOffer[]): string {
   const canonical = offers.map((offer) => [
     offer.rank,
     offer.sellerRef,
-    offer.sellerName,
-    offer.sellerRating,
-    offer.listingRef,
     offer.price?.toKurus().toString() ?? null,
     offer.finalPrice?.toKurus().toString() ?? null,
-    offer.offeredStock,
-    offer.dispatchTime,
-    offer.hasPromotion,
-    offer.promotionText,
-    offer.isWinner,
   ]);
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
@@ -138,9 +159,17 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
     };
   }
 
-  const candidates = await listingsRepo.listRepriceableListings(ctx.appDb, marketplaceCode);
+  const candidates = await listingsRepo.listObservableListings(ctx.appDb, marketplaceCode);
 
-  const due: { readonly listingId: string; readonly extra: string | null }[] = [];
+  const due: {
+    readonly listingId: string;
+    readonly extra: string | null;
+    /** Display label for the Jobs screen's live progress panel only — never used as data. */
+    readonly label: string;
+    readonly baseStockCode: string | null;
+    readonly price: bigint;
+    readonly minPrice: bigint | null;
+  }[] = [];
   for (const listing of candidates) {
     const state = await repricingRepo.getRepricingState(ctx.appDb, listing.id);
     const latestObservation = await competitionRepo.latestBuyboxObservation(ctx.appDb, listing.id);
@@ -153,7 +182,14 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
     if (!isDueForScrape(tier, payload.cycleNumber, payload.warmEveryNCycles, payload.coldEveryNCycles)) {
       continue;
     }
-    due.push({ listingId: listing.id, extra: listing.extra });
+    due.push({
+      listingId: listing.id,
+      extra: listing.extra,
+      label: `${listing.sellerStockCode} · ${listing.productName}`,
+      baseStockCode: listing.baseStockCode,
+      price: listing.price,
+      minPrice: listing.minPrice,
+    });
     if (due.length >= payload.maxListings) break;
   }
 
@@ -162,7 +198,54 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
   let attempted = 0;
   let skippedNoPageRef = 0;
 
+  let processed = 0;
+  const seenSellers: competitorSellersRepo.SeenSeller[] = [];
+
+  // Our own store's merchant id on this marketplace. We are one of the offers on our own
+  // listings, so without this an "any seller below X" rule would open an alert against
+  // ourselves the moment we priced below our own threshold — the rule would look like it was
+  // working while reporting our own price back to us. `null` when unconfigured, in which case
+  // nothing is removed; the same reading `loadSecondSellerId` takes (doc 03 §6.5).
+  const ourSellerRef =
+    (await configRepo.getMarketplace(ctx.appDb, marketplaceCode))?.merchantRef ?? null;
+
+  // Loaded once per run, not per listing: the rule set is small and identical for every page,
+  // and re-reading it 200 times would add nothing but load. Failing to load them is not fatal —
+  // alerting degrades to "off" for this run while the scrape itself proceeds untouched.
+  let alertRules: alertsRepo.AlertRuleRow[] = [];
+  const sellerGroupOf = new Map<string, string>();
+  try {
+    alertRules = await alertsRepo.listAlertRules(ctx.appDb, true);
+    if (alertRules.length > 0) {
+      for (const seller of await competitorSellersRepo.listCompetitorSellers(ctx.appDb, {
+        marketplaceCode,
+      })) {
+        if (seller.groupId !== null) sellerGroupOf.set(seller.sellerRef, seller.groupId);
+      }
+    }
+  } catch (error) {
+    await eventsRepo.logEvent(ctx.appDb, {
+      id: newId(),
+      at: nowMs,
+      level: 'warn',
+      marketplaceCode,
+      listingId: null,
+      jobRunId: ctx.correlationId,
+      code: 'AlertRulesLoadFailed',
+      message: `Could not load alert rules: ${error instanceof Error ? error.message : String(error)} — competitor history is unaffected`,
+      context: null,
+    });
+  }
+  let alertsOpened = 0;
+  let alertsResolved = 0;
+
   for (const item of due) {
+    // Reported *before* the fetch, so the panel names the page currently being waited on
+    // rather than the last one that finished — on a rate-limited scrape (api-references §1.6)
+    // that wait is most of the elapsed time, and it is what the operator is watching.
+    ctx.reportProgress({ done: processed, total: due.length, currentItem: item.label });
+    processed += 1;
+
     const ref = decodeProductPageRef(item.extra);
     if (!ref) {
       // Nothing to fetch: this listing was imported before product-page capture, or its
@@ -175,6 +258,20 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
     const scrapeRunId = newId();
     try {
       const snapshot = await source.fetchProductOffers(ref);
+      // Identity bookkeeping is accumulated and written once after the loop — see the note at
+      // the write site. Sellers the payload did not identify are skipped: a null ref has no
+      // durable identity, and matching one by display name is the mistake `competitor_sellers`
+      // exists to avoid.
+      for (const offer of snapshot.offers) {
+        if (offer.sellerRef === null) continue;
+        seenSellers.push({
+          id: newId(),
+          marketplaceCode,
+          sellerRef: offer.sellerRef,
+          sellerName: offer.sellerName ?? '',
+          seenAt: nowMs,
+        });
+      }
       const payloadHash = hashOffers(snapshot.offers);
       await competitionRepo.recordScrapeRun(
         ctx.appDb,
@@ -191,6 +288,53 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
         toObservationRows(item.listingId, scrapeRunId, nowMs, snapshot),
       );
       itemsOk += 1;
+
+      // Isolated on purpose, and evaluated on the snapshot rather than on what was just
+      // written: `recordScrapeRun` only stores observations when the seller set changed, so a
+      // rule created today would never fire on a product that has been stable for days.
+      // A failure here logs and moves on — the competitor history above is already durable, and
+      // nothing in the pricing path reads any of this (doc 07 §1.1).
+      if (alertRules.length > 0) {
+        try {
+          const result = await evaluateAlertsForListing(
+            ctx.appDb,
+            alertRules,
+            sellerGroupOf,
+            {
+              listing: toListingContext({
+                id: item.listingId,
+                marketplaceCode,
+                baseStockCode: item.baseStockCode,
+                price: item.price,
+                minPrice: item.minPrice,
+              }),
+              // Competitors only. The archive keeps the whole offer list — our rank is only
+              // meaningful among the offers it ranks against — but an alert is about someone
+              // else's behaviour.
+              offers:
+                ourSellerRef === null
+                  ? snapshot.offers
+                  : snapshot.offers.filter((offer) => offer.sellerRef !== ourSellerRef),
+              payloadHash,
+            },
+            nowMs,
+          );
+          alertsOpened += result.opened;
+          alertsResolved += result.resolved;
+        } catch (error) {
+          await eventsRepo.logEvent(ctx.appDb, {
+            id: newId(),
+            at: nowMs,
+            level: 'warn',
+            marketplaceCode,
+            listingId: item.listingId,
+            jobRunId: ctx.correlationId,
+            code: 'AlertEvaluationFailed',
+            message: `Alert evaluation failed for listing ${item.listingId}: ${error instanceof Error ? error.message : String(error)} — competitor history and repricing are unaffected`,
+            context: null,
+          });
+        }
+      }
     } catch (error) {
       itemsFailed += 1;
       const status: 'parseFailed' | 'fetchFailed' =
@@ -226,6 +370,46 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
         context: JSON.stringify({ status }),
       });
     }
+  }
+
+  // Written once for the whole run rather than per listing: the same handful of merchants
+  // appears across most of a catalogue (129 distinct sellers across 64 listings in the live
+  // archive), so `recordSeenSellers`'s dedup turns ~4,000 offer rows into ~130 upserts.
+  //
+  // Isolated by its own catch on purpose. This table is a convenience for reporting and, later,
+  // for alert rules; the scrape's actual output is already durably written by this point.
+  // Failing a page's scrape — or the run — because a bookkeeping upsert failed would be exactly
+  // the coupling the rest of this job is built to avoid.
+  if (seenSellers.length > 0) {
+    try {
+      await competitorSellersRepo.recordSeenSellers(ctx.appDb, seenSellers);
+    } catch (error) {
+      await eventsRepo.logEvent(ctx.appDb, {
+        id: newId(),
+        at: nowMs,
+        level: 'warn',
+        marketplaceCode,
+        listingId: null,
+        jobRunId: ctx.correlationId,
+        code: 'CompetitorSellerUpsertFailed',
+        message: `Could not record competitor seller identities: ${error instanceof Error ? error.message : String(error)} — competitor history is unaffected`,
+        context: null,
+      });
+    }
+  }
+
+  if (alertsOpened > 0 || alertsResolved > 0) {
+    await eventsRepo.logEvent(ctx.appDb, {
+      id: newId(),
+      at: nowMs,
+      level: 'info',
+      marketplaceCode,
+      listingId: null,
+      jobRunId: ctx.correlationId,
+      code: 'AlertsChanged',
+      message: `${alertsOpened} rakip alarmı açıldı, ${alertsResolved} alarm kapandı`,
+      context: JSON.stringify({ opened: alertsOpened, resolved: alertsResolved }),
+    });
   }
 
   if (attempted >= SCRAPE_FAILURE_RATE_MIN_SAMPLE) {

@@ -16,6 +16,18 @@ recommendation with its reasoning.
 | Legacy marketplaces | Farmazon, N11, GittiGidiyor dropped |
 | Orders | MAY-ADD-LATER |
 
+> **Deployment dependency added 2026-08-17**: the Trendyol competitor scraper
+> (`packages/adapters/src/trendyol/public-page/playwright-fetch.ts`, api-references §1.6) runs a
+> real headless Chromium via Playwright — the only transport found to reliably pass Trendyol's
+> TLS-fingerprinting bot detection. `npm install` at the repo root now runs
+> `playwright install chromium` (a root `postinstall` script) so the browser binary is present
+> after a normal install, on any OS. On a **Linux server**, Chromium's OS-level shared libraries
+> are a separate, one-time step the repo does not run automatically (it needs root, which a
+> restricted deploy user may not have): run `npx playwright install-deps chromium` once as an
+> operator with sufficient privilege. Skipping this step doesn't affect repricing — only
+> `ScrapeCompetitors` (off by default, doc 07 §7) fails to launch, and that failure is recorded
+> and the run continues, per the same graceful-degradation rule as any other scrape failure.
+
 ---
 
 ## 1. Why not "just Next.js"
@@ -132,6 +144,7 @@ IMarketplaceAdapter  IProductSource   repositories      IClock/ILogger
 interface IMarketplaceAdapter {
   readonly code: MarketplaceCode;
   readonly capabilities: MarketplaceCapabilities;   // doc 03 §9
+  readonly merchantRef: string;                     // our own seller id here (doc 05 §3)
 
   testConnection(creds: Credentials): Promise<ConnectionTestResult>;
 

@@ -4,7 +4,7 @@
 export type { Clock } from './clock.js';
 export { FakeClock, systemClock } from './clock.js';
 
-export type { JobContext, JobDefinition, JobHandler, JobResult } from './job.js';
+export type { JobContext, JobDefinition, JobHandler, JobProgress, JobResult } from './job.js';
 export { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, zeroResult } from './job.js';
 
 export { JobRunner } from './runner.js';
@@ -70,8 +70,11 @@ export {
   type ScrapeCompetitorsPayload,
 } from './pipeline/scrape-competitors.js';
 export { decodeProductPageRef, encodeListingExtra } from './pipeline/listing-extra.js';
+export { syncMerchantRef, type MerchantRefSyncResult } from './merchant-ref.js';
 export {
   SCRAPE_COLD_EVERY_N_CYCLES,
+  ALERT_DEFAULT_QUIET_PERIOD_MS,
+  ALERT_STALE_AFTER_MS,
   SCRAPE_CYCLE_MS,
   SCRAPE_FAILURE_RATE_ALERT_THRESHOLD,
   SCRAPE_FAILURE_RATE_MIN_SAMPLE,
@@ -86,6 +89,13 @@ export {
 } from './circuit-breaker-config.js';
 
 export { JOB_CATALOG, jobDefaultEnabled, jobEnabledSettingKey, type JobCatalogEntry } from './job-catalog.js';
+
+export {
+  getScrapeRateLimit,
+  scrapeRateSettingKey,
+  setScrapeRateLimit,
+  type ScrapeRateLimit,
+} from './scrape-rate-settings.js';
 
 export {
   buildAdapterRegistry,

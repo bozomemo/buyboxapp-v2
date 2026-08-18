@@ -1,0 +1,1 @@
+ALTER TABLE "listings" ADD COLUMN "observation_enabled" boolean NOT NULL DEFAULT false;

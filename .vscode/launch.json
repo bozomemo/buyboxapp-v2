@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Default (F5): the Next.js dev server. apps/web/.env.local sets SINGLE_PROCESS=1, so
+      // instrumentation.ts starts the worker in-process too — this one config debugs both the
+      // web routes and the scheduler/jobs (apps/worker/src/index.ts) together.
+      "name": "BuyBoxApp: web + worker (SINGLE_PROCESS)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/apps/web"
+    },
+    {
+      // Standalone worker only (apps/worker/src/main.ts), for when SINGLE_PROCESS is unset in
+      // apps/web/.env.local and the worker is run as its own process. cwd stays apps/web
+      // because DATABASE_URL in .env.local is the relative path `file:./data/app.db`.
+      "name": "BuyBoxApp: worker (standalone)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/tsx",
+      "program": "${workspaceFolder}/apps/worker/src/main.ts",
+      "cwd": "${workspaceFolder}/apps/web",
+      "envFile": "${workspaceFolder}/apps/web/.env.local",
+      "console": "integratedTerminal"
+    }
+  ]
+}

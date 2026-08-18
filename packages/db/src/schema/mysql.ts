@@ -186,9 +186,13 @@ export const listings = mysqlTable(
       .references(() => marketplaces.code, { onDelete: 'cascade' }),
     marketplaceListingId: code('marketplace_listing_id', 128).notNull(),
     sellerStockCode: code('seller_stock_code', 128).notNull(),
-    baseStockCode: code('base_stock_code', 64).references(() => stockItems.baseStockCode, {
-      onDelete: 'set null',
-    }),
+    // Deliberately NOT a foreign key to stock_items. Doc 05 §4 defines this as "parsed; null
+    // when unparseable" — nothing conditions it on stock_items already having a row for that
+    // code. Doc 07 §2 imports listings independently of cost data; a stock item is typically
+    // entered (manually, or via ImportStockItems) *after* the listings that use it already
+    // exist. An FK here made every ImportListings insert fail with a constraint violation
+    // whenever the product source hadn't been populated yet — i.e. on every first run.
+    baseStockCode: code('base_stock_code', 64),
     unitCount: int('unit_count').notNull(),
     isBundle: bool('is_bundle').notNull(),
     productName: text('product_name').notNull(),
@@ -212,6 +216,10 @@ export const listings = mysqlTable(
     allowIncrease: bool('allow_increase').notNull(),
     allowDecrease: bool('allow_decrease').notNull(),
     repriceEnabled: bool('reprice_enabled').notNull(),
+    // Independent of repriceEnabled: lets an operator watch buybox rank / competitors on a
+    // listing without opting it into the pricing engine. Same operator-owned, starts-disabled
+    // treatment as repriceEnabled — see the comment on `upsertListing` below.
+    observationEnabled: bool('observation_enabled').notNull(),
     extra: json('extra'),
     firstSeenAt: timestampMs('first_seen_at').notNull(),
     lastSeenAt: timestampMs('last_seen_at').notNull(),
@@ -301,6 +309,40 @@ export const competitorObservations = mysqlTable(
   (t) => [
     index('competitor_observations_listing_observed').on(t.listingId, t.observedAt),
     index('competitor_observations_seller_observed').on(t.sellerRef, t.observedAt),
+  ],
+);
+
+/** See the note on this table in `schema/sqlite.ts`. */
+export const competitorSellerGroups = mysqlTable('competitor_seller_groups', {
+  id: code('id', 36).primaryKey(),
+  displayName: text('display_name').notNull(),
+  note: text('note'),
+  createdAt: timestampMs('created_at').notNull(),
+  updatedAt: timestampMs('updated_at').notNull(),
+});
+
+/** See the note on this table in `schema/sqlite.ts`. */
+export const competitorSellers = mysqlTable(
+  'competitor_sellers',
+  {
+    id: code('id', 36).primaryKey(),
+    marketplaceCode: code('marketplace_code', 20)
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    // `varchar`, not `text`: it is half of the unique key below, and InnoDB cannot index an
+    // unbounded TEXT without a prefix length (see this file's header note).
+    sellerRef: code('seller_ref', 64).notNull(),
+    sellerName: text('seller_name').notNull(),
+    groupId: code('group_id', 36).references(() => competitorSellerGroups.id, {
+      onDelete: 'set null',
+    }),
+    operatorNote: text('operator_note'),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('competitor_sellers_marketplace_ref').on(t.marketplaceCode, t.sellerRef),
+    index('competitor_sellers_group').on(t.groupId),
   ],
 );
 
@@ -417,6 +459,24 @@ export const jobRuns = mysqlTable('job_runs', {
   itemsFailed: int('items_failed').notNull(),
   error: text('error'),
   correlationId: code('correlation_id', 64).notNull(),
+  // Nullable: rows written before this column existed have none, and a run started outside a
+  // claimed queue row (there is none today, but nothing enforces it) would too. Lets
+  // `requeueExpiredJobs` close out exactly the orphaned run for an expired claim — by id,
+  // never by jobName+time — so a still-legitimately-running instance of the same per-marketplace
+  // job (doc 07 §8: multiple marketplaces can run the same job name concurrently) is never
+  // mistakenly marked failed alongside it.
+  jobQueueId: code('job_queue_id', 36),
+  // Live progress for the Jobs screen's run detail panel (doc 06 §7). The worker and the web
+  // app are separate processes, so `job_runs` is the only channel by which the browser can
+  // watch a run — the handler heartbeats these three columns through `ctx.reportProgress`.
+  // `items_done` is the *attempted* count and only ever grows; `items_ok`/`items_failed` are
+  // still written once at the end by `finishJobRun`, so a detail panel showing progress must
+  // read `items_done`, not their sum, while the run is in flight.
+  itemsDone: int('items_done').notNull().default(0),
+  /** Human-readable label of the item in flight, e.g. a stock code. Never a price or money value. */
+  currentItem: text('current_item'),
+  /** When progress was last heartbeated — lets the UI tell "slow" from "stalled". */
+  progressAt: timestampMs('progress_at'),
 });
 
 export const appEvents = mysqlTable(
@@ -458,3 +518,67 @@ export const circuitBreakerState = mysqlTable('circuit_breaker_state', {
   lastError: text('last_error'),
   updatedAt: timestampMs('updated_at').notNull(),
 });
+
+/** See the notes on these three tables in `schema/sqlite.ts`. */
+export const alertRules = mysqlTable('alert_rules', {
+  id: code('id', 36).primaryKey(),
+  name: text('name').notNull(),
+  scopeType: code('scope_type', 20).notNull(),
+  scopeValue: text('scope_value'),
+  subjectType: code('subject_type', 20).notNull(),
+  subjectValue: text('subject_value'),
+  predicate: code('predicate', 20).notNull(),
+  thresholdType: code('threshold_type', 20).notNull(),
+  thresholdValue: money('threshold_value'),
+  thresholdPct: int('threshold_pct'),
+  quietPeriodMs: int('quiet_period_ms').notNull(),
+  enabled: bool('enabled').notNull(),
+  createdAt: timestampMs('created_at').notNull(),
+  updatedAt: timestampMs('updated_at').notNull(),
+});
+
+export const alerts = mysqlTable(
+  'alerts',
+  {
+    id: code('id', 36).primaryKey(),
+    ruleId: code('rule_id', 36)
+      .notNull()
+      .references(() => alertRules.id, { onDelete: 'cascade' }),
+    // varchar, not text: it is an index member (see this file's header note).
+    alertKey: code('alert_key', 200).notNull(),
+    listingId: code('listing_id', 36)
+      .notNull()
+      .references(() => listings.id, { onDelete: 'cascade' }),
+    sellerRef: code('seller_ref', 64),
+    state: code('state', 16).notNull(),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    resolvedAt: timestampMs('resolved_at'),
+    thresholdApplied: money('threshold_applied'),
+    snapshot: json('snapshot'),
+  },
+  (t) => [
+    index('alerts_key_state').on(t.alertKey, t.state),
+    index('alerts_state_last_seen').on(t.state, t.lastSeenAt),
+    index('alerts_listing').on(t.listingId),
+  ],
+);
+
+export const alertSellers = mysqlTable(
+  'alert_sellers',
+  {
+    id: code('id', 36).primaryKey(),
+    alertId: code('alert_id', 36)
+      .notNull()
+      .references(() => alerts.id, { onDelete: 'cascade' }),
+    sellerRef: code('seller_ref', 64),
+    sellerName: text('seller_name').notNull(),
+    observedPrice: money('observed_price'),
+    priceSource: code('price_source', 16).notNull(),
+    rank: int('rank').notNull(),
+    promotionText: text('promotion_text'),
+    joinedAt: timestampMs('joined_at').notNull(),
+    leftAt: timestampMs('left_at'),
+  },
+  (t) => [index('alert_sellers_alert').on(t.alertId)],
+);

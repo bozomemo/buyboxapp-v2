@@ -20,6 +20,11 @@ export async function POST(request: Request) {
       adapters: buildAdapterRegistry([]),
       correlationId: newId(),
       payload: JSON.stringify({ sourceCode: body.sourceCode, sourceConfig: body.sourceConfig }),
+      // This route runs the handler inline and answers the browser with the finished result —
+      // there is no `job_runs` row for a progress heartbeat to be written to, and nothing
+      // polling for one. Progress is reporting only (see `JobContext.reportProgress`), so
+      // discarding it here is correct rather than merely convenient.
+      reportProgress: () => undefined,
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

@@ -53,6 +53,61 @@ describe('observeBuybox (handler)', () => {
     }
   });
 
+  it('observation is independent of automation: repriceEnabled=false does not block it, observationEnabled=false does', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      // Watched, but not opted into the pricing engine — must still be observed.
+      const watchedOnlyId = await seedListing(appDb, {
+        marketplaceListingId: 'watched-only',
+        repriceEnabled: false,
+        observationEnabled: true,
+      });
+      // Opted into the pricing engine, but not watched — must NOT be observed.
+      const repriceOnlyId = await seedListing(appDb, {
+        marketplaceListingId: 'reprice-only',
+        repriceEnabled: true,
+        observationEnabled: false,
+      });
+      const clock = new FakeClock(NOW);
+
+      const seenIds: string[] = [];
+      const adapter = createFakeAdapter({
+        async fetchBuyboxObservations(ids) {
+          seenIds.push(...ids);
+          return ids.map((marketplaceListingId) => ({
+            marketplaceListingId,
+            rank: 1,
+            buyboxPrice: Money.fromKurus(2000n),
+            secondPrice: null,
+            thirdPrice: null,
+            hasMultipleSeller: false,
+            observedAt: new Date(NOW),
+          }));
+        },
+      });
+
+      const scheduler = new Scheduler({
+        appDb,
+        clock,
+        adapters: new Map([['trendyol', adapter]]),
+        instanceId: 'test',
+      });
+      scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
+      await scheduler.enqueueNow(
+        OBSERVE_BUYBOX_JOB,
+        JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+      );
+      await scheduler.tick();
+
+      expect(seenIds).toEqual(['watched-only']);
+      expect(await competitionRepo.latestBuyboxObservation(appDb, watchedOnlyId)).toBeDefined();
+      expect(await competitionRepo.latestBuyboxObservation(appDb, repriceOnlyId)).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
   it('a Cold-tier listing (BLOCKED) is skipped on a cycle where it is not due', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {

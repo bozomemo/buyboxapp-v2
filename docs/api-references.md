@@ -263,8 +263,15 @@ User-Agent: <identifies this client; see "Operating constraints" below>
 
 Redirects are followed; the final URL is the canonical product link. `productUrl` on each
 variant of the product filter (§1.4) is preferred when the import captured one — it is
-Trendyol's own canonical link. **This is a plain HTML GET; there is no JSON API and no
-browser automation is needed** — the whole application state is embedded in the response.
+Trendyol's own canonical link, but its query string carries `merchantId=<our own seller id>`
+and that param is always stripped before requesting the public page: fetching it with our own
+`merchantId` present is not neutral, it returns our own offer as the winner on every row
+regardless of the real buybox order (found 2026-08-17, `docs/trendyol-merchants-scraping-guide.md`
+§37.2 log entry, implemented in `source.ts`'s `buildUrl`). Everything but `merchantId` (e.g.
+`filterOverPriceListings`) is left as Trendyol supplied it. **This is a plain HTML GET; there
+is no JSON API** — the whole application state is embedded in the response — but see "Operating
+constraints" below for why the *transport* fetching it is a real browser, not a plain HTTP
+client.
 
 ### Response
 
@@ -297,6 +304,37 @@ Four things the shape gets wrong if assumed rather than read:
 
 `value` is in **lira** and is converted to exact kuruş once, at the adapter boundary.
 
+### Open question — `couponApplicablePrice` has never once been observed *(raised 2026-08-18)*
+
+The normaliser maps `finalPrice` to `couponApplicablePrice`, falling back to `discountedPrice`
+when no coupon price exists (guide §14, §26). Across the entire live archive — **1,799
+observations, 64 listings — `final_price` differs from `price` exactly zero times, and is never
+null.** The fallback has fired every time; the coupon field has never appeared.
+
+That is not obviously correct, because the discount is real on the site. Checked by the operator
+on 2026-08-18: product `844564577` showed a shelf price of 3.000,00 ₺ and a basket price of
+2.990,00 ₺, matching its `Sepette 10 TL İndirim` promotion. A shelf→basket delta exists; our data
+has never carried one.
+
+Two readings, and they mean different things downstream:
+
+1. `discountedPrice` **is already** the basket price, in which case `price` has been the customer
+   price all along, `finalPrice` is genuinely redundant on this marketplace, and we store no
+   shelf price at all.
+2. `couponApplicablePrice` is a real sibling we are failing to read — a mapping defect.
+
+**To resolve:** fetch one such product fresh and compare `sellingPrice` / `discountedPrice` /
+`couponApplicablePrice` side by side against what the page and the basket show at that moment.
+The archive cannot settle it, because the observation and the operator's check are a day apart
+and the seller may simply have repriced. Until it is settled, consumers read
+`finalPrice ?? price` and record which one they used.
+
+Separately confirmed on the same check and **working as intended**: quantity-tiered promotions
+(`2. Ürüne %10 İndirim`, `3 Adet ve Üzeri 150 TL İndirim`) do **not** move any price field, and
+must not. Product `1145880513` listed at 2.790,00 ₺ for a single unit with the discount visible
+only after adding two. Promotion *text* advertises reductions that no price field carries — one
+more reason a competitor price is never derived from it.
+
 ### Operating constraints — all mandatory
 
 | Constraint | Where it lives |
@@ -304,7 +342,9 @@ Four things the shape gets wrong if assumed rather than read:
 | Rate limiting, independent of the Seller API limiters | `TrendyolPublicPageSource` (30 req/min, burst 5 — doc 08) |
 | Caching of identical requests | same, 10-minute TTL keyed by resolved URL |
 | Tiered polling by listing importance | `ScrapeCompetitors` (doc 07 §4, §7) |
-| Honest `User-Agent`, never a browser impersonation | `SCRAPER_USER_AGENT` (doc 08) |
+| Browser-identifying `User-Agent` | `SCRAPER_BROWSER_USER_AGENT` (doc 08) — an honest agent got a 403 from Trendyol's bot detection even at a conservative request rate; confirmed 2026-08-17 when the operator's own browser reached the same product page without incident from the same network. The product owner authorised the same reporting-only exception already recorded for Hepsiburada (§2.11, 2026-08-13). |
+| Bounded retry on 403 specifically | `TrendyolPublicPageSource.retryOn403MaxAttempts` (doc 08) — kept as a cheap second line of defence even after the transport fix below; never applied to any other status. |
+| **No Node-native HTTP client is used for this scraper — a real headless browser is** | `playwright-fetch.ts` (`packages/adapters/src/trendyol/public-page/`), Playwright + headless Chromium. First tried Node's core `https` in place of `fetch` (`node-https-fetch.ts`, kept as an injectable alternative, no longer the default) on the theory that undici's connection handling was the problem; re-measured live and that did **not** hold — Node's core `https` also returned 403 consistently, even with a full realistic browser header set. The actual mechanism: Cloudflare fingerprints the **TLS ClientHello**, and `fetch` and Node's core `https` share the same OpenSSL TLS stack, so neither was ever going to pass reliably — `curl` had only succeeded because it happened to run through Windows' Schannel TLS on the diagnostic machine. A real browser's TLS/JS fingerprint is what actually clears the check: confirmed 2026-08-17, 10/10 consecutive previously-failing product pages returned 200 through a headless Chromium instance. This is the "browser impersonation" exception above (the `SCRAPER_BROWSER_USER_AGENT` row) taken literally rather than approximated via headers on a non-browser client. |
 | Graceful degradation | typed `fetchFailed`/`parseFailed`; repricing unaffected (doc 12 Phase 7 DoD) |
 | **An explicit business decision to permit it** | `ScrapeCompetitors` is **off by default** and must be switched on by an operator |
 
@@ -995,6 +1035,16 @@ cost model (doc 02) — it is not read.
   certainly customer-segment pricing, but which audience each segment addresses is unknown, so
   none of them is mapped to `finalPrice` — a competitor's final price is reported as unknown
   rather than guessed.
+
+  **Consequence, recorded 2026-08-18:** `finalPrice` is therefore hard-coded `null` for every
+  Hepsiburada offer (`public-listings/normalize.ts`), not merely null when data is missing. Any
+  consumer that reads `finalPrice` alone gets nothing on this marketplace — an alert rule keyed
+  on it would never fire, silently, across the whole marketplace rather than on one listing.
+  Consumers must read `finalPrice ?? price` and record which of the two they used.
+
+  Re-checking this is **blocked on live data**: the Hepsiburada connection is a test-environment
+  one and the product owner does not trust its prices (decision 2026-08-18). To be verified when
+  a live store is connected.
 - **`quantity` may be capped.** Several sellers report exactly `100`. It is stored as reported
   and used as a stock signal for nothing.
 - **`price.currency`.** Only ever observed as `0`. The enum is not read or acted on.
@@ -1028,3 +1078,5 @@ rank (§2.5), exactly as designed.
 | 2026-08-13 | Hepsiburada | §2.11 public listings endpoint `/api/v1/product/listings/{sku}`: 200 + 10 sellers for `BS1372`, the minimum accepted header set (measured by ablation), no credential required, ~8-request rate ceiling, `data.listings[]` field map, price unit fixed as lira by `formattedPrice` | direct request by the assistant, product owner supplied the endpoint and authorised browser headers; response recorded as a fixture |
 | 2026-08-13 | Trendyol | §1.6 public product-page payload: `__envoy__SHARED_PROPS` marker, `product.merchantListing` as an object, winner joined from `merchant` + `winnerVariant`, `otherMerchants[].variants[]`, `{value,text}` price nodes in lira, `"NaN TL"` rrp | product owner's extraction guide (`docs/trendyol-merchants-scraping-guide.md`), implemented and fixture-tested in `packages/adapters/src/trendyol/public-page/` |
 | 2026-08-14 | Hepsiburada | **§2.2, §2.4, §2.6, §2.10 — the whole listing integration.** Basic-only auth with a mandatory `User-Agent`; all 9 listing query parameters and the complete `Listing` schema; JSON accepted on uploads; `price-uploads` chosen over `inventory-uploads`; `{id}`-only accepted response; `Error` + `PriceValidation` item-level schema with 1-based `elementNo`; **`MinLock`/`MaxLock` price locking**; `priceIncrease/DecreaseDisabled` kill switches; the full 18-operation surface; commission ≤50 SKU / ~240 req-min and buybox ≤10 SKU limits; the `OutOfPriceRange` bands | assistant, from the vendor's own OpenAPI 3.0.1 document and portal guide, retrieved via the portal's public content API (§2.12) after the product owner suggested applying the §2.11 browser-header technique; both artefacts stored verbatim in `docs/vendor/` |
+| 2026-08-18 | Trendyol | §1.6 — **open question raised, not closed.** `couponApplicablePrice` never observed across 1,799 archived observations (`final_price` never once differs from `price`), yet the site shows a real shelf→basket delta (product `844564577`: 3.000,00 ₺ shelf → 2.990,00 ₺ basket). Separately **confirmed correct**: quantity-tiered promotions move no price field (product `1145880513`, 2.790,00 ₺ for a single unit) | operator checked both products live in a browser; archive figures measured by the assistant against `apps/web/data/app.db`. **Needs a fresh payload comparison to settle** |
+| 2026-08-18 | Hepsiburada | §2.11 — recorded that `finalPrice` is hard-coded `null` for every offer, so it is null by design rather than by absence, and consumers must read `finalPrice ?? price`. Re-check deferred: the connected store is a test environment whose prices the product owner does not trust | product owner decision; code inspection of `public-listings/normalize.ts` |
