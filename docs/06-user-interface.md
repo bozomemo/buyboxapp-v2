@@ -329,9 +329,9 @@ network error.
 
 ## 7. Jobs (`/jobs`)
 
-Run history with state, duration, item counts and errors. Per job: schedule, status, last run,
-next run, enable/disable, run-now. Queue depth and currently-claimed jobs. Circuit-breaker state
-per marketplace with a manual reset.
+Run history with state, duration, item counts and errors. Per job: schedule (operator-editable,
+§7.3), status, last run, next run, enable/disable, run-now. Queue depth and currently-claimed
+jobs. Circuit-breaker state per marketplace with a manual reset.
 
 ### 7.1 Live run state
 
@@ -376,6 +376,17 @@ competitor scrapers, editable and audited like every other setting. Shows the ef
 (a stored override, or the compiled default when none is set) and whether it is currently
 overridden. Takes effect on the worker's next restart — the UI says so, rather than implying an
 immediate effect it cannot deliver.
+
+### 7.3 Cadence editing (doc 07 §8.1, R-JOB-2)
+
+The catalogue table's *Sıklık* column is a numeric field (seconds), one per cadence-driven job
+(every job in doc 07 §1 except `ImportBundles`, which has no cadence at all and shows "Yalnızca
+manuel" instead). Next to it: the currently effective value in human units (`formatCadence`,
+e.g. "30 dakikada bir"), a *Kaydet* button, and a *Varsayılana dön* button that only appears once
+an override is stored — clearing it is a distinct action from typing the default value back in,
+since only the former lets the operator later tell "no override" from "override that happens to
+match default". A note above the table repeats the same restart-to-apply honesty §7.2 already
+gives the scrape rate limit: a saved cadence takes effect on the worker's next restart, not live.
 
 ---
 

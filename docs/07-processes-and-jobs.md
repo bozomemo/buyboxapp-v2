@@ -10,6 +10,9 @@ identical either way.
 
 ## 1. Job inventory
 
+Every cadence below is a **default**, not a fixed value — an operator can override any of them
+per job from the Jobs screen (§8 "Operator-configurable cadence").
+
 | Job | Default cadence | Purpose |
 |-----|-----------------|---------|
 | `ImportStockItems` | on demand + daily | Pull products/costs from the configured `IProductSource` |
@@ -392,6 +395,22 @@ The scheduler is DB-backed (doc 10 §1.2). Guarantees:
 - **Graceful shutdown**: stop claiming, finish in-flight work, flush pending batches, release
   locks. Never drop a queued submission on shutdown (doc 09 §6).
 
+### 8.1 Operator-configurable cadence (R-JOB-2)
+
+Every job in §1 with a cadence at all (every one except `ImportBundles`, which has none — see
+§1.1) accepts an operator-supplied override from the Jobs screen (doc 06 §7,
+`GET`/`POST`/`DELETE /api/jobs/cadence`). An override is stored in `app_settings`
+(`job.<jobName>.cadenceMs`, doc 08 §12) audited like any other setting; deleting it restores the
+catalogue default. A floor (`MIN_JOB_CADENCE_MS`, 10 s) rejects an accidental near-zero value —
+below the fastest catalogue default (`SubmitPriceChanges` at 30 s) is very likely a typo, not an
+intentional choice.
+
+**Takes effect on the worker's next restart, not live.** `apps/worker/src/index.ts` resolves
+every job's effective cadence once at boot (`getJobCadenceMs`, `packages/jobs/src/job-catalog.ts`)
+and uses that value for the process's lifetime — the same startup-time-read semantics the scrape
+rate limit and marketplace credentials already use. The Jobs screen says so next to the field so
+an operator does not expect an edit to change what fires immediately.
+
 ---
 
 ## 9. Kill switches
@@ -445,7 +464,7 @@ Used for:
 | ID | Requirement |
 |----|-------------|
 | R-JOB-1 | Automation runs in a supervised worker, independent of any UI session |
-| R-JOB-2 | Every job has a configurable schedule and concurrency limit |
+| R-JOB-2 | Every job has a configurable schedule (§8.1) and concurrency limit (`repricing_policies.concurrency`, §8) |
 | R-JOB-3 | Work is distributed by a queue, never by array-index splitting |
 | R-JOB-4 | Per-marketplace, per-domain rate limiting with retry, backoff and a circuit breaker |
 | R-JOB-5 | Imports are idempotent upserts with a stale sweep gated on full success |

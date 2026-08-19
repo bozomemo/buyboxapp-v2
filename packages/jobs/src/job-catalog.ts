@@ -130,6 +130,48 @@ export function jobEnabledSettingKey(jobName: string): string {
   return `job.${jobName}.enabled`;
 }
 
+/**
+ * Floor for an operator-supplied cadence override (doc 07 §8, doc 08 §12). Below the fastest
+ * catalogue default (`SubmitPriceChanges` at 30 s) is very likely a typo, not an intentional
+ * choice — this stops a fat-fingered value from hammering a marketplace or the DB.
+ */
+export const MIN_JOB_CADENCE_MS = 10_000;
+
+/** `app_settings` key holding an operator's cadence override for a job, if any (doc 07 §8). */
+export function jobCadenceSettingKey(jobName: string): string {
+  return `job.${jobName}.cadenceMs`;
+}
+
+/** Catalogue default only — `null` for a job with no cadence at all (`ImportBundles`). */
+export function jobDefaultCadenceMs(jobName: string): number | null {
+  return JOB_CATALOG.find((entry) => entry.jobName === jobName)?.cadenceMs ?? null;
+}
+
+/**
+ * Effective cadence for a job: a stored override wins, else the catalogue default. Mirrors
+ * `isJobEnabled`'s precedence. A job with no cadence at all (`ImportBundles`) never accepts an
+ * override (doc 07 §1.1 — no bundle-source port exists yet), so this can only return `null` via
+ * the catalogue default, never via a stored setting.
+ *
+ * Read once at worker startup (`apps/worker/src/index.ts`) — a changed setting takes effect on
+ * the worker's next restart, not mid-process, the same as the scrape rate limit and marketplace
+ * credentials.
+ */
+export async function getJobCadenceMs(appDb: AppDatabase, jobName: string): Promise<number | null> {
+  const def = jobDefaultCadenceMs(jobName);
+  if (def === null) return null;
+  const setting = await configRepo.getAppSetting(appDb, jobCadenceSettingKey(jobName));
+  if (!setting) return def;
+  // Tolerate a corrupt, non-numeric or since-lowered-floor stored value by falling back to the
+  // default rather than throwing or handing the worker a nonsensical interval.
+  try {
+    const parsed = JSON.parse(setting.value) as unknown;
+    return typeof parsed === 'number' && Number.isFinite(parsed) && parsed >= MIN_JOB_CADENCE_MS ? parsed : def;
+  } catch {
+    return def;
+  }
+}
+
 /** What "no setting stored" means for a job — see `JobCatalogEntry.defaultEnabled`. */
 export function jobDefaultEnabled(jobName: string): boolean {
   return JOB_CATALOG.find((entry) => entry.jobName === jobName)?.defaultEnabled ?? true;

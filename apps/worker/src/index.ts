@@ -8,9 +8,16 @@
  * (`PruneHistory`). Every other doc 07 §1 job is parametrised per marketplace (or, for
  * `ImportStockItems`, per configured product source) — so this file runs its own lightweight
  * per-target ticker that calls `scheduler.enqueueNow()` with the right payload on each job's
- * documented cadence. `ImportBundles` is deliberately **not** auto-cadenced: doc 10 §4 defines
- * no bundle *source* port, so (as already decided in Phase 5) it only ever runs from an
- * explicit payload — manually, via the Jobs screen, until a future source supplies one.
+ * cadence. `ImportBundles` is deliberately **not** auto-cadenced: doc 10 §4 defines no bundle
+ * *source* port, so (as already decided in Phase 5) it only ever runs from an explicit payload —
+ * manually, via the Jobs screen, until a future source supplies one.
+ *
+ * Every cadence — the tickers' interval and `PruneHistory`'s `scheduler.register` cadence alike —
+ * is resolved once, here, via `getJobCadenceMs` (doc 07 §8, doc 08 §12): a stored operator
+ * override if present, else `JOB_CATALOG`'s compiled default. This is the *only* place cadence is
+ * read; there is no second hardcoded copy to drift out of sync with the Jobs screen. A changed
+ * override takes effect on the worker's next restart, not mid-process — the same startup-time
+ * read the scrape rate limit and marketplace credentials already use.
  */
 import type { MarketplaceCode } from '@buybox/core';
 import { checkSchemaVersion, configRepo, createDb, type AppDatabase } from '@buybox/db';
@@ -30,6 +37,7 @@ import {
   buildCompetitorSourceRegistry,
   CONFIRM_SUBMISSIONS_JOB,
   confirmSubmissions,
+  getJobCadenceMs,
   getScrapeRateLimit,
   IMPORT_LISTINGS_JOB,
   IMPORT_STOCK_ITEMS_JOB,
@@ -45,7 +53,6 @@ import {
   RESET_BUDGET_JOB,
   resetBudget,
   SCRAPE_COMPETITORS_JOB,
-  SCRAPE_CYCLE_MS,
   scrapeCompetitors,
   Scheduler,
   submitPriceChanges,
@@ -71,22 +78,6 @@ export interface WorkerHandle {
   readonly competitorSources: CompetitorSourceRegistry;
   shutdown(): Promise<void>;
 }
-
-/**
- * doc 07 §1's cadence table, in milliseconds. Kept in sync by hand with `JOB_CATALOG`
- * (packages/jobs) — the catalog's `cadenceMs` is what the Jobs screen (doc 12 6.9) *displays*
- * as each job's schedule, this is what actually fires; they must agree.
- */
-const CADENCE_MS = {
-  importListings: 30 * 60_000,
-  observeBuybox: 60_000, // tiering (doc 07 §4) decides per-listing whether a poll is due
-  reprice: 5 * 60_000, // conservative default; per-policy pollIntervalMs is honoured inside Reprice's own listing selection in a future refinement
-  submitPriceChanges: 30_000,
-  confirmSubmissions: 60_000,
-  resetBudget: 60 * 60_000, // hourly check; ensureBudgetUsageRow is a no-op once today's row exists
-  importStockItems: 24 * 60 * 60_000,
-  scrapeCompetitors: SCRAPE_CYCLE_MS,
-} as const;
 
 async function buildAdapter(
   code: MarketplaceCode,
@@ -236,6 +227,41 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   // (api-references §1.6, §2.11) — deployment configuration, not a constant.
   const competitorSources = await buildCompetitorSources(appDb, adapters, env.SCRAPER_BROWSER_USER_AGENT);
 
+  // Resolved once, at boot (doc 07 §8): a stored operator override if present, else
+  // `JOB_CATALOG`'s compiled default.
+  const [
+    pruneHistoryCadence,
+    importListingsCadence,
+    observeBuyboxCadence,
+    repriceCadence,
+    submitPriceChangesCadence,
+    confirmSubmissionsCadence,
+    resetBudgetCadence,
+    scrapeCompetitorsCadence,
+    importStockItemsCadence,
+  ] = await Promise.all([
+    getJobCadenceMs(appDb, PRUNE_HISTORY_JOB),
+    getJobCadenceMs(appDb, IMPORT_LISTINGS_JOB),
+    getJobCadenceMs(appDb, OBSERVE_BUYBOX_JOB),
+    getJobCadenceMs(appDb, REPRICE_JOB),
+    getJobCadenceMs(appDb, SUBMIT_PRICE_CHANGES_JOB),
+    getJobCadenceMs(appDb, CONFIRM_SUBMISSIONS_JOB),
+    getJobCadenceMs(appDb, RESET_BUDGET_JOB),
+    getJobCadenceMs(appDb, SCRAPE_COMPETITORS_JOB),
+    getJobCadenceMs(appDb, IMPORT_STOCK_ITEMS_JOB),
+  ]);
+  // None of these jobs has a null default cadence, so the `??` fallback only ever guards a
+  // theoretical `getJobCadenceMs` bug, not a real code path.
+  const pruneHistoryCadenceMs = pruneHistoryCadence ?? 60_000;
+  const importListingsCadenceMs = importListingsCadence ?? 60_000;
+  const observeBuyboxCadenceMs = observeBuyboxCadence ?? 60_000;
+  const repriceCadenceMs = repriceCadence ?? 60_000;
+  const submitPriceChangesCadenceMs = submitPriceChangesCadence ?? 60_000;
+  const confirmSubmissionsCadenceMs = confirmSubmissionsCadence ?? 60_000;
+  const resetBudgetCadenceMs = resetBudgetCadence ?? 60_000;
+  const scrapeCompetitorsCadenceMs = scrapeCompetitorsCadence ?? 60_000;
+  const importStockItemsCadenceMs = importStockItemsCadence ?? 60_000;
+
   const scheduler = new Scheduler({
     appDb,
     clock: systemClock,
@@ -244,7 +270,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     instanceId: `worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
   });
 
-  scheduler.register({ jobName: PRUNE_HISTORY_JOB, handler: pruneHistoryJob, cadenceMs: 24 * 60 * 60_000 });
+  scheduler.register({ jobName: PRUNE_HISTORY_JOB, handler: pruneHistoryJob, cadenceMs: pruneHistoryCadenceMs });
   scheduler.register({ jobName: IMPORT_LISTINGS_JOB, handler: importListings });
   scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
   scheduler.register({ jobName: REPRICE_JOB, handler: reprice });
@@ -275,14 +301,14 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       }, intervalMs),
     );
   };
-  everyMarketplace(IMPORT_LISTINGS_JOB, CADENCE_MS.importListings);
-  everyMarketplace(OBSERVE_BUYBOX_JOB, CADENCE_MS.observeBuybox, { cycleNumber: 0 });
-  everyMarketplace(REPRICE_JOB, CADENCE_MS.reprice, { mode: 'live' });
-  everyMarketplace(SUBMIT_PRICE_CHANGES_JOB, CADENCE_MS.submitPriceChanges);
-  everyMarketplace(CONFIRM_SUBMISSIONS_JOB, CADENCE_MS.confirmSubmissions);
-  everyMarketplace(RESET_BUDGET_JOB, CADENCE_MS.resetBudget);
+  everyMarketplace(IMPORT_LISTINGS_JOB, importListingsCadenceMs);
+  everyMarketplace(OBSERVE_BUYBOX_JOB, observeBuyboxCadenceMs, { cycleNumber: 0 });
+  everyMarketplace(REPRICE_JOB, repriceCadenceMs, { mode: 'live' });
+  everyMarketplace(SUBMIT_PRICE_CHANGES_JOB, submitPriceChangesCadenceMs);
+  everyMarketplace(CONFIRM_SUBMISSIONS_JOB, confirmSubmissionsCadenceMs);
+  everyMarketplace(RESET_BUDGET_JOB, resetBudgetCadenceMs);
   // Off unless the operator enabled it — `isJobEnabled` inside `everyMarketplace` gates this.
-  everyMarketplace(SCRAPE_COMPETITORS_JOB, CADENCE_MS.scrapeCompetitors, { cycleNumber: 0 });
+  everyMarketplace(SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs, { cycleNumber: 0 });
 
   const importStockItemsTicker = setInterval(() => {
     void (async () => {
@@ -295,7 +321,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       };
       await scheduler.enqueueNow(IMPORT_STOCK_ITEMS_JOB, JSON.stringify({ sourceCode, sourceConfig }));
     })();
-  }, CADENCE_MS.importStockItems);
+  }, importStockItemsCadenceMs);
   tickers.push(importStockItemsTicker);
 
   return {

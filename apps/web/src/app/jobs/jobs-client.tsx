@@ -39,6 +39,8 @@ interface JobRow {
   jobName: string;
   label: string;
   cadenceMs: number | null;
+  isCadenceOverride: boolean;
+  defaultCadenceMs: number | null;
   perMarketplace: boolean;
   defaultPayload: Record<string, unknown>;
   enabled: boolean;
@@ -301,6 +303,9 @@ export function JobsClient() {
     {},
   );
   const [scrapeRateSaved, setScrapeRateSaved] = useState<string | null>(null);
+  /** Draft cadence per job, in **seconds** (fine enough for both the 30s and 60min defaults). */
+  const [cadenceDraft, setCadenceDraft] = useState<Record<string, string>>({});
+  const [cadenceSaved, setCadenceSaved] = useState<string | null>(null);
   /** Which job's detail panel is open, if any. One at a time — it is a drill-down, not a dashboard. */
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
@@ -348,6 +353,19 @@ export function JobsClient() {
       .then((r) => r.json())
       .then((data: JobsOverview) => {
         setOverview(data);
+        // Seed the cadence draft from the effective value, once per job — an in-progress edit
+        // must never be clobbered by the next poll.
+        setCadenceDraft((prev) => {
+          const next = { ...prev };
+          let changed = false;
+          for (const job of data.jobs) {
+            if (job.cadenceMs !== null && !(job.jobName in next)) {
+              next[job.jobName] = String(Math.round(job.cadenceMs / 1000));
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
         // The worker has now spoken for these jobs (queued or running), so the optimistic
         // "Kuyruğa alındı" is no longer needed — and must be dropped, or the button would stay
         // disabled after the run finished.
@@ -578,6 +596,55 @@ export function JobsClient() {
     }
   }
 
+  /**
+   * Stores a cadence override. Takes effect on the worker's next restart, not live — the same
+   * startup-time-read semantics `saveScrapeRate` already has, so no different UI promise here.
+   */
+  async function saveCadence(jobName: string) {
+    const seconds = Number(cadenceDraft[jobName]);
+    setBusy(`cadence-${jobName}`);
+    setCadenceSaved(null);
+    setError(null);
+    try {
+      const res = await fetch('/api/jobs/cadence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobName, cadenceMs: seconds * 1000 }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Bilinmeyen hata');
+      loadOverview();
+      setCadenceSaved(jobName);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function resetCadence(jobName: string) {
+    setBusy(`cadence-${jobName}`);
+    setCadenceSaved(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/jobs/cadence?jobName=${encodeURIComponent(jobName)}`, { method: 'DELETE' });
+      const data = (await res.json()) as { ok?: boolean; error?: string; cadenceMs?: number };
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Bilinmeyen hata');
+      // The next poll would re-seed this from the overview anyway, but dropping it now means the
+      // input shows the restored default immediately rather than after the next poll tick.
+      setCadenceDraft((prev) => {
+        const next = { ...prev };
+        delete next[jobName];
+        return next;
+      });
+      loadOverview();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!overview) return <p className="text-[var(--color-muted)]">Yükleniyor…</p>;
 
   return (
@@ -588,13 +655,16 @@ export function JobsClient() {
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
           İş Kataloğu
         </h2>
+        <p className="mb-2 text-xs text-[var(--color-muted)]">
+          Sıklık değişiklikleri worker&apos;ın bir sonraki yeniden başlatılmasında etkili olur, anında değil.
+        </p>
         <TableFrame>
           <table className="w-full text-sm">
             <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
               <tr>
                 <th className="px-3 py-2">İş</th>
                 <th className="px-3 py-2">Durum</th>
-                <th className="px-3 py-2">Zamanlama</th>
+                <th className="px-3 py-2">Sıklık</th>
                 <th className="px-3 py-2">Son Çalışma</th>
                 <th className="px-3 py-2">Sonraki Çalışma</th>
                 <th className="px-3 py-2">Etkin</th>
@@ -626,7 +696,50 @@ export function JobsClient() {
                       <span className="text-[var(--color-muted)]">Boşta</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[var(--color-muted)]">{formatCadence(job.cadenceMs)}</td>
+                  <td className="px-3 py-2">
+                    {job.cadenceMs === null ? (
+                      <span className="text-[var(--color-muted)]">{formatCadence(job.cadenceMs)}</span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={10}
+                          step={1}
+                          className="w-16 rounded border border-[var(--color-border)] px-1 py-0.5 text-xs"
+                          value={cadenceDraft[job.jobName] ?? String(Math.round(job.cadenceMs / 1000))}
+                          onChange={(e) =>
+                            setCadenceDraft((prev) => ({ ...prev, [job.jobName]: e.target.value }))
+                          }
+                        />
+                        <span className="text-xs text-[var(--color-muted)]">sn</span>
+                        <button
+                          type="button"
+                          disabled={busy === `cadence-${job.jobName}`}
+                          onClick={() => saveCadence(job.jobName)}
+                          className="rounded bg-[var(--color-accent)] px-1.5 py-0.5 text-xs text-white"
+                        >
+                          Kaydet
+                        </button>
+                        {job.isCadenceOverride && (
+                          <button
+                            type="button"
+                            disabled={busy === `cadence-${job.jobName}`}
+                            onClick={() => resetCadence(job.jobName)}
+                            className="rounded bg-slate-300 px-1.5 py-0.5 text-xs text-slate-700"
+                          >
+                            Varsayılana dön
+                          </button>
+                        )}
+                        {cadenceSaved === job.jobName && (
+                          <span className="text-xs text-[var(--color-success)]">Kaydedildi</span>
+                        )}
+                        <span className="text-xs text-[var(--color-muted)]">
+                          (şu an: {formatCadence(job.cadenceMs)}
+                          {job.isCadenceOverride ? '' : ', varsayılan'})
+                        </span>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     {job.lastRun ? (
                       <span>

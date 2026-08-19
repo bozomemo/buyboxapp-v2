@@ -355,6 +355,65 @@ export async function getAppSetting(appDb: AppDatabase, key: string): Promise<Ap
   });
 }
 
+/**
+ * Clears a stored override so a setting falls back to its compiled default — distinct from
+ * setting it to a value that happens to equal the default, so a caller can still tell "no
+ * override" from "override matching the default". Appends the audit row in the same call, same
+ * as `setAppSetting` ("settings are never set silently"); a delete of a key that was never set
+ * is a no-op on the row but still leaves no audit trail, since there is no previous value to
+ * record a change from.
+ */
+export async function deleteAppSetting(
+  appDb: AppDatabase,
+  key: string,
+  deletedBy: string,
+  deletedAt: number,
+  auditId: string,
+): Promise<void> {
+  const previous = await getAppSetting(appDb, key);
+  if (!previous) return;
+  await runDialect(appDb, {
+    sqlite: (db) => db.delete(sqliteSchema.appSettings).where(eq(sqliteSchema.appSettings.key, key)),
+    postgres: (db) => db.delete(postgresSchema.appSettings).where(eq(postgresSchema.appSettings.key, key)),
+    mysql: (db) => db.delete(mysqlSchema.appSettings).where(eq(mysqlSchema.appSettings.key, key)),
+  });
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db.insert(sqliteSchema.settingsAudit).values({
+        id: auditId,
+        entity: 'app_settings',
+        entityId: key,
+        field: 'value',
+        oldValue: previous.value,
+        newValue: null,
+        changedBy: deletedBy,
+        changedAt: deletedAt,
+      }),
+    postgres: (db) =>
+      db.insert(postgresSchema.settingsAudit).values({
+        id: auditId,
+        entity: 'app_settings',
+        entityId: key,
+        field: 'value',
+        oldValue: previous.value,
+        newValue: null,
+        changedBy: deletedBy,
+        changedAt: deletedAt,
+      }),
+    mysql: (db) =>
+      db.insert(mysqlSchema.settingsAudit).values({
+        id: auditId,
+        entity: 'app_settings',
+        entityId: key,
+        field: 'value',
+        oldValue: previous.value,
+        newValue: null,
+        changedBy: deletedBy,
+        changedAt: deletedAt,
+      }),
+  });
+}
+
 /** Shared audit-row writer (doc 06 §9: "Every change is audited") for Settings save routes that aren't `setAppSetting`. */
 export async function recordSettingsAudit(
   appDb: AppDatabase,

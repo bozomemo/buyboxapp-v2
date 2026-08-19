@@ -189,6 +189,19 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     expect(audit).toHaveLength(2);
     expect(audit[0]?.newValue).toBe('"Renamed"'); // most recent first
     expect(audit[1]?.oldValue).toBeNull(); // first-ever write had no previous value
+
+    // deleteAppSetting clears the row and audits the deletion — distinct from setting it to a
+    // value that happens to match the default (doc 07 §8 cadence override "reset").
+    await configRepo.deleteAppSetting(appDb, 'store.name', 'op', NOW + 2, newId());
+    expect(await configRepo.getAppSetting(appDb, 'store.name')).toBeUndefined();
+    const auditAfterDelete = await configRepo.listSettingsAudit(appDb, 'app_settings', 'store.name');
+    expect(auditAfterDelete).toHaveLength(3);
+    expect(auditAfterDelete[0]?.oldValue).toBe('"Renamed"');
+    expect(auditAfterDelete[0]?.newValue).toBeNull();
+
+    // Deleting a key that was never set is a no-op — no row, no audit trail to append to.
+    await configRepo.deleteAppSetting(appDb, 'never.set', 'op', NOW + 3, newId());
+    expect(await configRepo.listSettingsAudit(appDb, 'app_settings', 'never.set')).toHaveLength(0);
   }, 30_000);
 
   it('stock: upsert stock item, operator prefs never overwritten by ensure, bundle replace', async () => {

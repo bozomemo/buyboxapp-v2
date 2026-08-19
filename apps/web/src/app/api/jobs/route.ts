@@ -4,7 +4,7 @@
  */
 import { NextResponse } from 'next/server';
 import { circuitBreakerRepo, configRepo, jobsRepo } from '@buybox/db';
-import { JOB_CATALOG, jobEnabledSettingKey } from '@buybox/jobs';
+import { getJobCadenceMs, JOB_CATALOG, jobCadenceSettingKey, jobEnabledSettingKey } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
 
 export async function GET() {
@@ -41,14 +41,21 @@ export async function GET() {
             : entry.defaultEnabled;
       const lastRun = latestByName.get(entry.jobName);
       const runningRun = runningByName.get(entry.jobName);
+      // Effective cadence: an operator override (doc 07 §8) if stored, else the catalog default.
+      const [cadenceMs, cadenceSetting] = await Promise.all([
+        getJobCadenceMs(appDb, entry.jobName),
+        entry.cadenceMs !== null ? configRepo.getAppSetting(appDb, jobCadenceSettingKey(entry.jobName)) : undefined,
+      ]);
       const nextRunAt =
-        entry.cadenceMs !== null && enabled
-          ? (lastRun?.finishedAt ?? lastRun?.startedAt ?? nowMs) + entry.cadenceMs
+        cadenceMs !== null && enabled
+          ? (lastRun?.finishedAt ?? lastRun?.startedAt ?? nowMs) + cadenceMs
           : null;
       return {
         jobName: entry.jobName,
         label: entry.label,
-        cadenceMs: entry.cadenceMs,
+        cadenceMs,
+        isCadenceOverride: cadenceSetting !== undefined,
+        defaultCadenceMs: entry.cadenceMs,
         perMarketplace: entry.perMarketplace,
         defaultPayload: entry.defaultPayload,
         enabled,

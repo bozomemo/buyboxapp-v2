@@ -198,6 +198,11 @@ Specification: doc 06, doc 10 §1.1, §6.
 **Definition of done:** the operator can install, configure, import, observe and enable
 repricing without touching a config file or the database.
 
+> **Addendum, 2026-08-19:** 6.9 extended to include operator-configurable job cadence (doc 07
+> §8.1), closing `R-JOB-2`'s "configurable schedule" half. Per-job cadence is now an
+> `app_settings` override (doc 08 §12), editable from the Jobs screen, restart-to-apply — see
+> `packages/jobs/src/job-catalog.ts`'s `getJobCadenceMs`.
+
 ---
 
 ## Phase 7 — Scraping (reporting only)

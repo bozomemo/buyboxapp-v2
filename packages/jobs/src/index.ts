@@ -88,7 +88,16 @@ export {
   CIRCUIT_BREAKER_OPEN_DURATION_MS,
 } from './circuit-breaker-config.js';
 
-export { JOB_CATALOG, jobDefaultEnabled, jobEnabledSettingKey, type JobCatalogEntry } from './job-catalog.js';
+export {
+  getJobCadenceMs,
+  JOB_CATALOG,
+  jobCadenceSettingKey,
+  jobDefaultCadenceMs,
+  jobDefaultEnabled,
+  jobEnabledSettingKey,
+  MIN_JOB_CADENCE_MS,
+  type JobCatalogEntry,
+} from './job-catalog.js';
 
 export {
   getScrapeRateLimit,
