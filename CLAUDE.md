@@ -48,6 +48,7 @@ Read the document that covers your task. Do not read all of them.
 | Legacy behaviour and its bugs | `docs/09-known-defects-and-risks.md` |
 | Architecture, module boundaries | `docs/10-target-architecture.md` |
 | Acceptance criteria | `docs/11-rewrite-requirements.md` |
+| Licensing / activation | `docs/13-licensing.md` |
 
 ## Rule: marketplace API work
 

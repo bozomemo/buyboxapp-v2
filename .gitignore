@@ -8,3 +8,6 @@ coverage/
 .next/
 data/
 *.log
+
+# Licence signing key — the vendor private key. NEVER commit; keep an offline backup.
+.license-keys/

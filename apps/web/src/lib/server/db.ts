@@ -67,3 +67,23 @@ export async function writeBootstrapEnv(values: Partial<Record<string, string>>)
   const content = [...lines.entries()].map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
   await writeFile(ENV_LOCAL_PATH, content, 'utf8');
 }
+
+/**
+ * The inverse of `writeBootstrapEnv`, for a value that has found a better home. Used when a
+ * licence pasted before the database existed (and therefore parked in `.env.local`) is adopted
+ * into `app_settings`: the environment takes precedence over the stored row (doc 13 §3), so a
+ * leftover `LICENSE_TOKEN` line would shadow every future renewal made through the UI.
+ */
+export async function removeBootstrapEnv(keys: readonly string[]): Promise<void> {
+  if (!existsSync(ENV_LOCAL_PATH)) return;
+  const existing = await readFile(ENV_LOCAL_PATH, 'utf8');
+  const kept = existing
+    .split('\n')
+    .filter((line) => {
+      const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
+      return !(match && keys.includes(match[1]!));
+    })
+    .filter((line) => line.trim() !== '');
+  for (const key of keys) delete process.env[key];
+  await writeFile(ENV_LOCAL_PATH, kept.join('\n') + '\n', 'utf8');
+}

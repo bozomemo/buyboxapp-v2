@@ -20,3 +20,27 @@ export {
   isMarketplaceKillSwitchEngaged,
   marketplaceKillSwitchSettingKey,
 } from './kill-switch.js';
+export type {
+  LicenseClaims,
+  LicenseInvalidReason,
+  LicenseStatus,
+  EvaluateClaimsOptions,
+  VerifyLicenseOptions,
+} from './license/index.js';
+export {
+  CLOCK_SKEW_TOLERANCE_MS,
+  LICENSE_CACHE_TTL_MS,
+  LICENSE_GRACE_MS,
+  LICENSE_LAST_SEEN_SETTING_KEY,
+  LICENSE_PUBLIC_KEY_PEM,
+  LICENSE_TOKEN_ENV_VAR,
+  LICENSE_TOKEN_PREFIX,
+  LICENSE_TOKEN_SETTING_KEY,
+  LicenseClaimsSchema,
+  base64UrlEncode,
+  evaluateClaims,
+  isLicensedToRun,
+  resolveLicensePublicKey,
+  signLicense,
+  verifyLicense,
+} from './license/index.js';

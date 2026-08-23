@@ -4,6 +4,7 @@
  * `test-helpers.ts` convention. SQLite only: cross-dialect correctness is `packages/db`'s own
  * Phase 3 DoD; these tests are about job-orchestration logic, not repository portability.
  */
+import { generateKeyPairSync } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -18,7 +19,39 @@ import {
   type AppDatabase,
 } from '@buybox/db';
 import type { MarketplaceCode } from '@buybox/core';
-import { SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
+import { SYSTEM_PAUSE_SETTING_KEY, signLicense } from '@buybox/shared';
+
+/**
+ * The licence gate (`Scheduler.tick()`, doc 13 §6) is fail-closed exactly like the system
+ * pause below: an install with no licence runs nothing. Every test in this package except the
+ * ones in `license-gate.test.ts` is testing *job* behaviour and implicitly assumes a licensed
+ * system, so a throwaway licence is installed here, once per test process.
+ *
+ * It is installed at import time rather than inside `createSqliteTestDb` because the licence is
+ * resolved from `process.env` (doc 13 §3), which is process-global — a test file that builds its
+ * own database without the helper (`scheduler.test.ts`'s untouched-database tests) would
+ * otherwise see a licensed or unlicensed process depending purely on import order.
+ *
+ * The keypair is generated per run, so the real vendor private key is never needed by, and must
+ * never appear in, the test suite.
+ */
+function installTestLicense(): void {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  process.env.LICENSE_PUBLIC_KEY_PEM = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  process.env.LICENSE_TOKEN = signLicense(
+    {
+      v: 1,
+      id: 'LIC-TEST',
+      customer: 'Test',
+      issuedAt: '2020-01-01T00:00:00.000Z',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      edition: 'standard',
+    },
+    privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  );
+}
+
+installTestLicense();
 
 export interface TestDb {
   readonly appDb: AppDatabase;

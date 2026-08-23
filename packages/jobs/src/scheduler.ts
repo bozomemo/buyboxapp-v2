@@ -13,6 +13,7 @@ import { isKillSwitchEngaged, SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
 import type { Clock } from './clock.js';
 import { isJobEnabled } from './job-catalog.js';
+import { isLicensed } from './license-gate.js';
 import { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, type JobDefinition } from './job.js';
 import { JobRunner } from './runner.js';
 import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
@@ -34,6 +35,9 @@ export interface TickResult {
   /** True when this tick did nothing because the system pause (`SYSTEM_PAUSE_SETTING_KEY`) is
    *  engaged — distinct from not holding the lock, so callers/tests can tell the two apart. */
   readonly paused: boolean;
+  /** True when this tick did nothing because the install is unlicensed or lapsed (doc 13 §6).
+   *  Reported separately from `paused` so an operator is told to renew, not to un-pause. */
+  readonly unlicensed: boolean;
   readonly enqueued: readonly string[];
   readonly ran: readonly { jobName: string; ok: boolean }[];
 }
@@ -124,7 +128,7 @@ export class Scheduler {
     );
     this.holdsLock = heldLock;
     if (!heldLock) {
-      return { heldLock: false, paused: false, enqueued: [], ran: [] };
+      return { heldLock: false, paused: false, unlicensed: false, enqueued: [], ran: [] };
     }
 
     // The real "stop everything" switch (doc 06 §2) — checked before anything is enqueued or
@@ -132,7 +136,15 @@ export class Scheduler {
     // queued, of any kind. Deliberately separate from `SubmitPriceChanges`'s own, narrower
     // switch (see that job's doc comment): this one stops imports and observation too.
     if (await isSystemPaused(this.appDb)) {
-      return { heldLock: true, paused: true, enqueued: [], ran: [] };
+      return { heldLock: true, paused: true, unlicensed: false, enqueued: [], ran: [] };
+    }
+
+    // doc 13 §4.2/§6: an unlicensed or lapsed install behaves exactly as though the pause above
+    // were engaged — nothing enqueued, nothing claimed. Evaluated per tick rather than once at
+    // boot, so pasting a renewal restores the system within one interval and without a restart
+    // (R-LIC-5). The process deliberately stays up and keeps ticking; it must not crash-loop.
+    if (!(await isLicensed(this.appDb, nowMs))) {
+      return { heldLock: true, paused: false, unlicensed: true, enqueued: [], ran: [] };
     }
 
     const enqueued: string[] = [];
@@ -172,7 +184,7 @@ export class Scheduler {
       await settled; // sequential within a tick — concurrency comes from calling tick() itself concurrently
     }
 
-    return { heldLock: true, paused: false, enqueued, ran };
+    return { heldLock: true, paused: false, unlicensed: false, enqueued, ran };
   }
 
   /** Real-timer loop for `apps/worker`. Not exercised by unit tests (see file doc comment). */

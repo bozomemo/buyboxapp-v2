@@ -231,7 +231,7 @@ describe('Scheduler', () => {
         });
 
         const result = await scheduler.tick();
-        expect(result).toEqual({ heldLock: true, paused: true, enqueued: [], ran: [] });
+        expect(result).toEqual({ heldLock: true, paused: true, unlicensed: false, enqueued: [], ran: [] });
         expect(runs).toHaveLength(0);
       } finally {
         cleanup();

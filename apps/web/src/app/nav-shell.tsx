@@ -93,6 +93,42 @@ function SystemPauseButton() {
   );
 }
 
+/**
+ * doc 13 §4.1: a lapsed licence inside its 7-day grace window still runs, but must say so
+ * everywhere, not just on the `/license` screen — an operator working the dashboard should not
+ * discover the system is about to stop only when it actually does. Silent otherwise: a `valid`
+ * licence and the pre-bootstrap/setup state (where `/api/license` 404s or isn't configured yet)
+ * both render nothing.
+ */
+function LicenseGraceBanner() {
+  const [daysRemaining, setDaysRemaining] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/license')
+      .then((res) => (res.ok ? res.json() : undefined))
+      .then((data: { status: { state: string; graceDaysRemaining?: number } } | undefined) => {
+        if (cancelled || !data) return;
+        setDaysRemaining(data.status.state === 'grace' ? data.status.graceDaysRemaining : undefined);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (daysRemaining === undefined) return null;
+
+  return (
+    <div className="border-b border-(--color-warning-border) bg-(--color-warning-bg) px-6 py-2 text-center text-sm text-(--color-warning)">
+      Lisans süresi doldu. Sistem {daysRemaining} gün sonra duracak.{' '}
+      <Link href="/license" className="font-semibold underline">
+        Şimdi yenile
+      </Link>
+    </div>
+  );
+}
+
 export function NavShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isSetup = pathname?.startsWith('/setup');
@@ -134,6 +170,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
+        <LicenseGraceBanner />
         <header className="flex items-center justify-end gap-3 border-b border-(--color-border) bg-(--color-surface) px-6 py-3">
           <ThemeToggle />
           <SystemPauseButton />

@@ -147,6 +147,20 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | N-6 | M | All configuration changes audited (who, when, old, new) | 05 §2 |
 | N-7 | S | Authentication on the web app; separate view and change-price permissions | 10 §2 |
 
+## 9a. Licensing
+
+Added 2026-08-23. Full detail, including why each rule exists, is in `docs/13-licensing.md`.
+
+| ID | Pri | Requirement | Spec |
+|----|-----|-------------|------|
+| R-LIC-1 | M | A fresh install with no licence reaches only `/license`; every route redirects there, the scheduler enqueues and runs nothing | 13 §6, §4 |
+| R-LIC-2 | M | A tampered payload, wrong-key signature, unknown format prefix, and truncated token are all rejected as invalid | 13 §4, §8 |
+| R-LIC-3 | M | An expired licence within the 7-day grace window keeps running, with a visible countdown | 13 §4.1 |
+| R-LIC-4 | M | An expired licence past grace stops every job and gates the UI | 13 §4.2 |
+| R-LIC-5 | M | Pasting a valid licence into a stopped install restores it within one scheduler tick, with no restart | 13 §4.2 |
+| R-LIC-6 | S | A system clock wound back more than 24 hours is rejected as tampering | 13 §4.3 |
+| R-LIC-7 | S | An install-fingerprint mismatch warns but never stops the system | 13 §5 |
+
 ## 10. Quality
 
 | ID | Pri | Requirement | Spec |

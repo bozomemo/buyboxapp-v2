@@ -10,6 +10,10 @@ const TABS = [
   { href: '/settings/product-sources', label: 'Ürün Kaynakları' },
   { href: '/settings/retention', label: 'Saklama' },
   { href: '/settings/database', label: 'Veritabanı' },
+  // Doc 13 §6: the licence screen itself is the one route reachable while unlicensed, so it
+  // lives outside `/settings` — this tab is only the everyday path to it for a licensed
+  // operator checking days remaining or pasting a renewal ahead of expiry.
+  { href: '/license', label: 'Lisans' },
 ];
 
 export function SettingsNav() {

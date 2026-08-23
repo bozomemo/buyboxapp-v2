@@ -9,6 +9,13 @@ export { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, zeroResult } from 
 
 export { JobRunner } from './runner.js';
 export { isJobEnabled, Scheduler, type SchedulerOptions, type TickResult } from './scheduler.js';
+export {
+  getLicenseStatus,
+  isLicensed,
+  readLicenseToken,
+  LICENSE_LAST_SEEN_WRITE_INTERVAL_MS,
+  type LicenseGateOptions,
+} from './license-gate.js';
 
 export type { BudgetAdmission } from './budget.js';
 export { admitByPriority, remainingBudget, reserveAmount } from './budget.js';
