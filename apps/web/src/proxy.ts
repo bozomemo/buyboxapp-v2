@@ -18,8 +18,12 @@ import { getCachedLicenseStatus } from '@/lib/server/license';
 /**
  * The licence screen itself and its API must stay reachable while unlicensed — otherwise the
  * operator has no way to paste the licence that would fix it.
+ *
+ * `/api/health` is exempt for a different reason (doc 14 §5.1): the installer polls it to decide
+ * whether the service came up, and that happens before any licence has been pasted. Gating it
+ * would make every first install report itself as failed. It exposes no business data.
  */
-const EXEMPT_PREFIXES = ['/license', '/api/license'];
+const EXEMPT_PREFIXES = ['/license', '/api/license', '/api/health'];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

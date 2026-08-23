@@ -49,6 +49,7 @@ Read the document that covers your task. Do not read all of them.
 | Architecture, module boundaries | `docs/10-target-architecture.md` |
 | Acceptance criteria | `docs/11-rewrite-requirements.md` |
 | Licensing / activation | `docs/13-licensing.md` |
+| Installer, packaging, deployment | `docs/14-deployment.md` |
 
 ## Rule: marketplace API work
 

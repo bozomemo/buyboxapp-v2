@@ -25,11 +25,18 @@ old shape onto the new one. Do not carry the old shape forward.
 Migrations are **forward-only and idempotent**. On boot the app compares schema version and
 refuses to start on mismatch, offering to migrate. All three dialects run migrations in CI.
 
-Two ways to apply them: the setup wizard's database step (interactive, doc 10 §6 step 1), and
+Three ways to apply them: the setup wizard's database step (interactive, doc 10 §6 step 1),
 `npm run migrate` (`scripts/migrate.mjs`) for an already-configured database that has fallen
-behind — typically after a `git pull` that brought a new migration. The worker refuses to boot
+behind — typically after a `git pull` that brought a new migration — and, on a packaged customer
+install only, **automatically at boot** (`AUTO_MIGRATE=1`, doc 14 §5.2). The worker refuses to boot
 on a stale schema and says which; the **web** process does not check, so its first request that
 touches a new column fails with a raw driver error instead. Migrate before starting either.
+
+`AUTO_MIGRATE` narrows the "refuses to start on mismatch" rule above rather than replacing it,
+and only in one direction. A database **behind** this build is migrated forward; a database
+**ahead** of it — an older app opened against a newer database — still refuses, because applying
+this build's DDL to a schema it does not recognise corrupts data. Revised 2026-08-24; doc 14
+§5.2 records why a packaged install needs it and what guards it.
 
 ---
 

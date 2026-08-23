@@ -11,8 +11,14 @@ export { inferDialect, sqliteFilePath } from './dialect.js';
 export type { AppDatabase } from './client.js';
 export { createDb } from './client.js';
 
-export type { SchemaVersionStatus } from './migrate.js';
-export { checkSchemaVersion, defaultMigrationsFolder, runMigrations } from './migrate.js';
+export type { AutoMigrateOptions, AutoMigrateResult, SchemaDrift, SchemaVersionStatus } from './migrate.js';
+export {
+  autoMigrate,
+  backupSqliteDatabase,
+  checkSchemaVersion,
+  defaultMigrationsFolder,
+  runMigrations,
+} from './migrate.js';
 
 export type { DialectBranches, MysqlDb, PostgresDb, SqliteDb } from './with-dialect.js';
 export { withDialect } from './with-dialect.js';

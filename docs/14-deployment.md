@@ -1,0 +1,474 @@
+# 14 — Deployment and the customer installer
+
+Status: specification. Added 2026-08-23.
+
+## 1. What this covers
+
+How the system gets onto a customer's machine and becomes usable without the customer knowing
+what Node.js is.
+
+The delivery target agreed with the product owner on 2026-08-23 is a **single-machine Windows
+install**: one office PC runs everything, and the operator uses it from a browser on that same
+PC. Ubuntu is a stated future target and §11 records what changes for it, but nothing in §2–§10
+may assume more than one machine.
+
+Out of scope: multi-tenant hosting, high availability, and any deployment where the web app is
+reachable from another computer. §4.4 explains why the last one is *forbidden* for now rather
+than merely unimplemented.
+
+Also out of scope, deliberately: **automatic self-update**. Decided 2026-08-24 — upgrades are
+manual for now, the vendor sends a new installer and the operator runs it. §12 records what was
+considered and what would have to be true before it is built, so the decision is revisitable
+rather than forgotten.
+
+## 2. What the installer actually has to do
+
+Less than it first appears, because four things are already solved in the application:
+
+| Already solved | Where | Consequence for the installer |
+|---|---|---|
+| Single-process operation | `SINGLE_PROCESS=1` boots the scheduler inside the Next.js process (`packages/shared/src/config/env.ts`) | One service, not two |
+| First-run configuration | The eight-step wizard at `/setup` | The installer asks **no** business questions |
+| Licence entry | `/license` and the gate in `apps/web/src/proxy.ts` | The installer asks for **no** licence key (§7) |
+| Schema migration | `checkSchemaVersion` / `runMigrations` at worker boot (§5.2) | The installer runs no migration step of its own |
+
+So the installer's whole job is: put the runtime and the built application on disk, create the
+bootstrap environment, register a service, and open a browser. Everything a human has to decide
+is decided in the browser afterwards, and everything the *database* needs is done by the service
+on its first boot.
+
+## 3. Dependencies, and why they are eliminated rather than checked
+
+There are exactly three runtime dependencies:
+
+1. **Node.js ≥ 20** (`package.json` `engines`).
+2. **Playwright's Chromium** — mandatory, not optional: Trendyol competitor collection needs a
+   real browser because a spoofed header alone is not enough (`CLAUDE.md`, api-references §1.6).
+3. **`better-sqlite3`'s native binary**, plus `pg`/`mysql2` if the operator later switches
+   engines. All three are declared in `serverExternalPackages` (`apps/web/next.config.ts`).
+
+The obvious design is to detect these on the customer's machine and install what is missing.
+**Rejected.** Detection means the install can fail on a wrong Node version already on PATH, on
+a corporate proxy blocking a download, on a machine with no administrator rights, or on any of
+the several ways a shared PATH goes wrong — and every one of those failures becomes a support
+call in Turkish about a tool the customer never asked to have.
+
+Instead all three ship **inside the package**. The installer looks for nothing and installs
+nothing else. The cost is the download size, paid once by us; the benefit is that the install is
+offline-capable and has no failure mode that depends on the customer's existing software.
+
+Measured on the first real build, 2026-08-24: **265 MB installer**, from a ~890 MB staging tree
+(Chromium ~700 MB of it, Node 91 MB, the app 82 MB, WinSW 17 MB). LZMA2/max does the rest, at the
+cost of a ~5-minute compile.
+
+Chromium is that large because `playwright install chromium` fetches Chrome for Testing *and* the
+headless shell *and* ffmpeg. Whether the headless shell alone would serve `playwright-fetch.ts` is
+worth asking if the download size ever becomes a problem — but it is a size question, not a
+correctness one, and it is not worth risking the one browser the Trendyol source is known to work
+with in order to shave a download.
+
+### 3.1 The native-module constraint this creates
+
+`better-sqlite3` is compiled against a specific Node ABI (`NODE_MODULE_VERSION`). The bundled
+Node runtime and the bundled `node_modules` must therefore be built **together, on Windows,
+for the same Node major version**. A package assembled by copying a Linux-built `node_modules`
+next to a Windows `node.exe` fails at first request with an ABI mismatch, and it fails on the
+customer's machine rather than in CI. The build pipeline in §8 exists mainly to make this
+impossible.
+
+## 4. Installed layout
+
+```
+C:\Program Files\BuyBox\          — code. Replaced wholesale on upgrade.
+  node\                             bundled Node 22 runtime
+  app\                              next build --output standalone result
+    server.js
+    .next\static\
+    public\
+  chromium\                         Playwright browser, pinned by PLAYWRIGHT_BROWSERS_PATH
+  scripts\migrate.mjs
+  service\BuyBoxApp.exe             WinSW wrapper
+  service\BuyBoxApp.xml
+
+C:\ProgramData\BuyBox\            — data. Never touched by an upgrade.
+  .env.local
+  app.db                            SQLite, when the operator keeps the default
+  secrets.enc.json
+  logs\
+```
+
+The split is the single most important decision in this document: an upgrade deletes and
+rewrites `Program Files` and must not be able to reach anything the operator created.
+
+### 4.1 The service's working directory is the data directory
+
+`apps/web/src/lib/server/db.ts` resolves `.env.local` as `path.join(process.cwd(), '.env.local')`,
+and the setup wizard **writes** that file when the operator finishes step 1. `scripts/migrate.mjs`
+resolves relative SQLite paths against the same directory for the same reason.
+
+If the service ran with its working directory in `Program Files`, the wizard's write would fail
+(a service account has no write access there), and if it somehow succeeded the file would be
+destroyed by the next upgrade.
+
+Therefore: **the service runs `C:\Program Files\BuyBox\node\node.exe app\boot.mjs` with its
+working directory set to `C:\ProgramData\BuyBox\`.** This makes the existing `process.cwd()`
+behaviour correct rather than requiring a code change, and it makes a bare relative
+`DATABASE_URL` land in the data directory by construction. No change to `db.ts` is needed or
+wanted.
+
+`boot.mjs` (`installer/boot.mjs`, copied next to Next's generated `server.js`) is a short
+launcher that does two things the working-directory design turns out to need. Both were found by
+inspecting Next 16's generated output on 2026-08-24, not predicted.
+
+**It puts the working directory back.** Next's generated `server.js` calls
+`process.chdir(__dirname)` while it boots. Left alone, that moves the working directory into
+`C:\Program Files\BuyBox\app` — where the service account cannot write, and where an upgrade
+deletes everything — and the setup wizard's `.env.local` write would land there. `boot.mjs`
+captures the real working directory, imports `server.js`, and restores it. Next is unaffected: it
+resolved its own directory to an absolute path before anything was restored.
+
+**It loads `.env.local` itself.** Whether Next's standalone server reads that file is an
+implementation detail of Next rather than a contract, and the failure mode if it ever changed —
+an install that cannot find its own database — is too expensive to rest on a detail. Values
+already in the environment win, so the service's own settings (below) are never shadowed by a
+stale line in the file.
+
+### 4.2 `output: 'standalone'`
+
+`apps/web/next.config.ts` must gain `output: 'standalone'`. Without it there is no self-contained
+server bundle to ship, and the alternative — copying the monorepo's whole `node_modules` — is
+several times larger and carries dev dependencies onto a customer machine.
+
+Standalone does not copy `.next/static` or `public`; the build step in §8 copies them explicitly.
+
+### 4.3 Bootstrap environment written at install time
+
+The installer writes `C:\ProgramData\BuyBox\.env.local`:
+
+| Key | Value | Note |
+|---|---|---|
+| `DATABASE_URL` | `file:C:\ProgramData\BuyBox\app.db` | Absolute, see below. SQLite is the default per §6 |
+| `SECRET_STORE_KEY` | 32 random bytes, hex | **Generated on the customer's machine at install time** |
+| `SECRET_STORE_PATH` | `C:\ProgramData\BuyBox\secrets.enc.json` | Absolute, see below |
+| `SINGLE_PROCESS` | `1` | |
+| `PORT` | `3000`, or the port chosen in §5 step 2 | |
+| `HOSTNAME` | `127.0.0.1` | §4.4 |
+| `PLAYWRIGHT_BROWSERS_PATH` | `C:\Program Files\BuyBox\chromium` | Absolute: it points into the code directory, not the data directory |
+| `AUTO_MIGRATE` | `1` | §5.2. Written **only** by the installer — a development checkout never has it |
+| `APP_VERSION` | the installed version | Names the build in `/api/health` and in backup filenames |
+
+`SECRET_STORE_KEY` is generated per install and never ships in the package. A key baked into
+the installer would be one key protecting every customer's marketplace credentials, which is
+the same as no key. It is generated by the bundled Node (`randomBytes(32)`), not by an installer
+scripting language, so there is one implementation of "random" in the product.
+
+The two paths are **absolute**, which reads as redundant given §4.1 — the working directory is
+already the data directory, so `file:app.db` would resolve to the same place. It is defence
+against exactly one window: `server.js` chdirs into the application directory while it boots
+(§4.1), and a relative path read during that window would quietly create a second, empty database
+under `Program Files` rather than failing. `boot.mjs` closes that window; absolute paths mean the
+operator's data does not depend on it having closed it.
+
+These do not all live in the same place, and the split matters. `.env.local` holds only what the
+setup wizard can later change — `DATABASE_URL`, `SECRET_STORE_KEY`, `SECRET_STORE_PATH`,
+`SINGLE_PROCESS`. The rest are deployment facts the operator cannot change from the UI, and they
+are set on the **service** (`BuyBoxApp.xml`) instead. Putting a wizard-editable value in the
+service definition would silently override the operator's own change at the next restart; putting
+a deployment fact only in the file would let a stale line contradict what the service actually
+does.
+
+`SCRAPER_USER_AGENT` and `SCRAPER_BROWSER_USER_AGENT` are deliberately **not** written. They have
+defaults in `BootstrapEnvSchema`, and the browser user agent is expected to go stale and be
+refreshed (`env.ts`); pinning it at install time would freeze a value the schema is designed to
+let us update.
+
+### 4.4 Loopback only, and why that is a requirement rather than a default
+
+`docs/11-rewrite-requirements.md` N-7 — authentication on the web app — is a *should*, and is
+not built. The application therefore trusts every request it receives.
+
+The service binds `127.0.0.1` and the installer creates **no** Windows Firewall rule. An install
+reachable from the office LAN would let anyone on that LAN change prices on live marketplace
+listings with no credential at all. Binding to `0.0.0.0` is not a configuration option we expose
+until N-7 is implemented; when it is, that change belongs in this document's §11 and in a
+requirement of its own.
+
+## 5. Installation sequence
+
+The installer is an Inno Setup executable, `BuyBoxSetup-<version>.exe`, requiring administrator
+elevation (it writes to `Program Files` and registers a service).
+
+1. **Preflight.** Windows 10 1809+ x64; ~1.5 GB free on the system drive; administrator rights.
+   A failed check stops the install with a sentence naming what is wrong, in Turkish. It never
+   continues in a degraded mode.
+2. **Port.** Probe `3000`. If it is in use, ask for another port rather than failing — a
+   developer machine with something already on 3000 is common and is not an error.
+3. **Files.** Unpack into the two directories of §4. On upgrade, `Program Files\BuyBox` is
+   emptied first; `ProgramData\BuyBox` is never touched.
+4. **Environment.** Write `.env.local` per §4.3 — but on an upgrade, **preserve every key that
+   already exists**, in particular `SECRET_STORE_KEY`. Regenerating it would render the existing
+   `secrets.enc.json` undecryptable and silently destroy the customer's stored marketplace
+   credentials. This is the one step where an upgrade bug is unrecoverable, so it gets its own
+   check in §10.
+5. *(No migration step.)* The schema is created and upgraded by the service itself at boot
+   (§5.2). The installer verifies the outcome at step 8 rather than performing it.
+6. **Defender exclusion** (optional, default on, one checkbox). Add
+   `C:\ProgramData\BuyBox` to Windows Defender's exclusion list. Real-time scanning of a SQLite
+   file being written by every job is a measurable throughput cost. Offered, never silent.
+7. **Service.** Register `BuyBoxApp` via WinSW: automatic (delayed start), restart on failure,
+   working directory and command line per §4.1, stdout/stderr to `ProgramData\BuyBox\logs\`
+   with rotation. WinSW is chosen over `node-windows` (which needs Node on PATH and generates
+   scripts at runtime) and over NSSM (unmaintained): WinSW is a single executable configured by
+   one XML file we ship, so what runs on the customer's machine is what we tested.
+8. **Verify.** Start the service and poll `GET http://127.0.0.1:<port>/api/health` for up to
+   60 s. **If it does not answer, the install has failed** — say so, name the log file, and offer
+   to open it. An installer that reports success over a service that never started is worse than
+   one that fails, because the failure surfaces later without the installation context.
+9. **Shortcuts and launch.** Desktop and Start Menu shortcuts to `http://127.0.0.1:<port>`. On
+   finish, open the default browser there. The licence gate (`proxy.ts`) redirects to `/license`;
+   after a valid key is pasted the operator lands in `/setup`. The installer explains neither —
+   both screens explain themselves.
+
+### 5.1 `/api/health`
+
+Does not exist yet and must be added: a route that returns 200 with the application version and
+schema-migration state. It must be **exempt from the licence gate** (added to `EXEMPT_PREFIXES`
+in `apps/web/src/proxy.ts`), because step 8 runs before any licence exists and a 402 there would
+make every first install look broken. It must not require a database connection to return 200 —
+it reports connectivity, it does not depend on it.
+
+### 5.2 Migrations run at boot, not at install
+
+Decided 2026-08-24, replacing the installer-run `scripts/migrate.mjs` step.
+
+`startWorker` today refuses to boot on a schema mismatch and tells the operator to run
+migrations from the setup wizard or `npm run migrate` (`apps/worker/src/index.ts`). That is right
+for a developer checkout and wrong for a packaged install: there is nobody at a terminal, and an
+upgrade would otherwise need the installer to know how to migrate a database whose engine and
+location the *operator* chose in the wizard, possibly a PostgreSQL server on another host.
+
+So when `AUTO_MIGRATE=1` is set (§4.3 — the installer sets it; a development checkout never does),
+`startWorker` applies pending migrations itself instead of refusing. This is the only mechanism:
+the installer performs no migration, and a fresh install and an upgrade take the same code path,
+which is the path we test on every boot rather than once per release.
+
+Four guards make that safe. None is optional — automatic DDL against a customer's only copy of
+their pricing data is the most destructive thing this product does.
+
+**a) Forward only; a database ahead of the build still refuses.** `checkSchemaVersion` currently
+reports `upToDate: appliedCount === expectedCount`, which conflates "behind" with "ahead". Under
+automatic migration that distinction becomes load-bearing, so it must gain a direction:
+`behind` migrates, `ahead` refuses to start exactly as today. A database ahead of the running
+build means an older app was pointed at a newer database, and applying this build's DDL to a
+schema it does not recognise corrupts it.
+
+**b) Back up before applying, on SQLite.** Copy `app.db` to `backups\app-<version>-<timestamp>.db`
+before the first statement, and keep the most recent few. Not on a database with nothing applied
+yet — a fresh install has nothing to lose, and an empty snapshot that looks like a restore point
+and is not one is worse than no snapshot. Migrations are forward-only with no
+`down`, so without this a bad migration is unrecoverable; with it, recovery is a file copy.
+On PostgreSQL and MySQL no backup is taken — we do not have the credentials or the tooling to do
+it correctly — and the boot log says so. Those installs have an administrator; the SQLite
+default does not, which is exactly why the default is the one that gets the safety net.
+
+**c) One migrator at a time.** A lock file (`.migrate.lock`, in the data directory) serialises
+migration between processes, and a lock older than fifteen minutes is treated as abandoned by a
+crashed process rather than as held — otherwise one crash leaves an install that can never start
+again.
+
+Revised 2026-08-24, during implementation: this was specified as "the same advisory lock the
+scheduler already uses", and that cannot work. The scheduler's lock is a row in `job_queue`, a
+table that does not exist until the very migrations it would be guarding have run. A lock that
+needs the schema cannot protect the creation of the schema.
+
+The honest limit of a lock file: it serialises processes on **one machine**, which is the shipped
+deployment and the only one where SQLite is involved. It does not serialise two hosts sharing one
+PostgreSQL or MySQL server. There the engine is the backstop — a weaker one on MySQL, whose DDL is
+not transactional — and those installs, which have an administrator, are told to stop one host
+before upgrading.
+
+**d) Failure is loud and stops the service.** A migration error aborts the boot, is written to
+the log directory, and is reported by `/api/health` (§5.1) with the reason. A half-migrated schema
+must never serve traffic; the install then fails visibly at §5 step 8, which is where an operator
+is still watching.
+
+`scripts/migrate.mjs` stays. It remains the right tool for a developer after a `git pull`, and
+for any install that deliberately runs without `AUTO_MIGRATE`.
+
+## 6. Database
+
+SQLite is the installed default (`DATABASE_URL=file:app.db`). It adds no dependency, no service,
+and no uninstall residue, and a single-machine install has one writer.
+
+The operator can move to PostgreSQL or MySQL at any time from step 1 of the setup wizard, which
+already offers it. The installer does **not** install or offer a database engine: doing so would
+add a second product to install, upgrade, back up and uninstall, in exchange for a capability
+the wizard already provides to the customers who need it.
+
+Backups are the operator's responsibility and are one file copy from `ProgramData\BuyBox`. The
+UI should say so somewhere; that is a doc 06 concern, not an installer one.
+
+## 7. Licensing
+
+The installer neither asks for nor validates a licence key. `docs/13-licensing.md` §6 makes the
+gate in `proxy.ts` the only web-side enforcement point, deliberately, and R-LIC-5 requires that
+pasting a licence into a stopped install revives it with no restart. An installer-side check
+would duplicate that gate, would need the Ed25519 verifier compiled into the installer, and
+would create a second place a licence can be rejected with different wording.
+
+Consequence: a customer can install before their licence is issued, and a lapsed customer fixes
+their install by pasting a key rather than by reinstalling.
+
+The install fingerprint of doc 13 §5 is computed by the application from the machine id and
+database name. The installer contributes nothing to it and must not persist one.
+
+## 8. Build pipeline
+
+Two constraints drive it: the ABI problem of §3.1, and the fact that Chromium's version is
+pinned by Playwright's version, so a hand-assembled `chromium\` folder goes stale silently.
+
+Everything therefore runs on a **Windows CI runner**, in this order:
+
+1. `npm ci` — on Windows, so `better-sqlite3` is built for the Windows Node ABI.
+2. `npm test` and `npm run typecheck`. An installer is not built from a red build.
+3. `npm run build` with `output: 'standalone'`.
+4. Assemble `app\`: the standalone output, plus `.next\static` and `public` copied in, **minus
+   every `.env*` file** — see §8.1.
+5. Copy the Node 22 runtime into `node\`. Its major version must match the one `npm ci` ran
+   under; CI asserts this rather than assuming it.
+6. `PLAYWRIGHT_BROWSERS_PATH=<staging>\chromium npx playwright install chromium`.
+7. Compile `installer\buybox.iss` with Inno Setup.
+8. Sign — see §9.
+
+Files under `installer\`:
+
+| File | Role |
+|---|---|
+| `build-package.ps1` | The pipeline above, runnable locally and from CI |
+| `buybox.iss` | Inno Setup script. Thin — it sequences the scripts below rather than reimplementing them in Pascal |
+| `preflight.ps1` | §5 step 1 |
+| `configure-env.ps1` | §5 step 4, including the upgrade-preservation rule |
+| `install-service.ps1` | §5 step 7; renders `BuyBoxApp.xml.template` |
+| `verify-health.ps1` | §5 step 8 |
+| `uninstall-service.ps1` | §10 D-6 |
+| `BuyBoxApp.xml.template` | WinSW definition, with the install paths and port as tokens |
+| `boot.mjs` | §4.1's launcher |
+| `vendor\WinSW.exe` | Vendored, not downloaded during a build: the binary that runs as a service on a customer machine should be one we chose and hashed once |
+| `README-build.md` | How to produce a package locally, and what to test on a clean VM |
+
+`.github/workflows/release-windows.yml` runs the same script on a `windows-latest` runner.
+
+### 8.1 The package must contain no `.env` file
+
+Found by building the first package, 2026-08-24, not predicted: **Next's standalone output copies
+the developer's `.env*` files into it.** `apps/web/.env.local` — `SECRET_STORE_KEY` and all —
+landed in `staging\app`.
+
+Shipping that would give every customer the same secret-store key, the one key protecting their
+marketplace credentials, and would put a credential in a distributed artefact, which CLAUDE.md
+forbids outright. The environment written on the customer's machine at install time (§4.3) must
+be the only one that exists.
+
+`build-package.ps1` therefore deletes every `.env*` under `app\` after assembling it and **fails
+the build** if any remains. It is a deletion followed by an assertion rather than a deletion
+alone, because the thing being guarded against is a future version of Next putting the file
+somewhere the deletion does not look.
+
+### 8.2 Installer scripts are ASCII-only
+
+Also found by building, 2026-08-24. Windows PowerShell 5.1 — what a customer machine runs, and
+what the installer invokes — reads a BOM-less UTF-8 file as ANSI. One em dash in a comment became
+mojibake containing a quote character, which terminated a string early and made the script fail
+to **parse**, not to run.
+
+The Turkish messages in these scripts are already written without diacritics for the same reason.
+`build-package.ps1` asserts that every script it packages is pure ASCII.
+
+The installer version comes from the root `package.json` version, which is currently `0.0.0` and
+has to start being maintained.
+
+## 9. Code signing
+
+There is no certificate today (product owner, 2026-08-23), so the first packages ship unsigned.
+This is a known, accepted, and temporary state, and it has costs worth writing down rather than
+discovering:
+
+- SmartScreen shows "Bilinmeyen yayıncı" and hides the run button behind "Daha fazla bilgi".
+  Some customers will stop there.
+- An unsigned `node.exe` next to an unsigned Chromium is a shape corporate antivirus products
+  quarantine, sometimes silently and sometimes after the install appears to have succeeded.
+
+Mitigation until a certificate exists: publish the SHA-256 of each release so a customer can
+verify what they downloaded, and ship a one-page Turkish install note covering the SmartScreen
+dialog. Neither is a substitute. An OV/EV certificate should be treated as a prerequisite for
+selling to any customer with managed endpoints.
+
+## 10. Definition of done
+
+| # | Check |
+|---|---|
+| D-1 | On a clean Windows 10/11 VM with no Node, no Chromium and no internet, the installer completes and the browser lands on `/license` |
+| D-2 | `SECRET_STORE_KEY` differs between two installs made from the same package |
+| D-3 | Rebooting the VM brings the service back without a login |
+| D-4 | Upgrading over an existing install preserves `SECRET_STORE_KEY`, `app.db`, `secrets.enc.json` and the licence, and applies pending migrations |
+| D-5 | A deliberately broken build (bad `DATABASE_URL`) makes the installer **fail** at step 8 and name the log file |
+| D-10 | A fresh install creates the schema on first boot with no migration step in the installer (§5.2) |
+| D-11 | An upgrade carrying a new migration applies it on the first service start, and a SQLite backup file exists afterwards |
+| D-12 | An older build pointed at a newer database refuses to start and says so, rather than migrating (§5.2a) |
+| D-13 | A migration that throws leaves the service stopped and `/api/health` reporting the reason — never a half-migrated schema serving traffic |
+| D-6 | Uninstall removes the service and `Program Files\BuyBox`, and leaves `ProgramData\BuyBox` unless the operator ticks the box; the default is to keep it |
+| D-7 | The port is not reachable from a second machine on the same LAN (§4.4) |
+| D-8 | Trendyol competitor collection succeeds on the installed machine, proving the bundled Chromium is found via `PLAYWRIGHT_BROWSERS_PATH` |
+| D-9 | An ABI-mismatched package fails in CI, not on a customer machine (§3.1 assertion in step 5) |
+
+## 11. Ubuntu, later
+
+The layout generalises without redesign: `/opt/buybox` for code, `/var/lib/buybox` for data,
+systemd `WorkingDirectory=/var/lib/buybox` reproducing §4.1, a `buybox` system user, and
+`ExecStart` on the bundled Node.
+
+The packaging is a `.deb`, not a shell script. Chromium's shared-library needs
+(`libnss3`, `libatk-bridge2.0-0`, `libgbm1`, and the rest of Playwright's list) go in `Depends:`,
+so **apt** performs the dependency resolution instead of a script we wrote — strictly more
+reliable, and it makes the "check dependencies" requirement disappear into the package manager.
+`postinst` performs §5 steps 4–8; `postrm` keeps data except on `purge`.
+
+Docker Compose is a reasonable third option for a technically staffed customer running a server,
+and the repository already has `packages/db/docker-compose.test.yml` as a starting shape. It is
+explicitly **not** the primary path on Windows: Docker Desktop is a second product to install and
+upgrade, and it is not free for larger companies.
+
+## 12. Automatic self-update — deferred, and what it would take
+
+Decided 2026-08-24: **not built.** Distribution is manual — the vendor sends a new
+`BuyBoxSetup-<version>.exe`, the operator runs it, and §5 handles the rest. With §5.2 in place an
+upgrade is genuinely one double-click, which is enough at the current number of installs.
+
+Recorded here so the decision can be revisited on evidence rather than re-derived:
+
+**GitHub Releases is the right build host and the wrong distribution host.** GitHub Actions on a
+Windows runner is already what §8 requires. Serving the artefact from Releases is not: a private
+repository would need a GitHub token sitting on the customer's machine, which leaks the whole
+source if it leaks, and a public one publishes a commercial product. The artefact would belong in
+our own object store (S3/R2) at an unguessable path instead.
+
+**The manifest would reuse the licensing key machinery, with a different key.** A signed
+`update.json` (version, url, sha256), verified with the Ed25519 verifier already in
+`packages/shared/src/license/`, then the download verified against the hash before anything runs.
+An unsigned manifest hands anyone who can spoof DNS administrator-level code execution on a
+customer machine. The release key must be **separate** from the licence key so one leak is not both.
+
+**Code signing stops being a sales concern and becomes a functional prerequisite.** A service
+silently launching an unsigned installer with elevation is the exact behaviour EDR products
+classify as a malicious updater. §9 would have to be resolved first.
+
+**Download automatically, install on one click — not silently.** This product changes live prices
+with real money, there is no staged rollout at this install count, and the customer has no
+rollback. A network failure should pass unnoticed; an upgrade should happen when the operator
+chose it.
+
+**It must not become a licence heartbeat.** `docs/13-licensing.md` §2 promises offline
+verification with no vendor call. An update check is not that, but it is still regular vendor
+contact: it would have to sit entirely outside the pricing path (a failure is recorded and the
+run continues, as with the reporting scrapers), send no licence id, and be exempt from the
+licence gate — otherwise an expired install could be stuck on a build that cannot be updated.

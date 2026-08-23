@@ -30,7 +30,14 @@
  * granularity the ticker itself already fires at (every marketplace together, every tick).
  */
 import type { MarketplaceCode } from '@buybox/core';
-import { checkSchemaVersion, configRepo, createDb, jobsRepo, type AppDatabase } from '@buybox/db';
+import {
+  autoMigrate,
+  checkSchemaVersion,
+  configRepo,
+  createDb,
+  jobsRepo,
+  type AppDatabase,
+} from '@buybox/db';
 import {
   HepsiburadaAdapter,
   HepsiburadaCredentialsSchema,
@@ -76,6 +83,7 @@ import {
   FileSecretStore,
   marketplaceCredentialsKey,
   parseBootstrapEnv,
+  type BootstrapEnv,
   type ISecretStore,
 } from '@buybox/shared';
 
@@ -217,9 +225,39 @@ export interface StartWorkerOptions {
   readonly appDb?: AppDatabase;
 }
 
-export async function startWorker(options: StartWorkerOptions = {}): Promise<WorkerHandle> {
-  const env = parseBootstrapEnv(options.env ?? process.env);
-  const appDb = options.appDb ?? createDb(env.DATABASE_URL);
+/**
+ * Doc 05 §1: the app compares schema version at boot and refuses to start on a mismatch. Doc 14
+ * §5.2 narrows that in exactly one direction, for exactly one deployment: a packaged customer
+ * install sets `AUTO_MIGRATE=1` and the service migrates itself forward, because there is nobody
+ * at a terminal to run `npm run migrate` and the database may be one the operator chose in the
+ * wizard — possibly a PostgreSQL server the installer knows nothing about.
+ *
+ * A database *ahead* of this build refuses either way; `autoMigrate` enforces that, along with
+ * the pre-migration backup and the cross-process lock. Every failure here is fatal on purpose:
+ * a half-migrated schema must never serve traffic.
+ */
+async function ensureSchema(appDb: AppDatabase, env: BootstrapEnv): Promise<void> {
+  if (env.AUTO_MIGRATE === '1') {
+    // `APP_VERSION` is written by the installer (doc 14 §4.3) purely so a backup filename says
+    // which build's schema it predates. Absent on a checkout, and the backup is still taken.
+    const version = process.env.APP_VERSION;
+    const result = await autoMigrate(appDb, {
+      databaseUrl: env.DATABASE_URL,
+      ...(version === undefined ? {} : { version }),
+    });
+    if (!result.migrated) return;
+    logger.info(
+      result.backupPath
+        ? 'Applied pending migrations at boot; database backed up first.'
+        : 'Applied pending migrations at boot. No backup was taken — either this database was empty, or its engine is not one we can copy aside; back it up yourself before upgrading.',
+      {
+        appliedBefore: result.appliedBefore,
+        appliedAfter: result.appliedAfter,
+        backupPath: result.backupPath ?? null,
+      },
+    );
+    return;
+  }
 
   const versionStatus = await checkSchemaVersion(appDb);
   if (!versionStatus.upToDate) {
@@ -230,6 +268,13 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         `migrations applied. Run migrations from the setup wizard or 'npm run migrate' first.`,
     );
   }
+}
+
+export async function startWorker(options: StartWorkerOptions = {}): Promise<WorkerHandle> {
+  const env = parseBootstrapEnv(options.env ?? process.env);
+  const appDb = options.appDb ?? createDb(env.DATABASE_URL);
+
+  await ensureSchema(appDb, env);
 
   const secretStore = new FileSecretStore(env.SECRET_STORE_PATH, env.SECRET_STORE_KEY);
   const adapters = await buildAdapters(appDb, secretStore);
@@ -280,7 +325,11 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     instanceId: `worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
   });
 
-  scheduler.register({ jobName: PRUNE_HISTORY_JOB, handler: pruneHistoryJob, cadenceMs: pruneHistoryCadenceMs });
+  scheduler.register({
+    jobName: PRUNE_HISTORY_JOB,
+    handler: pruneHistoryJob,
+    cadenceMs: pruneHistoryCadenceMs,
+  });
   scheduler.register({ jobName: IMPORT_LISTINGS_JOB, handler: importListings });
   scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
   scheduler.register({ jobName: REPRICE_JOB, handler: reprice });

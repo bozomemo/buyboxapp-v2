@@ -32,6 +32,24 @@ describe('parseBootstrapEnv', () => {
     expect(() => parseBootstrapEnv({ SECRET_STORE_KEY: 'a-key' })).toThrow();
   });
 
+  it('defaults AUTO_MIGRATE to "0" when absent — only the installer opts in', () => {
+    const env = parseBootstrapEnv({
+      DATABASE_URL: 'sqlite://./data/app.db',
+      SECRET_STORE_KEY: 'a-key',
+    });
+    expect(env.AUTO_MIGRATE).toBe('0');
+  });
+
+  it('rejects an invalid AUTO_MIGRATE value', () => {
+    expect(() =>
+      parseBootstrapEnv({
+        DATABASE_URL: 'sqlite://./data/app.db',
+        SECRET_STORE_KEY: 'a-key',
+        AUTO_MIGRATE: 'true',
+      }),
+    ).toThrow();
+  });
+
   it('rejects an invalid SINGLE_PROCESS value', () => {
     expect(() =>
       parseBootstrapEnv({

@@ -42,6 +42,18 @@ export const BootstrapEnvSchema = z.object({
     .union([z.literal('0'), z.literal('1')])
     .optional()
     .default('0'),
+  /**
+   * '1' lets the worker apply pending migrations itself at boot instead of refusing to start
+   * (doc 14 §5.2). Written **only** by the customer installer, which has nobody at a terminal
+   * to run `npm run migrate`; a development checkout leaves it unset and keeps the explicit,
+   * refuse-and-say-so behaviour that makes an unexpected schema change visible.
+   *
+   * It never authorises a *downgrade*: a database ahead of the running build still refuses.
+   */
+  AUTO_MIGRATE: z
+    .union([z.literal('0'), z.literal('1')])
+    .optional()
+    .default('0'),
 });
 
 export type BootstrapEnv = z.infer<typeof BootstrapEnvSchema>;

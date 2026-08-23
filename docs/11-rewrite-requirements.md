@@ -161,6 +161,31 @@ Added 2026-08-23. Full detail, including why each rule exists, is in `docs/13-li
 | R-LIC-6 | S | A system clock wound back more than 24 hours is rejected as tampering | 13 §4.3 |
 | R-LIC-7 | S | An install-fingerprint mismatch warns but never stops the system | 13 §5 |
 
+## 9b. Deployment and installer
+
+Added 2026-08-23. Full detail, including the rejected alternatives, is in `docs/14-deployment.md`.
+
+| ID | Pri | Requirement | Spec |
+|----|-----|-------------|------|
+| R-DEP-1 | M | A single installer executable installs on a clean Windows machine with no Node, no Chromium and no internet connection | 14 §3, §5 |
+| R-DEP-2 | M | Code and data live in separate directories; an upgrade replaces code and never touches data | 14 §4 |
+| R-DEP-3 | M | `SECRET_STORE_KEY` is generated per install and preserved across upgrades | 14 §4.3, §5 step 4 |
+| R-DEP-4 | M | The service binds `127.0.0.1` only, and no firewall rule is created, until N-7 (authentication) exists | 14 §4.4 |
+| R-DEP-5 | M | The install fails, visibly and with a named log file, if the service does not answer `/api/health` | 14 §5 step 8 |
+| R-DEP-6 | M | The service starts automatically after a reboot with no login | 14 §5 step 7 |
+| R-DEP-7 | M | The installer collects no business configuration and no licence key; both are entered in the browser | 14 §2, §7 |
+| R-DEP-8 | M | The bundled Node ABI and the bundled native modules are verified to match in CI, not on a customer machine | 14 §3.1, §8 |
+| R-DEP-9 | S | Uninstall keeps operator data by default | 14 §10 D-6 |
+| R-DEP-10 | S | Packages are code-signed | 14 §9 |
+| R-DEP-11 | M | With `AUTO_MIGRATE=1`, a fresh install creates its schema and an upgrade applies pending migrations on the first service boot, with no installer migration step | 14 §5.2 |
+| R-DEP-12 | M | A database **ahead** of the running build refuses to start rather than being migrated | 14 §5.2a |
+| R-DEP-13 | M | A SQLite database is backed up before any automatic migration; on PostgreSQL/MySQL the absence of a backup is logged | 14 §5.2b |
+| R-DEP-14 | M | A failed migration stops the service and is reported by `/api/health`; a half-migrated schema never serves traffic | 14 §5.2d |
+| R-DEP-15 | M | Only one process migrates at a time | 14 §5.2c |
+
+Automatic self-update is **out of scope** (decided 2026-08-24); doc 14 §12 records the conditions
+under which it would be reconsidered.
+
 ## 10. Quality
 
 | ID | Pri | Requirement | Spec |
