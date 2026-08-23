@@ -1,0 +1,52 @@
+<!--
+  WinSW service definition (doc 14 §5 step 7). Rendered by install-service.ps1, which replaces
+  the {{TOKENS}} and writes the result next to WinSW's executable.
+
+  Two things here are load-bearing:
+
+  - <workingdirectory> is the DATA directory, not the install directory (doc 14 §4.1). The app
+    resolves `.env.local` and a relative SQLite path against the working directory, and a
+    service account cannot write inside Program Files.
+  - <env> carries only what the operator cannot change from the UI. DATABASE_URL,
+    SECRET_STORE_KEY and SECRET_STORE_PATH are deliberately absent: they live in `.env.local`
+    where the setup wizard can rewrite them, and an environment variable set here would silently
+    win over the operator's own change after the next restart.
+-->
+<service>
+  <id>BuyBoxApp</id>
+  <name>BuyBox</name>
+  <description>BuyBox — pazaryeri fiyatlandirma ve ilan yonetimi.</description>
+
+  <executable>{{INSTALL_DIR}}\node\node.exe</executable>
+  <arguments>"{{INSTALL_DIR}}\app\boot.mjs"</arguments>
+  <workingdirectory>{{DATA_DIR}}</workingdirectory>
+
+  <startmode>Automatic</startmode>
+  <delayedAutoStart />
+
+  <!-- A crashed repricing host that stays down is an outage nobody is watching for. -->
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <onfailure action="restart" delay="60 sec" />
+  <resetfailure>1 hour</resetfailure>
+
+  <!-- Graceful shutdown: the scheduler stops claiming, lets in-flight work finish and releases
+       its lock. Killing it mid-submission is what leaves a price change unconfirmed. -->
+  <stoptimeout>45 sec</stoptimeout>
+
+  <logpath>{{DATA_DIR}}\logs</logpath>
+  <log mode="roll-by-size-time">
+    <sizeThreshold>10240</sizeThreshold>
+    <pattern>yyyyMMdd</pattern>
+    <autoRollAtTime>00:00:00</autoRollAtTime>
+    <keepFiles>30</keepFiles>
+  </log>
+
+  <env name="NODE_ENV" value="production" />
+  <env name="PORT" value="{{PORT}}" />
+  <!-- Loopback only, until authentication exists (doc 14 §4.4). -->
+  <env name="HOSTNAME" value="127.0.0.1" />
+  <env name="AUTO_MIGRATE" value="1" />
+  <env name="APP_VERSION" value="{{VERSION}}" />
+  <env name="PLAYWRIGHT_BROWSERS_PATH" value="{{INSTALL_DIR}}\chromium" />
+</service>

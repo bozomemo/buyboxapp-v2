@@ -11,3 +11,8 @@ data/
 
 # Licence signing key — the vendor private key. NEVER commit; keep an offline backup.
 .license-keys/
+
+# Installer build artefacts (installer/README-build.md). The staging tree and the compiled
+# package are outputs; the vendored WinSW binary is an input and IS committed.
+installer/staging/
+installer/out/

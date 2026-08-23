@@ -1,0 +1,59 @@
+# Builds the customer installer (docs/14-deployment.md §8).
+#
+# Windows runner, not by preference: `better-sqlite3` is compiled against a Node ABI, and a
+# package built anywhere else fails on the customer's machine rather than here (doc 14 §3.1).
+name: Release (Windows installer)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for the package filename (defaults to package.json)'
+        required: false
+
+jobs:
+  installer:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The bundled runtime is whatever `node` is on PATH here, so this pin is also the
+      # version customers run. Changing it changes the ABI the native modules are built for.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (builds native modules for this ABI)
+        run: npm ci
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      # Vendored rather than fetched during the build (installer/README-build.md): what runs as
+      # a service on a customer machine is a binary we chose and checked, not whatever a URL
+      # served today. CI verifies the checked-in copy is present and matches.
+      - name: Verify vendored WinSW
+        shell: pwsh
+        run: |
+          $path = 'installer\vendor\WinSW.exe'
+          if (-not (Test-Path $path)) { throw "WinSW missing at $path — see installer/README-build.md" }
+          Write-Output "WinSW SHA-256: $((Get-FileHash $path -Algorithm SHA256).Hash)"
+
+      - name: Build package
+        shell: pwsh
+        run: |
+          $args = @('-ExecutionPolicy','Bypass','-File','installer\build-package.ps1')
+          if ('${{ inputs.version }}') { $args += @('-Version','${{ inputs.version }}') }
+          powershell @args
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: buybox-installer
+          path: |
+            installer/out/*.exe
+            installer/out/*.sha256
+          if-no-files-found: error

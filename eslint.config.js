@@ -5,7 +5,16 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', 'reference/**', '**/.next/**'],
+    // installer/staging and installer/out are build outputs (installer/README-build.md) --
+    // generated Next server code and a packed installer, neither of them ours to lint.
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      'reference/**',
+      '**/.next/**',
+      'installer/staging/**',
+      'installer/out/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -21,7 +30,7 @@ export default tseslint.config(
     // Plain Node scripts, run directly by `npm run` rather than compiled. They get no
     // `@types/node` lib the way the TypeScript packages do, so the Node globals they use are
     // declared here instead of being reported as undefined.
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'installer/**/*.mjs'],
     languageOptions: {
       globals: { console: 'readonly', process: 'readonly' },
     },
