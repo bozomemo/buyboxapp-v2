@@ -27,7 +27,7 @@ export function Step8Review({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-[var(--color-muted)]">
+      <p className="text-sm text-(--color-muted)">
         Veritabanı hazır, mağaza kimliği kaydedildi, pazaryeri kimlik bilgileri şifreli olarak saklandı, ücret
         ve politika ayarları girildi, ürün kaynağı yapılandırıldı. Otomasyon her pazaryerinde{' '}
         <strong>kapalı</strong> olarak başlayacak — Panel'den bilinçli olarak açacaksınız (doc 10 §6, adım 8).

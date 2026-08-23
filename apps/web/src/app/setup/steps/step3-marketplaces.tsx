@@ -94,12 +94,12 @@ export function Step3Marketplaces({
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-[var(--color-muted)]">
+      <p className="text-sm text-(--color-muted)">
         Her pazaryeri için bilgileri girin ve "Bağlantıyı Test Et" ile gerçek bir okuma çağrısı yapıp dönen
         sonucu doğrulayın, ardından kaydedin. Devre dışı bıraktığınız pazaryerleri atlanır.
       </p>
       {forms.map((form) => (
-        <div key={form.code} className="rounded border border-[var(--color-border)] p-4">
+        <div key={form.code} className="rounded border border-(--color-border) p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-semibold">{form.title}</h3>
             <label className="flex items-center gap-2 text-sm">

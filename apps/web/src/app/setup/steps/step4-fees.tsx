@@ -96,7 +96,7 @@ function BandEditor({
           />
           <button
             type="button"
-            className="text-xs text-[var(--color-danger)]"
+            className="text-xs text-(--color-danger)"
             onClick={() => onChange(bands.filter((_, j) => j !== i))}
           >
             Kaldır
@@ -105,7 +105,7 @@ function BandEditor({
       ))}
       <button
         type="button"
-        className="w-fit text-xs text-[var(--color-accent)]"
+        className="w-fit text-xs text-(--color-accent)"
         onClick={() => onChange([...bands, { edge: '', amount: '0' }])}
       >
         + Bant Ekle
@@ -176,13 +176,13 @@ export function Step4Fees({
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-[var(--color-muted)]">
+      <p className="text-sm text-(--color-muted)">
         Komisyon KDV oranı ve muamelesi, kargo bantları ve gider bantları (doc 02 §3). Kalıcı değerler
         mağazanızın gerçek sözleşme koşullarıyla eşleşmelidir — buradaki değerler başlangıç varsayımlarıdır ve
         Ayarlar ekranından daha sonra düzeltilebilir.
       </p>
       {forms.map((form) => (
-        <div key={form.code} className="rounded border border-[var(--color-border)] p-4">
+        <div key={form.code} className="rounded border border-(--color-border) p-4">
           <h3 className="mb-3 font-semibold">{form.title}</h3>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Komisyon KDV Oranı (%)">

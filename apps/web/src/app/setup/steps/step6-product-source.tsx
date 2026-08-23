@@ -85,7 +85,7 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
             setPreview(undefined);
             setSaved(false);
           }}
-          className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm"
+          className="rounded border border-(--color-border) px-3 py-1.5 text-sm"
         >
           <option value="manual">Manuel (Stok ekranından tek tek eklenir)</option>
           <option value="excel">Excel</option>
@@ -94,7 +94,7 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
       </Field>
 
       {source === 'excel' && (
-        <div className="flex flex-col gap-3 rounded border border-[var(--color-border)] p-4">
+        <div className="flex flex-col gap-3 rounded border border-(--color-border) p-4">
           <input ref={fileInput} type="file" accept=".xlsx" className="text-sm" />
           <div className="grid grid-cols-2 gap-3">
             {(['baseStockCode', 'name', 'unitCost', 'unitStock'] as const).map((field) => (
@@ -140,7 +140,7 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
       )}
 
       {source === 'marketplaceListing' && (
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-(--color-muted)">
           Bu kaynak, ilanlar içe aktarıldıktan sonra devreye girer; şu an önizlenecek veri yok. Birim maliyet
           daha sonra manuel olarak veya başka bir kaynakla girilmelidir.
         </p>

@@ -123,12 +123,12 @@ export function MarketplacesClient() {
   return (
     <div className="flex flex-col gap-6">
       {forms.map((form) => (
-        <div key={form.code} className="rounded border border-[var(--color-border)] p-4">
+        <div key={form.code} className="rounded border border-(--color-border) p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-semibold">{TITLES[form.code]}</h3>
             <div className="flex items-center gap-3">
               {form.updatedAt && (
-                <span className="text-xs text-[var(--color-muted)]">
+                <span className="text-xs text-(--color-muted)">
                   Son güncelleme: {formatDateTime(form.updatedAt)}
                 </span>
               )}
@@ -148,17 +148,17 @@ export function MarketplacesClient() {
                 it did: every own-offer filter simply matched nothing and our own store was
                 reported as our biggest competitor. */}
             <Field label="Satıcı Referansı (merchantRef)">
-              <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm">
+              <div className="rounded border border-(--color-border) bg-(--color-surface-2) px-2 py-1.5 text-sm">
                 {form.merchantRef || '— henüz belirlenmedi —'}
               </div>
             </Field>
-            <p className="text-xs text-[var(--color-muted)]">
+            <p className="text-xs text-(--color-muted)">
               Bu alan elle girilmez: kimlik bilgilerindeki satıcı kodundan (Trendyol{' '}
               <code>sellerId</code>, Hepsiburada <code>merchantId</code>) otomatik belirlenir ve her
               ürün içe aktarımında doğrulanır. Kendi teklifimizi rakiplerinkinden ayıran tek veri
               budur; yanlış olduğunda hata vermez, sadece kendi mağazamızı rakip sayardık.
             </p>
-            <p className="text-xs text-[var(--color-muted)]">
+            <p className="text-xs text-(--color-muted)">
               Kimlik bilgileri güvenlik nedeniyle görüntülenmez — yalnızca doldurduğunuz alanlar kaydedilir,
               boş bırakılanlar mevcut değeri korur.
             </p>

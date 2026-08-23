@@ -56,18 +56,18 @@ export function RetentionClient() {
     }
   }
 
-  if (!windows) return <p className="text-[var(--color-muted)]">Yükleniyor…</p>;
+  if (!windows) return <p className="text-(--color-muted)">Yükleniyor…</p>;
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-[var(--color-muted)]">
+      <p className="text-sm text-(--color-muted)">
         {isDefault
           ? 'Şu anda varsayılan pencereler kullanılıyor (doc 05 §10).'
           : 'Özelleştirilmiş pencereler kullanılıyor.'}{' '}
         <code>competitor_observations</code> ve <code>scrape_runs</code> süresiz saklanır ve burada
         listelenmez (doc 10 §5).
       </p>
-      <div className="grid grid-cols-2 gap-4 rounded border border-[var(--color-border)] p-4">
+      <div className="grid grid-cols-2 gap-4 rounded border border-(--color-border) p-4">
         {LABELS.map(({ key, label }) => (
           <Field key={key} label={label}>
             <TextInput

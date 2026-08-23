@@ -18,24 +18,24 @@ export function DatabaseClient() {
       .catch(() => undefined);
   }, []);
 
-  if (!info) return <p className="text-[var(--color-muted)]">Yükleniyor…</p>;
+  if (!info) return <p className="text-(--color-muted)">Yükleniyor…</p>;
 
   return (
-    <div className="max-w-md rounded border border-[var(--color-border)] p-4">
+    <div className="max-w-md rounded border border-(--color-border) p-4">
       <dl className="space-y-2 text-sm">
         <div className="flex justify-between">
-          <dt className="text-[var(--color-muted)]">Motor</dt>
+          <dt className="text-(--color-muted)">Motor</dt>
           <dd className="font-medium">{info.dialect}</dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-[var(--color-muted)]">Bağlantı</dt>
+          <dt className="text-(--color-muted)">Bağlantı</dt>
           <dd className="font-mono text-xs">{info.connection}</dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-[var(--color-muted)]">Şema Sürümü</dt>
+          <dt className="text-(--color-muted)">Şema Sürümü</dt>
           <dd
             className={
-              info.schemaVersion.upToDate ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'
+              info.schemaVersion.upToDate ? 'text-(--color-success)' : 'text-(--color-danger)'
             }
           >
             {info.schemaVersion.appliedCount}/{info.schemaVersion.expectedCount} göç uygulandı

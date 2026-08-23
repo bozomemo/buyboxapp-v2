@@ -128,7 +128,7 @@ export function PolicyClient() {
       <label className="text-sm">
         Pazaryeri:{' '}
         <select
-          className="rounded border border-[var(--color-border)] px-2 py-1"
+          className="rounded border border-(--color-border) px-2 py-1"
           value={marketplaceCode}
           onChange={(e) => setMarketplaceCode(e.target.value as 'trendyol' | 'hepsiburada')}
         >
@@ -137,7 +137,7 @@ export function PolicyClient() {
         </select>
       </label>
 
-      <div className="rounded border border-[var(--color-border)] p-4">
+      <div className="rounded border border-(--color-border) p-4">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Kaba Adım (%)">
             <TextInput
@@ -207,9 +207,9 @@ export function PolicyClient() {
           </Button>
         </div>
         {saved && <StatusBanner ok message="Politika kaydedildi." />}
-        {previewError && <p className="mt-2 text-sm text-[var(--color-danger)]">{previewError}</p>}
+        {previewError && <p className="mt-2 text-sm text-(--color-danger)">{previewError}</p>}
         {preview && (
-          <div className="mt-4 rounded border border-[var(--color-border)] p-3">
+          <div className="mt-4 rounded border border-(--color-border) p-3">
             <p className="text-sm">
               <strong>{preview.changed}</strong> ilan fiyat değiştirir, <strong>{preview.unchanged}</strong>{' '}
               ilan değişmez{preview.skipped > 0 ? `, ${preview.skipped} ilan hesaplanamadı (eksik veri)` : ''}{' '}
@@ -217,14 +217,14 @@ export function PolicyClient() {
               gölgede çalıştırılarak hesaplandı.
             </p>
             {preview.changed > 0 && (
-              <p className="mt-1 text-sm text-[var(--color-muted)]">
+              <p className="mt-1 text-sm text-(--color-muted)">
                 Ortalama değişim: {formatMoney(BigInt(Math.round(preview.averageDeltaKurus)))}
               </p>
             )}
             {preview.sample.length > 0 && (
               <div className="mt-3 max-h-64 overflow-auto">
               <table className="w-full text-xs">
-                <thead className="text-left text-[var(--color-muted)]">
+                <thead className="text-left text-(--color-muted)">
                   <tr>
                     <th className="py-1">Ürün</th>
                     <th className="py-1">Eski</th>
@@ -234,7 +234,7 @@ export function PolicyClient() {
                 </thead>
                 <tbody>
                   {preview.sample.map((s) => (
-                    <tr key={s.listingId} className="border-t border-[var(--color-border)]">
+                    <tr key={s.listingId} className="border-t border-(--color-border)">
                       <td className="py-1">{s.productName}</td>
                       <td className="py-1">{formatMoney(BigInt(s.oldPrice))}</td>
                       <td className="py-1">{formatMoney(BigInt(s.newPrice))}</td>

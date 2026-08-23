@@ -91,7 +91,7 @@ function BandEditor({
           />
           <button
             type="button"
-            className="text-xs text-[var(--color-danger)]"
+            className="text-xs text-(--color-danger)"
             onClick={() => onChange(bands.filter((_, j) => j !== i))}
           >
             Kaldır
@@ -100,7 +100,7 @@ function BandEditor({
       ))}
       <button
         type="button"
-        className="w-fit text-xs text-[var(--color-accent)]"
+        className="w-fit text-xs text-(--color-accent)"
         onClick={() => onChange([...bands, { edge: '', amount: '0' }])}
       >
         + Bant Ekle
@@ -187,7 +187,7 @@ export function FeesClient() {
       <label className="text-sm">
         Pazaryeri:{' '}
         <select
-          className="rounded border border-[var(--color-border)] px-2 py-1"
+          className="rounded border border-(--color-border) px-2 py-1"
           value={marketplaceCode}
           onChange={(e) => setMarketplaceCode(e.target.value as 'trendyol' | 'hepsiburada')}
         >
@@ -196,8 +196,8 @@ export function FeesClient() {
         </select>
       </label>
 
-      <div className="rounded border border-[var(--color-border)] p-4">
-        <p className="mb-3 text-xs text-[var(--color-muted)]">
+      <div className="rounded border border-(--color-border) p-4">
+        <p className="mb-3 text-xs text-(--color-muted)">
           Kaydettiğinizde yeni bir satır, şimdiki zamanla etkin olarak eklenir (doc 05 §2) — geçmiş fiyat
           kararları hep o anda geçerli olan değerlerle açıklanabilir kalır, eski satır asla değiştirilmez.
         </p>
@@ -260,17 +260,17 @@ export function FeesClient() {
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Geçmiş
         </h3>
-        <ul className="table-frame max-h-[50vh] divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)] text-sm">
+        <ul className="table-frame max-h-[50vh] divide-y divide-(--color-border) rounded border border-(--color-border) text-sm">
           {pagedHistory.rows.map((h) => (
             <li key={h.id} className="flex justify-between px-3 py-2">
               <span>{formatDate(h.effectiveFrom)}</span>
-              <span className="text-[var(--color-muted)]">Komisyon: %{h.defaultCommissionRate}</span>
+              <span className="text-(--color-muted)">Komisyon: %{h.defaultCommissionRate}</span>
             </li>
           ))}
-          {history.length === 0 && <li className="px-3 py-2 text-[var(--color-muted)]">Kayıt yok.</li>}
+          {history.length === 0 && <li className="px-3 py-2 text-(--color-muted)">Kayıt yok.</li>}
         </ul>
         {history.length > 0 && (
           <div className="mt-2">

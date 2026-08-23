@@ -74,7 +74,7 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
             setTestResult(undefined);
             setMigrateResult(undefined);
           }}
-          className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm"
+          className="rounded border border-(--color-border) px-3 py-1.5 text-sm"
         >
           <option value="sqlite">SQLite (tek kullanıcılı yerel kurulum için önerilir)</option>
           <option value="postgres">PostgreSQL</option>

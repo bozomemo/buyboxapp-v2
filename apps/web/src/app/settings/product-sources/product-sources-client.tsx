@@ -90,7 +90,7 @@ export function ProductSourcesClient() {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-[var(--color-muted)]">
+      <p className="text-sm text-(--color-muted)">
         {configured ? 'Şu anda yapılandırılmış bir kaynak var.' : 'Henüz bir ürün kaynağı yapılandırılmadı.'}
       </p>
       <Field label="Ürün Kaynağı">
@@ -101,7 +101,7 @@ export function ProductSourcesClient() {
             setPreview(undefined);
             setSaved(false);
           }}
-          className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm"
+          className="rounded border border-(--color-border) px-3 py-1.5 text-sm"
         >
           <option value="manual">Manuel (Stok ekranından tek tek eklenir)</option>
           <option value="excel">Excel</option>
@@ -110,7 +110,7 @@ export function ProductSourcesClient() {
       </Field>
 
       {source === 'excel' && (
-        <div className="flex flex-col gap-3 rounded border border-[var(--color-border)] p-4">
+        <div className="flex flex-col gap-3 rounded border border-(--color-border) p-4">
           <input ref={fileInput} type="file" accept=".xlsx" className="text-sm" />
           <div className="grid grid-cols-2 gap-3">
             {(['baseStockCode', 'name', 'unitCost', 'unitStock'] as const).map((field) => (
@@ -156,7 +156,7 @@ export function ProductSourcesClient() {
       )}
 
       {source === 'marketplaceListing' && (
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-(--color-muted)">
           Bu kaynak, ilanlar içe aktarıldıktan sonra devreye girer; şu an önizlenecek veri yok.
         </p>
       )}
@@ -172,9 +172,9 @@ export function ProductSourcesClient() {
       </div>
       {saved && <StatusBanner ok message="Ürün kaynağı yapılandırması kaydedildi." />}
 
-      <div className="mt-4 rounded border border-dashed border-[var(--color-border)] p-4">
-        <h3 className="font-semibold text-[var(--color-muted)]">ERP Entegrasyonu</h3>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">Yakında.</p>
+      <div className="mt-4 rounded border border-dashed border-(--color-border) p-4">
+        <h3 className="font-semibold text-(--color-muted)">ERP Entegrasyonu</h3>
+        <p className="mt-1 text-sm text-(--color-muted)">Yakında.</p>
       </div>
     </div>
   );

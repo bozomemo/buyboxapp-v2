@@ -91,12 +91,12 @@ export function Step5Policy({
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-[var(--color-muted)]">
+      <p className="text-sm text-(--color-muted)">
         Fiyatlandırma motoru politikası (doc 03 §3). Otomasyon bu adımda kapalı kaydedilir — kurulum bittikten
         sonra Panel'den pazaryeri bazında bilinçli olarak açarsınız (doc 10 §6, adım 8).
       </p>
       {forms.map((form) => (
-        <div key={form.code} className="rounded border border-[var(--color-border)] p-4">
+        <div key={form.code} className="rounded border border-(--color-border) p-4">
           <h3 className="mb-3 font-semibold">{form.title}</h3>
           <div className="grid grid-cols-2 gap-4">
             {/* Sabit-tutar modu Ayarlar ekranından (6.10) yapılandırılır — sihirbaz kasıtlı
