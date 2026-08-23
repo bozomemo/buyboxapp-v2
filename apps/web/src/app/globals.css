@@ -1,15 +1,123 @@
 @import 'tailwindcss';
 
+/*
+ * Theme tokens (light default, dark override below). Every screen reads color through these
+ * custom properties — never a raw Tailwind palette class — so a screen is dark-mode-correct the
+ * moment it uses a token, with nothing further to touch when the palette changes.
+ *
+ * `-bg`/`-border` suffixes are the soft tint used for alert boxes, badges and status rows;
+ * `-ink` is the text color to put *on* the solid `--color-accent/danger/warning/success` fill
+ * (white in light mode, but the dark palette's accent/success/warning are light, saturated
+ * colors that fail contrast under white text, so dark mode needs a near-black ink instead —
+ * always reach for `-ink` next to a solid status fill, never hardcode `text-white`).
+ */
 :root {
   --color-bg: #f8fafc;
   --color-surface: #ffffff;
   --color-border: #e2e8f0;
   --color-text: #0f172a;
   --color-muted: #64748b;
+  --color-hover: #f1f5f9;
+  --color-chip-bg: #e2e8f0;
+  --color-chip-text: #334155;
+  --color-strong-bg: #262626;
+  --color-strong-ink: #ffffff;
+
   --color-accent: #2563eb;
+  --color-accent-ink: #ffffff;
+  --color-accent-bg: #eff6ff;
+  --color-accent-border: #93c5fd;
+
   --color-danger: #dc2626;
+  --color-danger-ink: #ffffff;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #fca5a5;
+
   --color-warning: #d97706;
+  --color-warning-ink: #ffffff;
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fcd34d;
+
   --color-success: #16a34a;
+  --color-success-ink: #ffffff;
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #86efac;
+}
+
+/*
+ * Dark palette — "Yüksek Kontrastlı Veri Paneli" (doc 06 §11), the direction picked from four
+ * mocked-up options on 2026-08-18. Applied two ways so both "Sistem" and an explicit "Koyu"
+ * choice work: the media query covers a system preference with no explicit choice stored
+ * (`data-theme` absent or "system"), and the attribute selector covers an explicit choice,
+ * overriding the media query in either direction. Theme selection itself — reading
+ * localStorage, stamping `data-theme` on `<html>` before paint — lives in the inline script in
+ * `layout.tsx`, not here; this file only ever reacts to the attribute.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-bg: #05070a;
+    --color-surface: #0a0e15;
+    --color-border: #1c2430;
+    --color-text: #f4f6f9;
+    --color-muted: #7c8798;
+    --color-hover: #131a26;
+    --color-chip-bg: #1c2430;
+    --color-chip-text: #cbd5e1;
+    --color-strong-bg: #1c2430;
+    --color-strong-ink: #f4f6f9;
+
+    --color-accent: #22d3ee;
+    --color-accent-ink: #04141a;
+    --color-accent-bg: rgba(34, 211, 238, 0.14);
+    --color-accent-border: rgba(34, 211, 238, 0.4);
+
+    --color-danger: #ff3b47;
+    --color-danger-ink: #1a0304;
+    --color-danger-bg: rgba(255, 59, 71, 0.16);
+    --color-danger-border: rgba(255, 59, 71, 0.4);
+
+    --color-warning: #ffb020;
+    --color-warning-ink: #1a1102;
+    --color-warning-bg: rgba(255, 176, 32, 0.14);
+    --color-warning-border: rgba(255, 176, 32, 0.4);
+
+    --color-success: #16e37e;
+    --color-success-ink: #021a0e;
+    --color-success-bg: rgba(22, 227, 126, 0.14);
+    --color-success-border: rgba(22, 227, 126, 0.4);
+  }
+}
+:root[data-theme='dark'] {
+  --color-bg: #05070a;
+  --color-surface: #0a0e15;
+  --color-border: #1c2430;
+  --color-text: #f4f6f9;
+  --color-muted: #7c8798;
+  --color-hover: #131a26;
+  --color-chip-bg: #1c2430;
+  --color-chip-text: #cbd5e1;
+  --color-strong-bg: #1c2430;
+  --color-strong-ink: #f4f6f9;
+
+  --color-accent: #22d3ee;
+  --color-accent-ink: #04141a;
+  --color-accent-bg: rgba(34, 211, 238, 0.14);
+  --color-accent-border: rgba(34, 211, 238, 0.4);
+
+  --color-danger: #ff3b47;
+  --color-danger-ink: #1a0304;
+  --color-danger-bg: rgba(255, 59, 71, 0.16);
+  --color-danger-border: rgba(255, 59, 71, 0.4);
+
+  --color-warning: #ffb020;
+  --color-warning-ink: #1a1102;
+  --color-warning-bg: rgba(255, 176, 32, 0.14);
+  --color-warning-border: rgba(255, 176, 32, 0.4);
+
+  --color-success: #16e37e;
+  --color-success-ink: #021a0e;
+  --color-success-bg: rgba(22, 227, 126, 0.14);
+  --color-success-border: rgba(22, 227, 126, 0.4);
 }
 
 body {
@@ -47,16 +155,32 @@ body {
 
 /* Row-highlight semantics shared by the stock and listings grids (doc 06 §3, §4.2). */
 .row-danger {
-  background-color: #fef2f2;
+  background-color: var(--color-danger-bg);
 }
 .row-warning {
-  background-color: #fffbeb;
+  background-color: var(--color-warning-bg);
 }
 .row-success {
-  background-color: #f0fdf4;
+  background-color: var(--color-success-bg);
 }
 .row-muted {
-  background-color: #f8fafc;
+  background-color: var(--color-bg);
   color: var(--color-muted);
   text-decoration: line-through;
+}
+
+/*
+ * Tabular price columns: the dark direction (doc 06 §11) specifies a monospace/tabular-nums
+ * treatment for money and other aligned numeric cells so digits stay column-aligned — kept as a
+ * shared class rather than repeated inline so every grid picks it up the same way.
+ */
+.tabular-figures {
+  font-variant-numeric: tabular-nums;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    'JetBrains Mono',
+    Menlo,
+    Consolas,
+    monospace;
 }

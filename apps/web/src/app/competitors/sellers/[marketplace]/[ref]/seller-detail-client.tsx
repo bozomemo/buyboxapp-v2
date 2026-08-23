@@ -95,7 +95,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
 
   if (!detail) {
     return (
-      <div className="p-6 text-sm text-neutral-500">
+      <div className="p-6 text-sm text-(--color-muted)">
         {error ?? 'Yükleniyor…'}
       </div>
     );
@@ -108,13 +108,13 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <Link className="text-sm text-blue-700 hover:underline" href="/competitors/sellers">
+          <Link className="text-sm text-(--color-accent) hover:underline" href="/competitors/sellers">
             ← Rakip satıcılar
           </Link>
           <h1 className="mt-1 text-2xl font-semibold">
             {detail.seller.sellerName || detail.seller.sellerRef}
           </h1>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-(--color-muted)">
             {detail.seller.marketplaceCode} · {detail.seller.sellerRef}
             {detail.group && (
               <>
@@ -126,9 +126,9 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
           </p>
         </div>
         <label className="text-sm">
-          <span className="mb-1 block text-neutral-500">Dönem</span>
+          <span className="mb-1 block text-(--color-muted)">Dönem</span>
           <select
-            className="rounded border border-neutral-300 px-2 py-1"
+            className="rounded border border-(--color-border) px-2 py-1"
             value={String(sinceMs)}
             onChange={(e) => setSinceMs(Number(e.target.value))}
           >
@@ -139,33 +139,37 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
         </label>
       </div>
 
-      {error && <div className="rounded border border-red-300 bg-red-50 p-3 text-sm">{error}</div>}
+      {error && (
+        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
+          {error}
+        </div>
+      )}
 
       <CoverageBadge coverage={detail.coverage} sinceMs={detail.filters.sinceMs} />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded border border-neutral-200 p-3">
-          <div className="text-xs text-neutral-500">Çakıştığımız ürün</div>
+        <div className="rounded border border-(--color-border) p-3">
+          <div className="text-xs text-(--color-muted)">Çakıştığımız ürün</div>
           <div className="text-xl font-semibold">{formatNumber(detail.listings.length)}</div>
         </div>
-        <div className="rounded border border-neutral-200 p-3">
-          <div className="text-xs text-neutral-500">Kayıtlı teklif</div>
+        <div className="rounded border border-(--color-border) p-3">
+          <div className="text-xs text-(--color-muted)">Kayıtlı teklif</div>
           <div className="text-xl font-semibold">{formatNumber(totalObservations)}</div>
         </div>
-        <div className="rounded border border-neutral-200 p-3">
-          <div className="text-xs text-neutral-500">Buybox&apos;ta görüldüğü</div>
+        <div className="rounded border border-(--color-border) p-3">
+          <div className="text-xs text-(--color-muted)">Buybox&apos;ta görüldüğü</div>
           <div className="text-xl font-semibold">
             {formatNumber(totalBuybox)}
-            <span className="ml-2 text-sm font-normal text-neutral-500">
+            <span className="ml-2 text-sm font-normal text-(--color-muted)">
               {totalObservations > 0 ? formatPercent((totalBuybox / totalObservations) * 100) : '—'}
             </span>
           </div>
         </div>
       </div>
 
-      <section className="rounded border border-neutral-200 p-4">
+      <section className="rounded border border-(--color-border) p-4">
         <h2 className="text-lg font-medium">Kimlik eşleme</h2>
-        <p className="mt-1 max-w-3xl text-sm text-neutral-500">
+        <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
           Pazaryerleri kendi kimlik numaralarını verir; Trendyol&apos;daki bir numara ile
           Hepsiburada&apos;daki aynı numara ilgisizdir. İki kimliğin aynı firma olduğunu yalnızca
           siz bilebilirsiniz — sistem bunu isim benzerliğinden <strong>asla</strong> tahmin etmez,
@@ -174,16 +178,16 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
         </p>
 
         {!detail.seller.isKnown ? (
-          <p className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+          <p className="mt-3 rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
             Bu satıcı henüz kalıcı olarak kaydedilmemiş — aşağıdaki rakamlar geçmiş tekliflerden
             geliyor. Bir tarama çalıştıktan sonra gruplama ve not ekleyebilirsiniz.
           </p>
         ) : (
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <label className="text-sm">
-              <span className="mb-1 block text-neutral-500">Grup</span>
+              <span className="mb-1 block text-(--color-muted)">Grup</span>
               <select
-                className="rounded border border-neutral-300 px-2 py-1"
+                className="rounded border border-(--color-border) px-2 py-1"
                 disabled={busy}
                 value={detail.group?.id ?? ''}
                 onChange={(e) =>
@@ -204,16 +208,16 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
               </select>
             </label>
             <label className="text-sm">
-              <span className="mb-1 block text-neutral-500">Yeni grup oluştur</span>
+              <span className="mb-1 block text-(--color-muted)">Yeni grup oluştur</span>
               <input
-                className="rounded border border-neutral-300 px-2 py-1"
+                className="rounded border border-(--color-border) px-2 py-1"
                 placeholder="ör. Olympus Grup"
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
               />
             </label>
             <button
-              className="rounded bg-neutral-800 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              className="rounded bg-(--color-strong-bg) px-3 py-1.5 text-sm text-(--color-strong-ink) disabled:opacity-50"
               disabled={busy || newGroupName.trim() === ''}
               onClick={async () => {
                 await post({ action: 'createGroup', displayName: newGroupName.trim() });
@@ -242,12 +246,12 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
           </thead>
           <tbody>
             {paged.rows.map((l) => (
-              <tr key={l.listingId} className="border-t border-neutral-100">
+              <tr key={l.listingId} className="border-t border-(--color-border)">
                 <td className="px-3 py-2">
-                  <Link className="text-blue-700 hover:underline" href={`/listings/${l.listingId}`}>
+                  <Link className="text-(--color-accent) hover:underline" href={`/listings/${l.listingId}`}>
                     {l.productName}
                   </Link>
-                  <div className="text-xs text-neutral-500">
+                  <div className="text-xs text-(--color-muted)">
                     {l.baseStockCode ?? l.marketplaceListingId}
                   </div>
                 </td>
@@ -262,17 +266,17 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
                 <td className="px-3 py-2 text-right">
                   {l.avgRank === null ? '—' : l.avgRank.toFixed(1)}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap text-neutral-600">
+                <td className="px-3 py-2 whitespace-nowrap text-(--color-muted)">
                   ≥ {formatDateTime(l.firstSeenAt)}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap text-neutral-600">
+                <td className="px-3 py-2 whitespace-nowrap text-(--color-muted)">
                   {formatDateTime(l.lastSeenAt)}
                 </td>
               </tr>
             ))}
             {detail.listings.length === 0 && (
               <tr>
-                <td className="px-3 py-6 text-center text-neutral-500" colSpan={8}>
+                <td className="px-3 py-6 text-center text-(--color-muted)" colSpan={8}>
                   Bu dönemde bu satıcıya ait teklif kaydı yok.
                 </td>
               </tr>

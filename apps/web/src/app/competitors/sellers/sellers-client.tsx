@@ -88,7 +88,7 @@ export function SellersClient() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Rakip Satıcılar</h1>
-          <p className="mt-1 max-w-3xl text-sm text-neutral-500">
+          <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
             İzlediğimiz ürünlerde karşımıza çıkan satıcılar, en çok çakışandan başlayarak. Bu
             veriler <strong>tekliflerden</strong> gelir; bir satıcının ürünü kaç kez{' '}
             <em>listelediğini</em> gösterir, kaç adet sattığını değil.
@@ -96,9 +96,9 @@ export function SellersClient() {
         </div>
         <div className="flex items-end gap-3">
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-500">Dönem</span>
+            <span className="mb-1 block text-(--color-muted)">Dönem</span>
             <select
-              className="rounded border border-neutral-300 px-2 py-1"
+              className="rounded border border-(--color-border) px-2 py-1"
               value={String(sinceMs)}
               onChange={(e) => setSinceMs(Number(e.target.value))}
             >
@@ -108,9 +108,9 @@ export function SellersClient() {
             </select>
           </label>
           <label className="text-sm">
-            <span className="mb-1 block text-neutral-500">Pazaryeri</span>
+            <span className="mb-1 block text-(--color-muted)">Pazaryeri</span>
             <select
-              className="rounded border border-neutral-300 px-2 py-1"
+              className="rounded border border-(--color-border) px-2 py-1"
               value={marketplaceCode}
               onChange={(e) => setMarketplaceCode(e.target.value)}
             >
@@ -122,8 +122,12 @@ export function SellersClient() {
         </div>
       </div>
 
-      {error && <div className="rounded border border-red-300 bg-red-50 p-3 text-sm">{error}</div>}
-      {loading && <div className="text-sm text-neutral-500">Yükleniyor…</div>}
+      {error && (
+        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
+          {error}
+        </div>
+      )}
+      {loading && <div className="text-sm text-(--color-muted)">Yükleniyor…</div>}
 
       {report && (
         <>
@@ -134,7 +138,7 @@ export function SellersClient() {
               cannot, we sit at the top of the competitor list on 100% of our own listings and
               the report simply looks wrong, with nothing pointing at the cause. */}
           {report.ownSellerUnresolved.length > 0 && (
-            <div className="rounded border border-red-400 bg-red-50 p-4 text-sm text-red-900">
+            <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-4 text-sm text-(--color-danger)">
               <strong className="block">Kendi mağazanız bu listede rakip olarak görünüyor.</strong>
               <ul className="mt-2 space-y-1">
                 {report.ownSellerUnresolved.map((m) => (
@@ -159,7 +163,7 @@ export function SellersClient() {
           )}
 
           {report.ownStores.length > 0 && (
-            <div className="rounded border border-neutral-300 bg-neutral-50 p-3 text-sm">
+            <div className="rounded border border-(--color-border) bg-(--color-hover) p-3 text-sm">
               <span className="font-medium">Kendi mağazamız</span> (rakip listesinden çıkarıldı):{' '}
               {report.ownStores.map((o, i) => (
                 <span key={o.marketplaceCode}>
@@ -172,7 +176,7 @@ export function SellersClient() {
           )}
 
           {report.unidentifiedObservations > 0 && (
-            <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+            <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
               Bu dönemde <strong>{formatNumber(report.unidentifiedObservations)}</strong> teklif,
               pazaryerinin satıcı kimliği vermediği için aşağıdaki listede yer almıyor. Bu teklifler
               isme göre eşleştirilmez — aynı isim aynı firma anlamına gelmediği için yanlış satıcıya
@@ -197,21 +201,21 @@ export function SellersClient() {
               </thead>
               <tbody>
                 {paged.rows.map((s) => (
-                  <tr key={`${s.marketplaceCode}:${s.sellerRef}`} className="border-t border-neutral-100">
+                  <tr key={`${s.marketplaceCode}:${s.sellerRef}`} className="border-t border-(--color-border)">
                     <td className="px-3 py-2">
                       <Link
-                        className="font-medium text-blue-700 hover:underline"
+                        className="font-medium text-(--color-accent) hover:underline"
                         href={`/competitors/sellers/${s.marketplaceCode}/${encodeURIComponent(s.sellerRef)}`}
                       >
                         {s.sellerName || s.sellerRef}
                       </Link>
                       {s.groupName && (
-                        <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+                        <span className="ml-2 rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)">
                           {s.groupName}
                         </span>
                       )}
                       {s.operatorNote && (
-                        <div className="text-xs text-neutral-500">{s.operatorNote}</div>
+                        <div className="text-xs text-(--color-muted)">{s.operatorNote}</div>
                       )}
                     </td>
                     <td className="px-3 py-2">{s.marketplaceCode}</td>
@@ -219,7 +223,7 @@ export function SellersClient() {
                     <td className="px-3 py-2 text-right">{formatNumber(s.observationCount)}</td>
                     <td className="px-3 py-2 text-right">
                       {formatNumber(s.buyboxCount)}
-                      <span className="ml-1 text-xs text-neutral-500">
+                      <span className="ml-1 text-xs text-(--color-muted)">
                         ({formatPercent(s.buyboxRate * 100)})
                       </span>
                     </td>
@@ -231,17 +235,17 @@ export function SellersClient() {
                         ? '—'
                         : `${formatMoney(BigInt(s.minPrice))} – ${formatMoney(BigInt(s.maxPrice ?? s.minPrice))}`}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-neutral-600">
+                    <td className="px-3 py-2 whitespace-nowrap text-(--color-muted)">
                       ≥ {formatDateTime(s.firstSeenAt)}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-neutral-600">
+                    <td className="px-3 py-2 whitespace-nowrap text-(--color-muted)">
                       {formatDateTime(s.lastSeenAt)}
                     </td>
                   </tr>
                 ))}
                 {report.sellers.length === 0 && (
                   <tr>
-                    <td className="px-3 py-6 text-center text-neutral-500" colSpan={9}>
+                    <td className="px-3 py-6 text-center text-(--color-muted)" colSpan={9}>
                       Bu dönemde kayıtlı rakip teklifi yok.
                     </td>
                   </tr>
@@ -252,7 +256,7 @@ export function SellersClient() {
 
           <Pagination state={paged} label="satıcı" />
 
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-(--color-muted)">
             &ldquo;İlk görülme&rdquo; bir <em>gözlem</em> tarihidir, satışa başlama tarihi değil:
             satıcı ondan önce de orada olabilir, taramalar arasındaki boşlukta fark edilmemiş
             olabilir. Bu yüzden ≥ ile gösterilir.

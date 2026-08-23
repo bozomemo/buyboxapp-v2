@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { ThemeToggle } from './theme-toggle';
 
 const NAV_ITEMS: { href: string; label: string }[] = [
   { href: '/', label: 'Panel' },
@@ -83,8 +84,8 @@ function SystemPauseButton() {
       title="Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur."
       className={`rounded px-3 py-1.5 text-sm font-semibold transition ${
         engaged
-          ? 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-slate-50'
-          : 'bg-[var(--color-success)] text-white hover:opacity-90'
+          ? 'border border-(--color-border) bg-(--color-surface) text-(--color-text) hover:bg-(--color-hover)'
+          : 'bg-(--color-success) text-(--color-success-ink) hover:opacity-90'
       }`}
     >
       {engaged ? 'Genel Durdurma: Duraklatıldı' : 'Sistem Çalışıyor'}
@@ -111,7 +112,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-56 flex-none flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <aside className="flex w-56 flex-none flex-col border-r border-(--color-border) bg-(--color-surface) p-4">
         <div className="mb-6 text-lg font-bold">BuyBoxApp</div>
         <nav className="flex flex-col gap-1">
           {NAV_ITEMS.map((item) => {
@@ -122,8 +123,8 @@ export function NavShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 className={`rounded px-3 py-2 text-sm ${
                   active
-                    ? 'bg-[var(--color-accent)] text-white'
-                    : 'text-[var(--color-text)] hover:bg-slate-100'
+                    ? 'bg-(--color-accent) text-(--color-accent-ink)'
+                    : 'text-(--color-text) hover:bg-(--color-hover)'
                 }`}
               >
                 {item.label}
@@ -133,7 +134,8 @@ export function NavShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-end gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-3">
+        <header className="flex items-center justify-end gap-3 border-b border-(--color-border) bg-(--color-surface) px-6 py-3">
+          <ThemeToggle />
           <SystemPauseButton />
         </header>
         <main className="flex-1 overflow-x-auto p-6">{children}</main>

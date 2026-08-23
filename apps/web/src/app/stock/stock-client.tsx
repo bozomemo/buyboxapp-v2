@@ -75,7 +75,7 @@ function PrefCell({
           value={multiplier}
           onChange={(e) => setMultiplier(Number(e.target.value))}
           onBlur={() => void save({ priceMultiplier: multiplier })}
-          className="w-16 rounded border border-[var(--color-border)] px-1 py-0.5 text-xs"
+          className="w-16 rounded border border-(--color-border) px-1 py-0.5 text-xs"
         />
         <input
           type="checkbox"
@@ -86,7 +86,7 @@ function PrefCell({
           }}
           title="Otomatik Buybox"
         />
-        <span className="text-[10px] text-[var(--color-muted)]">{formatNumber(offered)}</span>
+        <span className="text-[10px] text-(--color-muted)">{formatNumber(offered)}</span>
       </div>
     </td>
   );
@@ -119,7 +119,7 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm font-semibold text-white"
+        className="rounded bg-(--color-accent) px-3 py-1.5 text-sm font-semibold text-(--color-accent-ink)"
       >
         Ürün Ekle
       </button>
@@ -127,13 +127,13 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2 rounded border border-[var(--color-border)] p-3">
+    <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) p-3">
       <label className="flex flex-col text-xs">
         Stok Kodu
         <input
           value={form.baseStockCode}
           onChange={(e) => setForm((f) => ({ ...f, baseStockCode: e.target.value }))}
-          className="rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+          className="rounded border border-(--color-border) px-2 py-1 text-sm"
         />
       </label>
       <label className="flex flex-col text-xs">
@@ -141,7 +141,7 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
         <input
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          className="rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+          className="rounded border border-(--color-border) px-2 py-1 text-sm"
         />
       </label>
       <label className="flex flex-col text-xs">
@@ -149,7 +149,7 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
         <input
           value={form.unitCost}
           onChange={(e) => setForm((f) => ({ ...f, unitCost: e.target.value }))}
-          className="rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+          className="rounded border border-(--color-border) px-2 py-1 text-sm"
         />
       </label>
       <label className="flex flex-col text-xs">
@@ -158,20 +158,20 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
           type="number"
           value={form.unitStock}
           onChange={(e) => setForm((f) => ({ ...f, unitStock: e.target.value }))}
-          className="rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+          className="rounded border border-(--color-border) px-2 py-1 text-sm"
         />
       </label>
       <button
         type="button"
         onClick={() => void submit()}
-        className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm font-semibold text-white"
+        className="rounded bg-(--color-accent) px-3 py-1.5 text-sm font-semibold text-(--color-accent-ink)"
       >
         Kaydet
       </button>
       <button type="button" onClick={() => setOpen(false)} className="rounded border px-3 py-1.5 text-sm">
         Vazgeç
       </button>
-      {error && <p className="w-full text-xs text-[var(--color-danger)]">{error}</p>}
+      {error && <p className="w-full text-xs text-(--color-danger)">{error}</p>}
     </div>
   );
 }
@@ -272,8 +272,8 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
   if (!config) return null;
 
   return (
-    <div className="rounded border border-[var(--color-border)] p-3 text-sm">
-      <p className="mb-2 text-[var(--color-muted)]">
+    <div className="rounded border border-(--color-border) p-3 text-sm">
+      <p className="mb-2 text-(--color-muted)">
         Yapılandırılmış kaynak: <strong>{config.configured ? config.sourceCode : 'yok'}</strong>
       </p>
       {config.sourceCode === 'excel' && (
@@ -291,7 +291,7 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
             type="button"
             disabled={busy}
             onClick={() => void commitExcel()}
-            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white"
+            className="rounded bg-(--color-accent) px-2 py-1 text-xs text-(--color-accent-ink)"
           >
             İçe Aktar
           </button>
@@ -360,7 +360,7 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
   }
 
   return (
-    <div className="rounded border border-[var(--color-border)] p-3 text-sm">
+    <div className="rounded border border-(--color-border) p-3 text-sm">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-semibold">Paket Düzenleyici</span>
         <button type="button" onClick={openNew} className="rounded border px-2 py-1 text-xs">
@@ -372,15 +372,15 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
           <li key={b.bundleStockCode} className="flex items-center justify-between">
             <button
               type="button"
-              className="text-[var(--color-accent)] hover:underline"
+              className="text-(--color-accent) hover:underline"
               onClick={() => void openBundle(b.bundleStockCode, b.name)}
             >
               {b.name} ({b.bundleStockCode})
             </button>
-            <span className="text-xs text-[var(--color-muted)]">{b.memberCount} üye</span>
+            <span className="text-xs text-(--color-muted)">{b.memberCount} üye</span>
           </li>
         ))}
-        {bundles.length === 0 && <li className="text-xs text-[var(--color-muted)]">Henüz paket yok.</li>}
+        {bundles.length === 0 && <li className="text-xs text-(--color-muted)">Henüz paket yok.</li>}
       </ul>
       {bundles.length > 0 && (
         <div className="mb-3">
@@ -388,12 +388,12 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
         </div>
       )}
       {editing !== undefined && (
-        <div className="space-y-2 border-t border-[var(--color-border)] pt-2">
+        <div className="space-y-2 border-t border-(--color-border) pt-2">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Paket adı"
-            className="w-full rounded border border-[var(--color-border)] px-2 py-1 text-xs"
+            className="w-full rounded border border-(--color-border) px-2 py-1 text-xs"
           />
           {/* Bounded: there is no cap on how many members a bundle may have (doc 06 §3), and the
               save button has to stay reachable. */}
@@ -408,7 +408,7 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
                   setMembers(next);
                 }}
                 placeholder="Üye stok kodu"
-                className="flex-1 rounded border border-[var(--color-border)] px-2 py-1 text-xs"
+                className="flex-1 rounded border border-(--color-border) px-2 py-1 text-xs"
               />
               <input
                 type="number"
@@ -419,12 +419,12 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
                   next[i] = { ...next[i]!, quantity: Number(e.target.value) };
                   setMembers(next);
                 }}
-                className="w-16 rounded border border-[var(--color-border)] px-2 py-1 text-xs"
+                className="w-16 rounded border border-(--color-border) px-2 py-1 text-xs"
               />
               <button
                 type="button"
                 onClick={() => setMembers(members.filter((_, j) => j !== i))}
-                className="text-xs text-[var(--color-danger)]"
+                className="text-xs text-(--color-danger)"
               >
                 Sil
               </button>
@@ -442,7 +442,7 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
             <button
               type="button"
               onClick={() => void save()}
-              className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs text-white"
+              className="rounded bg-(--color-accent) px-3 py-1 text-xs text-(--color-accent-ink)"
             >
               Kaydet
             </button>
@@ -490,7 +490,7 @@ export function StockClient() {
         <div className="space-y-2">
         <TableFrame>
           <table className="w-full text-sm">
-            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
+            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
               <tr>
                 <th className="px-2 py-2">Stok Kodu</th>
                 <th className="px-2 py-2">Ürün İsmi</th>
@@ -504,7 +504,7 @@ export function StockClient() {
                 <th className="px-2 py-2">Kaynak</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+            <tbody className="divide-y divide-(--color-border)">
               {paged.rows.map((item) => (
                 <tr key={item.baseStockCode} className={rowClass(item, marketplaces)}>
                   <td className="px-2 py-1">{item.baseStockCode}</td>
@@ -523,7 +523,7 @@ export function StockClient() {
                 <tr>
                   <td
                     colSpan={4 + marketplaces.length + 1}
-                    className="px-2 py-6 text-center text-[var(--color-muted)]"
+                    className="px-2 py-6 text-center text-(--color-muted)"
                   >
                     Henüz stok kalemi yok.
                   </td>

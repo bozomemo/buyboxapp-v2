@@ -34,7 +34,7 @@ export default function SetupWizard() {
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-6 py-10">
       <div>
         <h1 className="text-2xl font-bold">Kurulum Sihirbazı</h1>
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-(--color-muted)">
           Adım {stepIndex + 1} / {WIZARD_STEPS.length} — {STEP_LABELS[step]}
         </p>
       </div>
@@ -45,10 +45,10 @@ export default function SetupWizard() {
             key={s}
             className={`rounded-full px-3 py-1 ${
               i === stepIndex
-                ? 'bg-[var(--color-accent)] text-white'
+                ? 'bg-(--color-accent) text-(--color-accent-ink)'
                 : i < stepIndex
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-slate-100 text-[var(--color-muted)]'
+                  ? 'bg-(--color-success-bg) text-(--color-success)'
+                  : 'bg-(--color-chip-bg) text-(--color-muted)'
             }`}
           >
             {STEP_LABELS[s]}
@@ -56,7 +56,7 @@ export default function SetupWizard() {
         ))}
       </ol>
 
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
+      <div className="rounded-lg border border-(--color-border) bg-(--color-surface) p-6">
         {step === 'database' && (
           <Step1Database
             onDone={() => {
@@ -87,7 +87,7 @@ export default function SetupWizard() {
       </div>
 
       {!databaseReady && step !== 'database' && (
-        <p className="text-sm text-[var(--color-warning)]">
+        <p className="text-sm text-(--color-warning)">
           Not: veritabanı adımı bu oturumda henüz onaylanmadı; bu sayfaya elle geldiyseniz önce o adımı
           tamamlayın.
         </p>

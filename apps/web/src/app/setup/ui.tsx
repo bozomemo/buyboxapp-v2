@@ -13,7 +13,7 @@ export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`rounded border border-[var(--color-border)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)] ${props.className ?? ''}`}
+      className={`rounded border border-(--color-border) px-3 py-1.5 text-sm outline-none focus:border-(--color-accent) ${props.className ?? ''}`}
     />
   );
 }
@@ -25,7 +25,7 @@ export function Select(
   return (
     <select
       {...rest}
-      className={`rounded border border-[var(--color-border)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)] ${rest.className ?? ''}`}
+      className={`rounded border border-(--color-border) px-3 py-1.5 text-sm outline-none focus:border-(--color-accent) ${rest.className ?? ''}`}
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -43,15 +43,15 @@ export function Button({
   const base = 'rounded px-4 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed';
   const styles =
     variant === 'primary'
-      ? 'bg-[var(--color-accent)] text-white hover:opacity-90'
-      : 'border border-[var(--color-border)] bg-white hover:bg-slate-50';
+      ? 'bg-(--color-accent) text-(--color-accent-ink) hover:opacity-90'
+      : 'border border-(--color-border) bg-(--color-surface) hover:bg-(--color-hover)';
   return <button {...props} className={`${base} ${styles} ${props.className ?? ''}`} />;
 }
 
 export function StatusBanner({ ok, message }: { ok: boolean; message: string }) {
   return (
     <p
-      className={`rounded px-3 py-2 text-sm ${ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-[var(--color-danger)]'}`}
+      className={`rounded px-3 py-2 text-sm ${ok ? 'bg-(--color-success-bg) text-(--color-success)' : 'bg-(--color-danger-bg) text-(--color-danger)'}`}
     >
       {message}
     </p>

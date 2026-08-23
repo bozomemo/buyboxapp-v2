@@ -229,19 +229,19 @@ function ListingPicker({
   return (
     <div>
       <input
-        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+        className="w-full rounded border border-(--color-border) px-2 py-1 text-sm"
         placeholder="Ürün adı ya da stok kodu ile ara…"
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
-      {searching && <div className="mt-1 text-xs text-neutral-500">aranıyor…</div>}
+      {searching && <div className="mt-1 text-xs text-(--color-muted)">aranıyor…</div>}
       {results.length > 0 && (
-        <ul className="mt-1 max-h-48 overflow-y-auto rounded border border-neutral-200">
+        <ul className="mt-1 max-h-48 overflow-y-auto rounded border border-(--color-border)">
           {results.map((r) => (
             <li key={r.id}>
               <button
                 type="button"
-                className="w-full px-2 py-1 text-left text-sm hover:bg-neutral-100"
+                className="w-full px-2 py-1 text-left text-sm hover:bg-(--color-hover)"
                 onClick={() => {
                   onPick(r);
                   setText('');
@@ -249,7 +249,7 @@ function ListingPicker({
                 }}
               >
                 {r.productName}{' '}
-                <span className="text-xs text-neutral-500">({r.marketplaceCode})</span>
+                <span className="text-xs text-(--color-muted)">({r.marketplaceCode})</span>
               </button>
             </li>
           ))}
@@ -296,20 +296,20 @@ function RuleEditor({
   );
 
   return (
-    <div className="rounded border border-blue-300 bg-blue-50 p-4">
+    <div className="rounded border border-(--color-accent-border) bg-(--color-accent-bg) p-4">
       <h3 className="font-medium">{draft.id ? 'Kuralı düzenle' : 'Yeni kural'}</h3>
 
       {error && (
-        <div className="mt-3 rounded border border-red-300 bg-red-50 p-2 text-sm text-red-900">
+        <div className="mt-3 rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-2 text-sm text-(--color-danger)">
           {error}
         </div>
       )}
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <label className="text-sm">
-          <span className="block text-xs font-medium text-neutral-600">Kural adı</span>
+          <span className="block text-xs font-medium text-(--color-muted)">Kural adı</span>
           <input
-            className="mt-1 w-full rounded border border-neutral-300 px-2 py-1"
+            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
             placeholder="ör. Sahte ürün şüphesi — 400 TL altı"
             value={draft.name}
             onChange={(e) => set('name', e.target.value)}
@@ -317,9 +317,9 @@ function RuleEditor({
         </label>
 
         <label className="text-sm">
-          <span className="block text-xs font-medium text-neutral-600">Sessizlik süresi</span>
+          <span className="block text-xs font-medium text-(--color-muted)">Sessizlik süresi</span>
           <select
-            className="mt-1 w-full rounded border border-neutral-300 px-2 py-1"
+            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
             value={draft.quietPeriodMs}
             onChange={(e) => set('quietPeriodMs', Number(e.target.value))}
           >
@@ -329,16 +329,16 @@ function RuleEditor({
               </option>
             ))}
           </select>
-          <span className="mt-1 block text-xs text-neutral-500">
+          <span className="mt-1 block text-xs text-(--color-muted)">
             Kapanan bir alarmın yeniden açılması için beklenecek süre. Açık alarmı susturmaz.
           </span>
         </label>
 
         {/* Scope */}
         <div className="text-sm">
-          <span className="block text-xs font-medium text-neutral-600">Hangi ürünlerde?</span>
+          <span className="block text-xs font-medium text-(--color-muted)">Hangi ürünlerde?</span>
           <select
-            className="mt-1 w-full rounded border border-neutral-300 px-2 py-1"
+            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
             value={draft.scopeType}
             onChange={(e) =>
               onChange({
@@ -358,7 +358,7 @@ function RuleEditor({
 
           {draft.scopeType === 'marketplace' && (
             <select
-              className="mt-2 w-full rounded border border-neutral-300 px-2 py-1"
+              className="mt-2 w-full rounded border border-(--color-border) px-2 py-1"
               value={draft.scopeValue}
               onChange={(e) => set('scopeValue', e.target.value)}
             >
@@ -373,7 +373,7 @@ function RuleEditor({
 
           {draft.scopeType === 'baseStockCode' && (
             <input
-              className="mt-2 w-full rounded border border-neutral-300 px-2 py-1"
+              className="mt-2 w-full rounded border border-(--color-border) px-2 py-1"
               placeholder="Stok kodu"
               value={draft.scopeValue}
               onChange={(e) => onChange({ ...draft, scopeValue: e.target.value, scopeLabel: '' })}
@@ -383,11 +383,11 @@ function RuleEditor({
           {draft.scopeType === 'listing' && (
             <div className="mt-2">
               {draft.scopeValue ? (
-                <div className="flex items-center justify-between gap-2 rounded border border-neutral-300 bg-white px-2 py-1">
+                <div className="flex items-center justify-between gap-2 rounded border border-(--color-border) bg-(--color-surface) px-2 py-1">
                   <span>{draft.scopeLabel || draft.scopeValue}</span>
                   <button
                     type="button"
-                    className="text-xs text-blue-700 hover:underline"
+                    className="text-xs text-(--color-accent) hover:underline"
                     onClick={() => onChange({ ...draft, scopeValue: '', scopeLabel: '' })}
                   >
                     değiştir
@@ -406,9 +406,9 @@ function RuleEditor({
 
         {/* Subject */}
         <div className="text-sm">
-          <span className="block text-xs font-medium text-neutral-600">Hangi satıcı?</span>
+          <span className="block text-xs font-medium text-(--color-muted)">Hangi satıcı?</span>
           <select
-            className="mt-1 w-full rounded border border-neutral-300 px-2 py-1"
+            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
             value={draft.subjectType}
             onChange={(e) =>
               onChange({ ...draft, subjectType: e.target.value as SubjectType, subjectValue: '' })
@@ -424,7 +424,7 @@ function RuleEditor({
           {draft.subjectType === 'seller' && (
             <>
               <select
-                className="mt-2 w-full rounded border border-neutral-300 px-2 py-1"
+                className="mt-2 w-full rounded border border-(--color-border) px-2 py-1"
                 value={draft.subjectValue}
                 onChange={(e) => set('subjectValue', e.target.value)}
               >
@@ -436,7 +436,7 @@ function RuleEditor({
                 ))}
               </select>
               {sellersForScope.length === 0 && (
-                <span className="mt-1 block text-xs text-amber-800">
+                <span className="mt-1 block text-xs text-(--color-warning)">
                   Henüz kayıtlı satıcı yok — bir rakip taraması çalıştıktan sonra burada listelenir.
                 </span>
               )}
@@ -446,7 +446,7 @@ function RuleEditor({
           {draft.subjectType === 'sellerGroup' && (
             <>
               <select
-                className="mt-2 w-full rounded border border-neutral-300 px-2 py-1"
+                className="mt-2 w-full rounded border border-(--color-border) px-2 py-1"
                 value={draft.subjectValue}
                 onChange={(e) => set('subjectValue', e.target.value)}
               >
@@ -458,9 +458,9 @@ function RuleEditor({
                 ))}
               </select>
               {options.sellerGroups.length === 0 && (
-                <span className="mt-1 block text-xs text-amber-800">
+                <span className="mt-1 block text-xs text-(--color-warning)">
                   Tanımlı satıcı grubu yok.{' '}
-                  <Link className="text-blue-700 hover:underline" href="/competitors/sellers">
+                  <Link className="text-(--color-accent) hover:underline" href="/competitors/sellers">
                     Satıcılar
                   </Link>{' '}
                   ekranından oluşturabilirsiniz.
@@ -472,9 +472,9 @@ function RuleEditor({
 
         {/* Predicate */}
         <div className="text-sm">
-          <span className="block text-xs font-medium text-neutral-600">Ne olursa?</span>
+          <span className="block text-xs font-medium text-(--color-muted)">Ne olursa?</span>
           <select
-            className="mt-1 w-full rounded border border-neutral-300 px-2 py-1"
+            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
             value={draft.predicate}
             onChange={(e) => set('predicate', e.target.value as Predicate)}
           >
@@ -489,9 +489,9 @@ function RuleEditor({
         {/* Threshold */}
         {draft.predicate === 'priceBelow' && (
           <div className="text-sm">
-            <span className="block text-xs font-medium text-neutral-600">Eşik</span>
+            <span className="block text-xs font-medium text-(--color-muted)">Eşik</span>
             <select
-              className="mt-1 w-full rounded border border-neutral-300 px-2 py-1"
+              className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
               value={draft.thresholdType}
               onChange={(e) => set('thresholdType', e.target.value as ThresholdType)}
             >
@@ -506,7 +506,9 @@ function RuleEditor({
               <>
                 <input
                   className={`mt-2 w-full rounded border px-2 py-1 ${
-                    thresholdInvalid ? 'border-red-400 bg-red-50' : 'border-neutral-300'
+                    thresholdInvalid
+                      ? 'border-(--color-danger-border) bg-(--color-danger-bg)'
+                      : 'border-(--color-border)'
                   }`}
                   inputMode="decimal"
                   placeholder="400,00"
@@ -516,7 +518,7 @@ function RuleEditor({
                 {/* The operator sees the parsed value before saving. A threshold read as 1000×
                     its intent would save cleanly and simply never fire. */}
                 <span
-                  className={`mt-1 block text-xs ${thresholdInvalid ? 'text-red-700' : 'text-neutral-600'}`}
+                  className={`mt-1 block text-xs ${thresholdInvalid ? 'text-(--color-danger)' : 'text-(--color-muted)'}`}
                 >
                   {thresholdInvalid
                     ? 'Anlaşılmadı. Kuruş için virgül kullanın: 400,50'
@@ -531,17 +533,17 @@ function RuleEditor({
               <div className="mt-2 flex items-center gap-2">
                 <span>%</span>
                 <input
-                  className="w-24 rounded border border-neutral-300 px-2 py-1"
+                  className="w-24 rounded border border-(--color-border) px-2 py-1"
                   inputMode="numeric"
                   value={draft.thresholdPctText}
                   onChange={(e) => set('thresholdPctText', e.target.value)}
                 />
-                <span className="text-xs text-neutral-600">bizim fiyatımızın altında</span>
+                <span className="text-xs text-(--color-muted)">bizim fiyatımızın altında</span>
               </div>
             )}
 
             {draft.thresholdType === 'belowFloor' && (
-              <span className="mt-1 block text-xs text-neutral-600">
+              <span className="mt-1 block text-xs text-(--color-muted)">
                 İlanın operatör tanımlı taban fiyatı kullanılır. Taban fiyatı olmayan ilanlarda
                 kural &ldquo;değerlendirilemedi&rdquo; sayılır; alarmı ne açar ne kapatır.
               </span>
@@ -562,7 +564,7 @@ function RuleEditor({
       <div className="mt-4 flex gap-2">
         <button
           type="button"
-          className="rounded bg-blue-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          className="rounded bg-(--color-accent) px-3 py-1.5 text-sm text-(--color-accent-ink) disabled:opacity-50"
           disabled={saving || thresholdInvalid}
           onClick={onSave}
         >
@@ -570,7 +572,7 @@ function RuleEditor({
         </button>
         <button
           type="button"
-          className="rounded border border-neutral-300 px-3 py-1.5 text-sm"
+          className="rounded border border-(--color-border) px-3 py-1.5 text-sm"
           onClick={onCancel}
           disabled={saving}
         >
@@ -686,7 +688,7 @@ export function AlertsClient() {
     [load],
   );
 
-  if (!data) return <div className="p-6 text-sm text-neutral-500">{error ?? 'Yükleniyor…'}</div>;
+  if (!data) return <div className="p-6 text-sm text-(--color-muted)">{error ?? 'Yükleniyor…'}</div>;
 
   const staleMarketplaces = data.staleness.filter((s) => s.stale);
 
@@ -694,20 +696,24 @@ export function AlertsClient() {
     <div className="space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-semibold">Rakip Alarmları</h1>
-        <p className="mt-1 max-w-3xl text-sm text-neutral-500">
+        <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
           Alarmlar <strong>raporlamadır</strong>: hiçbir fiyat kararını tetiklemez, hiçbir fiyatı
           değiştirmez. Rakip tarama verisinden üretilir ve o veri kadar günceldir.
         </p>
       </div>
 
-      {error && <div className="rounded border border-red-300 bg-red-50 p-3 text-sm">{error}</div>}
+      {error && (
+        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* The single most important element on this page. Zero open alerts next to a scraper
           that has not succeeded in a day is not good news, and must not look like it. */}
       {staleMarketplaces.length > 0 && (
-        <div className="rounded border border-red-400 bg-red-50 p-4">
-          <h2 className="font-semibold text-red-900">Bu alarmlar güncel veriye dayanmıyor</h2>
-          <ul className="mt-2 space-y-1 text-sm text-red-900">
+        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-4">
+          <h2 className="font-semibold text-(--color-danger)">Bu alarmlar güncel veriye dayanmıyor</h2>
+          <ul className="mt-2 space-y-1 text-sm text-(--color-danger)">
             {staleMarketplaces.map((s) => (
               <li key={s.marketplaceCode}>
                 <strong>{s.displayName}</strong>:{' '}
@@ -718,7 +724,7 @@ export function AlertsClient() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-sm text-red-900">
+          <p className="mt-2 text-sm text-(--color-danger)">
             Aşağıda alarm görünmemesi &ldquo;sorun yok&rdquo; anlamına gelmez; &ldquo;bakmadık&rdquo;
             anlamına gelir. İşler ekranından Rakip Verisi Toplama işini kontrol edin.
           </p>
@@ -727,9 +733,9 @@ export function AlertsClient() {
 
       <div className="flex flex-wrap gap-4">
         {data.staleness.map((s) => (
-          <div key={s.marketplaceCode} className="rounded border border-neutral-200 px-3 py-2 text-sm">
-            <div className="text-xs text-neutral-500">{s.displayName}</div>
-            <div className={s.stale ? 'text-red-700' : 'text-neutral-800'}>
+          <div key={s.marketplaceCode} className="rounded border border-(--color-border) px-3 py-2 text-sm">
+            <div className="text-xs text-(--color-muted)">{s.displayName}</div>
+            <div className={s.stale ? 'text-(--color-danger)' : 'text-(--color-text)'}>
               {s.lastOkAt === null ? 'tarama yok' : `son tarama ${formatDateTime(s.lastOkAt)}`}
             </div>
           </div>
@@ -739,13 +745,13 @@ export function AlertsClient() {
       <section>
         <h2 className="mb-3 text-lg font-medium">
           Açık alarmlar{' '}
-          <span className="rounded bg-neutral-800 px-2 py-0.5 text-sm text-white">
+          <span className="rounded bg-(--color-strong-bg) px-2 py-0.5 text-sm text-(--color-strong-ink)">
             {data.alerts.length}
           </span>
         </h2>
 
         {data.alerts.length === 0 ? (
-          <div className="rounded border border-neutral-200 p-6 text-center text-sm text-neutral-500">
+          <div className="rounded border border-(--color-border) p-6 text-center text-sm text-(--color-muted)">
             {data.rules.length === 0
               ? 'Henüz alarm kuralı tanımlanmamış.'
               : staleMarketplaces.length > 0
@@ -755,14 +761,14 @@ export function AlertsClient() {
         ) : (
           <div className="space-y-3">
             {pagedAlerts.rows.map((a) => (
-              <div key={a.id} className="rounded border border-amber-300 bg-amber-50 p-4">
+              <div key={a.id} className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <div className="font-medium">{a.ruleName}</div>
-                    <Link className="text-sm text-blue-700 hover:underline" href={`/listings/${a.listingId}`}>
+                    <Link className="text-sm text-(--color-accent) hover:underline" href={`/listings/${a.listingId}`}>
                       {a.productName}
                     </Link>
-                    <div className="text-xs text-neutral-600">
+                    <div className="text-xs text-(--color-muted)">
                       {a.marketplaceCode} · bizim fiyatımız{' '}
                       {a.ourPrice ? formatMoney(BigInt(a.ourPrice)) : '—'}
                       {a.thresholdApplied && (
@@ -770,7 +776,7 @@ export function AlertsClient() {
                       )}
                     </div>
                   </div>
-                  <div className="text-right text-xs text-neutral-600">
+                  <div className="text-right text-xs text-(--color-muted)">
                     <div>başlangıç {formatDateTime(a.firstSeenAt)}</div>
                     <div>son görülme {formatDateTime(a.lastSeenAt)}</div>
                   </div>
@@ -784,7 +790,7 @@ export function AlertsClient() {
                       the alerts under it off the screen. */}
                   <div className="mt-1 max-h-56 overflow-auto">
                   <table className="w-full text-xs">
-                    <thead className="text-left text-neutral-500">
+                    <thead className="text-left text-(--color-muted)">
                       <tr>
                         <th className="py-1">Satıcı</th>
                         <th className="py-1 text-right">Fiyat</th>
@@ -795,11 +801,11 @@ export function AlertsClient() {
                     </thead>
                     <tbody>
                       {a.sellers.map((s, i) => (
-                        <tr key={i} className="border-t border-amber-200">
+                        <tr key={i} className="border-t border-(--color-warning-border)">
                           <td className="py-1">
                             {s.sellerRef ? (
                               <Link
-                                className="text-blue-700 hover:underline"
+                                className="text-(--color-accent) hover:underline"
                                 href={`/competitors/sellers/${a.marketplaceCode}/${encodeURIComponent(s.sellerRef)}`}
                               >
                                 {s.sellerName || s.sellerRef}
@@ -812,20 +818,20 @@ export function AlertsClient() {
                             {s.observedPrice ? formatMoney(BigInt(s.observedPrice)) : '—'}
                             {/* Which field the comparison used. On Hepsiburada the coupon price
                                 is never published, so this says "liste" there by design. */}
-                            <span className="ml-1 text-neutral-500">
+                            <span className="ml-1 text-(--color-muted)">
                               ({s.priceSource === 'finalPrice' ? 'kupon' : 'liste'})
                             </span>
                           </td>
                           <td className="py-1 text-right">{s.rank}</td>
                           <td className="py-1">{formatDateTime(s.joinedAt)}</td>
-                          <td className="py-1 text-neutral-500">{s.promotionText ?? '—'}</td>
+                          <td className="py-1 text-(--color-muted)">{s.promotionText ?? '—'}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                   </div>
                   {a.departedSellers > 0 && (
-                    <p className="mt-1 text-xs text-neutral-500">
+                    <p className="mt-1 text-xs text-(--color-muted)">
                       {a.departedSellers} satıcı bu alarmdan ayrıldı (geçmişte tutuluyor).
                     </p>
                   )}
@@ -842,7 +848,7 @@ export function AlertsClient() {
           <h2 className="text-lg font-medium">Kurallar ({data.rules.length})</h2>
           <button
             type="button"
-            className="rounded bg-blue-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            className="rounded bg-(--color-accent) px-3 py-1.5 text-sm text-(--color-accent-ink) disabled:opacity-50"
             disabled={draft !== null}
             onClick={() => {
               setFormError(null);
@@ -855,7 +861,7 @@ export function AlertsClient() {
           {data.rules.length > 0 && (
             <button
               type="button"
-              className="text-sm text-blue-700 hover:underline"
+              className="text-sm text-(--color-accent) hover:underline"
               onClick={() => setShowRules((v) => !v)}
             >
               {showRules ? 'Listeyi gizle' : 'Listeyi göster'}
@@ -885,29 +891,31 @@ export function AlertsClient() {
             {pagedRules.rows.map((r) => (
               <div
                 key={r.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded border border-(--color-border) p-3 text-sm"
               >
                 <div>
                   <div className="font-medium">
                     {r.name}
                     {!r.enabled && (
-                      <span className="ml-2 rounded bg-neutral-200 px-1.5 py-0.5 text-xs">pasif</span>
+                      <span className="ml-2 rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)">
+                        pasif
+                      </span>
                     )}
                   </div>
-                  <div className="text-xs text-neutral-500">{describeRule(r)}</div>
+                  <div className="text-xs text-(--color-muted)">{describeRule(r)}</div>
                   {/* A fixed threshold goes stale and nobody revisits it, so the rule shows
                       what it is comparing against right where it is edited. */}
                   {r.thresholdType === 'fixed' && r.predicate === 'priceBelow' && (
-                    <div className="text-xs text-neutral-500">
+                    <div className="text-xs text-(--color-muted)">
                       Sabit eşik — piyasa buradan uzaklaştıysa bu kural sessizce ölmüş olabilir.
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-neutral-500">
+                <div className="flex items-center gap-3 text-xs text-(--color-muted)">
                   <span>sessizlik {formatDuration(r.quietPeriodMs)}</span>
                   <button
                     type="button"
-                    className="text-blue-700 hover:underline"
+                    className="text-(--color-accent) hover:underline"
                     onClick={() => {
                       setFormError(null);
                       setDraft(draftFromRule(r));
@@ -917,14 +925,14 @@ export function AlertsClient() {
                   </button>
                   <button
                     type="button"
-                    className="text-blue-700 hover:underline"
+                    className="text-(--color-accent) hover:underline"
                     onClick={() => void toggleEnabled(r)}
                   >
                     {r.enabled ? 'pasifleştir' : 'etkinleştir'}
                   </button>
                   <button
                     type="button"
-                    className="text-red-700 hover:underline"
+                    className="text-(--color-danger) hover:underline"
                     onClick={() => void remove(r)}
                   >
                     sil
@@ -933,7 +941,7 @@ export function AlertsClient() {
               </div>
             ))}
             {data.rules.length === 0 ? (
-              <p className="text-sm text-neutral-500">Henüz kural yok.</p>
+              <p className="text-sm text-(--color-muted)">Henüz kural yok.</p>
             ) : (
               <Pagination state={pagedRules} label="kural" />
             )}

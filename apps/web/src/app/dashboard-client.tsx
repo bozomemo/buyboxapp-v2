@@ -69,12 +69,12 @@ const PHASE_LABELS: Record<string, string> = {
 };
 
 function budgetBarColor(consumed: number, allowance: number, reservePct: number): string {
-  if (allowance <= 0) return 'bg-slate-300';
+  if (allowance <= 0) return 'bg-(--color-chip-bg)';
   const remaining = allowance - consumed;
   const reserve = allowance * (reservePct / 100);
-  if (remaining <= 0) return 'bg-[var(--color-danger)]';
-  if (remaining <= reserve) return 'bg-[var(--color-warning)]';
-  return 'bg-[var(--color-success)]';
+  if (remaining <= 0) return 'bg-(--color-danger)';
+  if (remaining <= reserve) return 'bg-(--color-warning)';
+  return 'bg-(--color-success)';
 }
 
 /**
@@ -120,13 +120,13 @@ function SystemPauseSwitch({ engaged, onChanged }: { engaged: boolean; onChanged
     <div
       className={`flex items-center justify-between rounded border p-4 ${
         engaged
-          ? 'border-[var(--color-border)] bg-[var(--color-surface)]'
-          : 'border-[var(--color-success)] bg-green-50'
+          ? 'border-(--color-border) bg-(--color-surface)'
+          : 'border-(--color-success) bg-(--color-success-bg)'
       }`}
     >
       <div>
         <div className="font-semibold">Genel Durdurma: {engaged ? 'Duraklatıldı' : 'Çalışıyor'}</div>
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-(--color-muted)">
           {engaged
             ? 'Hiçbir iş çalışmıyor — içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi dahil. Sistemin varsayılan güvenli durumudur.'
             : 'İşler normal şekilde çalışıyor. Fiyat gönderimi ayrı bir anahtarla kontrol edilir — aşağıya bakın.'}
@@ -138,8 +138,8 @@ function SystemPauseSwitch({ engaged, onChanged }: { engaged: boolean; onChanged
         disabled={busy}
         className={`rounded px-3 py-2 text-sm font-semibold ${
           engaged
-            ? 'bg-[var(--color-success)] text-white'
-            : 'border border-[var(--color-border)] bg-white'
+            ? 'bg-(--color-success) text-(--color-success-ink)'
+            : 'border border-(--color-border) bg-(--color-surface)'
         }`}
       >
         {engaged ? 'Devam Ettir' : 'Duraklat'}
@@ -190,15 +190,15 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
     <div
       className={`flex items-center justify-between rounded border p-4 ${
         engaged
-          ? 'border-[var(--color-border)] bg-[var(--color-surface)]'
-          : 'border-[var(--color-danger)] bg-red-50'
+          ? 'border-(--color-border) bg-(--color-surface)'
+          : 'border-(--color-danger) bg-(--color-danger-bg)'
       }`}
     >
       <div>
         <div className="font-semibold">
           Fiyat Gönderimi: {engaged ? 'Durduruldu' : 'AKTİF — fiyat gönderiliyor'}
         </div>
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-(--color-muted)">
           {engaged
             ? 'Hiçbir pazaryerine fiyat güncellemesi gönderilmiyor. Bu, sistemin varsayılan güvenli durumudur.'
             : 'Sistem, uygun listing ve pazaryeri ayarlarına sahip ürünler için gerçek fiyat güncellemeleri gönderebilir.'}
@@ -209,7 +209,9 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
         onClick={toggle}
         disabled={busy}
         className={`rounded px-3 py-2 text-sm font-semibold ${
-          engaged ? 'bg-[var(--color-danger)] text-white' : 'border border-[var(--color-border)] bg-white'
+          engaged
+            ? 'bg-(--color-danger) text-(--color-danger-ink)'
+            : 'border border-(--color-border) bg-(--color-surface)'
         }`}
       >
         {engaged ? 'Fiyat Gönderimini Aç' : 'Fiyat Gönderimini Durdur'}
@@ -246,8 +248,8 @@ function MarketplaceKillSwitch({
       disabled={busy}
       className={`rounded px-2 py-1 text-xs font-semibold ${
         marketplace.killSwitchEngaged
-          ? 'bg-[var(--color-danger)] text-white'
-          : 'border border-[var(--color-border)] bg-white'
+          ? 'bg-(--color-danger) text-(--color-danger-ink)'
+          : 'border border-(--color-border) bg-(--color-surface)'
       }`}
     >
       {marketplace.killSwitchEngaged ? 'Durduruldu' : 'Aktif'}
@@ -278,8 +280,8 @@ export function DashboardClient() {
     return () => clearInterval(interval);
   }, []);
 
-  if (error) return <p className="text-[var(--color-danger)]">Panel verisi yüklenemedi: {error}</p>;
-  if (!data) return <p className="text-[var(--color-muted)]">Yükleniyor…</p>;
+  if (error) return <p className="text-(--color-danger)">Panel verisi yüklenemedi: {error}</p>;
+  if (!data) return <p className="text-(--color-muted)">Yükleniyor…</p>;
 
   const totalPhased = PHASES.reduce((sum, p) => sum + (data.phaseDistribution[p] ?? 0), 0);
 
@@ -293,20 +295,20 @@ export function DashboardClient() {
       </div>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Pazaryeri Sağlığı ve Bütçe
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {data.marketplaces.map((m) => (
             <div
               key={m.code}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+              className="rounded border border-(--color-border) bg-(--color-surface) p-4"
             >
               <div className="mb-2 flex items-center justify-between">
                 <span className="font-semibold">{m.displayName}</span>
                 <MarketplaceKillSwitch marketplace={m} onChanged={load} />
               </div>
-              <dl className="space-y-1 text-sm text-[var(--color-muted)]">
+              <dl className="space-y-1 text-sm text-(--color-muted)">
                 <div className="flex justify-between">
                   <dt>Otomasyon</dt>
                   <dd>{m.automationEnabled ? 'açık' : 'kapalı'}</dd>
@@ -326,13 +328,13 @@ export function DashboardClient() {
               </dl>
               {m.budget ? (
                 <div className="mt-3">
-                  <div className="mb-1 flex justify-between text-xs text-[var(--color-muted)]">
+                  <div className="mb-1 flex justify-between text-xs text-(--color-muted)">
                     <span>Güncelleme bütçesi</span>
                     <span>
                       {formatNumber(m.budget.consumed)} / {formatNumber(m.budget.allowance)}
                     </span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded bg-slate-100">
+                  <div className="h-2 w-full overflow-hidden rounded bg-(--color-border)">
                     <div
                       className={`h-full ${budgetBarColor(m.budget.consumed, m.budget.allowance, m.budget.reservePct)}`}
                       style={{
@@ -342,18 +344,18 @@ export function DashboardClient() {
                   </div>
                 </div>
               ) : (
-                <p className="mt-3 text-xs text-[var(--color-muted)]">Bugün için bütçe henüz sıfırlanmadı.</p>
+                <p className="mt-3 text-xs text-(--color-muted)">Bugün için bütçe henüz sıfırlanmadı.</p>
               )}
             </div>
           ))}
           {data.marketplaces.length === 0 && (
-            <p className="text-[var(--color-muted)]">Henüz etkin pazaryeri yok — Ayarlar'dan ekleyin.</p>
+            <p className="text-(--color-muted)">Henüz etkin pazaryeri yok — Ayarlar'dan ekleyin.</p>
           )}
         </div>
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Rakip Alarmları
         </h2>
         {/* The count is never shown on its own. A zero beside a scraper that has not succeeded
@@ -362,24 +364,24 @@ export function DashboardClient() {
         <div
           className={`rounded border p-4 ${
             data.competitorAlerts.staleMarketplaces.length > 0
-              ? 'border-red-400 bg-red-50'
+              ? 'border-(--color-danger-border) bg-(--color-danger-bg)'
               : data.competitorAlerts.open > 0
-                ? 'border-amber-300 bg-amber-50'
-                : 'border-[var(--color-border)]'
+                ? 'border-(--color-warning-border) bg-(--color-warning-bg)'
+                : 'border-(--color-border)'
           }`}
         >
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <div>
               <span className="text-2xl font-bold">{formatNumber(data.competitorAlerts.open)}</span>
-              <span className="ml-2 text-sm text-[var(--color-muted)]">açık alarm</span>
+              <span className="ml-2 text-sm text-(--color-muted)">açık alarm</span>
             </div>
-            <Link className="text-sm text-[var(--color-accent)] hover:underline" href="/alerts">
+            <Link className="text-sm text-(--color-accent) hover:underline" href="/alerts">
               Alarmları görüntüle →
             </Link>
           </div>
           <div className="mt-2 space-y-1 text-xs">
             {data.competitorAlerts.coverage.map((c) => (
-              <div key={c.marketplaceCode} className={c.stale ? 'font-medium text-red-800' : 'text-[var(--color-muted)]'}>
+              <div key={c.marketplaceCode} className={c.stale ? 'font-medium text-(--color-danger)' : 'text-(--color-muted)'}>
                 {c.displayName}:{' '}
                 {c.lastOkAt === null
                   ? 'son 7 günde başarılı tarama yok'
@@ -388,7 +390,7 @@ export function DashboardClient() {
             ))}
           </div>
           {data.competitorAlerts.staleMarketplaces.length > 0 && (
-            <p className="mt-2 text-xs font-medium text-red-800">
+            <p className="mt-2 text-xs font-medium text-(--color-danger)">
               Tarama verisi bayat — alarm görünmemesi &ldquo;sorun yok&rdquo; anlamına gelmez.
             </p>
           )}
@@ -396,52 +398,52 @@ export function DashboardClient() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Faz Dağılımı
         </h2>
         <div className="flex gap-4">
           {PHASES.map((phase) => (
-            <div key={phase} className="flex-1 rounded border border-[var(--color-border)] p-3 text-center">
+            <div key={phase} className="flex-1 rounded border border-(--color-border) p-3 text-center">
               <div className="text-2xl font-bold">{formatNumber(data.phaseDistribution[phase] ?? 0)}</div>
-              <div className="text-xs text-[var(--color-muted)]">{PHASE_LABELS[phase]}</div>
+              <div className="text-xs text-(--color-muted)">{PHASE_LABELS[phase]}</div>
             </div>
           ))}
         </div>
         {totalPhased > 0 && (
-          <p className="mt-2 text-xs text-[var(--color-muted)]">
+          <p className="mt-2 text-xs text-(--color-muted)">
             {formatPercent(((data.phaseDistribution.OPTIMUM ?? 0) / totalPhased) * 100)} optimum durumda.
           </p>
         )}
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Aktif Uyarılar
         </h2>
         {data.alerts.length === 0 ? (
-          <p className="text-sm text-[var(--color-muted)]">Uyarı yok.</p>
+          <p className="text-sm text-(--color-muted)">Uyarı yok.</p>
         ) : (
           <div className="space-y-2">
-          <ul className="table-frame max-h-[50vh] divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)]">
+          <ul className="table-frame max-h-[50vh] divide-y divide-(--color-border) rounded border border-(--color-border)">
             {pagedAlerts.rows.map((a) => (
               <li key={a.id} className="flex items-center justify-between px-3 py-2 text-sm">
                 <div>
                   <span
                     className={`mr-2 rounded px-1.5 py-0.5 text-xs font-semibold ${
                       a.level === 'error'
-                        ? 'bg-red-100 text-[var(--color-danger)]'
-                        : 'bg-amber-100 text-amber-800'
+                        ? 'bg-(--color-danger-bg) text-(--color-danger)'
+                        : 'bg-(--color-warning-bg) text-(--color-warning)'
                     }`}
                   >
                     {a.level === 'error' ? 'HATA' : 'UYARI'}
                   </span>
                   {a.message}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-[var(--color-muted)]">
+                <div className="flex items-center gap-3 text-xs text-(--color-muted)">
                   <span>{formatDateTime(a.at)}</span>
                   {a.listingId && (
                     <Link
-                      className="text-[var(--color-accent)] hover:underline"
+                      className="text-(--color-accent) hover:underline"
                       href={`/listings/${a.listingId}`}
                     >
                       İlana git
@@ -457,16 +459,16 @@ export function DashboardClient() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Son Kararlar
         </h2>
         {data.recentDecisions.length === 0 ? (
-          <p className="text-sm text-[var(--color-muted)]">Henüz karar yok.</p>
+          <p className="text-sm text-(--color-muted)">Henüz karar yok.</p>
         ) : (
           <div className="space-y-2">
           <TableFrame maxHeight="60vh">
             <table className="w-full text-sm">
-              <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
+              <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
                 <tr>
                   <th className="px-3 py-2">Ürün</th>
                   <th className="px-3 py-2">Eski → Yeni</th>
@@ -475,12 +477,12 @@ export function DashboardClient() {
                   <th className="px-3 py-2">Zaman</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
+              <tbody className="divide-y divide-(--color-border)">
                 {pagedDecisions.rows.map((d) => (
                   <tr key={d.id}>
                     <td className="px-3 py-2">
                       <Link
-                        className="text-[var(--color-accent)] hover:underline"
+                        className="text-(--color-accent) hover:underline"
                         href={`/listings/${d.listingId}`}
                       >
                         {d.productName}

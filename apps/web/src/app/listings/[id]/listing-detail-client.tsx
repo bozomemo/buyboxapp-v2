@@ -120,7 +120,7 @@ function PriceSparkline({
   ourPrice: string;
 }) {
   if (history.length < 2)
-    return <p className="text-xs text-[var(--color-muted)]">Grafik için yeterli veri yok.</p>;
+    return <p className="text-xs text-(--color-muted)">Grafik için yeterli veri yok.</p>;
 
   const width = 600;
   const height = 120;
@@ -249,41 +249,41 @@ export function ListingDetailClient({ id }: { id: string }) {
     }
   }
 
-  if (error) return <p className="text-[var(--color-danger)]">{error}</p>;
-  if (!detail) return <p className="text-[var(--color-muted)]">Yükleniyor…</p>;
+  if (error) return <p className="text-(--color-danger)">{error}</p>;
+  if (!detail) return <p className="text-(--color-muted)">Yükleniyor…</p>;
 
   const { listing, waterfall, competition, engine, lastDecisionExplanation, history } = detail;
 
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/listings" className="text-xs text-[var(--color-accent)] hover:underline">
+        <Link href="/listings" className="text-xs text-(--color-accent) hover:underline">
           ← İlanlara dön
         </Link>
         <h1 className="text-2xl font-semibold">{listing.productName}</h1>
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="text-sm text-(--color-muted)">
           {listing.marketplaceCode} · {listing.marketplaceListingId} · {listing.sellerStockCode}
         </p>
       </div>
 
       {/* Now */}
-      <section className="rounded border border-[var(--color-border)] p-4">
+      <section className="rounded border border-(--color-border) p-4">
         <h2 className="mb-3 text-lg font-medium">Şu An</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
-            <div className="text-xs text-[var(--color-muted)]">Satış Fiyatı</div>
+            <div className="text-xs text-(--color-muted)">Satış Fiyatı</div>
             <div className="text-lg">{formatMoney(BigInt(listing.price))}</div>
           </div>
           <div>
-            <div className="text-xs text-[var(--color-muted)]">Dip Fiyat</div>
+            <div className="text-xs text-(--color-muted)">Dip Fiyat</div>
             <div className="text-lg">{waterfall ? formatMoney(BigInt(waterfall.floorPrice)) : '—'}</div>
           </div>
           <div>
-            <div className="text-xs text-[var(--color-muted)]">Stok</div>
+            <div className="text-xs text-(--color-muted)">Stok</div>
             <div className="text-lg">{formatNumber(listing.offeredStock)}</div>
           </div>
           <div>
-            <div className="text-xs text-[var(--color-muted)]">Durum</div>
+            <div className="text-xs text-(--color-muted)">Durum</div>
             <div className="flex flex-wrap gap-1 text-xs">
               {!listing.isSalable && <span className="row-danger rounded px-1">Satılamaz</span>}
               {listing.isLocked && <span className="row-muted rounded px-1">Kilitli</span>}
@@ -300,25 +300,25 @@ export function ListingDetailClient({ id }: { id: string }) {
 
         {waterfall && (
           <div className="mt-4">
-            <div className="text-xs text-[var(--color-muted)]">
+            <div className="text-xs text-(--color-muted)">
               Fiyat Şelalesi (Birim Maliyet → Kargo/Gider → Komisyon → KDV → Dip Fiyat)
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-              <span className="rounded bg-slate-100 px-2 py-1">
+              <span className="rounded bg-(--color-chip-bg) px-2 py-1">
                 Maliyet {formatMoney(BigInt(waterfall.unitCost))}
               </span>
               <span>→</span>
-              <span className="rounded bg-slate-100 px-2 py-1">
+              <span className="rounded bg-(--color-chip-bg) px-2 py-1">
                 +Kargo/Gider {formatMoney(BigInt(waterfall.cargo))}
               </span>
               <span>→</span>
-              <span className="rounded bg-slate-100 px-2 py-1">
+              <span className="rounded bg-(--color-chip-bg) px-2 py-1">
                 +Komisyon {formatMoney(BigInt(waterfall.commission))}
               </span>
               <span>→</span>
-              <span className="rounded bg-slate-100 px-2 py-1">KDV %{waterfall.vatRate}</span>
+              <span className="rounded bg-(--color-chip-bg) px-2 py-1">KDV %{waterfall.vatRate}</span>
               <span>=</span>
-              <span className="rounded bg-[var(--color-accent)] px-2 py-1 text-white">
+              <span className="rounded bg-(--color-accent) px-2 py-1 text-(--color-accent-ink)">
                 Dip Fiyat {formatMoney(BigInt(waterfall.floorPrice))}
               </span>
             </div>
@@ -332,14 +332,14 @@ export function ListingDetailClient({ id }: { id: string }) {
               value={priceInput}
               onChange={(e) => setPriceInput(e.target.value)}
               placeholder="Yeni fiyat"
-              className="w-28 rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+              className="w-28 rounded border border-(--color-border) px-2 py-1 text-sm"
             />
           </label>
           <button
             type="button"
             disabled={busy || !priceInput}
             onClick={() => void submitManualPrice()}
-            className="rounded bg-[var(--color-accent)] px-3 py-1 text-sm text-white disabled:opacity-50"
+            className="rounded bg-(--color-accent) px-3 py-1 text-sm text-(--color-accent-ink) disabled:opacity-50"
           >
             Gönder
           </button>
@@ -347,7 +347,7 @@ export function ListingDetailClient({ id }: { id: string }) {
       </section>
 
       {/* Competition */}
-      <section className="rounded border border-[var(--color-border)] p-4">
+      <section className="rounded border border-(--color-border) p-4">
         <h2 className="mb-3 text-lg font-medium">Rekabet</h2>
         {competition.buybox && (
           <p className="mb-2 text-sm">
@@ -359,7 +359,7 @@ export function ListingDetailClient({ id }: { id: string }) {
         <PriceSparkline history={competition.priceHistory} ourPrice={listing.price} />
         <TableFrame className="mt-3" maxHeight="50vh">
           <table className="w-full text-xs">
-            <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
+            <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
               <tr>
                 <th className="px-2 py-1">Sıra</th>
                 <th className="px-2 py-1">Satıcı</th>
@@ -370,7 +370,7 @@ export function ListingDetailClient({ id }: { id: string }) {
                 <th className="px-2 py-1">Stok</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+            <tbody className="divide-y divide-(--color-border)">
               {pagedOffers.rows.map((o, i) => (
                 <tr key={i}>
                   <td className="px-2 py-1">{o.rank}</td>
@@ -384,7 +384,7 @@ export function ListingDetailClient({ id }: { id: string }) {
               ))}
               {competition.offers.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-2 py-4 text-center text-[var(--color-muted)]">
+                  <td colSpan={7} className="px-2 py-4 text-center text-(--color-muted)">
                     Kayıtlı rakip teklifi yok.
                   </td>
                 </tr>
@@ -398,52 +398,52 @@ export function ListingDetailClient({ id }: { id: string }) {
       </section>
 
       {/* Engine */}
-      <section className="rounded border border-[var(--color-border)] p-4">
+      <section className="rounded border border-(--color-border) p-4">
         <h2 className="mb-3 text-lg font-medium">Motor</h2>
         {engine ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
-              <div className="text-xs text-[var(--color-muted)]">Faz</div>
+              <div className="text-xs text-(--color-muted)">Faz</div>
               <div className="text-lg">{PHASE_LABELS[engine.phase] ?? engine.phase}</div>
             </div>
             <div>
-              <div className="text-xs text-[var(--color-muted)]">Son İyi Fiyat</div>
+              <div className="text-xs text-(--color-muted)">Son İyi Fiyat</div>
               <div className="text-lg">
                 {formatMoney(engine.lastGoodPrice ? BigInt(engine.lastGoodPrice) : null)}
               </div>
             </div>
             <div>
-              <div className="text-xs text-[var(--color-muted)]">Son Kötü Fiyat</div>
+              <div className="text-xs text-(--color-muted)">Son Kötü Fiyat</div>
               <div className="text-lg">
                 {formatMoney(engine.lastBadPrice ? BigInt(engine.lastBadPrice) : null)}
               </div>
             </div>
             <div>
-              <div className="text-xs text-[var(--color-muted)]">Optimum Fiyat</div>
+              <div className="text-xs text-(--color-muted)">Optimum Fiyat</div>
               <div className="text-lg">
                 {formatMoney(engine.optimumPrice ? BigInt(engine.optimumPrice) : null)}
               </div>
             </div>
             <div>
-              <div className="text-xs text-[var(--color-muted)]">Duraklatma Bitişi</div>
+              <div className="text-xs text-(--color-muted)">Duraklatma Bitişi</div>
               <div className="text-sm">{engine.settleUntil ? formatDateTime(engine.settleUntil) : '—'}</div>
             </div>
             <div>
-              <div className="text-xs text-[var(--color-muted)]">Ardışık Ret</div>
+              <div className="text-xs text-(--color-muted)">Ardışık Ret</div>
               <div className="text-sm">{formatNumber(engine.consecutiveRejections)}</div>
             </div>
           </div>
         ) : (
-          <p className="text-sm text-[var(--color-muted)]">Bu ilan için motor henüz bir karar üretmedi.</p>
+          <p className="text-sm text-(--color-muted)">Bu ilan için motor henüz bir karar üretmedi.</p>
         )}
 
         {lastDecisionExplanation && (
-          <div className="mt-3 rounded bg-slate-50 p-3 text-sm">
+          <div className="mt-3 rounded bg-(--color-hover) p-3 text-sm">
             <span className="font-medium">
               {REASON_LABELS[lastDecisionExplanation.reason] ?? lastDecisionExplanation.reason}:
             </span>{' '}
             {lastDecisionExplanation.explanation}
-            <span className="ml-2 text-xs text-[var(--color-muted)]">
+            <span className="ml-2 text-xs text-(--color-muted)">
               {formatDateTime(lastDecisionExplanation.decidedAt)}
             </span>
           </div>
@@ -474,7 +474,7 @@ export function ListingDetailClient({ id }: { id: string }) {
               <input
                 value={minInput}
                 onChange={(e) => setMinInput(e.target.value)}
-                className="w-24 rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+                className="w-24 rounded border border-(--color-border) px-2 py-1 text-sm"
               />
             </label>
             <label className="flex flex-col text-xs">
@@ -482,7 +482,7 @@ export function ListingDetailClient({ id }: { id: string }) {
               <input
                 value={maxInput}
                 onChange={(e) => setMaxInput(e.target.value)}
-                className="w-24 rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+                className="w-24 rounded border border-(--color-border) px-2 py-1 text-sm"
               />
             </label>
             <button
@@ -498,11 +498,11 @@ export function ListingDetailClient({ id }: { id: string }) {
       </section>
 
       {/* History */}
-      <section className="rounded border border-[var(--color-border)] p-4">
+      <section className="rounded border border-(--color-border) p-4">
         <h2 className="mb-3 text-lg font-medium">Fiyat Geçmişi</h2>
         <TableFrame maxHeight="50vh">
           <table className="w-full text-xs">
-            <thead className={`${STICKY_HEAD} text-left uppercase text-[var(--color-muted)]`}>
+            <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
               <tr>
                 <th className="px-2 py-1">Karar Zamanı</th>
                 <th className="px-2 py-1">Eski → Yeni</th>
@@ -514,7 +514,7 @@ export function ListingDetailClient({ id }: { id: string }) {
                 <th className="px-2 py-1">Hata</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+            <tbody className="divide-y divide-(--color-border)">
               {pagedHistory.rows.map((h) => (
                 <tr key={h.id}>
                   <td className="px-2 py-1">{formatDateTime(h.decidedAt)}</td>
@@ -528,14 +528,14 @@ export function ListingDetailClient({ id }: { id: string }) {
                   <td className="px-2 py-1">{formatMoney(h.floorPrice ? BigInt(h.floorPrice) : null)}</td>
                   <td className="px-2 py-1">{formatMoney(h.buyboxPrice ? BigInt(h.buyboxPrice) : null)}</td>
                   <td className="px-2 py-1">{h.rank ?? '—'}</td>
-                  <td className="px-2 py-1 text-[var(--color-danger)]">
+                  <td className="px-2 py-1 text-(--color-danger)">
                     {h.failureCode ? `${h.failureCode}: ${h.failureMessage ?? ''}` : ''}
                   </td>
                 </tr>
               ))}
               {history.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-2 py-4 text-center text-[var(--color-muted)]">
+                  <td colSpan={8} className="px-2 py-4 text-center text-(--color-muted)">
                     Bu ilan için henüz fiyat gönderimi yok.
                   </td>
                 </tr>

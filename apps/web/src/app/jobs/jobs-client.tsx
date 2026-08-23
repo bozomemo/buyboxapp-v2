@@ -150,10 +150,10 @@ const CIRCUIT_LABELS: Record<string, string> = {
 };
 
 const EVENT_LEVEL_CLASS: Record<string, string> = {
-  error: 'text-[var(--color-danger)]',
-  warn: 'text-[var(--color-warning)]',
-  info: 'text-[var(--color-muted)]',
-  debug: 'text-[var(--color-muted)]',
+  error: 'text-(--color-danger)',
+  warn: 'text-(--color-warning)',
+  info: 'text-(--color-muted)',
+  debug: 'text-(--color-muted)',
 };
 
 /**
@@ -164,22 +164,22 @@ const EVENT_LEVEL_CLASS: Record<string, string> = {
 function ProgressBar({ done, total }: { done: number; total: number }) {
   if (total <= 0) {
     return (
-      <div className="h-2 w-full overflow-hidden rounded bg-[var(--color-border)]">
-        <div className="h-full w-1/3 animate-pulse rounded bg-[var(--color-accent)]" />
+      <div className="h-2 w-full overflow-hidden rounded bg-(--color-border)">
+        <div className="h-full w-1/3 animate-pulse rounded bg-(--color-accent)" />
       </div>
     );
   }
   const pct = Math.min(100, Math.round((done / total) * 100));
   return (
     <div
-      className="h-2 w-full overflow-hidden rounded bg-[var(--color-border)]"
+      className="h-2 w-full overflow-hidden rounded bg-(--color-border)"
       role="progressbar"
       aria-valuenow={pct}
       aria-valuemin={0}
       aria-valuemax={100}
     >
       <div
-        className="h-full rounded bg-[var(--color-accent)] transition-[width] duration-500 ease-out"
+        className="h-full rounded bg-(--color-accent) transition-[width] duration-500 ease-out"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -204,11 +204,11 @@ function RunDetailPanel({
   hasRun: boolean;
   nowMs: number;
 }) {
-  if (error) return <p className="py-2 text-xs text-[var(--color-danger)]">{error}</p>;
+  if (error) return <p className="py-2 text-xs text-(--color-danger)">{error}</p>;
   if (!hasRun) {
-    return <p className="py-2 text-xs text-[var(--color-muted)]">Bu iş hiç çalışmadı — henüz gösterilecek bir çalışma yok.</p>;
+    return <p className="py-2 text-xs text-(--color-muted)">Bu iş hiç çalışmadı — henüz gösterilecek bir çalışma yok.</p>;
   }
-  if (!detail) return <p className="py-2 text-xs text-[var(--color-muted)]">Yükleniyor…</p>;
+  if (!detail) return <p className="py-2 text-xs text-(--color-muted)">Yükleniyor…</p>;
 
   const { run, events } = detail;
   const running = run.state === 'running';
@@ -219,20 +219,20 @@ function RunDetailPanel({
   const stalled = running && run.progressAt !== null && nowMs - run.progressAt > STALL_AFTER_MS;
 
   return (
-    <div className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
+    <div className="space-y-3 rounded border border-(--color-border) bg-(--color-bg) p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
         <span className="font-medium">
           {running ? 'Çalışıyor' : run.state === 'failed' ? 'Başarısız' : 'Tamamlandı'} ·{' '}
-          <span className="text-[var(--color-muted)]">{formatDateTime(run.startedAt)}</span>
+          <span className="text-(--color-muted)">{formatDateTime(run.startedAt)}</span>
         </span>
-        <span className="text-[var(--color-muted)]">
+        <span className="text-(--color-muted)">
           {formatDuration(elapsedMs)} {running ? 'geçti' : 'sürdü'}
         </span>
       </div>
 
       <ProgressBar done={run.itemsDone} total={run.itemsTotal} />
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-(--color-muted)">
         <span>
           {formatNumber(run.itemsDone)} / {run.itemsTotal > 0 ? formatNumber(run.itemsTotal) : '?'} öğe
         </span>
@@ -240,9 +240,9 @@ function RunDetailPanel({
             end, so mid-run they are still 0 and showing them would read as "everything failed". */}
         {!running && (
           <>
-            <span className="text-[var(--color-success)]">{formatNumber(run.itemsOk)} başarılı</span>
+            <span className="text-(--color-success)">{formatNumber(run.itemsOk)} başarılı</span>
             {run.itemsFailed > 0 && (
-              <span className="text-[var(--color-danger)]">{formatNumber(run.itemsFailed)} başarısız</span>
+              <span className="text-(--color-danger)">{formatNumber(run.itemsFailed)} başarısız</span>
             )}
           </>
         )}
@@ -250,31 +250,31 @@ function RunDetailPanel({
 
       {running && (
         <p className="truncate text-xs">
-          <span className="text-[var(--color-muted)]">Şu an: </span>
-          {run.currentItem ?? <span className="text-[var(--color-muted)]">hazırlanıyor…</span>}
+          <span className="text-(--color-muted)">Şu an: </span>
+          {run.currentItem ?? <span className="text-(--color-muted)">hazırlanıyor…</span>}
         </p>
       )}
 
       {stalled && (
-        <p className="text-xs text-[var(--color-warning)]">
+        <p className="text-xs text-(--color-warning)">
           {formatDuration(nowMs - (run.progressAt ?? nowMs))} önce ilerleme bildirildi — iş takılmış ya da
           worker durmuş olabilir.
         </p>
       )}
 
-      {run.error && <p className="text-xs text-[var(--color-danger)]">{run.error}</p>}
+      {run.error && <p className="text-xs text-(--color-danger)">{run.error}</p>}
 
       <div>
-        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-(--color-muted)">
           Olaylar
         </div>
         {events.length === 0 ? (
-          <p className="text-xs text-[var(--color-muted)]">Bu çalışma için kayıt yok.</p>
+          <p className="text-xs text-(--color-muted)">Bu çalışma için kayıt yok.</p>
         ) : (
-          <ul className="max-h-64 overflow-y-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)] font-mono text-xs">
+          <ul className="max-h-64 overflow-y-auto rounded border border-(--color-border) bg-(--color-surface) font-mono text-xs">
             {events.map((e) => (
-              <li key={e.id} className="flex gap-2 border-b border-[var(--color-border)] px-2 py-1 last:border-b-0">
-                <span className="shrink-0 text-[var(--color-muted)]">{formatTime(e.at)}</span>
+              <li key={e.id} className="flex gap-2 border-b border-(--color-border) px-2 py-1 last:border-b-0">
+                <span className="shrink-0 text-(--color-muted)">{formatTime(e.at)}</span>
                 <span className={`shrink-0 ${EVENT_LEVEL_CLASS[e.level] ?? ''}`}>{e.code}</span>
                 <span className="break-all">{e.message}</span>
               </li>
@@ -645,22 +645,22 @@ export function JobsClient() {
     }
   }
 
-  if (!overview) return <p className="text-[var(--color-muted)]">Yükleniyor…</p>;
+  if (!overview) return <p className="text-(--color-muted)">Yükleniyor…</p>;
 
   return (
     <div className="space-y-8">
-      {error && <p className="text-[var(--color-danger)]">{error}</p>}
+      {error && <p className="text-(--color-danger)">{error}</p>}
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           İş Kataloğu
         </h2>
-        <p className="mb-2 text-xs text-[var(--color-muted)]">
+        <p className="mb-2 text-xs text-(--color-muted)">
           Sıklık değişiklikleri worker&apos;ın bir sonraki yeniden başlatılmasında etkili olur, anında değil.
         </p>
         <TableFrame>
           <table className="w-full text-sm">
-            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
+            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
               <tr>
                 <th className="px-3 py-2">İş</th>
                 <th className="px-3 py-2">Durum</th>
@@ -671,52 +671,52 @@ export function JobsClient() {
                 <th className="px-3 py-2">Şimdi Çalıştır</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+            <tbody className="divide-y divide-(--color-border)">
               {overview.jobs.map((job) => (
                 <Fragment key={job.jobName}>
-                <tr className={expandedJob === job.jobName ? 'bg-[var(--color-surface)]' : undefined}>
+                <tr className={expandedJob === job.jobName ? 'bg-(--color-surface)' : undefined}>
                   <td className="px-3 py-2 font-medium">{job.label}</td>
                   <td className="px-3 py-2">
                     {job.activeRun ? (
-                      <span className="inline-flex items-center gap-1.5 text-[var(--color-accent)]">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-accent)]" />
+                      <span className="inline-flex items-center gap-1.5 text-(--color-accent)">
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-(--color-accent)" />
                         Çalışıyor
                         {job.activeRun.itemsTotal > 0 && (
-                          <span className="text-xs text-[var(--color-muted)]">
+                          <span className="text-xs text-(--color-muted)">
                             {job.activeRun.itemsDone}/{job.activeRun.itemsTotal}
                           </span>
                         )}
                       </span>
                     ) : isJobBusy(job) ? (
-                      <span className="inline-flex items-center gap-1.5 text-[var(--color-warning)]">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-warning)]" />
+                      <span className="inline-flex items-center gap-1.5 text-(--color-warning)">
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-(--color-warning)" />
                         Kuyrukta
                       </span>
                     ) : (
-                      <span className="text-[var(--color-muted)]">Boşta</span>
+                      <span className="text-(--color-muted)">Boşta</span>
                     )}
                   </td>
                   <td className="px-3 py-2">
                     {job.cadenceMs === null ? (
-                      <span className="text-[var(--color-muted)]">{formatCadence(job.cadenceMs)}</span>
+                      <span className="text-(--color-muted)">{formatCadence(job.cadenceMs)}</span>
                     ) : (
                       <div className="flex items-center gap-1.5">
                         <input
                           type="number"
                           min={10}
                           step={1}
-                          className="w-16 rounded border border-[var(--color-border)] px-1 py-0.5 text-xs"
+                          className="w-16 rounded border border-(--color-border) px-1 py-0.5 text-xs"
                           value={cadenceDraft[job.jobName] ?? String(Math.round(job.cadenceMs / 1000))}
                           onChange={(e) =>
                             setCadenceDraft((prev) => ({ ...prev, [job.jobName]: e.target.value }))
                           }
                         />
-                        <span className="text-xs text-[var(--color-muted)]">sn</span>
+                        <span className="text-xs text-(--color-muted)">sn</span>
                         <button
                           type="button"
                           disabled={busy === `cadence-${job.jobName}`}
                           onClick={() => saveCadence(job.jobName)}
-                          className="rounded bg-[var(--color-accent)] px-1.5 py-0.5 text-xs text-white"
+                          className="rounded bg-(--color-accent) px-1.5 py-0.5 text-xs text-(--color-accent-ink)"
                         >
                           Kaydet
                         </button>
@@ -725,15 +725,15 @@ export function JobsClient() {
                             type="button"
                             disabled={busy === `cadence-${job.jobName}`}
                             onClick={() => resetCadence(job.jobName)}
-                            className="rounded bg-slate-300 px-1.5 py-0.5 text-xs text-slate-700"
+                            className="rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)"
                           >
                             Varsayılana dön
                           </button>
                         )}
                         {cadenceSaved === job.jobName && (
-                          <span className="text-xs text-[var(--color-success)]">Kaydedildi</span>
+                          <span className="text-xs text-(--color-success)">Kaydedildi</span>
                         )}
-                        <span className="text-xs text-[var(--color-muted)]">
+                        <span className="text-xs text-(--color-muted)">
                           (şu an: {formatCadence(job.cadenceMs)}
                           {job.isCadenceOverride ? '' : ', varsayılan'})
                         </span>
@@ -747,18 +747,18 @@ export function JobsClient() {
                         <span
                           className={
                             job.lastRun.state === 'failed'
-                              ? 'text-[var(--color-danger)]'
-                              : 'text-[var(--color-muted)]'
+                              ? 'text-(--color-danger)'
+                              : 'text-(--color-muted)'
                           }
                         >
                           {job.lastRun.state}
                         </span>
                       </span>
                     ) : (
-                      <span className="text-[var(--color-muted)]">Hiç çalışmadı</span>
+                      <span className="text-(--color-muted)">Hiç çalışmadı</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[var(--color-muted)]">
+                  <td className="px-3 py-2 text-(--color-muted)">
                     {job.nextRunAt ? formatDateTime(job.nextRunAt) : '—'}
                   </td>
                   <td className="px-3 py-2">
@@ -768,8 +768,8 @@ export function JobsClient() {
                       onClick={() => toggleEnabled(job)}
                       className={
                         job.enabled
-                          ? 'rounded bg-[var(--color-success)] px-2 py-1 text-xs text-white'
-                          : 'rounded bg-slate-300 px-2 py-1 text-xs text-slate-700'
+                          ? 'rounded bg-(--color-success) px-2 py-1 text-xs text-(--color-success-ink)'
+                          : 'rounded bg-(--color-chip-bg) px-2 py-1 text-xs text-(--color-chip-text)'
                       }
                     >
                       {job.enabled ? 'Etkin' : 'Devre dışı'}
@@ -779,7 +779,7 @@ export function JobsClient() {
                     <div className="flex items-center gap-2">
                       {job.perMarketplace && (
                         <select
-                          className="rounded border border-[var(--color-border)] px-1 py-0.5 text-xs"
+                          className="rounded border border-(--color-border) px-1 py-0.5 text-xs"
                           value={selectedMarketplace[job.jobName] ?? marketplaces[0]?.code ?? ''}
                           onChange={(e) =>
                             setSelectedMarketplace((prev) => ({ ...prev, [job.jobName]: e.target.value }))
@@ -805,7 +805,7 @@ export function JobsClient() {
                           (job.perMarketplace && marketplaces.length === 0)
                         }
                         onClick={() => runNow(job)}
-                        className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {job.activeRun ? 'Çalışıyor…' : isJobBusy(job) ? 'Kuyruğa alındı' : 'Çalıştır'}
                       </button>
@@ -813,7 +813,7 @@ export function JobsClient() {
                         type="button"
                         onClick={() => toggleDetails(job)}
                         aria-expanded={expandedJob === job.jobName}
-                        className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface)]"
+                        className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface)"
                       >
                         {expandedJob === job.jobName ? 'Detayları gizle' : 'Detaylar'}
                       </button>
@@ -821,7 +821,7 @@ export function JobsClient() {
                   </td>
                 </tr>
                 {expandedJob === job.jobName && (
-                  <tr className="bg-[var(--color-surface)]">
+                  <tr className="bg-(--color-surface)">
                     <td colSpan={7} className="px-3 pb-4 pt-0">
                       <RunDetailPanel
                         detail={detail}
@@ -840,25 +840,25 @@ export function JobsClient() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Kuyruk Derinliği ve Alınan İşler
         </h2>
         <div className="flex flex-wrap gap-4">
           {['ready', 'locked', 'done', 'failed'].map((state) => (
-            <div key={state} className="rounded border border-[var(--color-border)] px-4 py-2 text-center">
+            <div key={state} className="rounded border border-(--color-border) px-4 py-2 text-center">
               <div className="text-xl font-bold">{formatNumber(overview.queueDepth[state] ?? 0)}</div>
-              <div className="text-xs text-[var(--color-muted)]">{state}</div>
+              <div className="text-xs text-(--color-muted)">{state}</div>
             </div>
           ))}
         </div>
         {overview.claimed.length > 0 && (
-          <ul className="mt-3 divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)] text-sm">
+          <ul className="mt-3 divide-y divide-(--color-border) rounded border border-(--color-border) text-sm">
             {overview.claimed.map((j) => (
               <li key={j.id} className="flex justify-between px-3 py-2">
                 <span>
                   {j.jobName} — {j.lockedBy}
                 </span>
-                <span className="text-[var(--color-muted)]">
+                <span className="text-(--color-muted)">
                   {j.attempts}. deneme, kilit bitiş: {formatDateTime(j.lockedUntil)}
                 </span>
               </li>
@@ -868,26 +868,26 @@ export function JobsClient() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Devre Kesici (Circuit Breaker)
         </h2>
         {overview.circuitBreakers.length === 0 ? (
-          <p className="text-sm text-[var(--color-muted)]">Hiç tetiklenmedi.</p>
+          <p className="text-sm text-(--color-muted)">Hiç tetiklenmedi.</p>
         ) : (
-          <ul className="divide-y divide-[var(--color-border)] rounded border border-[var(--color-border)] text-sm">
+          <ul className="divide-y divide-(--color-border) rounded border border-(--color-border) text-sm">
             {overview.circuitBreakers.map((c) => (
               <li key={c.marketplaceCode} className="flex items-center justify-between px-3 py-2">
                 <div>
                   <span className="font-medium">{c.marketplaceCode}</span> —{' '}
                   <span
                     className={
-                      c.state === 'closed' ? 'text-[var(--color-muted)]' : 'text-[var(--color-danger)]'
+                      c.state === 'closed' ? 'text-(--color-muted)' : 'text-(--color-danger)'
                     }
                   >
                     {CIRCUIT_LABELS[c.state]}
                   </span>
                   {c.state !== 'closed' && (
-                    <span className="ml-2 text-xs text-[var(--color-muted)]">
+                    <span className="ml-2 text-xs text-(--color-muted)">
                       {c.consecutiveFailures} ardışık hata — {c.lastError}
                     </span>
                   )}
@@ -897,7 +897,7 @@ export function JobsClient() {
                     type="button"
                     disabled={busy === `circuit-${c.marketplaceCode}`}
                     onClick={() => resetCircuit(c.marketplaceCode)}
-                    className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface)]"
+                    className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface)"
                   >
                     Sıfırla
                   </button>
@@ -907,24 +907,24 @@ export function JobsClient() {
           </ul>
         )}
         {/* doc 07 §3: a tripped circuit must not silently disable repricing — it's shown, not hidden. */}
-        <p className="mt-2 text-xs text-[var(--color-muted)]">
+        <p className="mt-2 text-xs text-(--color-muted)">
           Devre açıkken ilgili pazaryerine giden istekler duraklatılır; yeniden fiyatlandırma ve diğer işler
           bloke olmaz, yalnızca o pazaryerine giden çağrılar ertelenir.
         </p>
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Tarama Hızı (Rakip Verisi Toplama)
         </h2>
-        <p className="mb-2 text-xs text-[var(--color-muted)]">
+        <p className="mb-2 text-xs text-(--color-muted)">
           Bu değerler yalnızca raporlama amaçlı rakip taramasının (ScrapeCompetitors) pazaryerine gönderdiği
           istek hızını belirler; fiyatlandırma kararlarını etkilemez. 403 hataları sıklaşırsa istek/dakika
           değerini düşürün. Değişiklik, worker bir sonraki başlatıldığında etkin olur.
         </p>
         <TableFrame maxHeight="50vh">
           <table className="w-full text-sm">
-            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
+            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
               <tr>
                 <th className="px-3 py-2">Pazaryeri</th>
                 <th className="px-3 py-2">İstek/Dakika</th>
@@ -933,7 +933,7 @@ export function JobsClient() {
                 <th className="px-3 py-2">Kaydet</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+            <tbody className="divide-y divide-(--color-border)">
               {scrapeRates.map((rate) => (
                 <tr key={rate.marketplaceCode}>
                   <td className="px-3 py-2 font-medium">{rate.marketplaceCode}</td>
@@ -941,7 +941,7 @@ export function JobsClient() {
                     <input
                       type="number"
                       min={1}
-                      className="w-20 rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+                      className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
                       value={scrapeRateDraft[rate.marketplaceCode]?.requestsPerMinute ?? ''}
                       onChange={(e) =>
                         setScrapeRateDraft((prev) => ({
@@ -958,7 +958,7 @@ export function JobsClient() {
                     <input
                       type="number"
                       min={1}
-                      className="w-20 rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+                      className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
                       value={scrapeRateDraft[rate.marketplaceCode]?.burst ?? ''}
                       onChange={(e) =>
                         setScrapeRateDraft((prev) => ({
@@ -972,7 +972,7 @@ export function JobsClient() {
                       }
                     />
                   </td>
-                  <td className="px-3 py-2 text-xs text-[var(--color-muted)]">
+                  <td className="px-3 py-2 text-xs text-(--color-muted)">
                     {rate.default.requestsPerMinute}/dk, patlama {rate.default.burst}
                     {rate.isOverride ? ' (özelleştirildi)' : ''}
                   </td>
@@ -981,12 +981,12 @@ export function JobsClient() {
                       type="button"
                       disabled={busy === `scrape-rate-${rate.marketplaceCode}`}
                       onClick={() => saveScrapeRate(rate.marketplaceCode)}
-                      className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface)]"
+                      className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface)"
                     >
                       Kaydet
                     </button>
                     {scrapeRateSaved === rate.marketplaceCode && (
-                      <span className="ml-2 text-xs text-[var(--color-success)]">Kaydedildi</span>
+                      <span className="ml-2 text-xs text-(--color-success)">Kaydedildi</span>
                     )}
                   </td>
                 </tr>
@@ -997,12 +997,12 @@ export function JobsClient() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Çalışma Geçmişi
         </h2>
         <div className="mb-2 flex gap-2">
           <select
-            className="rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+            className="rounded border border-(--color-border) px-2 py-1 text-sm"
             value={historyFilter.jobName}
             onChange={(e) => setHistoryFilter((f) => ({ ...f, jobName: e.target.value }))}
           >
@@ -1014,7 +1014,7 @@ export function JobsClient() {
             ))}
           </select>
           <select
-            className="rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+            className="rounded border border-(--color-border) px-2 py-1 text-sm"
             value={historyFilter.state}
             onChange={(e) => setHistoryFilter((f) => ({ ...f, state: e.target.value }))}
           >
@@ -1025,7 +1025,7 @@ export function JobsClient() {
         </div>
         <TableFrame>
           <table className="w-full text-sm">
-            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-[var(--color-muted)]`}>
+            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
               <tr>
                 <th className="px-3 py-2">İş</th>
                 <th className="px-3 py-2">Başlangıç</th>
@@ -1035,27 +1035,27 @@ export function JobsClient() {
                 <th className="px-3 py-2">Hata</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+            <tbody className="divide-y divide-(--color-border)">
               {pagedHistory.rows.map((r) => (
                 <tr key={r.id}>
                   <td className="px-3 py-2">{r.jobName}</td>
-                  <td className="px-3 py-2 text-[var(--color-muted)]">{formatDateTime(r.startedAt)}</td>
-                  <td className="px-3 py-2 text-[var(--color-muted)]">
+                  <td className="px-3 py-2 text-(--color-muted)">{formatDateTime(r.startedAt)}</td>
+                  <td className="px-3 py-2 text-(--color-muted)">
                     {r.finishedAt ? `${((r.finishedAt - r.startedAt) / 1000).toFixed(1)} sn` : '—'}
                   </td>
-                  <td className={r.state === 'failed' ? 'px-3 py-2 text-[var(--color-danger)]' : 'px-3 py-2'}>
+                  <td className={r.state === 'failed' ? 'px-3 py-2 text-(--color-danger)' : 'px-3 py-2'}>
                     {r.state}
                   </td>
-                  <td className="px-3 py-2 text-[var(--color-muted)]">
+                  <td className="px-3 py-2 text-(--color-muted)">
                     {r.itemsOk}/{r.itemsTotal} başarılı
                     {r.itemsFailed > 0 ? `, ${r.itemsFailed} başarısız` : ''}
                   </td>
-                  <td className="px-3 py-2 text-xs text-[var(--color-danger)]">{r.error ?? ''}</td>
+                  <td className="px-3 py-2 text-xs text-(--color-danger)">{r.error ?? ''}</td>
                 </tr>
               ))}
               {runHistory.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-4 text-center text-[var(--color-muted)]">
+                  <td colSpan={6} className="px-3 py-4 text-center text-(--color-muted)">
                     Kayıt yok.
                   </td>
                 </tr>

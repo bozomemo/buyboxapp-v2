@@ -79,7 +79,7 @@ function TriState({
       <select
         value={value === undefined ? 'any' : String(value)}
         onChange={(e) => onChange(e.target.value === 'any' ? undefined : e.target.value === 'true')}
-        className="rounded border border-[var(--color-border)] px-1 py-0.5"
+        className="rounded border border-(--color-border) px-1 py-0.5"
       >
         <option value="any">herhangi</option>
         <option value="true">evet</option>
@@ -141,22 +141,22 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Yeni fiyat"
-          className="w-20 rounded border border-[var(--color-border)] px-1 py-0.5 text-xs"
+          className="w-20 rounded border border-(--color-border) px-1 py-0.5 text-xs"
         />
         <button
           type="button"
           onClick={() => setConfirming(true)}
           disabled={!value}
-          className="text-xs text-[var(--color-accent)]"
+          className="text-xs text-(--color-accent)"
         >
           Gönder
         </button>
-        <button type="button" onClick={() => setEditing(false)} className="text-xs text-[var(--color-muted)]">
+        <button type="button" onClick={() => setEditing(false)} className="text-xs text-(--color-muted)">
           İptal
         </button>
       </div>
       {confirming && (
-        <div className="rounded border border-[var(--color-warning)] bg-amber-50 p-2 text-xs">
+        <div className="rounded border border-(--color-warning) bg-(--color-warning-bg) p-2 text-xs">
           <p>
             {formatMoney(BigInt(row.price))} → ₺{value} olarak gönderilsin mi? Bu, bu ilan için otomasyonu
             geçici olarak duraklatır.
@@ -166,7 +166,7 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
               type="button"
               disabled={busy}
               onClick={() => void submit()}
-              className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-white"
+              className="rounded bg-(--color-accent) px-2 py-0.5 text-(--color-accent-ink)"
             >
               Onayla
             </button>
@@ -176,7 +176,7 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
           </div>
         </div>
       )}
-      {error && <p className="text-[var(--color-danger)]">{error}</p>}
+      {error && <p className="text-(--color-danger)">{error}</p>}
     </div>
   );
 }
@@ -206,14 +206,14 @@ function MinMaxCell({ row, onChanged }: { row: Row; onChanged: () => void }) {
         onChange={(e) => setMin(e.target.value)}
         onBlur={() => void save()}
         placeholder="min"
-        className="w-14 rounded border border-[var(--color-border)] px-1 py-0.5 text-xs"
+        className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
       />
       <input
         value={max}
         onChange={(e) => setMax(e.target.value)}
         onBlur={() => void save()}
         placeholder="max"
-        className="w-14 rounded border border-[var(--color-border)] px-1 py-0.5 text-xs"
+        className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
       />
     </div>
   );
@@ -293,7 +293,7 @@ export function ListingsClient() {
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">İlanlar</h1>
 
-      <div className="flex flex-wrap items-end gap-3 rounded border border-[var(--color-border)] p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded border border-(--color-border) p-3">
         <label className="flex flex-col text-xs">
           Pazaryeri
           <select
@@ -302,7 +302,7 @@ export function ListingsClient() {
               setPage(0);
               setFilters((f) => ({ ...f, marketplaceCode: e.target.value }));
             }}
-            className="rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+            className="rounded border border-(--color-border) px-2 py-1 text-sm"
           >
             <option value="">Tümü</option>
             <option value="trendyol">Trendyol</option>
@@ -317,7 +317,7 @@ export function ListingsClient() {
               setPage(0);
               setFilters((f) => ({ ...f, text: e.target.value }));
             }}
-            className="w-56 rounded border border-[var(--color-border)] px-2 py-1 text-sm"
+            className="w-56 rounded border border-(--color-border) px-2 py-1 text-sm"
           />
         </label>
         <div className="flex flex-wrap gap-2">
@@ -328,8 +328,8 @@ export function ListingsClient() {
               onClick={() => togglePhase(p)}
               className={`rounded px-2 py-1 text-xs ${
                 filters.phases.includes(p)
-                  ? 'bg-[var(--color-accent)] text-white'
-                  : 'border border-[var(--color-border)]'
+                  ? 'bg-(--color-accent) text-(--color-accent-ink)'
+                  : 'border border-(--color-border)'
               }`}
             >
               {p}
@@ -371,7 +371,7 @@ export function ListingsClient() {
       </div>
 
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 rounded border border-[var(--color-accent)] bg-blue-50 px-3 py-2 text-sm">
+        <div className="flex items-center gap-2 rounded border border-(--color-accent) bg-(--color-accent-bg) px-3 py-2 text-sm">
           <span>{selected.size} ilan seçildi</span>
           <button
             type="button"
@@ -413,7 +413,7 @@ export function ListingsClient() {
 
       <TableFrame>
         <table className="w-full text-xs">
-          <thead className={`${STICKY_HEAD} bg-slate-50 text-left uppercase text-[var(--color-muted)]`}>
+          <thead className={`${STICKY_HEAD} bg-(--color-hover) text-left uppercase text-(--color-muted)`}>
             <tr>
               <th className="px-2 py-2">
                 <input
@@ -436,7 +436,7 @@ export function ListingsClient() {
               <th className="px-2 py-2">Gözlem</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
+          <tbody className="divide-y divide-(--color-border)">
             {rows.map((row) => (
               <tr key={row.id} className={rowClass(row)} style={{ contentVisibility: 'auto' }}>
                 <td className="px-2 py-1">
@@ -448,7 +448,7 @@ export function ListingsClient() {
                 </td>
                 <td className="px-2 py-1">{row.marketplaceCode}</td>
                 <td className="px-2 py-1">
-                  <Link href={`/listings/${row.id}`} className="text-[var(--color-accent)] hover:underline">
+                  <Link href={`/listings/${row.id}`} className="text-(--color-accent) hover:underline">
                     {row.productName}
                   </Link>
                 </td>
@@ -500,7 +500,7 @@ export function ListingsClient() {
             ))}
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={13} className="px-2 py-6 text-center text-[var(--color-muted)]">
+                <td colSpan={13} className="px-2 py-6 text-center text-(--color-muted)">
                   Filtreyle eşleşen ilan yok.
                 </td>
               </tr>

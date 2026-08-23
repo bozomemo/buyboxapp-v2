@@ -44,7 +44,7 @@ export function TableFrame({
 }) {
   return (
     <div
-      className={`table-frame rounded border border-[var(--color-border)] ${className}`}
+      className={`table-frame rounded border border-(--color-border) ${className}`}
       style={{ maxHeight }}
     >
       {children}
@@ -134,7 +134,7 @@ function PageButton({
       disabled={disabled}
       onClick={onClick}
       title={title}
-      className="rounded border border-[var(--color-border)] px-2 py-1 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-transparent"
+      className="rounded border border-(--color-border) px-2 py-1 hover:bg-(--color-hover) disabled:opacity-40 disabled:hover:bg-transparent"
     >
       {label}
     </button>
@@ -164,7 +164,7 @@ export function Pagination({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-      <span className="text-[var(--color-muted)]">
+      <span className="text-(--color-muted)">
         {total === 0
           ? `${label} yok`
           : `${formatNumber(first)}–${formatNumber(last)} / ${formatNumber(total)} ${label}`}
@@ -172,7 +172,7 @@ export function Pagination({
       </span>
       {totalPages > 1 && (
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+          <label className="flex items-center gap-1 text-xs text-(--color-muted)">
             Sayfa boyutu
             <select
               value={pageSize}
@@ -183,7 +183,7 @@ export function Pagination({
                 setPage(Math.floor((page * pageSize) / nextSize));
                 setPageSize(nextSize);
               }}
-              className="rounded border border-[var(--color-border)] px-1 py-0.5"
+              className="rounded border border-(--color-border) px-1 py-0.5"
             >
               {PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>
@@ -194,7 +194,7 @@ export function Pagination({
           </label>
           <PageButton label="«" title="İlk sayfa" disabled={page === 0} onClick={() => setPage(0)} />
           <PageButton label="Önceki" disabled={page === 0} onClick={() => setPage(page - 1)} />
-          <span className="text-[var(--color-muted)]">
+          <span className="text-(--color-muted)">
             {formatNumber(page + 1)} / {formatNumber(totalPages)}
           </span>
           <PageButton

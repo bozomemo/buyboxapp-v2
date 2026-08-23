@@ -35,7 +35,7 @@ export function CoverageBadge({ coverage, sinceMs }: { coverage: Coverage; since
 
   if (attempted === 0) {
     return (
-      <div className="rounded border border-red-300 bg-red-50 p-3 text-sm">
+      <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
         <strong>Bu dönemde hiç tarama yapılmamış.</strong> Aşağıdaki rakamlar &ldquo;rakip
         yok&rdquo; anlamına gelmez, &ldquo;bakmadık&rdquo; anlamına gelir. Rakip Verisi Toplama
         işi varsayılan olarak kapalıdır; İşler ekranından açabilirsiniz.
@@ -47,34 +47,34 @@ export function CoverageBadge({ coverage, sinceMs }: { coverage: Coverage; since
     <div
       className={`rounded border p-3 text-sm ${
         stale || failureRate >= 0.25
-          ? 'border-amber-300 bg-amber-50'
-          : 'border-neutral-200 bg-neutral-50'
+          ? 'border-(--color-warning-border) bg-(--color-warning-bg)'
+          : 'border-(--color-border) bg-(--color-hover)'
       }`}
     >
       <div className="flex flex-wrap gap-x-6 gap-y-1">
         <span>
-          <span className="text-neutral-500">Tarama:</span>{' '}
+          <span className="text-(--color-muted)">Tarama:</span>{' '}
           <strong>{formatNumber(coverage.ok)}</strong> başarılı / {formatNumber(attempted)} deneme
         </span>
         {failed > 0 && (
-          <span className={failureRate >= 0.25 ? 'font-medium text-amber-800' : ''}>
-            <span className="text-neutral-500">Başarısız:</span> {formatNumber(failed)} (
+          <span className={failureRate >= 0.25 ? 'font-medium text-(--color-warning)' : ''}>
+            <span className="text-(--color-muted)">Başarısız:</span> {formatNumber(failed)} (
             {formatPercent(failureRate * 100)})
           </span>
         )}
         {averageGapMs !== null && (
           <span>
-            <span className="text-neutral-500">Ortalama aralık:</span>{' '}
+            <span className="text-(--color-muted)">Ortalama aralık:</span>{' '}
             {(averageGapMs / 3600_000).toFixed(1)} saat
           </span>
         )}
-        <span className={stale ? 'font-medium text-amber-800' : ''}>
-          <span className="text-neutral-500">Son başarılı tarama:</span>{' '}
+        <span className={stale ? 'font-medium text-(--color-warning)' : ''}>
+          <span className="text-(--color-muted)">Son başarılı tarama:</span>{' '}
           {coverage.lastOkAt === null ? 'yok' : formatDateTime(coverage.lastOkAt)}
         </span>
       </div>
       {stale && (
-        <p className="mt-2 text-amber-800">
+        <p className="mt-2 text-(--color-warning)">
           Veri bayat. Aşağıdaki rakamlar bugünü değil, son başarılı taramanın anını anlatıyor.
         </p>
       )}
