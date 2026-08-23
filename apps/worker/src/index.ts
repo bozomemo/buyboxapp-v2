@@ -18,9 +18,19 @@
  * read; there is no second hardcoded copy to drift out of sync with the Jobs screen. A changed
  * override takes effect on the worker's next restart, not mid-process — the same startup-time
  * read the scrape rate limit and marketplace credentials already use.
+ *
+ * Catch-up on boot: `setInterval` only fires after a full `intervalMs` has elapsed, so a plain
+ * `setInterval(fn, cadenceMs)` would make every job wait a whole fresh cadence period after each
+ * restart before its first automatic run — even if the previous run finished long enough ago
+ * that the job was already due. `isTickerDue` below checks each job's last completed run
+ * (`job_runs`, read once at boot alongside the cadences above) against its cadence and fires the
+ * ticker body immediately when it's overdue, in addition to scheduling the normal interval. A
+ * job that has never run at all counts as due, so a fresh install doesn't wait a full cadence
+ * for its first run either. Granularity is per job name, not per marketplace — the same
+ * granularity the ticker itself already fires at (every marketplace together, every tick).
  */
 import type { MarketplaceCode } from '@buybox/core';
-import { checkSchemaVersion, configRepo, createDb, type AppDatabase } from '@buybox/db';
+import { checkSchemaVersion, configRepo, createDb, jobsRepo, type AppDatabase } from '@buybox/db';
 import {
   HepsiburadaAdapter,
   HepsiburadaCredentialsSchema,
@@ -282,24 +292,43 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
 
   scheduler.startLoop();
 
+  // Read once at boot (see file doc comment's "Catch-up on boot"): the latest completed/failed
+  // run per job name, so a ticker can tell whether its cadence had already elapsed before this
+  // restart.
+  const latestRunByName = new Map(
+    (await jobsRepo.latestJobRunPerJobName(appDb)).map((run) => [run.jobName, run]),
+  );
+  const isTickerDue = (jobName: string, cadenceMs: number, nowMs: number): boolean => {
+    const lastRun = latestRunByName.get(jobName);
+    if (!lastRun) return true; // never run — don't make a fresh install wait a full cadence
+    return (lastRun.finishedAt ?? lastRun.startedAt) + cadenceMs <= nowMs;
+  };
+
   const marketplaceCodes = [...adapters.keys()];
   const tickers: ReturnType<typeof setInterval>[] = [];
+  // Boot-time catch-up fires (see file doc comment) are awaited below, before `startWorker`
+  // returns, rather than left fire-and-forget like the interval-triggered ones — otherwise a
+  // caller that shuts the worker down (and closes its `appDb`) immediately after boot can race
+  // an in-flight catch-up query against a now-closed connection (this is exactly how the
+  // embedding test's fresh in-memory db caught it).
+  const catchUpFires: Promise<void>[] = [];
+
   const everyMarketplace = (
     jobName: string,
     intervalMs: number,
     extraPayload: Record<string, unknown> = {},
   ) => {
-    tickers.push(
-      setInterval(() => {
-        void (async () => {
-          // doc 12 6.9 "enable/disable" — an operator-disabled job simply doesn't fire.
-          if (!(await isJobEnabled(appDb, jobName))) return;
-          for (const marketplaceCode of marketplaceCodes) {
-            void scheduler.enqueueNow(jobName, JSON.stringify({ marketplaceCode, ...extraPayload }));
-          }
-        })();
-      }, intervalMs),
-    );
+    const fire = async (): Promise<void> => {
+      // doc 12 6.9 "enable/disable" — an operator-disabled job simply doesn't fire.
+      if (!(await isJobEnabled(appDb, jobName))) return;
+      for (const marketplaceCode of marketplaceCodes) {
+        void scheduler.enqueueNow(jobName, JSON.stringify({ marketplaceCode, ...extraPayload }));
+      }
+    };
+    if (isTickerDue(jobName, intervalMs, Date.now())) {
+      catchUpFires.push(fire().catch((error) => logger.warn('ticker.catchUpFailed', { jobName, error })));
+    }
+    tickers.push(setInterval(() => void fire(), intervalMs));
   };
   everyMarketplace(IMPORT_LISTINGS_JOB, importListingsCadenceMs);
   everyMarketplace(OBSERVE_BUYBOX_JOB, observeBuyboxCadenceMs, { cycleNumber: 0 });
@@ -310,19 +339,29 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   // Off unless the operator enabled it — `isJobEnabled` inside `everyMarketplace` gates this.
   everyMarketplace(SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs, { cycleNumber: 0 });
 
-  const importStockItemsTicker = setInterval(() => {
-    void (async () => {
-      if (!(await isJobEnabled(appDb, IMPORT_STOCK_ITEMS_JOB))) return;
-      const configured = await configRepo.getAppSetting(appDb, 'productSource.config');
-      if (!configured) return; // wizard step 6 not completed yet
-      const { sourceCode, sourceConfig } = JSON.parse(configured.value) as {
-        sourceCode: string;
-        sourceConfig: unknown;
-      };
-      await scheduler.enqueueNow(IMPORT_STOCK_ITEMS_JOB, JSON.stringify({ sourceCode, sourceConfig }));
-    })();
-  }, importStockItemsCadenceMs);
+  const fireImportStockItems = async (): Promise<void> => {
+    if (!(await isJobEnabled(appDb, IMPORT_STOCK_ITEMS_JOB))) return;
+    const configured = await configRepo.getAppSetting(appDb, 'productSource.config');
+    if (!configured) return; // wizard step 6 not completed yet
+    const { sourceCode, sourceConfig } = JSON.parse(configured.value) as {
+      sourceCode: string;
+      sourceConfig: unknown;
+    };
+    await scheduler.enqueueNow(IMPORT_STOCK_ITEMS_JOB, JSON.stringify({ sourceCode, sourceConfig }));
+  };
+  if (isTickerDue(IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs, Date.now())) {
+    catchUpFires.push(
+      fireImportStockItems().catch((error) =>
+        logger.warn('ticker.catchUpFailed', { jobName: IMPORT_STOCK_ITEMS_JOB, error }),
+      ),
+    );
+  }
+  const importStockItemsTicker = setInterval(() => void fireImportStockItems(), importStockItemsCadenceMs);
   tickers.push(importStockItemsTicker);
+
+  // Boot isn't done until any overdue job this restart owes has at least been kicked off —
+  // see `catchUpFires`'s doc comment above.
+  await Promise.all(catchUpFires);
 
   return {
     scheduler,
