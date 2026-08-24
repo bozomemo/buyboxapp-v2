@@ -221,9 +221,13 @@ elevation (it writes to `Program Files` and registers a service).
    scripts at runtime) and over NSSM (unmaintained): WinSW is a single executable configured by
    one XML file we ship, so what runs on the customer's machine is what we tested.
 8. **Verify.** Start the service and poll `GET http://127.0.0.1:<port>/api/health` for up to
-   60 s. **If it does not answer, the install has failed** — say so, name the log file, and offer
-   to open it. An installer that reports success over a service that never started is worse than
-   one that fails, because the failure surfaces later without the installation context.
+   90 s, requiring `status: ok`. **Anything less fails the install** — say so, report the last
+   status seen, and name the log file. An installer that reports success over a broken service is
+   worse than one that fails, because the failure surfaces later without the installation context.
+
+   Requiring `ok` rather than merely a response is a correction, made 2026-08-24 after the first
+   real install passed this step and then returned 500 on every page (§8.2). `/api/health` answers
+   200 while degraded by design, so a 200 alone proves only that a process is listening.
 9. **Shortcuts and launch.** Desktop and Start Menu shortcuts to `http://127.0.0.1:<port>`. On
    finish, open the default browser there. The licence gate (`proxy.ts`) redirects to `/license`;
    after a valid key is pasted the operator lands in `/setup`. The installer explains neither —
@@ -231,8 +235,8 @@ elevation (it writes to `Program Files` and registers a service).
 
 ### 5.1 `/api/health`
 
-Does not exist yet and must be added: a route that returns 200 with the application version and
-schema-migration state. It must be **exempt from the licence gate** (added to `EXEMPT_PREFIXES`
+A route that returns 200 with the application version and schema-migration state, and a
+`status` of `ok` only when the database is reachable and its schema matches the build. It must be **exempt from the licence gate** (added to `EXEMPT_PREFIXES`
 in `apps/web/src/proxy.ts`), because step 8 runs before any licence exists and a 402 there would
 make every first install look broken. It must not require a database connection to return 200 —
 it reports connectivity, it does not depend on it.
@@ -374,7 +378,36 @@ the build** if any remains. It is a deletion followed by an assertion rather tha
 alone, because the thing being guarded against is a future version of Next putting the file
 somewhere the deletion does not look.
 
-### 8.2 Installer scripts are ASCII-only
+### 8.2 The packaged app must be booted before it is shipped
+
+The first package built from this specification installed cleanly, passed its health check, and
+then returned **500 on every request**. Two runtime files were missing from it, and nothing in
+the pipeline could see that: typecheck, the full test suite and the Node ABI assertion were all
+green, because every one of them exercises the *repository*, not the *package*.
+
+Both failures came from the same place — Next's file tracing keeps what it can see being
+imported, and neither of these is imported:
+
+1. **`playwright-core/browsers.json`.** Playwright reads it from its own package directory at
+   runtime. Tracing copied the library and left the data file, so the instrumentation hook —
+   which starts the embedded worker, which loads the adapters, which load Playwright — threw
+   before the server finished preparing. A server that fails to prepare answers every request,
+   including `/api/health`, with 500.
+2. **The migration SQL files.** They were not in the package at all, and could not have been
+   found if they were: `@buybox/db` is in `transpilePackages`, so `defaultMigrationsFolder`'s
+   `import.meta.url` resolves inside a bundle chunk rather than inside the package. The packaged
+   app looked for migrations at a path that has never existed on any machine. Hence
+   `BUYBOX_MIGRATIONS_DIR`, which the service sets and a checkout does not.
+
+`build-package.ps1` now copies both, and asserts each is present. But the durable fix is the
+third one: **it boots the assembled package the way the service boots it, against a throwaway
+data directory, and requires `/api/health` to report `status: ok` and `/` not to return 5xx.**
+Neither bug survives that check, and neither was catchable by anything cheaper.
+
+The lesson generalises beyond these two files. A package is a different artefact from the
+repository it was built from, and the only reliable way to know it works is to run it.
+
+### 8.3 Installer scripts are ASCII-only
 
 Also found by building, 2026-08-24. Windows PowerShell 5.1 — what a customer machine runs, and
 what the installer invokes — reads a BOM-less UTF-8 file as ANSI. One em dash in a comment became

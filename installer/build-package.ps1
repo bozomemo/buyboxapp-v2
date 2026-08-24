@@ -14,7 +14,8 @@
 param(
   [string] $Version,
   [switch] $SkipTests,
-  [switch] $SkipCompile
+  [switch] $SkipCompile,
+  [switch] $SkipSmokeTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -92,6 +93,33 @@ foreach ($file in $leakedEnv) {
 $stillThere = Get-ChildItem $appDir -Recurse -Force -File -Filter '.env*' -ErrorAction SilentlyContinue
 if ($stillThere) { throw "Refusing to package: .env files remain in $appDir." }
 
+# Next's file tracing keeps what it can see being imported. Two things it cannot see, both found
+# on a real install 2026-08-24 (doc 14 section 8.2), each of which made every request return 500:
+#
+# 1. playwright-core reads `browsers.json` at runtime from its own package directory. Tracing
+#    copied the library and not the data file, so the instrumentation hook -- which starts the
+#    embedded worker, which loads the adapters, which load Playwright -- threw before the server
+#    could finish preparing. Overlay the real packages rather than trusting the traced subset.
+foreach ($pkg in @('playwright-core', 'playwright')) {
+  $source = Join-Path $repoRoot "node_modules\$pkg"
+  $target = Join-Path $appDir "node_modules\$pkg"
+  if (-not (Test-Path $source)) { throw "$pkg is not installed in the repository; run npm ci." }
+  if (Test-Path $target) { Remove-Item $target -Recurse -Force }
+  Copy-Item $source $target -Recurse -Force
+}
+if (-not (Test-Path (Join-Path $appDir 'node_modules\playwright-core\browsers.json'))) {
+  throw 'playwright-core/browsers.json is missing from the package; the app will fail to start.'
+}
+
+# 2. The migration SQL files are read from disk at runtime, and `@buybox/db` is bundled
+#    (transpilePackages), so the package cannot locate them by relative path at all. Ship them
+#    and point BUYBOX_MIGRATIONS_DIR at them (BuyBoxApp.xml.template).
+$migrationsSource = Join-Path $repoRoot 'packages\db\migrations'
+if (-not (Test-Path (Join-Path $migrationsSource 'sqlite\meta\_journal.json'))) {
+  throw "Migrations not found at $migrationsSource."
+}
+Copy-Item $migrationsSource (Join-Path $appDir 'migrations') -Recurse -Force
+
 # --- 4. Bundle the Node runtime ---------------------------------------------------------------------
 $nodeDir = Join-Path $staging 'node'
 New-Item -ItemType Directory -Path $nodeDir -Force | Out-Null
@@ -155,7 +183,84 @@ if (-not (Test-Path $winswSource)) {
 }
 Copy-Item $winswSource (Join-Path $serviceDir 'BuyBoxApp.exe') -Force
 
-# --- 8. Compile ------------------------------------------------------------------------------------------
+# --- 8. Smoke test: boot the assembled package and require a healthy answer -------------------------------
+# This exists because two packaging bugs shipped in the first build (doc 14 section 8.2). Both
+# made every request return 500, and neither was visible in anything short of running the thing:
+# typecheck, tests and the ABI assertion were all green. The only check that would have caught
+# them is the one that starts the package the way the service starts it.
+#
+# It demands `status: ok`, not merely an HTTP 200. `/api/health` answers 200 while degraded on
+# purpose (doc 14 section 5.1), so a 200 alone proves nothing about whether the app works.
+if (-not $SkipSmokeTest) {
+  Write-Output '-- smoke test'
+  $smokeDir = Join-Path $env:TEMP "buybox-smoke-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+  New-Item -ItemType Directory -Path $smokeDir -Force | Out-Null
+  $smokePort = 3999
+  $smokeKey = & (Join-Path $nodeDir 'node.exe') -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))"
+  Set-Content -Path (Join-Path $smokeDir '.env.local') -Encoding utf8 -Value @(
+    "DATABASE_URL=file:$(Join-Path $smokeDir 'app.db')",
+    "SECRET_STORE_KEY=$smokeKey",
+    "SECRET_STORE_PATH=$(Join-Path $smokeDir 'secrets.enc.json')",
+    'SINGLE_PROCESS=1'
+  )
+
+  $env:NODE_ENV = 'production'
+  $env:PORT = "$smokePort"
+  $env:HOSTNAME = '127.0.0.1'
+  $env:AUTO_MIGRATE = '1'
+  $env:APP_VERSION = $Version
+  $env:PLAYWRIGHT_BROWSERS_PATH = $chromiumDir
+  $env:BUYBOX_MIGRATIONS_DIR = (Join-Path $appDir 'migrations')
+
+  $logPath = Join-Path $smokeDir 'smoke.log'
+  $proc = Start-Process -FilePath (Join-Path $nodeDir 'node.exe') `
+    -ArgumentList (Join-Path $appDir 'boot.mjs') `
+    -WorkingDirectory $smokeDir -PassThru -NoNewWindow `
+    -RedirectStandardOutput $logPath -RedirectStandardError "$logPath.err"
+
+  try {
+    $healthy = $false
+    $lastSeen = '(no response)'
+    $deadline = (Get-Date).AddSeconds(90)
+    while ((Get-Date) -lt $deadline) {
+      try {
+        $body = Invoke-RestMethod -Uri "http://127.0.0.1:$smokePort/api/health" -TimeoutSec 5
+        $lastSeen = ($body | ConvertTo-Json -Compress -Depth 6)
+        if ($body.status -eq 'ok') { $healthy = $true; break }
+      } catch {
+        $lastSeen = $_.Exception.Message
+      }
+      Start-Sleep -Seconds 3
+    }
+
+    if (-not $healthy) {
+      Write-Output '--- smoke log ---'
+      if (Test-Path $logPath) { Get-Content $logPath -Tail 40 | Write-Output }
+      if (Test-Path "$logPath.err") { Get-Content "$logPath.err" -Tail 40 | Write-Output }
+      throw "Smoke test failed: the packaged app never reported healthy. Last response: $lastSeen"
+    }
+
+    # The licence gate must send an unlicensed install to /license, not to an error page. This is
+    # what a customer sees first, and it is what returned 500 on the first real install.
+    try {
+      $root = Invoke-WebRequest -Uri "http://127.0.0.1:$smokePort/" -MaximumRedirection 0 -UseBasicParsing -TimeoutSec 10
+      $rootStatus = $root.StatusCode
+    } catch {
+      $rootStatus = $_.Exception.Response.StatusCode.value__
+    }
+    if ($rootStatus -ge 500) { throw "Smoke test failed: / returned $rootStatus." }
+
+    Write-Output "-- smoke test passed (health ok, / returned $rootStatus)"
+  } finally {
+    if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+    foreach ($name in @('PORT','HOSTNAME','AUTO_MIGRATE','APP_VERSION','PLAYWRIGHT_BROWSERS_PATH','BUYBOX_MIGRATIONS_DIR')) {
+      Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
+    }
+    Remove-Item $smokeDir -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
+# --- 9. Compile ------------------------------------------------------------------------------------------
 if ($SkipCompile) {
   Write-Output "Staging ready at $staging (compile skipped)."
   exit 0

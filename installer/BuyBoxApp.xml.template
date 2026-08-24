@@ -49,4 +49,7 @@
   <env name="AUTO_MIGRATE" value="1" />
   <env name="APP_VERSION" value="{{VERSION}}" />
   <env name="PLAYWRIGHT_BROWSERS_PATH" value="{{INSTALL_DIR}}\chromium" />
+  <!-- Bundling moves this module into a chunk, so the package cannot find its own
+       migrations by relative path (doc 14 section 8.2). Tell it where they are. -->
+  <env name="BUYBOX_MIGRATIONS_DIR" value="{{INSTALL_DIR}}\app\migrations" />
 </service>

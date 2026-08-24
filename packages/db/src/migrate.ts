@@ -27,8 +27,19 @@ import { sqliteFilePath } from './dialect.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-/** Default migrations folder for a dialect, relative to the package root. */
+/**
+ * Default migrations folder for a dialect.
+ *
+ * `BUYBOX_MIGRATIONS_DIR` first, because the relative resolution below cannot survive bundling.
+ * `@buybox/db` is in `transpilePackages`, so in a Next build this module ends up inside a bundle
+ * chunk and `import.meta.url` points at the chunk, not at the package -- which made the packaged
+ * app look for migrations at a path that has never existed on any machine. Found on a real
+ * install, 2026-08-24 (doc 14 section 8.2); the packaged app sets the variable, a checkout does
+ * not and keeps resolving relative to the package as before.
+ */
 export function defaultMigrationsFolder(dialect: AppDatabase['dialect']): string {
+  const override = process.env.BUYBOX_MIGRATIONS_DIR;
+  if (override) return path.join(override, dialect);
   return path.join(HERE, '..', 'migrations', dialect);
 }
 

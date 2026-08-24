@@ -42,6 +42,17 @@ powershell -ExecutionPolicy Bypass -File installer\build-package.ps1 -SkipTests
 powershell -ExecutionPolicy Bypass -File installer\build-package.ps1 -SkipCompile
 ```
 
+**Do not pass `-SkipSmokeTest` for anything you intend to ship.** The smoke test boots the
+assembled package the way the service boots it, against a throwaway data directory, and requires
+`/api/health` to report `status: ok`. It is the only step that exercises the *package* rather
+than the repository, and the two packaging bugs that reached a real install (doc 14 §8.2) were
+invisible to everything else — typecheck, the full test suite and the ABI assertion were all
+green while every request returned 500. The switch exists for iterating on the Inno Setup script,
+nothing more.
+
+When the smoke test fails it prints the last 40 lines of the packaged app's own log before
+throwing. That log is usually enough to name the missing file.
+
 ## What ends up in the package
 
 ```
