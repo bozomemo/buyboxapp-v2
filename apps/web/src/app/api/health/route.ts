@@ -15,8 +15,9 @@
  * this build, `degraded` while anything below that is still true.
  */
 import { NextResponse } from 'next/server';
-import { checkSchemaVersion } from '@buybox/db';
-import { getAppDb, isBootstrapped } from '@/lib/server/db';
+import { checkSchemaVersion, inferDialect, sqliteFilePath } from '@buybox/db';
+import { getAppDb, isBootstrapped, tryGetBootstrapEnv } from '@/lib/server/db';
+import { getWorkerStatus } from '@/lib/server/worker-status';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,13 +49,54 @@ async function describeDatabase(): Promise<DatabaseReport> {
   }
 }
 
+/**
+ * The database the *configuration* currently names, in the same form the worker reports — an
+ * absolute path for SQLite. Comparing the two is the whole point: the worker opens its
+ * connection once at boot and the setup wizard can rewrite `DATABASE_URL` afterwards, which on
+ * 2026-08-24 left one process running two halves against two different files, each of them
+ * individually healthy.
+ */
+function configuredDatabaseTarget(): string | undefined {
+  const env = tryGetBootstrapEnv();
+  if (!env) return undefined;
+  try {
+    return inferDialect(env.DATABASE_URL) === 'sqlite'
+      ? sqliteFilePath(env.DATABASE_URL)
+      : env.DATABASE_URL;
+  } catch {
+    return env.DATABASE_URL;
+  }
+}
+
 export async function GET() {
   const database = await describeDatabase();
-  const healthy = database.reachable && database.schema?.drift === 'up-to-date';
+  const worker = getWorkerStatus();
+  const configured = configuredDatabaseTarget();
+
+  const warnings: string[] = [];
+  // A worker on a different database than the web half is the failure this route exists to
+  // make visible. It is a `degraded`, not a note: jobs queue up and nothing ever runs them.
+  if (worker.running && configured && worker.databaseTarget !== configured) {
+    warnings.push(
+      `Worker farklı bir veritabanına bağlı (${worker.databaseTarget}), yapılandırma ise ${configured}. Servisi yeniden başlatın.`,
+    );
+  }
+  // Ticks are two seconds apart; a minute of silence means the loop has stopped, whatever the
+  // reason. Reported rather than diagnosed — the log is where the reason lives.
+  if (worker.running && worker.msSinceLastTick !== undefined && worker.msSinceLastTick > 60_000) {
+    warnings.push(`Worker ${Math.round(worker.msSinceLastTick / 1000)} saniyedir tick atmadı.`);
+  }
+
+  const healthy =
+    database.reachable && database.schema?.drift === 'up-to-date' && warnings.length === 0;
   return NextResponse.json({
     status: healthy ? 'ok' : 'degraded',
     version: process.env.APP_VERSION ?? null,
     database,
+    // `configured` is reported even when no worker runs here: on a split deployment the web
+    // process has no embedded worker at all, and `running: false` is then correct, not a fault.
+    worker: { ...worker, configuredDatabase: configured ?? null },
+    warnings,
     at: new Date().toISOString(),
   });
 }

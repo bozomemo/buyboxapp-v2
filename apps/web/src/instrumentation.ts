@@ -16,7 +16,14 @@ export async function register(): Promise<void> {
     const { startWorker } = await import('@buybox/worker');
     try {
       const handle = await startWorker();
-      console.log('[buybox] embedded worker started (SINGLE_PROCESS=1)');
+      // Recorded so `/api/health` and the Jobs screen can say whether the worker is running and
+      // which database it opened. A worker that starts and then quietly does nothing used to be
+      // indistinguishable from one that never started (see `lib/server/worker-status.ts`).
+      const { registerWorker } = await import('./lib/server/worker-status');
+      registerWorker(handle);
+      console.log(
+        `[buybox] embedded worker started (SINGLE_PROCESS=1), database: ${handle.databaseTarget}`,
+      );
       const { registerShutdown } = await import('./instrumentation-shutdown');
       registerShutdown(handle);
     } catch (error) {

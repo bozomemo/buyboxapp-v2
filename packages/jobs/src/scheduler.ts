@@ -28,6 +28,8 @@ export interface SchedulerOptions {
   readonly lockTtlMs?: number;
   /** How many ready jobs this instance claims and runs per `tick()`. */
   readonly maxClaimsPerTick?: number;
+  /** Called when a `startLoop()` tick rejects. Without it the failure would be invisible. */
+  readonly onTickError?: (error: unknown) => void;
 }
 
 export interface TickResult {
@@ -59,6 +61,22 @@ export async function isSystemPaused(appDb: AppDatabase): Promise<boolean> {
  *  `runner.ts` can use it too without a `scheduler.ts` ⇄ `runner.ts` import cycle. */
 export { isJobEnabled } from './job-catalog.js';
 
+/**
+ * What the last `tick()` did, for anything that needs to know the scheduler is alive — today
+ * `/api/health` and the Jobs screen.
+ *
+ * This exists because a worker that starts, ticks forever and does nothing looked exactly like
+ * a worker that never started at all: no rows written, no errors logged, nothing on any screen.
+ * Diagnosing one real occurrence (2026-08-24) took two hours of reading the SQLite file by hand.
+ * `outcome` is the reason the tick stopped where it did, so "nothing is running" can be
+ * answered with *why* rather than a shrug.
+ */
+export interface SchedulerTickReport {
+  readonly atMs: number;
+  readonly outcome: 'ran' | 'no-lock' | 'paused' | 'unlicensed';
+  readonly ranCount: number;
+}
+
 export class Scheduler {
   private readonly appDb: AppDatabase;
   private readonly clock: Clock;
@@ -70,6 +88,8 @@ export class Scheduler {
   private readonly inFlight = new Set<Promise<unknown>>();
   private loopHandle: ReturnType<typeof setInterval> | undefined;
   private holdsLock = false;
+  private lastTick: SchedulerTickReport | undefined;
+  private readonly onTickError: ((error: unknown) => void) | undefined;
 
   constructor(options: SchedulerOptions) {
     this.appDb = options.appDb;
@@ -77,6 +97,7 @@ export class Scheduler {
     this.instanceId = options.instanceId;
     this.lockTtlMs = options.lockTtlMs ?? 30_000;
     this.maxClaimsPerTick = options.maxClaimsPerTick ?? 5;
+    this.onTickError = options.onTickError;
     this.runner = new JobRunner(
       this.appDb,
       this.clock,
@@ -128,6 +149,7 @@ export class Scheduler {
     );
     this.holdsLock = heldLock;
     if (!heldLock) {
+      this.lastTick = { atMs: nowMs, outcome: 'no-lock', ranCount: 0 };
       return { heldLock: false, paused: false, unlicensed: false, enqueued: [], ran: [] };
     }
 
@@ -136,6 +158,7 @@ export class Scheduler {
     // queued, of any kind. Deliberately separate from `SubmitPriceChanges`'s own, narrower
     // switch (see that job's doc comment): this one stops imports and observation too.
     if (await isSystemPaused(this.appDb)) {
+      this.lastTick = { atMs: nowMs, outcome: 'paused', ranCount: 0 };
       return { heldLock: true, paused: true, unlicensed: false, enqueued: [], ran: [] };
     }
 
@@ -144,6 +167,7 @@ export class Scheduler {
     // boot, so pasting a renewal restores the system within one interval and without a restart
     // (R-LIC-5). The process deliberately stays up and keeps ticking; it must not crash-loop.
     if (!(await isLicensed(this.appDb, nowMs))) {
+      this.lastTick = { atMs: nowMs, outcome: 'unlicensed', ranCount: 0 };
       return { heldLock: true, paused: false, unlicensed: true, enqueued: [], ran: [] };
     }
 
@@ -184,13 +208,28 @@ export class Scheduler {
       await settled; // sequential within a tick — concurrency comes from calling tick() itself concurrently
     }
 
+    this.lastTick = { atMs: nowMs, outcome: 'ran', ranCount: ran.length };
     return { heldLock: true, paused: false, unlicensed: false, enqueued, ran };
   }
 
-  /** Real-timer loop for `apps/worker`. Not exercised by unit tests (see file doc comment). */
+  /** The last completed `tick()`, or `undefined` if none has finished yet. */
+  get lastTickReport(): SchedulerTickReport | undefined {
+    return this.lastTick;
+  }
+
+  /**
+   * Real-timer loop for `apps/worker`. Not exercised by unit tests (see file doc comment).
+   *
+   * The rejection handler is not decoration. `void this.tick()` on its own makes any failure an
+   * unhandled rejection, which Node terminates the process for — taking the web server down
+   * with it in single-process mode, over what may be one transient database error. A tick that
+   * fails is logged and the next one is attempted.
+   */
   startLoop(intervalMs = 2000): void {
     this.loopHandle = setInterval(() => {
-      void this.tick();
+      void this.tick().catch((error: unknown) => {
+        this.onTickError?.(error);
+      });
     }, intervalMs);
   }
 

@@ -78,11 +78,62 @@ interface CircuitBreakerRow {
   updatedAt: number;
 }
 
+/**
+ * Why the queue might not be moving. Every field here has, at least once, held every job in the
+ * system while this screen showed a perfectly ordinary "Kuyrukta" and no error anywhere.
+ */
+interface SchedulerStatus {
+  running: boolean;
+  systemPaused: boolean;
+  databaseTarget?: string;
+  lastTickAt?: string;
+  msSinceLastTick?: number;
+  lastTickOutcome?: string;
+}
+
 interface JobsOverview {
   jobs: JobRow[];
+  scheduler?: SchedulerStatus;
   queueDepth: Record<string, number>;
   claimed: ClaimedJob[];
   circuitBreakers: CircuitBreakerRow[];
+}
+
+/**
+ * The banner that answers "why is nothing running?" in one line.
+ *
+ * Returns nothing when the scheduler is ticking normally — a healthy system should not carry a
+ * status bar it never needs. `running: false` is only reported when this process is *supposed*
+ * to host the worker; a split deployment sends `scheduler` absent instead of false.
+ */
+function SchedulerBanner({ status }: { status: SchedulerStatus | undefined }) {
+  if (!status) return null;
+
+  let message: string | undefined;
+  if (status.systemPaused) {
+    message =
+      'Genel durdurma açık — hiçbir iş çalışmıyor. Panel ekranından devam ettirin.';
+  } else if (!status.running) {
+    message =
+      'Worker çalışmıyor — kuyruktaki işleri alacak kimse yok. Servis günlüğünü kontrol edin.';
+  } else if (status.msSinceLastTick !== undefined && status.msSinceLastTick > 60_000) {
+    message = `Worker ${Math.round(status.msSinceLastTick / 1000)} saniyedir tick atmadı — kuyruk ilerlemiyor olabilir.`;
+  } else if (status.lastTickOutcome === 'unlicensed') {
+    message = 'Lisans geçersiz veya süresi dolmuş — scheduler hiçbir iş çalıştırmıyor.';
+  } else if (status.lastTickOutcome === 'no-lock') {
+    message =
+      'Scheduler kilidi başka bir instance’da — bu süreç hiçbir iş çalıştırmıyor.';
+  }
+
+  if (!message) return null;
+  return (
+    <div className="rounded border border-(--color-warning) bg-(--color-warning-bg) px-4 py-3 text-sm">
+      {message}
+      {status.databaseTarget && (
+        <div className="mt-1 text-xs text-(--color-muted)">Worker veritabanı: {status.databaseTarget}</div>
+      )}
+    </div>
+  );
 }
 
 interface JobRunRow {
@@ -650,6 +701,7 @@ export function JobsClient() {
   return (
     <div className="space-y-8">
       {error && <p className="text-(--color-danger)">{error}</p>}
+      <SchedulerBanner status={overview?.scheduler} />
 
       <section>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">

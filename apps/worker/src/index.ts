@@ -35,7 +35,9 @@ import {
   checkSchemaVersion,
   configRepo,
   createDb,
+  inferDialect,
   jobsRepo,
+  sqliteFilePath,
   type AppDatabase,
 } from '@buybox/db';
 import {
@@ -94,7 +96,25 @@ export interface WorkerHandle {
   readonly appDb: AppDatabase;
   readonly adapters: MarketplaceAdapterRegistry;
   readonly competitorSources: CompetitorSourceRegistry;
+  /**
+   * The database this worker actually opened, resolved to an absolute SQLite path where that
+   * applies. Reported so `/api/health` can compare it against the configured `DATABASE_URL`:
+   * the worker opens its connection once at boot, while the setup wizard can rewrite the
+   * setting afterwards, and on 2026-08-24 that left the two halves of one process running
+   * against two different files with no error on either side.
+   */
+  readonly databaseTarget: string;
+  readonly startedAtMs: number;
   shutdown(): Promise<void>;
+}
+
+/** Absolute file path for SQLite, the URL itself otherwise — something two processes can compare. */
+export function describeDatabaseTarget(databaseUrl: string): string {
+  try {
+    return inferDialect(databaseUrl) === 'sqlite' ? sqliteFilePath(databaseUrl) : databaseUrl;
+  } catch {
+    return databaseUrl;
+  }
 }
 
 async function buildAdapter(
@@ -323,6 +343,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     adapters,
     competitorSources,
     instanceId: `worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
+    // A rejected tick must not become an unhandled rejection: in single-process mode that
+    // terminates the web server too. Log it and let the next tick try again.
+    onTickError: (error) => logger.error('scheduler.tickFailed', { error }),
   });
 
   scheduler.register({
@@ -417,6 +440,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     appDb,
     adapters,
     competitorSources,
+    databaseTarget: describeDatabaseTarget(env.DATABASE_URL),
+    startedAtMs: Date.now(),
     async shutdown() {
       for (const ticker of tickers) clearInterval(ticker);
       await scheduler.shutdown();

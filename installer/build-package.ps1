@@ -197,8 +197,12 @@ if (-not $SkipSmokeTest) {
   New-Item -ItemType Directory -Path $smokeDir -Force | Out-Null
   $smokePort = 3999
   $smokeKey = & (Join-Path $nodeDir 'node.exe') -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))"
+  # Deliberately RELATIVE. An absolute path cannot reproduce the 2026-08-24 split, where the
+  # embedded worker and the web half resolved one setting into two different files because Next
+  # chdirs during boot. With BUYBOX_DATA_DIR set (as the service sets it) both must land on the
+  # same file, and the assertion below is what proves it.
   Set-Content -Path (Join-Path $smokeDir '.env.local') -Encoding utf8 -Value @(
-    "DATABASE_URL=file:$(Join-Path $smokeDir 'app.db')",
+    "DATABASE_URL=file:./data/app.db",
     "SECRET_STORE_KEY=$smokeKey",
     "SECRET_STORE_PATH=$(Join-Path $smokeDir 'secrets.enc.json')",
     'SINGLE_PROCESS=1'
@@ -211,6 +215,7 @@ if (-not $SkipSmokeTest) {
   $env:APP_VERSION = $Version
   $env:PLAYWRIGHT_BROWSERS_PATH = $chromiumDir
   $env:BUYBOX_MIGRATIONS_DIR = (Join-Path $appDir 'migrations')
+  $env:BUYBOX_DATA_DIR = $smokeDir
 
   $logPath = Join-Path $smokeDir 'smoke.log'
   $proc = Start-Process -FilePath (Join-Path $nodeDir 'node.exe') `
@@ -240,6 +245,19 @@ if (-not $SkipSmokeTest) {
       throw "Smoke test failed: the packaged app never reported healthy. Last response: $lastSeen"
     }
 
+    # The worker must be running, and on the SAME database as the web half. This is the check
+    # that would have caught the failure the first customer install actually hit (doc 14 section
+    # 8.4): a healthy web server, a healthy worker, two databases, and every job queued forever.
+    # `status: ok` alone does not cover it -- both halves were individually fine.
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$smokePort/api/health" -TimeoutSec 10
+    if (-not $health.worker.running) {
+      throw 'Smoke test failed: the embedded worker is not running in the packaged app.'
+    }
+    if ($health.worker.databaseTarget -ne $health.worker.configuredDatabase) {
+      throw "Smoke test failed: worker database '$($health.worker.databaseTarget)' does not match configured '$($health.worker.configuredDatabase)'."
+    }
+    Write-Output "-- worker running on $($health.worker.databaseTarget)"
+
     # The licence gate must send an unlicensed install to /license, not to an error page. This is
     # what a customer sees first, and it is what returned 500 on the first real install.
     try {
@@ -253,7 +271,7 @@ if (-not $SkipSmokeTest) {
     Write-Output "-- smoke test passed (health ok, / returned $rootStatus)"
   } finally {
     if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-    foreach ($name in @('PORT','HOSTNAME','AUTO_MIGRATE','APP_VERSION','PLAYWRIGHT_BROWSERS_PATH','BUYBOX_MIGRATIONS_DIR')) {
+    foreach ($name in @('PORT','HOSTNAME','AUTO_MIGRATE','APP_VERSION','PLAYWRIGHT_BROWSERS_PATH','BUYBOX_MIGRATIONS_DIR','BUYBOX_DATA_DIR')) {
       Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
     }
     Remove-Item $smokeDir -Recurse -Force -ErrorAction SilentlyContinue

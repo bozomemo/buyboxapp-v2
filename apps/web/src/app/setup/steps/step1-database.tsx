@@ -1,22 +1,56 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Field, StatusBanner, TextInput } from '../ui';
 
 type Engine = 'sqlite' | 'postgres' | 'mysql';
 
-const DEFAULTS: Record<Engine, string> = {
-  sqlite: 'file:./data/app.db',
+/**
+ * SQLite deliberately has no compiled-in default: only the server knows where this deployment
+ * keeps its data, and the value it suggests is absolute. The constant that used to live here
+ * was `file:./data/app.db`, and that relative path is what split a real install's database in
+ * two on 2026-08-24 — the web process and the embedded worker resolved it at different moments,
+ * against different working directories, and each ran happily against its own file. The
+ * suggestion now comes from `/api/setup/database/suggest`; the server refuses a relative SQLite
+ * path outright.
+ */
+const DEFAULTS: Record<Exclude<Engine, 'sqlite'>, string> = {
   postgres: 'postgres://user:password@localhost:5432/buybox',
   mysql: 'mysql://user:password@localhost:3306/buybox',
 };
 
 export function Step1Database({ onDone }: { onDone: () => void }) {
   const [engine, setEngine] = useState<Engine>('sqlite');
-  const [connectionString, setConnectionString] = useState(DEFAULTS.sqlite);
+  const [connectionString, setConnectionString] = useState('');
+  const [suggestedSqlite, setSuggestedSqlite] = useState('');
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | undefined>();
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | undefined>();
   const [busy, setBusy] = useState(false);
+
+  // The SQLite suggestion is the server's to make — it is absolute, and only the server knows
+  // this deployment's data directory. Until it arrives the field stays empty rather than
+  // showing a placeholder value the operator might accept without reading.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/setup/database/suggest');
+        const data = (await res.json()) as { sqlite: string };
+        if (cancelled) return;
+        setSuggestedSqlite(data.sqlite);
+        setConnectionString((current) => (current === '' ? data.sqlite : current));
+      } catch {
+        // Leave the field empty; the operator can type a path and the server validates it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function defaultFor(next: Engine): string {
+    return next === 'sqlite' ? suggestedSqlite : DEFAULTS[next];
+  }
 
   async function testConnection() {
     setBusy(true);
@@ -70,7 +104,7 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
           onChange={(e) => {
             const next = e.target.value as Engine;
             setEngine(next);
-            setConnectionString(DEFAULTS[next]);
+            setConnectionString(defaultFor(next));
             setTestResult(undefined);
             setMigrateResult(undefined);
           }}
@@ -86,8 +120,14 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
         <TextInput
           value={connectionString}
           onChange={(e) => setConnectionString(e.target.value)}
-          placeholder={DEFAULTS[engine]}
+          placeholder={defaultFor(engine)}
         />
+        {engine === 'sqlite' && (
+          <p className="mt-1 text-xs text-(--color-muted)">
+            Mutlak bir yol olmalıdır. Göreli bir yol (örn. <code>file:./data/app.db</code>) uygulamanın
+            web ve worker parçalarının farklı dosyalar açmasına yol açar; sunucu bunu reddeder.
+          </p>
+        )}
       </Field>
 
       <div className="flex gap-2">

@@ -52,4 +52,10 @@
   <!-- Bundling moves this module into a chunk, so the package cannot find its own
        migrations by relative path (doc 14 section 8.2). Tell it where they are. -->
   <env name="BUYBOX_MIGRATIONS_DIR" value="{{INSTALL_DIR}}\app\migrations" />
+  <!-- The anchor a relative SQLite path resolves against, independent of the working directory
+       at the moment a connection is opened. Without it, Next's `process.chdir` during boot made
+       the embedded worker and the web half open two different database files from one setting
+       (2026-08-24). Paths written by the installer and the wizard are absolute anyway; this
+       makes a relative one harmless rather than silently destructive. -->
+  <env name="BUYBOX_DATA_DIR" value="{{DATA_DIR}}" />
 </service>

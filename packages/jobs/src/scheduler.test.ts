@@ -32,6 +32,109 @@ async function createUntouchedSqliteTestDb() {
 const emptyAdapters = new Map();
 
 describe('Scheduler', () => {
+  /**
+   * A worker that starts, ticks forever and does nothing looked exactly like a worker that
+   * never started: no rows, no errors, nothing on any screen. Diagnosing one real occurrence
+   * (2026-08-24) meant reading the SQLite file by hand. `lastTickReport` is what `/api/health`
+   * and the Jobs screen now read instead, so each early return has to be able to say why it
+   * stopped where it did.
+   */
+  describe('lastTickReport — says whether the scheduler is alive, and why it did nothing', () => {
+    it('is undefined until the first tick completes', async () => {
+      const { appDb, cleanup } = await createSqliteTestDb();
+      try {
+        const scheduler = new Scheduler({
+          appDb,
+          clock: new FakeClock(1000),
+          adapters: emptyAdapters,
+          instanceId: 'a',
+        });
+        expect(scheduler.lastTickReport).toBeUndefined();
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('reports `ran` with the tick time on a normal tick', async () => {
+      const { appDb, cleanup } = await createSqliteTestDb();
+      try {
+        const scheduler = new Scheduler({
+          appDb,
+          clock: new FakeClock(1000),
+          adapters: emptyAdapters,
+          instanceId: 'a',
+        });
+        await scheduler.tick();
+        expect(scheduler.lastTickReport).toEqual({ atMs: 1000, outcome: 'ran', ranCount: 0 });
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('reports `no-lock` for the instance that lost the lock, not silence', async () => {
+      const { appDb, cleanup } = await createSqliteTestDb();
+      try {
+        const clock = new FakeClock(1000);
+        const a = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a' });
+        const b = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'b' });
+        await a.tick();
+        await b.tick();
+        expect(a.lastTickReport?.outcome).toBe('ran');
+        expect(b.lastTickReport?.outcome).toBe('no-lock');
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('reports `paused` — the state a fresh install starts in', async () => {
+      const { appDb, cleanup } = await createUntouchedSqliteTestDb();
+      try {
+        const scheduler = new Scheduler({
+          appDb,
+          clock: new FakeClock(1000),
+          adapters: emptyAdapters,
+          instanceId: 'a',
+        });
+        await scheduler.tick();
+        expect(scheduler.lastTickReport?.outcome).toBe('paused');
+      } finally {
+        cleanup();
+      }
+    });
+  });
+
+  it('a failing tick is reported, not left to terminate the process', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      const scheduler = new Scheduler({
+        appDb,
+        clock: new FakeClock(1000),
+        adapters: emptyAdapters,
+        instanceId: 'a',
+        onTickError: () => {},
+      });
+      // `startLoop` used to do `void this.tick()`. In single-process mode an unhandled
+      // rejection there takes the web server down with the worker, over what may be one
+      // transient database error — so the loop reports and keeps going instead.
+      const errors: unknown[] = [];
+      const failing = new Scheduler({
+        appDb,
+        clock: new FakeClock(1000),
+        adapters: emptyAdapters,
+        instanceId: 'b',
+        onTickError: (error) => errors.push(error),
+      });
+      const boom = new Error('database went away');
+      failing.tick = () => Promise.reject(boom);
+      failing.startLoop(1);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await failing.shutdown(0);
+      expect(errors).toContain(boom);
+      expect(scheduler.lastTickReport).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
   it('two schedulers started against the same database — exactly one runs (doc 12 Phase 5.2 DoD)', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {

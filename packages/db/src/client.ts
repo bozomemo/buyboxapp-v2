@@ -37,9 +37,12 @@ export function createDb(databaseUrl: string, dialectOverride?: Dialect): AppDat
   const dialect = dialectOverride ?? inferDialect(databaseUrl);
 
   if (dialect === 'sqlite') {
+    // Absolute by the time it gets here, even if the URL was relative: `sqliteFilePath`
+    // anchors it on `appDataDir()` rather than on whatever the working directory happens to be
+    // at this instant. See that function for the split-database failure this prevents.
     const filePath = sqliteFilePath(databaseUrl);
-    // A fresh local install's setup wizard (doc 10 §6 step 1) offers `file:./data/app.db`
-    // before `./data` exists — better-sqlite3 refuses to create the parent directory itself.
+    // A developer checkout's wizard offers `file:./data/app.db` before `./data` exists —
+    // better-sqlite3 refuses to create the parent directory itself.
     if (filePath !== ':memory:') {
       mkdirSync(path.dirname(filePath), { recursive: true });
     }

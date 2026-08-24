@@ -5,7 +5,9 @@
 import { NextResponse } from 'next/server';
 import { circuitBreakerRepo, configRepo, jobsRepo } from '@buybox/db';
 import { getJobCadenceMs, JOB_CATALOG, jobCadenceSettingKey, jobEnabledSettingKey } from '@buybox/jobs';
+import { isSystemPaused } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
+import { getWorkerStatus } from '@/lib/server/worker-status';
 
 export async function GET() {
   const appDb = getAppDb();
@@ -87,8 +89,17 @@ export async function GET() {
     }),
   );
 
+  // Everything the Jobs screen needs to explain "queued, but nothing happens" without the
+  // operator having to guess. Each of these has silently held the whole queue at least once.
+  const worker = getWorkerStatus();
+  const scheduler = {
+    ...worker,
+    systemPaused: await isSystemPaused(appDb),
+  };
+
   return NextResponse.json({
     jobs,
+    scheduler,
     queueDepth: depth,
     claimed: claimed.map((j) => ({
       id: j.id,

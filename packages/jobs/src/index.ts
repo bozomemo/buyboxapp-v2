@@ -8,7 +8,14 @@ export type { JobContext, JobDefinition, JobHandler, JobProgress, JobResult } fr
 export { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, zeroResult } from './job.js';
 
 export { JobRunner } from './runner.js';
-export { isJobEnabled, Scheduler, type SchedulerOptions, type TickResult } from './scheduler.js';
+export {
+  isJobEnabled,
+  isSystemPaused,
+  Scheduler,
+  type SchedulerOptions,
+  type SchedulerTickReport,
+  type TickResult,
+} from './scheduler.js';
 export {
   getLicenseStatus,
   isLicensed,

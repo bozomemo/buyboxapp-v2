@@ -156,6 +156,7 @@ The installer writes `C:\ProgramData\BuyBox\.env.local`:
 | `PLAYWRIGHT_BROWSERS_PATH` | `C:\Program Files\BuyBox\chromium` | Absolute: it points into the code directory, not the data directory |
 | `AUTO_MIGRATE` | `1` | §5.2. Written **only** by the installer — a development checkout never has it |
 | `APP_VERSION` | the installed version | Names the build in `/api/health` and in backup filenames |
+| `BUYBOX_DATA_DIR` | `C:\ProgramData\BuyBox` | The anchor a relative SQLite path resolves against (§8.3). Set on the **service**, not in `.env.local` |
 
 `SECRET_STORE_KEY` is generated per install and never ships in the package. A key baked into
 the installer would be one key protecting every customer's marketplace credentials, which is
@@ -168,6 +169,13 @@ against exactly one window: `server.js` chdirs into the application directory wh
 (§4.1), and a relative path read during that window would quietly create a second, empty database
 under `Program Files` rather than failing. `boot.mjs` closes that window; absolute paths mean the
 operator's data does not depend on it having closed it.
+
+**That defence was not enough, and §8.4 records why.** The installer wrote an absolute path and
+the setup wizard then overwrote it with a relative one, because the wizard offered `file:./data/app.db`
+as its SQLite default. Guarding the value the installer writes does not guard the value the
+operator ends up with. Three things now hold the line instead of one: `BUYBOX_DATA_DIR` anchors a
+relative path wherever it comes from, the wizard suggests an absolute path supplied by the server,
+and the wizard's API refuses a relative SQLite path outright.
 
 These do not all live in the same place, and the split matters. `.env.local` holds only what the
 setup wizard can later change — `DATABASE_URL`, `SECRET_STORE_KEY`, `SECRET_STORE_PATH`,
@@ -407,7 +415,40 @@ Neither bug survives that check, and neither was catchable by anything cheaper.
 The lesson generalises beyond these two files. A package is a different artefact from the
 repository it was built from, and the only reliable way to know it works is to run it.
 
-### 8.3 Installer scripts are ASCII-only
+### 8.3 One `DATABASE_URL` must mean one database
+
+The first customer install reached the Jobs screen with two jobs queued, `failed: 0`, and
+nothing running — for two hours, with no error in any log. The web half was writing to
+`C:\ProgramData\BuyBox\data\app.db` and the embedded worker was polling
+`C:\ProgramData\BuyBox\app.db`. Both were healthy. Both were doing exactly what they were told.
+
+The setting was `DATABASE_URL=file:./data/app.db`. A relative SQLite path is resolved by whoever
+opens the connection, at the moment they open it — and the two halves of a single-process install
+open theirs under different working directories, because `server.js` calls `process.chdir(__dirname)`
+during boot (§4.1) and the embedded worker starts inside that window while every web request runs
+after `boot.mjs` has put the directory back.
+
+The value came from the setup wizard, which offered `file:./data/app.db` as its SQLite default and
+wrote it over the absolute path the installer had put there.
+
+Four changes, because no single one of them is sufficient:
+
+1. **`BUYBOX_DATA_DIR`** (§4.3) is the anchor a relative SQLite path resolves against, so the
+   answer no longer depends on *when* the connection is opened.
+2. **The wizard's SQLite suggestion comes from the server** (`/api/setup/database/suggest`) and is
+   absolute. There is no compiled-in relative default left to accept without reading.
+3. **The wizard's API refuses a relative SQLite path**, rather than silently rewriting what the
+   operator typed.
+4. **`/api/health` reports the worker** — whether it is running, when it last ticked, and which
+   database it opened — and reports `degraded` when that database is not the configured one. The
+   Jobs screen shows the same thing as a banner. The build's smoke test now asserts it, using a
+   deliberately relative `DATABASE_URL` so the split would reappear if the anchor regressed.
+
+The first three prevent this failure. The fourth is the one that matters more, because it is not
+about this failure: nothing in the product could answer "is the worker running, and is it looking
+at my database?" A component that can fail silently and completely needs a way to say so.
+
+### 8.4 Installer scripts are ASCII-only
 
 Also found by building, 2026-08-24. Windows PowerShell 5.1 — what a customer machine runs, and
 what the installer invokes — reads a BOM-less UTF-8 file as ANSI. One em dash in a comment became
