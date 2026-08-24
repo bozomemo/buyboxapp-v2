@@ -279,6 +279,42 @@ why a listing is polled at its rate.
 > at 1,000 calls/min; the constraint is not the API but the wasted work of re-observing
 > thousands of listings that are sitting quietly at their optimum.
 
+### 4.1 Not yet implemented — two gaps that only appear above ~200 listings
+
+Measured against the running 0.1.3 build, 2026-08-24. Neither shows up on a small catalogue,
+and neither reports an error when it does bite: the job completes, and some listings simply
+never appear in the data.
+
+**G-1 — the cycle counter is always zero, so the tier cadences above do nothing.**
+`apps/worker` passes a literal `{ cycleNumber: 0 }` on every `ObserveBuybox` and
+`ScrapeCompetitors` trigger. The counter is never incremented and never persisted, so
+`isDueThisCycle` / `isDueForScrape` evaluate `0 % 24 === 0` and `0 % 168 === 0` — both true,
+every time. **Warm is not daily and Cold is not weekly; every non-Frozen listing is treated as
+due on every cycle.** The table above describes an intent the code does not implement.
+
+*Consequence:* work and marketplace quota are spent at Hot rates on the entire observable
+catalogue. No price is wrong as a result — this costs calls, not correctness — but the scaling
+argument in the quote above does not currently hold.
+
+*Fix:* persist a per-marketplace cycle counter (an `app_settings` row is enough), increment it
+on each trigger, and pass it through. Table-driven tests per tier and cadence.
+
+**G-2 — nothing rotates past `SCRAPE_MAX_LISTINGS_PER_RUN`, so listings beyond it are never
+scraped at all.** `listObservableListings` has no `ORDER BY` and takes no offset, and
+`scrapeCompetitors` breaks out of its loop once `due` reaches the ceiling (200). The same first
+200 rows are therefore selected on every run, in whatever order the engine returns them.
+`scrape-config.ts` claims "listings beyond the ceiling are picked up on the next cycle"; that
+rotation does not exist.
+
+*Consequence:* at 1,000 observable listings, 200 are scraped hourly and **800 are never scraped**.
+The run reports `completed` with no failures, so nothing surfaces it. Reporting-only, so no
+pricing decision is wrong — but the competitor reports are silently partial. Note that
+`ObserveBuybox`, which *is* on the pricing path, has no such ceiling and is unaffected.
+
+*Fix:* order the candidate query by last successful scrape (oldest first, nulls first) so the
+ceiling becomes a rotation rather than a permanent cut-off. Test with more candidates than the
+ceiling, asserting that two consecutive runs cover disjoint sets.
+
 ---
 
 ## 5. Budget management

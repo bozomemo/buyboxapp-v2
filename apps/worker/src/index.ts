@@ -431,6 +431,11 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     tickers.push(setInterval(() => void fire(), intervalMs));
   };
   everyMarketplace(IMPORT_LISTINGS_JOB, importListingsCadenceMs);
+  // !! `cycleNumber: 0` is a literal, here and on the scrape ticker below, and it is never
+  // incremented or persisted. Both jobs' tier cadences are `cycleNumber % N === 0`, so a
+  // permanent zero makes every tier due on every cycle: Warm is not daily and Cold is not
+  // weekly (doc 07 §4 describes the intent, §4.1 gap G-1 records that this does not implement
+  // it). Costs quota, not correctness. Fix is a per-marketplace counter in `app_settings`.
   everyMarketplace(OBSERVE_BUYBOX_JOB, observeBuyboxCadenceMs, { cycleNumber: 0 });
   everyMarketplace(REPRICE_JOB, repriceCadenceMs, { mode: 'live' });
   everyMarketplace(SUBMIT_PRICE_CHANGES_JOB, submitPriceChangesCadenceMs);

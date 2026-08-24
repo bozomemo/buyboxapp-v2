@@ -16,7 +16,13 @@ export const SCRAPE_COLD_EVERY_N_CYCLES = 168;
 /**
  * Ceiling on pages fetched per run, so one cycle can never turn into an unbounded crawl of the
  * whole catalogue — the legacy scraper's dominant cost and main fragility (doc 04 §1.5).
- * Listings beyond the ceiling are picked up on the next cycle.
+ *
+ * !! Listings beyond the ceiling are **not** currently picked up on the next cycle, though this
+ * comment used to say they were. `listObservableListings` has no `ORDER BY` and takes no offset,
+ * so every run selects the same first rows and breaks at the ceiling: above 200 observable
+ * listings the remainder are never scraped, with the run still reporting `completed`. Recorded
+ * as gap G-2 in doc 07 §4.1 (2026-08-24) with the fix — order by last successful scrape so the
+ * ceiling becomes a rotation.
  */
 export const SCRAPE_MAX_LISTINGS_PER_RUN = 200;
 
