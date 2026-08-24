@@ -323,6 +323,38 @@ a default and becomes a decision.
 The pause stays fail-closed everywhere else, and the Jobs screen now names it as the reason
 nothing is running (§5.1).
 
+### 5.4 The wizard must offer the database the install already has
+
+The installer writes `DATABASE_URL=file:<data dir>\app.db` before the operator ever reaches the
+wizard (§4.3). The wizard's database step then *suggested a path of its own* —
+`<data dir>\data\app.db`, one directory deeper, because it appended a `data` segment that only a
+checkout needs: `BUYBOX_DATA_DIR` **is** the data directory, it does not contain one.
+
+Accepting that suggestion, which is the obvious thing to do, migrated and adopted a **second**
+database while the running service kept the first open. Both were healthy, both were live, and
+neither saw the other's jobs. Measured on a real install 2026-08-24: the web wrote configuration
+to `C:\ProgramData\BuyBox\data\app.db` while the worker ticked against
+`C:\ProgramData\BuyBox\app.db`, reporting `paused` forever.
+
+It also silently discarded the licence. The licence gate stands in front of the wizard (doc 13
+§6), so the operator had already activated one — into the *outgoing* database. The new one had no
+licence row, so finishing setup returned them to `/license` with no explanation, which is the loop
+the operator was stuck in.
+
+Two rules, both now enforced:
+
+1. **An install that is already configured is offered its own database, never a reconstructed
+   guess at one** (`/api/setup/database/suggest`). A path is derived only when there is nothing to
+   read — the one case where no second database can exist yet. The wizard says so on screen, so
+   the operator knows that accepting it is correct and that typing another path is what splits it.
+2. **A deliberate change of database carries the licence forward**
+   (`/api/setup/database/migrate`). Moving to PostgreSQL is legitimate and must not lock the
+   operator out of the screen they would fix it from. Best-effort: it never fails a migration that
+   is otherwise fine.
+
+`/api/health` already compared the worker's open database against the configured one and warned
+when they diverged (§5.1) — that warning is what identified this, and it stays.
+
 ## 6. Database
 
 SQLite is the installed default (`DATABASE_URL=file:app.db`). It adds no dependency, no service,

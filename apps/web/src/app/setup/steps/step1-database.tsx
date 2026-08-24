@@ -23,6 +23,11 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
   const [engine, setEngine] = useState<Engine>('sqlite');
   const [connectionString, setConnectionString] = useState('');
   const [suggestedSqlite, setSuggestedSqlite] = useState('');
+  // True when the suggestion is the database this install is *already* using, rather than a
+  // path derived for a deployment that has none yet. Worth saying out loud: an operator who
+  // cannot tell the difference edits the value, and editing it here is what creates a second
+  // database (see the suggest route's doc comment).
+  const [suggestionIsConfigured, setSuggestionIsConfigured] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | undefined>();
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | undefined>();
   const [busy, setBusy] = useState(false);
@@ -35,9 +40,10 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
     void (async () => {
       try {
         const res = await fetch('/api/setup/database/suggest');
-        const data = (await res.json()) as { sqlite: string };
+        const data = (await res.json()) as { sqlite: string; configured?: boolean };
         if (cancelled) return;
         setSuggestedSqlite(data.sqlite);
+        setSuggestionIsConfigured(data.configured === true);
         setConnectionString((current) => (current === '' ? data.sqlite : current));
       } catch {
         // Leave the field empty; the operator can type a path and the server validates it.
@@ -122,6 +128,13 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
           onChange={(e) => setConnectionString(e.target.value)}
           placeholder={defaultFor(engine)}
         />
+        {engine === 'sqlite' && suggestionIsConfigured && connectionString === suggestedSqlite && (
+          <p className="mt-1 text-xs text-(--color-success)">
+            Bu, kurulumun hâlihazırda kullandığı veritabanıdır. Değiştirmeniz gerekmiyor — başka bir
+            yol yazarsanız ikinci bir veritabanı oluşur ve servis yeniden başlatılana kadar worker
+            eskisini kullanmaya devam eder.
+          </p>
+        )}
         {engine === 'sqlite' && (
           <p className="mt-1 text-xs text-(--color-muted)">
             Mutlak bir yol olmalıdır. Göreli bir yol (örn. <code>file:./data/app.db</code>) uygulamanın
