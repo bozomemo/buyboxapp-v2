@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configRepo, createDb, runMigrations } from '@buybox/db';
+import { IMPORT_LISTINGS_JOB, jobCadenceSettingKey, REPRICE_JOB } from '@buybox/jobs';
 import { FileSecretStore, marketplaceCredentialsKey } from '@buybox/shared';
 import { startWorker } from './index.js';
 
@@ -90,6 +91,48 @@ describe('startWorker', () => {
     } finally {
       vi.useRealTimers();
     }
+    appDb.close();
+  });
+
+  /**
+   * The Jobs screen's "next run" column and its pending-restart badge are both derived from this
+   * map, so it has to be the cadence the tickers were really built from — not a re-read of
+   * `app_settings`, which is exactly the value that can disagree with a running worker.
+   */
+  it('reports the cadence it actually booted with, including an operator override', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'buybox-worker-test-'));
+    const dbFile = path.join(dir, 'test.db');
+    const appDb = createDb(`file:${dbFile}`, 'sqlite');
+    await runMigrations(appDb);
+
+    // ImportListings defaults to 30 minutes (JOB_CATALOG); override it to 10.
+    await configRepo.setAppSetting(
+      appDb,
+      {
+        key: jobCadenceSettingKey(IMPORT_LISTINGS_JOB),
+        value: JSON.stringify(10 * 60_000),
+        updatedBy: 'test',
+        updatedAt: Date.now(),
+      },
+      'test-setting-id',
+    );
+
+    const handle = await startWorker({
+      appDb,
+      env: {
+        DATABASE_URL: `file:${dbFile}`,
+        SECRET_STORE_KEY: 'test-key',
+        SECRET_STORE_PATH: path.join(dir, 'secrets.enc.json'),
+      },
+    });
+
+    expect(handle.cadenceMsByJobName.get(IMPORT_LISTINGS_JOB)).toBe(10 * 60_000);
+    // An untouched job still reports its catalogue default, not the override above.
+    expect(handle.cadenceMsByJobName.get(REPRICE_JOB)).toBe(5 * 60_000);
+    // `ImportBundles` has no cadence at all and must not appear as though it had one.
+    expect(handle.cadenceMsByJobName.has('ImportBundles')).toBe(false);
+
+    await handle.shutdown();
     appDb.close();
   });
 

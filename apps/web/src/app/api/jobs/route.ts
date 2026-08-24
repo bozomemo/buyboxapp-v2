@@ -7,7 +7,7 @@ import { circuitBreakerRepo, configRepo, jobsRepo } from '@buybox/db';
 import { getJobCadenceMs, JOB_CATALOG, jobCadenceSettingKey, jobEnabledSettingKey } from '@buybox/jobs';
 import { isSystemPaused } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
-import { getWorkerStatus } from '@/lib/server/worker-status';
+import { getWorkerCadences, getWorkerStatus } from '@/lib/server/worker-status';
 
 export async function GET() {
   const appDb = getAppDb();
@@ -21,6 +21,10 @@ export async function GET() {
     circuitBreakerRepo.listCircuitBreakerStates(appDb),
   ]);
   const latestByName = new Map(latestRuns.map((r) => [r.jobName, r]));
+  // What the worker is *actually* firing at, which is not necessarily what is stored: cadence is
+  // read once at worker boot (doc 07 §8.1). Empty when no worker runs in this process, in which
+  // case there is no live value to contradict the stored one and the stored one is all we have.
+  const workerCadences = getWorkerCadences();
   const claimed = active.filter((j) => j.state === 'locked');
   // Both halves of "this job is busy", kept separate because they mean different things to the
   // operator: `queued` is a row the worker has not picked up yet (a manual run spends up to one
@@ -48,14 +52,27 @@ export async function GET() {
         getJobCadenceMs(appDb, entry.jobName),
         entry.cadenceMs !== null ? configRepo.getAppSetting(appDb, jobCadenceSettingKey(entry.jobName)) : undefined,
       ]);
+      // The live cadence wins over the stored one for anything predictive. Saving an override
+      // used to move this column immediately while the worker kept its boot-time interval, so
+      // the screen promised a run at a time nothing was going to run at — the same column
+      // sitting next to the note saying a change needs a restart. `pendingRestart` is that
+      // disagreement made explicit, so the operator is told to restart rather than left to
+      // notice the times were wrong.
+      const liveCadenceMs = workerCadences.get(entry.jobName);
+      const effectiveCadenceMs = liveCadenceMs ?? cadenceMs;
+      const pendingRestart = liveCadenceMs !== undefined && cadenceMs !== null && liveCadenceMs !== cadenceMs;
       const nextRunAt =
-        cadenceMs !== null && enabled
-          ? (lastRun?.finishedAt ?? lastRun?.startedAt ?? nowMs) + cadenceMs
+        effectiveCadenceMs !== null && enabled
+          ? (lastRun?.finishedAt ?? lastRun?.startedAt ?? nowMs) + effectiveCadenceMs
           : null;
       return {
         jobName: entry.jobName,
         label: entry.label,
         cadenceMs,
+        /** What the running worker is firing at, when one runs here — else `null`. */
+        liveCadenceMs: liveCadenceMs ?? null,
+        /** Saved cadence differs from the running worker's: a restart would apply it. */
+        pendingRestart,
         isCadenceOverride: cadenceSetting !== undefined,
         defaultCadenceMs: entry.cadenceMs,
         perMarketplace: entry.perMarketplace,

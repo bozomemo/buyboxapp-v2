@@ -447,6 +447,23 @@ and uses that value for the process's lifetime — the same startup-time-read se
 rate limit and marketplace credentials already use. The Jobs screen says so next to the field so
 an operator does not expect an edit to change what fires immediately.
 
+The worker reports the cadences it actually booted with (`WorkerHandle.cadenceMsByJobName`), and
+the Jobs screen computes *Sonraki Çalışma* from those rather than from `app_settings`. Without
+that the screen contradicted itself: saving an override moved the predicted time immediately, in
+the column next to the note saying the change needed a restart. Where the saved value and the
+running one disagree the row is badged (doc 06 §7.3) — the state is derived on the server, so it
+survives a reload rather than vanishing with a transient "Kaydedildi".
+
+**Applying it: the restart button, not a PowerShell prompt** (`POST /api/jobs/worker/restart`,
+doc 06 §7.3). It restarts the *worker* — `shutdown()` then `startWorker()`, in place — and not
+the `BuyBoxApp` service. The web half and the worker share one process (doc 14 §3,
+`SINGLE_PROCESS=1`), so stopping the service would drop the connection carrying the response and
+leave the operator unable to tell whether it came back; restarting the worker keeps the UI up and
+returns a real outcome. Every value read at worker boot is re-read — cadence and the scrape rate
+limit alike — so this is the documented way to apply either. In-flight jobs are drained, not
+killed (`Scheduler.shutdown`). Environment-level configuration (`.env.local`, the service's own
+variables) belongs to the Next.js process and still needs a real service restart.
+
 ---
 
 ## 9. Kill switches

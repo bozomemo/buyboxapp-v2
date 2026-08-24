@@ -105,6 +105,19 @@ export interface WorkerHandle {
    */
   readonly databaseTarget: string;
   readonly startedAtMs: number;
+  /**
+   * The cadence, in milliseconds, this worker is *actually* firing each job at — resolved once
+   * at boot (`getJobCadenceMs`) and fixed for the process's lifetime, keyed by job name. Jobs
+   * with no cadence at all (`ImportBundles`) are absent.
+   *
+   * Reported for the same reason `databaseTarget` above is: the Jobs screen used to compute its
+   * "next run" column from the cadence stored in `app_settings`, which is the value an operator
+   * has *saved*, not the value anything is firing at. Saving an override therefore moved the
+   * displayed time immediately while the worker kept its boot-time interval — the screen
+   * contradicting, in the next column, its own "takes effect on the next restart" note. With
+   * this the screen can show what will really happen, and say plainly when the two differ.
+   */
+  readonly cadenceMsByJobName: ReadonlyMap<string, number>;
   shutdown(): Promise<void>;
 }
 
@@ -365,6 +378,20 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   const scrapeCompetitorsCadenceMs = scrapeCompetitorsCadence ?? 60_000;
   const importStockItemsCadenceMs = importStockItemsCadence ?? 60_000;
 
+  // Exactly the values the tickers below are built from — assembled here, next to them, so the
+  // two cannot drift. See `WorkerHandle.cadenceMsByJobName` for why anything outside needs them.
+  const cadenceMsByJobName = new Map<string, number>([
+    [PRUNE_HISTORY_JOB, pruneHistoryCadenceMs],
+    [IMPORT_LISTINGS_JOB, importListingsCadenceMs],
+    [OBSERVE_BUYBOX_JOB, observeBuyboxCadenceMs],
+    [REPRICE_JOB, repriceCadenceMs],
+    [SUBMIT_PRICE_CHANGES_JOB, submitPriceChangesCadenceMs],
+    [CONFIRM_SUBMISSIONS_JOB, confirmSubmissionsCadenceMs],
+    [RESET_BUDGET_JOB, resetBudgetCadenceMs],
+    [SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs],
+    [IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs],
+  ]);
+
   const scheduler = new Scheduler({
     appDb,
     clock: systemClock,
@@ -526,6 +553,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     },
     databaseTarget: describeDatabaseTarget(env.DATABASE_URL),
     startedAtMs: Date.now(),
+    cadenceMsByJobName,
     async shutdown() {
       for (const ticker of tickers) clearInterval(ticker);
       await scheduler.shutdown();

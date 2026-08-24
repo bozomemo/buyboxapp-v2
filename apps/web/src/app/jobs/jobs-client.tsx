@@ -39,6 +39,10 @@ interface JobRow {
   jobName: string;
   label: string;
   cadenceMs: number | null;
+  /** What the running worker actually fires this job at; `null` when no worker runs here. */
+  liveCadenceMs: number | null;
+  /** The saved cadence is not the one running — a worker restart would apply it. */
+  pendingRestart: boolean;
   isCadenceOverride: boolean;
   defaultCadenceMs: number | null;
   perMarketplace: boolean;
@@ -357,6 +361,7 @@ export function JobsClient() {
   /** Draft cadence per job, in **seconds** (fine enough for both the 30s and 60min defaults). */
   const [cadenceDraft, setCadenceDraft] = useState<Record<string, string>>({});
   const [cadenceSaved, setCadenceSaved] = useState<string | null>(null);
+  const [restartResult, setRestartResult] = useState<{ ok: boolean; message: string } | null>(null);
   /** Which job's detail panel is open, if any. One at a time — it is a drill-down, not a dashboard. */
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
@@ -696,7 +701,33 @@ export function JobsClient() {
     }
   }
 
+  /**
+   * Applies every saved-but-not-running cadence by restarting the worker in place (doc 07 §8.1).
+   * Not a service restart: this page keeps its connection and shows the outcome, which is the
+   * whole point of the button existing rather than an instruction to open PowerShell.
+   */
+  async function restartWorker() {
+    setBusy('worker-restart');
+    setRestartResult(null);
+    setError(null);
+    try {
+      const res = await fetch('/api/jobs/worker/restart', { method: 'POST' });
+      const data = (await res.json()) as { ok?: boolean; message?: string };
+      // A failed restart leaves the worker stopped; `loadOverview` refreshes the scheduler
+      // banner, which reports that far more usefully than this line can.
+      setRestartResult({ ok: res.ok && data.ok === true, message: data.message ?? 'Bilinmeyen hata' });
+      loadOverview();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!overview) return <p className="text-(--color-muted)">Yükleniyor…</p>;
+
+  const pendingRestartCount = overview.jobs.filter((job) => job.pendingRestart).length;
+  const runningCount = overview.jobs.filter((job) => job.activeRun !== null).length;
 
   return (
     <div className="space-y-8">
@@ -707,9 +738,41 @@ export function JobsClient() {
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           İş Kataloğu
         </h2>
-        <p className="mb-2 text-xs text-(--color-muted)">
-          Sıklık değişiklikleri worker&apos;ın bir sonraki yeniden başlatılmasında etkili olur, anında değil.
-        </p>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <p className="text-xs text-(--color-muted)">
+            Sıklık değişiklikleri worker yeniden başlatılınca etkili olur, kaydedilir kaydedilmez değil.
+          </p>
+          <button
+            type="button"
+            disabled={busy === 'worker-restart'}
+            onClick={restartWorker}
+            className={
+              pendingRestartCount > 0
+                ? 'rounded bg-(--color-warning) px-2 py-1 text-xs font-medium text-(--color-warning-ink)'
+                : 'rounded bg-(--color-chip-bg) px-2 py-1 text-xs text-(--color-chip-text)'
+            }
+          >
+            {busy === 'worker-restart'
+              ? 'Yeniden başlatılıyor…'
+              : pendingRestartCount > 0
+                ? `Worker'ı Yeniden Başlat (${pendingRestartCount} bekleyen)`
+                : "Worker'ı Yeniden Başlat"}
+          </button>
+          {/* Running jobs are drained, not killed (`Scheduler.shutdown`), so this is a warning
+              about how long the click takes — not about losing work. */}
+          {runningCount > 0 && busy !== 'worker-restart' && (
+            <span className="text-xs text-(--color-muted)">
+              {runningCount} iş çalışıyor — yeniden başlatma bitmelerini bekler.
+            </span>
+          )}
+          {restartResult && (
+            <span
+              className={`text-xs ${restartResult.ok ? 'text-(--color-success)' : 'text-(--color-danger)'}`}
+            >
+              {restartResult.message}
+            </span>
+          )}
+        </div>
         <TableFrame>
           <table className="w-full text-sm">
             <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
@@ -785,10 +848,21 @@ export function JobsClient() {
                         {cadenceSaved === job.jobName && (
                           <span className="text-xs text-(--color-success)">Kaydedildi</span>
                         )}
-                        <span className="text-xs text-(--color-muted)">
-                          (şu an: {formatCadence(job.cadenceMs)}
-                          {job.isCadenceOverride ? '' : ', varsayılan'})
-                        </span>
+                        {/* Survives a page reload, unlike "Kaydedildi" above: the disagreement
+                            is derived from the server's own comparison of the saved cadence
+                            against the running worker's, so an operator who saves and comes back
+                            tomorrow is still told the value is not in effect. */}
+                        {job.pendingRestart ? (
+                          <span className="text-xs text-(--color-warning)">
+                            ⚠ Kaydedildi, henüz geçerli değil — worker {formatCadence(job.liveCadenceMs)}{' '}
+                            çalışıyor. Yeniden başlatın.
+                          </span>
+                        ) : (
+                          <span className="text-xs text-(--color-muted)">
+                            (şu an: {formatCadence(job.cadenceMs)}
+                            {job.isCadenceOverride ? '' : ', varsayılan'})
+                          </span>
+                        )}
                       </div>
                     )}
                   </td>

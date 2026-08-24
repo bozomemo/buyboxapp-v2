@@ -17,8 +17,15 @@
  * hang instead of stopping the process at all. `shuttingDown` guards against a second signal (or
  * Next's own handler for the same one) re-entering mid-cleanup, and the timeout is a bound in
  * case `handle.shutdown()` itself stalls (e.g. a slow DB write) — better to exit late than never.
+ *
+ * Takes a *getter* rather than a handle, because the worker this process owns can be replaced
+ * while it runs: `restartWorker()` (lib/server/worker-status.ts) tears one down and starts
+ * another in its place. A captured handle would make these listeners shut down the worker that
+ * was current when the process booted — by then already stopped — and leave the live one's
+ * tickers and database connection running past the signal, which is precisely the leak this
+ * file was written to prevent.
  */
-export function registerShutdown(handle: { shutdown: () => Promise<void> }): void {
+export function registerShutdown(getHandle: () => { shutdown: () => Promise<void> } | undefined): void {
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
@@ -28,6 +35,14 @@ export function registerShutdown(handle: { shutdown: () => Promise<void> }): voi
       process.exit(0);
     }, 5000);
     forceExit.unref();
+    // No worker registered (a restart failed, or one is mid-flight) — nothing to drain, but the
+    // process must still exit, since registering a listener suppressed Node's own default.
+    const handle = getHandle();
+    if (!handle) {
+      clearTimeout(forceExit);
+      process.exit(0);
+      return;
+    }
     void handle
       .shutdown()
       .catch((error) => console.error('[buybox] embedded worker shutdown failed:', error))

@@ -388,6 +388,27 @@ since only the former lets the operator later tell "no override" from "override 
 match default". A note above the table repeats the same restart-to-apply honesty §7.2 already
 gives the scrape rate limit: a saved cadence takes effect on the worker's next restart, not live.
 
+*Sonraki Çalışma* is computed from the cadence the **running worker** booted with, never from the
+stored setting. Saving an override used to move that column immediately while the worker kept
+firing on its old interval — the screen predicting runs at times nothing would run at, one column
+away from the note saying the change needed a restart.
+
+Where the two disagree the row carries a persistent warning — *"Kaydedildi, henüz geçerli değil —
+worker <x> çalışıyor. Yeniden başlatın."* Persistent is the point: the transient "Kaydedildi"
+confirmation vanishes on the next reload, so an operator who saved yesterday had nothing left
+telling them the value was not in effect. The state is derived server-side (`pendingRestart` on
+`GET /api/jobs`) from the same comparison, so it cannot drift from the badge.
+
+**Worker'ı Yeniden Başlat** sits above the table, next to that note, and carries a count of the
+pending changes when there are any (`3 bekleyen`). It restarts the worker in place — not the
+`BuyBoxApp` service — so this page keeps its connection and shows the outcome; see doc 07 §8.1
+for why that distinction is what makes the button possible at all. It exists because the
+documented way to apply a cadence was `Restart-Service BuyBoxApp` from an elevated PowerShell
+prompt, which is not an action an operator will take to change how often a job runs. When jobs
+are running the button says so — they are drained, not killed, so the click takes as long as the
+longest in-flight handler. Where no worker runs in this process (a standalone `apps/worker`
+deployment) the route answers 409 saying which, rather than reporting a restart of nothing.
+
 ---
 
 ## 8. Events (`/events`)

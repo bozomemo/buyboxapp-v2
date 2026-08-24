@@ -19,13 +19,15 @@ export async function register(): Promise<void> {
       // Recorded so `/api/health` and the Jobs screen can say whether the worker is running and
       // which database it opened. A worker that starts and then quietly does nothing used to be
       // indistinguishable from one that never started (see `lib/server/worker-status.ts`).
-      const { registerWorker } = await import('./lib/server/worker-status');
+      const { registerWorker, getWorkerHandle } = await import('./lib/server/worker-status');
       registerWorker(handle);
       console.log(
         `[buybox] embedded worker started (SINGLE_PROCESS=1), database: ${handle.databaseTarget}`,
       );
       const { registerShutdown } = await import('./instrumentation-shutdown');
-      registerShutdown(handle);
+      // A getter, not `handle`: the Jobs screen's restart button replaces the worker in place
+      // (`restartWorker`), and these listeners must drain whichever one is current at the signal.
+      registerShutdown(getWorkerHandle);
     } catch (error) {
       // Setup not finished yet (no DATABASE_URL, or schema not migrated) — this is expected on
       // a fresh install before the wizard runs. The web UI still boots so /setup is reachable.
