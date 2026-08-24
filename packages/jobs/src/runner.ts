@@ -35,11 +35,30 @@ export class JobRunner {
   constructor(
     private readonly appDb: AppDatabase,
     private readonly clock: Clock,
-    private readonly adapters: MarketplaceAdapterRegistry,
+    private adapters: MarketplaceAdapterRegistry,
     private readonly definitions: ReadonlyMap<string, JobDefinition>,
     /** Reporting-only (doc 07 §7); absent when scraping is not configured. */
-    private readonly competitorSources?: CompetitorSourceRegistry,
+    private competitorSources?: CompetitorSourceRegistry,
   ) {}
+
+  /**
+   * Replaces the marketplace adapters and competitor sources this runner hands to handlers.
+   *
+   * Both registries used to be fixed for the lifetime of the process, built once from the
+   * credentials present at worker boot. On a fresh install there are none — the operator enters
+   * them in the setup wizard, which the worker is already past — so `ImportListings` failed with
+   * `No marketplace adapter registered for "trendyol"` and `ScrapeCompetitors` with
+   * `no competitor source registered`, on every new installation, until somebody restarted the
+   * service. Measured on a clean 0.1.2 install, 2026-08-24.
+   *
+   * The caller is responsible for only swapping while nothing is in flight (see
+   * `Scheduler.isIdle`): a handler holds whatever registry it was given for the duration of its
+   * run, and the outgoing competitor sources own a Playwright browser that is closed on replace.
+   */
+  setRegistries(adapters: MarketplaceAdapterRegistry, competitorSources?: CompetitorSourceRegistry): void {
+    this.adapters = adapters;
+    this.competitorSources = competitorSources;
+  }
 
   /** Runs the handler for an already-claimed row and settles its terminal `job_queue` state. */
   async runClaimed(claimed: jobsRepo.JobQueueRow): Promise<JobResult> {

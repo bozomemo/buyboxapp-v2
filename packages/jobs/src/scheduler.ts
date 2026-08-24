@@ -111,6 +111,30 @@ export class Scheduler {
     this.definitions.set(def.jobName, def);
   }
 
+  /**
+   * True when no job this scheduler started is still running.
+   *
+   * Exists so `apps/worker` can swap the adapter and competitor-source registries
+   * (`setRegistries`) at a moment when no handler is holding the outgoing ones — the competitor
+   * sources own a Playwright browser, and closing it under a running scrape would fail that
+   * scrape rather than the reload.
+   */
+  isIdle(): boolean {
+    return this.inFlight.size === 0;
+  }
+
+  /**
+   * Rebuilds what handlers are given when marketplace configuration changes, without a restart.
+   * See `JobRunner.setRegistries` for why this must be possible at all. Only call while
+   * `isIdle()`.
+   */
+  setRegistries(
+    adapters: MarketplaceAdapterRegistry,
+    competitorSources?: CompetitorSourceRegistry,
+  ): void {
+    this.runner.setRegistries(adapters, competitorSources);
+  }
+
   /** For an on-demand run (e.g. a UI "run now" button) — enqueues regardless of cadence. */
   async enqueueNow(jobName: string, payload: string, priority = 0): Promise<string> {
     const def = this.definitions.get(jobName);

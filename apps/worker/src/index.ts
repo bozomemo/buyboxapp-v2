@@ -290,6 +290,31 @@ async function ensureSchema(appDb: AppDatabase, env: BootstrapEnv): Promise<void
   }
 }
 
+/**
+ * How often the worker checks whether the operator has changed marketplace configuration.
+ *
+ * Cheap enough to be frequent — one indexed SELECT over a table with at most two rows — and
+ * short enough that finishing the setup wizard is followed by working jobs rather than by a
+ * support question.
+ */
+const MARKETPLACE_RELOAD_INTERVAL_MS = 10_000;
+
+/**
+ * A value that changes whenever marketplace configuration does.
+ *
+ * Both routes that store credentials (`setup/marketplace/save`, `settings/marketplaces`) upsert
+ * the marketplace row with a fresh `updatedAt` in the same request, so this covers a credential
+ * change as well as an enable/disable — without the credentials themselves ever being read
+ * here, which they must not be (CLAUDE.md: no credential in the app database).
+ */
+async function marketplaceConfigRevision(appDb: AppDatabase): Promise<string> {
+  const marketplaces = await configRepo.listMarketplaces(appDb);
+  return marketplaces
+    .map((m) => `${m.code}:${m.enabled ? 1 : 0}:${m.updatedAt}`)
+    .sort()
+    .join('|');
+}
+
 export async function startWorker(options: StartWorkerOptions = {}): Promise<WorkerHandle> {
   const env = parseBootstrapEnv(options.env ?? process.env);
   const appDb = options.appDb ?? createDb(env.DATABASE_URL);
@@ -297,10 +322,13 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   await ensureSchema(appDb, env);
 
   const secretStore = new FileSecretStore(env.SECRET_STORE_PATH, env.SECRET_STORE_KEY);
-  const adapters = await buildAdapters(appDb, secretStore);
+  // Deliberately `let`: rebuilt in place by `reloadIfConfigChanged` below when the operator
+  // configures a marketplace after this process booted, which on a fresh install is always.
+  let adapters = await buildAdapters(appDb, secretStore);
   // `SCRAPER_BROWSER_USER_AGENT` is the recorded exception for both reporting-only scrapers
   // (api-references §1.6, §2.11) — deployment configuration, not a constant.
-  const competitorSources = await buildCompetitorSources(appDb, adapters, env.SCRAPER_BROWSER_USER_AGENT);
+  let competitorSources = await buildCompetitorSources(appDb, adapters, env.SCRAPER_BROWSER_USER_AGENT);
+  let marketplaceConfig = await marketplaceConfigRevision(appDb);
 
   // Resolved once, at boot (doc 07 §8): a stored operator override if present, else
   // `JOB_CATALOG`'s compiled default.
@@ -376,7 +404,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     return (lastRun.finishedAt ?? lastRun.startedAt) + cadenceMs <= nowMs;
   };
 
-  const marketplaceCodes = [...adapters.keys()];
+  let marketplaceCodes = [...adapters.keys()];
   const tickers: ReturnType<typeof setInterval>[] = [];
   // Boot-time catch-up fires (see file doc comment) are awaited below, before `startWorker`
   // returns, rather than left fire-and-forget like the interval-triggered ones — otherwise a
@@ -431,6 +459,51 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   const importStockItemsTicker = setInterval(() => void fireImportStockItems(), importStockItemsCadenceMs);
   tickers.push(importStockItemsTicker);
 
+  /**
+   * Picks up marketplace configuration entered after this process booted.
+   *
+   * Everything a job needs to reach a marketplace used to be resolved exactly once, at boot. A
+   * fresh install has no credentials at that moment — the operator enters them in the setup
+   * wizard minutes later — so the registries stayed empty and every `ImportListings` failed with
+   * `No marketplace adapter registered for "trendyol"`, every `ScrapeCompetitors` with
+   * `no competitor source registered`, until somebody thought to restart the service. Nothing on
+   * any screen said so. Measured end-to-end on a clean 0.1.2 install, 2026-08-24.
+   *
+   * Deferred while a job is running: the outgoing competitor sources own a Playwright browser
+   * that is closed here, and closing it under a running scrape would fail that scrape instead of
+   * the reload. The check simply runs again in `MARKETPLACE_RELOAD_INTERVAL_MS`.
+   *
+   * The revision is read *before* the rebuild, so a change that lands mid-rebuild is picked up on
+   * the next pass rather than being recorded as already applied.
+   */
+  const reloadIfConfigChanged = async (): Promise<void> => {
+    const revision = await marketplaceConfigRevision(appDb);
+    if (revision === marketplaceConfig) return;
+    if (!scheduler.isIdle()) return;
+
+    const nextAdapters = await buildAdapters(appDb, secretStore);
+    const nextSources = await buildCompetitorSources(
+      appDb,
+      nextAdapters,
+      env.SCRAPER_BROWSER_USER_AGENT,
+    );
+    const outgoingSources = competitorSources;
+
+    adapters = nextAdapters;
+    competitorSources = nextSources;
+    marketplaceCodes = [...nextAdapters.keys()];
+    scheduler.setRegistries(nextAdapters, nextSources);
+    marketplaceConfig = revision;
+
+    await Promise.all([...outgoingSources.values()].map((source) => source.close?.()));
+    logger.info('worker.marketplacesReloaded', { marketplaces: marketplaceCodes });
+  };
+  tickers.push(
+    setInterval(() => {
+      void reloadIfConfigChanged().catch((error) => logger.error('worker.reloadFailed', { error }));
+    }, MARKETPLACE_RELOAD_INTERVAL_MS),
+  );
+
   // Boot isn't done until any overdue job this restart owes has at least been kicked off —
   // see `catchUpFires`'s doc comment above.
   await Promise.all(catchUpFires);
@@ -438,8 +511,14 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   return {
     scheduler,
     appDb,
-    adapters,
-    competitorSources,
+    // Getters, not snapshots: `reloadIfConfigChanged` replaces both, and a caller reading a
+    // boot-time copy would be told the install has no marketplaces long after it has one.
+    get adapters() {
+      return adapters;
+    },
+    get competitorSources() {
+      return competitorSources;
+    },
     databaseTarget: describeDatabaseTarget(env.DATABASE_URL),
     startedAtMs: Date.now(),
     async shutdown() {

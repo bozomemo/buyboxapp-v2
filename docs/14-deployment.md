@@ -355,6 +355,44 @@ Two rules, both now enforced:
 `/api/health` already compared the worker's open database against the configured one and warned
 when they diverged (§5.1) — that warning is what identified this, and it stays.
 
+### 5.5 The worker must pick up credentials entered after it booted
+
+The service starts before anybody has configured anything. On a fresh install that ordering is
+not a race, it is the only possible order: the worker boots, the operator then opens the wizard
+and enters marketplace credentials minutes later.
+
+Everything a job needs to reach a marketplace used to be resolved exactly once, at worker boot —
+the adapter registry, the reporting-only competitor sources, and the list of marketplace codes
+the cadence tickers enqueue for. All three were therefore empty for the life of the process on
+every new installation. Measured end-to-end on a clean 0.1.2 install, 2026-08-24:
+
+```
+ImportListings      failed   error="No marketplace adapter registered for \"trendyol\""
+ScrapeCompetitors   failed   error="no competitor source registered for trendyol"
+```
+
+`/api/health` reported `status: ok` throughout — the web half, the worker and the database were
+all genuinely fine — and nothing on any screen connected the failures to the missing restart.
+The operator's only route out was to restart the service, which they had no reason to suspect.
+
+**Rule: marketplace configuration is re-read while the worker runs, not only at boot.**
+`apps/worker` polls a cheap revision of the marketplace table (`code:enabled:updatedAt`, sorted)
+every 10 seconds and rebuilds the adapters, the competitor sources and the ticker's marketplace
+list when it changes. Both routes that store credentials upsert the marketplace row with a fresh
+`updatedAt` in the same request, so a credential change is covered as well as an enable/disable —
+without the credentials themselves ever being read to detect the change.
+
+Two constraints on the reload, both load-bearing:
+
+- **It is deferred while any job is in flight.** The outgoing competitor sources own a Playwright
+  browser which is closed on replace, and closing it under a running scrape would fail that
+  scrape rather than the reload. The check simply runs again on the next interval.
+- **The revision is read before the rebuild, never after.** A change landing mid-rebuild is then
+  picked up on the following pass instead of being recorded as already applied.
+
+Covered by `apps/worker/src/index.test.ts` — "picks up a marketplace configured after boot,
+without a restart".
+
 ## 6. Database
 
 SQLite is the installed default (`DATABASE_URL=file:app.db`). It adds no dependency, no service,
