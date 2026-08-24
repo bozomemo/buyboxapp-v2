@@ -428,6 +428,17 @@ The scheduler is DB-backed (doc 10 §1.2). Guarantees:
   since it was claimed, so switching a job off stops its own in-flight retry chain immediately
   rather than only preventing the *next* cadence-driven enqueue. A manual "run now" is
   unaffected: disabling only gates cadence enqueueing and retries, never an explicit trigger.
+- **One run at a time, per target.** A cadence-driven job is never enqueued while a copy of it
+  is still `ready` or `locked`. `Scheduler.tick` enforces this for the jobs it cadences itself
+  (`countActiveJobs`, keyed on job name); `apps/worker`'s per-marketplace tickers call
+  `enqueueNow` directly and so enforce it themselves with `countActiveJobsForPayload`, keyed on
+  job name **and payload**. The payload half is not optional: keying on the name alone would let
+  a slow Trendyol run suppress the Hepsiburada one, which stops repricing a marketplace instead
+  of merely wasting quota. Without the guard a job slower than its own cadence gains a queue row
+  on every tick and the backlog grows without bound — reachable in practice since cadence became
+  operator-editable (§8.1), whose 10 s floor is well under a real catalogue import. A skipped
+  tick is logged (`ticker.skippedStillActive`), because silently dropping every tick is
+  indistinguishable from the job never running.
 - **Graceful shutdown**: stop claiming, finish in-flight work, flush pending batches, release
   locks. Never drop a queued submission on shutdown (doc 09 §6).
 

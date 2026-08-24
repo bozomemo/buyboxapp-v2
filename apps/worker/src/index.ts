@@ -19,6 +19,14 @@
  * override takes effect on the worker's next restart, not mid-process — the same startup-time
  * read the scrape rate limit and marketplace credentials already use.
  *
+ * One run at a time, per target: these tickers call `scheduler.enqueueNow` directly and so do
+ * not pass through `Scheduler.tick`'s own `countActiveJobs` guard. Each `fire` therefore checks
+ * `countActiveJobsForPayload` itself before enqueueing, keying on job name *and* payload so that
+ * a slow Trendyol run never suppresses the Hepsiburada one. Without it a job slower than its own
+ * cadence enqueues a fresh copy on every tick and the backlog grows without bound — reachable
+ * since cadence became operator-editable (doc 07 §8.1), whose 10 s floor is well under a real
+ * catalogue import.
+ *
  * Catch-up on boot: `setInterval` only fires after a full `intervalMs` has elapsed, so a plain
  * `setInterval(fn, cadenceMs)` would make every job wait a whole fresh cadence period after each
  * restart before its first automatic run — even if the previous run finished long enough ago
@@ -449,13 +457,35 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       // doc 12 6.9 "enable/disable" — an operator-disabled job simply doesn't fire.
       if (!(await isJobEnabled(appDb, jobName))) return;
       for (const marketplaceCode of marketplaceCodes) {
-        void scheduler.enqueueNow(jobName, JSON.stringify({ marketplaceCode, ...extraPayload }));
+        const payload = JSON.stringify({ marketplaceCode, ...extraPayload });
+        // doc 07 §8 "one run at a time", per target. `Scheduler.tick` applies this to the jobs
+        // it cadences itself; these tickers bypass that path entirely by calling `enqueueNow`,
+        // so without this a job that takes longer than its cadence queues another copy of
+        // itself on every tick and the backlog only ever grows. Reachable in practice since
+        // cadence became operator-editable (doc 07 §8.1): `MIN_JOB_CADENCE_MS` allows 10 s,
+        // which is shorter than a real `ImportListings` over a full catalogue.
+        if ((await jobsRepo.countActiveJobsForPayload(appDb, jobName, payload)) > 0) {
+          // Not an error: a slower-than-cadence job is a legitimate state. Logged because the
+          // alternative — silently dropping every tick — is how "the job never runs" looks from
+          // the outside.
+          logger.info('ticker.skippedStillActive', { jobName, marketplaceCode });
+          continue;
+        }
+        await scheduler.enqueueNow(jobName, payload);
       }
     };
     if (isTickerDue(jobName, intervalMs, Date.now())) {
       catchUpFires.push(fire().catch((error) => logger.warn('ticker.catchUpFailed', { jobName, error })));
     }
-    tickers.push(setInterval(() => void fire(), intervalMs));
+    // Caught, not `void fire()`: an interval callback's rejection is an unhandled rejection,
+    // which Node terminates the process for — taking the web server down with it in
+    // single-process mode over one transient database error. Same reasoning as
+    // `Scheduler.startLoop`'s `onTickError`.
+    tickers.push(
+      setInterval(() => {
+        void fire().catch((error: unknown) => logger.error('ticker.fireFailed', { jobName, error }));
+      }, intervalMs),
+    );
   };
   everyMarketplace(IMPORT_LISTINGS_JOB, importListingsCadenceMs);
   // !! `cycleNumber: 0` is a literal, here and on the scrape ticker below, and it is never
@@ -479,7 +509,14 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       sourceCode: string;
       sourceConfig: unknown;
     };
-    await scheduler.enqueueNow(IMPORT_STOCK_ITEMS_JOB, JSON.stringify({ sourceCode, sourceConfig }));
+    const payload = JSON.stringify({ sourceCode, sourceConfig });
+    // Same "one run at a time" guard as `everyMarketplace` above — this job reads a whole
+    // product catalogue and is the likeliest of all of them to outlast its own cadence.
+    if ((await jobsRepo.countActiveJobsForPayload(appDb, IMPORT_STOCK_ITEMS_JOB, payload)) > 0) {
+      logger.info('ticker.skippedStillActive', { jobName: IMPORT_STOCK_ITEMS_JOB });
+      return;
+    }
+    await scheduler.enqueueNow(IMPORT_STOCK_ITEMS_JOB, payload);
   };
   if (isTickerDue(IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs, Date.now())) {
     catchUpFires.push(
@@ -488,7 +525,11 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       ),
     );
   }
-  const importStockItemsTicker = setInterval(() => void fireImportStockItems(), importStockItemsCadenceMs);
+  const importStockItemsTicker = setInterval(() => {
+    void fireImportStockItems().catch((error: unknown) =>
+      logger.error('ticker.fireFailed', { jobName: IMPORT_STOCK_ITEMS_JOB, error }),
+    );
+  }, importStockItemsCadenceMs);
   tickers.push(importStockItemsTicker);
 
   /**

@@ -79,6 +79,70 @@ export async function countActiveJobs(appDb: AppDatabase, jobName: string): Prom
 }
 
 /**
+ * Ready or locked rows for one job name **and one exact payload** — the per-target equivalent of
+ * `countActiveJobs` above.
+ *
+ * `countActiveJobs` keys on the job name alone, which is right for the scheduler's own cadence
+ * loop (those jobs take no payload) but wrong for `apps/worker`'s per-marketplace tickers: a
+ * running Trendyol `ImportListings` would suppress the Hepsiburada one, starving whichever
+ * marketplace happened to be slower. Matching the payload too keeps the two targets independent
+ * while still preventing a target from being queued behind itself.
+ *
+ * Payload equality is exact string equality, which is sound here because every caller builds the
+ * payload with the same `JSON.stringify` of the same literal shape on every tick, so the same
+ * target always produces byte-identical JSON. It is deliberately not a semantic JSON comparison:
+ * a payload that does not match exactly enqueues, which is the safe direction to err in — a
+ * duplicate run wastes quota, a wrongly-suppressed one silently stops repricing a marketplace.
+ */
+export async function countActiveJobsForPayload(
+  appDb: AppDatabase,
+  jobName: string,
+  payload: string,
+): Promise<number> {
+  return withDialect(appDb, {
+    sqlite: async (db) =>
+      (
+        await db
+          .select()
+          .from(sqliteSchema.jobQueue)
+          .where(
+            and(
+              eq(sqliteSchema.jobQueue.jobName, jobName),
+              eq(sqliteSchema.jobQueue.payload, payload),
+              inArray(sqliteSchema.jobQueue.state, ['ready', 'locked']),
+            ),
+          )
+      ).length,
+    postgres: async (db) =>
+      (
+        await db
+          .select()
+          .from(postgresSchema.jobQueue)
+          .where(
+            and(
+              eq(postgresSchema.jobQueue.jobName, jobName),
+              eq(postgresSchema.jobQueue.payload, payload),
+              inArray(postgresSchema.jobQueue.state, ['ready', 'locked']),
+            ),
+          )
+      ).length,
+    mysql: async (db) =>
+      (
+        await db
+          .select()
+          .from(mysqlSchema.jobQueue)
+          .where(
+            and(
+              eq(mysqlSchema.jobQueue.jobName, jobName),
+              eq(mysqlSchema.jobQueue.payload, payload),
+              inArray(mysqlSchema.jobQueue.state, ['ready', 'locked']),
+            ),
+          )
+      ).length,
+  });
+}
+
+/**
  * All non-terminal (`ready` or `locked`) rows, for the Jobs screen. `listClaimedJobs` only
  * sees `locked`, which leaves a manual "run now" invisible for the up-to-one scheduler tick
  * between the enqueue and the claim — precisely the window in which the operator has clicked
