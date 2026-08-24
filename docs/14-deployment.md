@@ -576,10 +576,29 @@ discovering:
 - An unsigned `node.exe` next to an unsigned Chromium is a shape corporate antivirus products
   quarantine, sometimes silently and sometimes after the install appears to have succeeded.
 
+- **Smart App Control blocks the installer outright.** Not a dialog with a way past it: the
+  process never starts and PowerShell reports `An Application Control policy has blocked this
+  file`. Measured 2026-08-24 on the development machine — `VerifiedAndReputablePolicyState: 1`,
+  user-mode code integrity enforced — where the 0.1.3 package was blocked while 0.1.1 and 0.1.2
+  had installed from the same directory hours earlier. Smart App Control judges each unsigned
+  binary on cloud reputation, so a package that installs today is no evidence the next one will.
+  It is **on by default on new Windows 11 installations**, and it cannot be re-enabled once
+  turned off without resetting Windows — so "ask the customer to disable it" is not a mitigation
+  that can be offered.
+
 Mitigation until a certificate exists: publish the SHA-256 of each release so a customer can
 verify what they downloaded, and ship a one-page Turkish install note covering the SmartScreen
-dialog. Neither is a substitute. An OV/EV certificate should be treated as a prerequisite for
-selling to any customer with managed endpoints.
+dialog. Neither is a substitute, and neither touches Smart App Control. An OV/EV certificate
+should be treated as a prerequisite for selling to any customer with managed endpoints — and,
+after the measurement above, for any customer on a recent Windows 11 machine at all. EV is what
+carries reputation with Smart App Control immediately; OV accrues it slowly and unpredictably.
+
+**Testing around the block.** `installer\install-from-staging.ps1`-style manual installation —
+copying `installer\staging`'s five directories into place and running `configure-env.ps1`,
+`install-service.ps1` and `verify-health.ps1` with the arguments `buybox.iss` passes them —
+installs the identical payload without the blocked executable. It exercises the service, the
+worker and the wizard; it does **not** exercise the installer, the uninstaller or the shortcuts,
+so it is a development workaround and never a release check. D-1 still requires the real package.
 
 ## 10. Definition of done
 
