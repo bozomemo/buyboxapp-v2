@@ -88,7 +88,7 @@ Filename: "http://127.0.0.1:{code:GetPort}"; \
 
 [UninstallRun]
 Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\uninstall-service.ps1"" -InstallDir ""{app}"""; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\uninstall-service.ps1"" -InstallDir ""{app}"" -DataDir ""{#DataDir}"""; \
   Flags: runhidden waituntilterminated; RunOnceId: "RemoveBuyBoxService"
 
 [Code]
