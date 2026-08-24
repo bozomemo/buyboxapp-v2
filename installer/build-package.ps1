@@ -78,20 +78,42 @@ if (Test-Path $publicDir) { Copy-Item $publicDir (Join-Path $appDir 'public') -R
 
 Copy-Item (Join-Path $PSScriptRoot 'boot.mjs') (Join-Path $appDir 'boot.mjs') -Force
 
-# !! Next's standalone output copies the developer's `.env*` files into the package. Measured
-# 2026-08-24: apps/web/.env.local, SECRET_STORE_KEY and all, landed in stagingpp.
+# !! Next's standalone output copies more of the developer's working tree than the package has
+# any business containing. Two separate leaks have been found this way, both on 2026-08-24:
 #
-# Shipping that would give every customer the same secret-store key -- the key that protects
-# their marketplace credentials -- and would put a credential in a distributed artefact, which
-# CLAUDE.md forbids outright. The installed environment is written on the customer's machine at
-# install time (configure-env.ps1) and must be the only one in existence.
-$leakedEnv = Get-ChildItem $appDir -Recurse -Force -File -Filter '.env*' -ErrorAction SilentlyContinue
-foreach ($file in $leakedEnv) {
-  Write-Output "-- removing $($file.FullName.Substring($appDir.Length + 1)) from the package"
-  Remove-Item $file.FullName -Force
+#   - apps\web\.env.local -- SECRET_STORE_KEY and all -- landed in staging\app.
+#   - apps\web\data\app.db -- a 4.8 MB development database -- landed in staging\app\data and
+#     was installed as "Program Files\BuyBox\app\data\app.db" on a customer's machine.
+#
+# The first was fixed by deleting `.env*`, and that fix was too narrow: it named the file that
+# had gone wrong instead of stating what the package is allowed to contain, so the second leak
+# shipped anyway. What follows is the general rule. Developer state is purged, and the build
+# then refuses to continue if any of it survived.
+#
+# Both are real faults, not untidiness. An `.env.local` gives every customer the same key
+# protecting their marketplace credentials, which CLAUDE.md forbids outright. A database file
+# gives them someone else's data, and leaves a second, stale database inside the install
+# directory where a mistake -- a relative path, a wrong working directory -- can open it.
+$forbiddenInPackage = @('.env*', '*.db', '*.db-wal', '*.db-shm', '*.sqlite', '*.sqlite3', 'secrets.enc.json')
+
+function Get-PackagedDeveloperState {
+  param([Parameter(Mandatory)] [string] $Root, [Parameter(Mandatory)] [string[]] $Patterns)
+  $found = @()
+  foreach ($pattern in $Patterns) {
+    $found += Get-ChildItem $Root -Recurse -Force -File -Filter $pattern -ErrorAction SilentlyContinue
+  }
+  # The developer's SQLite directory. It is .gitignore'd, which is exactly why it went unnoticed:
+  # nothing in review ever shows it. It has no meaning inside the package -- the installed app's
+  # data directory is under ProgramData and is created on the customer's machine.
+  $dataDir = Join-Path $Root 'data'
+  if (Test-Path $dataDir) { $found += Get-Item $dataDir }
+  $found
 }
-$stillThere = Get-ChildItem $appDir -Recurse -Force -File -Filter '.env*' -ErrorAction SilentlyContinue
-if ($stillThere) { throw "Refusing to package: .env files remain in $appDir." }
+
+foreach ($item in Get-PackagedDeveloperState -Root $appDir -Patterns $forbiddenInPackage) {
+  Write-Output "-- removing $($item.FullName.Substring($appDir.Length + 1)) from the package"
+  Remove-Item $item.FullName -Recurse -Force
+}
 
 # Next's file tracing keeps what it can see being imported. Two things it cannot see, both found
 # on a real install 2026-08-24 (doc 14 section 8.2), each of which made every request return 500:
@@ -119,6 +141,14 @@ if (-not (Test-Path (Join-Path $migrationsSource 'sqlite\meta\_journal.json'))) 
   throw "Migrations not found at $migrationsSource."
 }
 Copy-Item $migrationsSource (Join-Path $appDir 'migrations') -Recurse -Force
+
+# Asserted here rather than beside the purge above: every copy into the app directory has now
+# happened, so this covers what later steps bring in as well as what the standalone output did.
+$leakedState = Get-PackagedDeveloperState -Root $appDir -Patterns $forbiddenInPackage
+if ($leakedState) {
+  $names = ($leakedState | ForEach-Object { $_.FullName.Substring($appDir.Length + 1) }) -join ', '
+  throw "Refusing to package: developer state present in $appDir -- $names"
+}
 
 # --- 4. Bundle the Node runtime ---------------------------------------------------------------------
 $nodeDir = Join-Path $staging 'node'

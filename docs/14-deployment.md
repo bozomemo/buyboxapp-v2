@@ -307,6 +307,22 @@ is still watching.
 `scripts/migrate.mjs` stays. It remains the right tool for a developer after a `git pull`, and
 for any install that deliberately runs without `AUTO_MIGRATE`.
 
+### 5.3 A fresh install must not be born paused
+
+The system pause is fail-closed (`isKillSwitchEngaged`): a missing or unreadable value means
+paused. That is the right failure for a running system whose setting was lost — stopping is the
+safe direction for something that submits prices — but a fresh install has no row at all, so
+every new installation started paused with nothing on any screen saying so. On a real install
+(2026-08-24) this was indistinguishable from a broken scheduler and was misdiagnosed twice.
+
+`POST /api/setup/finish` therefore writes `system.pause = false` explicitly, and only when no row
+exists — re-running the wizard must never resume a system somebody paused on purpose. Completing
+setup is the operator declaring the system configured, which is the moment the state stops being
+a default and becomes a decision.
+
+The pause stays fail-closed everywhere else, and the Jobs screen now names it as the reason
+nothing is running (§5.1).
+
 ## 6. Database
 
 SQLite is the installed default (`DATABASE_URL=file:app.db`). It adds no dependency, no service,
@@ -370,21 +386,39 @@ Files under `installer\`:
 
 `.github/workflows/release-windows.yml` runs the same script on a `windows-latest` runner.
 
-### 8.1 The package must contain no `.env` file
+### 8.1 The package must contain no developer state
 
-Found by building the first package, 2026-08-24, not predicted: **Next's standalone output copies
-the developer's `.env*` files into it.** `apps/web/.env.local` — `SECRET_STORE_KEY` and all —
-landed in `staging\app`.
+**Next's standalone output copies more of the developer's working tree into the package than the
+package has any business containing.** Neither instance below was predicted; both were found by
+building, and the second was found on a customer's machine.
 
-Shipping that would give every customer the same secret-store key, the one key protecting their
-marketplace credentials, and would put a credential in a distributed artefact, which CLAUDE.md
-forbids outright. The environment written on the customer's machine at install time (§4.3) must
-be the only one that exists.
+| Date | What leaked | Where it ended up |
+|---|---|---|
+| 2026-08-24 | `apps/web/.env.local`, `SECRET_STORE_KEY` and all | `staging\app\.env.local` |
+| 2026-08-24 | `apps/web/data/app.db`, a 4.8 MB development database | installed as `Program Files\BuyBox\app\data\app.db` |
 
-`build-package.ps1` therefore deletes every `.env*` under `app\` after assembling it and **fails
-the build** if any remains. It is a deletion followed by an assertion rather than a deletion
-alone, because the thing being guarded against is a future version of Next putting the file
-somewhere the deletion does not look.
+Both are faults, not untidiness. An `.env.local` gives every customer the same key protecting
+their marketplace credentials, which CLAUDE.md forbids outright — the environment written on the
+customer's machine at install time (§4.3) must be the only one that exists. A database file gives
+them somebody else's data, and leaves a second, stale database inside the install directory where
+a mistake — a relative path, a wrong working directory (§8.3) — can open it.
+
+**The first fix caused the second.** Deleting `.env*` named the file that had gone wrong instead
+of stating what the package is allowed to contain, so `data\app.db` shipped past it untouched. It
+was invisible to every other check too: `data/` is `.gitignore`d, so nothing in review has ever
+shown it.
+
+`build-package.ps1` therefore purges a *class* of thing — `.env*`, `*.db`, `*.db-wal`, `*.db-shm`,
+`*.sqlite`, `*.sqlite3`, `secrets.enc.json`, and a `data\` directory — and then **fails the
+build** if any of it survived. The assertion runs after every copy into `app\`, not beside the
+deletion, so it also covers what a later assembly step brings in.
+
+`outputFileTracingExcludes` in `apps/web/next.config.ts` keeps `data/` out of the trace in the
+first place. That is the weaker of the two defences and is not the one relied on: it depends on
+tracing honouring the exclusion, whereas the assertion inspects the artefact about to be compiled.
+
+The rule to apply to a third instance: state what the package may contain, and assert it. Do not
+add a pattern.
 
 ### 8.2 The packaged app must be booted before it is shipped
 
