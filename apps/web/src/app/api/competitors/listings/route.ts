@@ -3,7 +3,8 @@
  * structural text search `queryListings` already uses for the main grid (doc 06 §4).
  */
 import { NextResponse } from 'next/server';
-import { listingsRepo } from '@buybox/db';
+import { catalogRepo, listingsRepo } from '@buybox/db';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
 export async function GET(request: Request) {
@@ -19,10 +20,15 @@ export async function GET(request: Request) {
     sortDir: 'asc',
   });
 
+  const brandNames = await catalogRepo.brandNamesByListingIds(
+    appDb,
+    rows.map((r) => r.id),
+  );
+
   return NextResponse.json({
     rows: rows.map((r) => ({
       id: r.id,
-      productName: r.productName,
+      productName: withBrand(r.productName, brandNames.get(r.id)),
       marketplaceCode: r.marketplaceCode,
       marketplaceListingId: r.marketplaceListingId,
       baseStockCode: r.baseStockCode,

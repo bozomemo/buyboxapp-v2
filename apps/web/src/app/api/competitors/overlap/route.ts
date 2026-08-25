@@ -17,6 +17,7 @@
  */
 import { NextResponse } from 'next/server';
 import { competitorReportsRepo, competitorSellersRepo } from '@buybox/db';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { resolveOwnSellers } from '@/lib/server/own-sellers';
 
@@ -84,7 +85,10 @@ export async function GET(request: Request) {
   for (const t of tuples) {
     if (!productMarketplaces.has(t.baseStockCode)) productMarketplaces.set(t.baseStockCode, new Set());
     productMarketplaces.get(t.baseStockCode)!.add(t.marketplaceCode);
-    if (!productNames.has(t.baseStockCode)) productNames.set(t.baseStockCode, t.productName);
+    // `Marka - Ürün Adı` (customer feedback 2026-08-25) — see `withBrand`.
+    if (!productNames.has(t.baseStockCode)) {
+      productNames.set(t.baseStockCode, withBrand(t.productName, t.brandName));
+    }
   }
 
   const byProductGroup = new Map<

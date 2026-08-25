@@ -12,9 +12,17 @@ import {
   normalisedCargo,
   normalisedExpenditure,
 } from '@buybox/core';
-import { competitionRepo, configRepo, listingsRepo, repricingRepo, stockRepo } from '@buybox/db';
+import {
+  catalogRepo,
+  competitionRepo,
+  configRepo,
+  listingsRepo,
+  repricingRepo,
+  stockRepo,
+} from '@buybox/db';
 import { mapFeeSettings } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
 const HISTORY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — the price chart's default span
@@ -90,6 +98,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   // decision time); reusing it here rather than re-deriving avoids the two ever disagreeing.
   const lastDecision = submissions[0] ?? null;
 
+  const brandNames = await catalogRepo.brandNamesByListingIds(appDb, [listing.id]);
+
   return NextResponse.json({
     listing: {
       id: listing.id,
@@ -97,7 +107,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       marketplaceListingId: listing.marketplaceListingId,
       sellerStockCode: listing.sellerStockCode,
       baseStockCode: listing.baseStockCode,
-      productName: listing.productName,
+      // `Marka - Ürün Adı` (customer feedback 2026-08-25) — see `withBrand`.
+      productName: withBrand(listing.productName, brandNames.get(listing.id)),
       price: listing.price.toString(),
       listPrice: listing.listPrice?.toString() ?? null,
       customerPrice: listing.customerPrice?.toString() ?? null,

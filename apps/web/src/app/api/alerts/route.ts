@@ -9,12 +9,14 @@
 import { NextResponse } from 'next/server';
 import {
   alertsRepo,
+  catalogRepo,
   competitorReportsRepo,
   competitorSellersRepo,
   configRepo,
   listingsRepo,
 } from '@buybox/db';
 import { ALERT_DEFAULT_QUIET_PERIOD_MS, ALERT_STALE_AFTER_MS } from '@buybox/jobs';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
 const COVERAGE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -72,6 +74,13 @@ export async function GET(request: Request) {
   const listingById = new Map(
     listings.filter((l) => l !== undefined).map((l) => [l.id, l]),
   );
+  const brandNames = await catalogRepo.brandNamesByListingIds(appDb, listingIds);
+  /** `Marka - Ürün Adı` (customer feedback 2026-08-25) — see `withBrand`. */
+  function productLabel(listingId: string | null | undefined): string | undefined {
+    const listing = listingId === null || listingId === undefined ? undefined : listingById.get(listingId);
+    if (!listing) return undefined;
+    return withBrand(listing.productName, brandNames.get(listing.id));
+  }
   const rulesById = new Map(rules.map((r) => [r.id, r]));
   const marketplaceName = new Map(marketplaces.map((m) => [m.code, m.displayName]));
   const groupName = new Map(sellerGroups.map((g) => [g.id, g.displayName]));
@@ -89,7 +98,7 @@ export async function GET(request: Request) {
       case 'marketplace':
         return marketplaceName.get(rule.scopeValue ?? '') ?? `${rule.scopeValue} (bulunamadı)`;
       case 'listing':
-        return listingById.get(rule.scopeValue ?? '')?.productName ?? '(ilan bulunamadı)';
+        return productLabel(rule.scopeValue) ?? '(ilan bulunamadı)';
       case 'baseStockCode':
         return `Stok ${rule.scopeValue}`;
       default:
@@ -116,7 +125,7 @@ export async function GET(request: Request) {
         ruleId: a.ruleId,
         ruleName: rule?.name ?? '(silinmiş kural)',
         listingId: a.listingId,
-        productName: listing?.productName ?? '(bilinmeyen ilan)',
+        productName: productLabel(a.listingId) ?? '(bilinmeyen ilan)',
         marketplaceCode: listing?.marketplaceCode ?? null,
         ourPrice: listing?.price?.toString() ?? null,
         state: a.state,

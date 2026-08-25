@@ -7,7 +7,8 @@
  * Hepsiburada's `12345` one company (doc 05 §5).
  */
 import { NextResponse } from 'next/server';
-import { competitorReportsRepo, competitorSellersRepo } from '@buybox/db';
+import { catalogRepo, competitorReportsRepo, competitorSellersRepo } from '@buybox/db';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -39,6 +40,11 @@ export async function GET(
     competitorReportsRepo.coverageInRange(appDb, { sinceMs, untilMs, marketplaceCode }),
   ]);
 
+  const brandNames = await catalogRepo.brandNamesByListingIds(
+    appDb,
+    listings.map((l) => l.listingId),
+  );
+
   return NextResponse.json({
     filters: { sinceMs, untilMs },
     seller: {
@@ -61,7 +67,7 @@ export async function GET(
     listings: listings.map((l) => ({
       listingId: l.listingId,
       marketplaceListingId: l.marketplaceListingId,
-      productName: l.productName,
+      productName: withBrand(l.productName, brandNames.get(l.listingId)),
       baseStockCode: l.baseStockCode,
       ourPrice: l.ourPrice.toString(),
       observationCount: l.observationCount,

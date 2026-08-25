@@ -22,9 +22,10 @@ import {
   type RepricingState,
   type UpdateBudget,
 } from '@buybox/core';
-import { competitionRepo, listingsRepo, repricingRepo } from '@buybox/db';
+import { catalogRepo, competitionRepo, listingsRepo, repricingRepo } from '@buybox/db';
 import { mapFeeSettings, mapPolicy, preloadCostDeps } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { feesPayloadToRow } from '@/app/api/setup/fees/to-row';
 
@@ -242,12 +243,22 @@ export async function POST(request: Request) {
     }
   }
 
+  // Only the 20 sampled rows are named on screen, so only those need a brand lookup.
+  const sampleBrands = await catalogRepo.brandNamesByListingIds(
+    appDb,
+    sample.map((s) => s.listingId),
+  );
+
   return NextResponse.json({
     totalListings: candidates.length,
     changed,
     unchanged,
     skipped,
     averageDeltaKurus: changed > 0 ? Number(totalDeltaKurus / BigInt(changed)) : 0,
-    sample,
+    // `Marka - Ürün Adı` (customer feedback 2026-08-25) — see `withBrand`.
+    sample: sample.map((s) => ({
+      ...s,
+      productName: withBrand(s.productName, sampleBrands.get(s.listingId)),
+    })),
   });
 }

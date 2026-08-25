@@ -13,6 +13,7 @@
 import { NextResponse } from 'next/server';
 import {
   alertsRepo,
+  catalogRepo,
   competitionRepo,
   competitorReportsRepo,
   configRepo,
@@ -27,6 +28,7 @@ import {
   isMarketplaceKillSwitchEngaged,
   SYSTEM_PAUSE_SETTING_KEY,
 } from '@buybox/shared';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
 function usageDateKey(nowMs: number): string {
@@ -99,6 +101,11 @@ export async function GET() {
     }),
   );
 
+  const decisionBrands = await catalogRepo.brandNamesByListingIds(
+    appDb,
+    decisions.map((d) => d.listingId),
+  );
+
   return NextResponse.json({
     // Two genuinely separate states — see /api/system-pause's and /api/kill-switch's doc
     // comments. `systemPaused` stops everything; `globalKillSwitchEngaged` stops only
@@ -125,7 +132,8 @@ export async function GET() {
       id: d.id,
       listingId: d.listingId,
       marketplaceCode: d.marketplaceCode,
-      productName: d.productName,
+      // `Marka - Ürün Adı` (customer feedback 2026-08-25) — see `withBrand`.
+      productName: withBrand(d.productName, decisionBrands.get(d.listingId)),
       oldPrice: d.oldPrice.toString(),
       newPrice: d.newPrice.toString(),
       reason: d.reason,

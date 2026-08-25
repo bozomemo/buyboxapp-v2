@@ -638,6 +638,11 @@ export interface ProductSellerTuple {
   readonly sellerRef: string;
   readonly observedName: string;
   readonly productName: string;
+  /** For the `Marka - Ürün Adı` display (customer feedback 2026-08-25); null when the listing
+   * carries no brand — every Hepsiburada row today (doc 06 §12.1). Joined here rather than
+   * looked up by listing id like everywhere else because this report is keyed by stock code and
+   * never names a listing. */
+  readonly brandName: string | null;
 }
 
 /**
@@ -670,9 +675,11 @@ export async function productSellerTuplesInRange(
           sellerRef: co.sellerRef,
           observedName: co.sellerName,
           productName: l.productName,
+          brandName: sqliteSchema.brands.name,
         })
         .from(co)
         .innerJoin(l, eq(l.id, co.listingId))
+        .leftJoin(sqliteSchema.brands, eq(sqliteSchema.brands.id, l.brandId))
         .where(
           and(
             gte(co.observedAt, window.sinceMs),
@@ -695,9 +702,11 @@ export async function productSellerTuplesInRange(
           sellerRef: co.sellerRef,
           observedName: co.sellerName,
           productName: l.productName,
+          brandName: postgresSchema.brands.name,
         })
         .from(co)
         .innerJoin(l, eq(l.id, co.listingId))
+        .leftJoin(postgresSchema.brands, eq(postgresSchema.brands.id, l.brandId))
         .where(
           and(
             gte(co.observedAt, window.sinceMs),
@@ -720,9 +729,11 @@ export async function productSellerTuplesInRange(
           sellerRef: co.sellerRef,
           observedName: co.sellerName,
           productName: l.productName,
+          brandName: mysqlSchema.brands.name,
         })
         .from(co)
         .innerJoin(l, eq(l.id, co.listingId))
+        .leftJoin(mysqlSchema.brands, eq(mysqlSchema.brands.id, l.brandId))
         .where(
           and(
             gte(co.observedAt, window.sinceMs),
@@ -742,5 +753,6 @@ export async function productSellerTuplesInRange(
     sellerRef: r.sellerRef as string,
     observedName: r.observedName,
     productName: r.productName,
+    brandName: r.brandName ?? null,
   }));
 }

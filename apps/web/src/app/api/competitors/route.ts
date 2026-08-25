@@ -8,7 +8,8 @@
  * paged catalogue browse (see the repository doc-comment for the full rationale).
  */
 import { NextResponse } from 'next/server';
-import { competitionRepo, competitorReportsRepo, repricingRepo } from '@buybox/db';
+import { catalogRepo, competitionRepo, competitorReportsRepo, repricingRepo } from '@buybox/db';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -231,6 +232,11 @@ export async function GET(request: Request) {
   }
   const observationCoverage = [...coverageByDay.values()].sort((a, b) => a.date.localeCompare(b.date));
 
+  const presenceBrands = await catalogRepo.brandNamesByListingIds(
+    appDb,
+    sellerPresence.map((p) => p.listingId),
+  );
+
   return NextResponse.json({
     filters: { sinceMs, untilMs, listingId, marketplaceCode, baseStockCode, sellerRef },
     truncated: {
@@ -238,7 +244,11 @@ export async function GET(request: Request) {
       scrapeRuns: scrapeRuns.length >= 20_000,
     },
     priceTimeline,
-    sellerPresence,
+    // `Marka - Ürün Adı` (customer feedback 2026-08-25) — see `withBrand`.
+    sellerPresence: sellerPresence.map((p) => ({
+      ...p,
+      productName: withBrand(p.productName, presenceBrands.get(p.listingId)),
+    })),
     buyboxShare,
     timeWeightedBuyboxShare,
     uncoveredMs,

@@ -15,8 +15,10 @@ operator already knows the app by them; the interface language is Turkish.
 | `/stock` | Stock items | Physical products, costs, per-marketplace preferences |
 | `/listings` | Listings | The main working grid, filterable by marketplace |
 | `/listings/[id]` | Listing detail | Everything about one listing, including its decision history |
+| `/brands` | Brands | Marka bazlı gezinme — click a brand, see its listings (§12.1) |
 | `/competitors` | Competitor history | Time-series reporting over the retained scrape data |
 | `/competitors/sellers` | Competitor sellers | The same archive by seller: overlap, pricing behaviour, identity linking |
+| `/tracked-products` | Tracked products | Products we do not sell, watched for price/rank by link (§12.2) |
 | `/alerts` | Alerts | Open competitor conditions and the rules that raise them |
 | `/jobs` | Jobs | Run history, manual triggers, schedules |
 | `/events` | Event log | Persisted, filterable operation log |
@@ -88,7 +90,7 @@ the legacy app loaded the whole catalogue into memory.
 | Cost | Orj. Birim Fiyat · Birim Fiyat · **Dip Fiyat** · Komisyon · KDV |
 | Price | Satış Fiyatı · Müşteri Fiyatı · PSF · Marj % |
 | Stock | Satış Stok · Fiziksel Stok |
-| Competition | Sıra · Buybox Fiyatı · 2. Fiyat · 3. Fiyat · Fark |
+| Competition | Sıra · Buybox Fiyatı · **Buybox Mağaza** · 2. Fiyat · 3. Fiyat · Fark |
 | Engine | **Faz** · Optimum Fiyat · Son Karar · Son Gönderim Durumu |
 | Controls | Oto BB · Fiyat Artır · Fiyat Düşür · Min Fiyat · Max Fiyat |
 | Status | Satılabilir · Kilitli · Askıda · Kampanyalı |
@@ -96,6 +98,13 @@ the legacy app loaded the whole catalogue into memory.
 **Competitor price, rating, name and dispatch time are separate typed columns.** The legacy
 system packed them into strings like `"9.2 / SellerName"` and `"149.90 / 129.90"` and then
 parsed them back to make decisions (doc 09 §12). This must not recur.
+
+**Buybox Mağaza** (customer feedback 2026-08-25) is the store name of whoever currently holds
+the buybox. It is sourced from `competitor_observations` — the scrape-sourced, reporting-only
+archive (doc 05 §5) — never from `buybox_observations`, the API-sourced table the pricing path
+reads. The two can disagree in staleness (a scrape can lag the last API poll) and the column is
+allowed to show `—` when nothing has been scraped yet; it never blocks or delays a pricing
+decision.
 
 ### 4.2 Row highlighting
 
@@ -126,7 +135,9 @@ does not immediately overwrite the operator, and says so in the UI.
 
 Built structurally, never by string concatenation (doc 09 §20). Server-side.
 
-- Text: marketplace SKU, stock code, product name, brand, category
+- Text: marketplace SKU, stock code, product name, brand, category. Brand is filterable today via
+  `brandId` (cross-navigation from `/brands`, §12.1) — a free-text brand/category search box on
+  this screen itself is not yet built.
 - Numeric with operator: commission, VAT, offered stock, physical stock, margin %
 - Multi-select: marketplace, phase, last decision reason
 - Tri-state booleans (true / false / any): in buybox · can win buybox · selling at a loss ·
@@ -451,6 +462,25 @@ catalogue and report how many listings would change price and by how much, befor
 | R-UI-9 | Kill switches are reachable within one click from any screen |
 | R-UI-10 | The UI works against all three database engines with no behavioural difference |
 | R-UI-11 | Interface language Turkish; number and date formatting Turkish locale |
+| R-UI-12 | Every table screen's columns can be shown/hidden, reordered and resized, remembered per browser via `localStorage`; server-sortable columns are sortable from the header |
+| R-UI-13 | Every table screen offers a CSV ("Excel'e Aktar") export of what the grid currently shows, honouring the active filters |
+| R-UI-14 | A product is named `Marka - Ürün Adı` wherever it is shown, on screen and in exports |
+
+Column customisation (R-UI-12) lives in `useColumnPrefs`/`ColumnMenu`/`ResizableTh`
+(`components/table.tsx`) and is wired up on `/listings` as the reference implementation
+(customer feedback 2026-08-25). CSV export (R-UI-13) is `lib/csv.ts`'s `downloadCsv`, wired up
+so far on `/listings` (server-side, capped at 5,000 rows — see the comment on
+`CSV_EXPORT_LIMIT` in `api/listings/route.ts` for why the per-row competitive enrichment is
+skipped in the export), `/stock`, `/alerts`, `/competitors`, `/competitors/sellers` and
+`/events` (client-side, from data already loaded in the browser). Column customisation and
+export are both wired up on `/listings`, `/competitors/sellers` and the seller-detail sub-page
+`/competitors/sellers/[marketplace]/[ref]`. Not yet rolled out: `/jobs` (run history) — copy the
+pattern from one of the screens above rather than inventing a new column-prefs or export shape.
+
+Product naming (R-UI-14) is `lib/product-name.ts`'s `withBrand`, applied **server-side in the API
+routes**, not per screen: the brand lives on `listings.brand_id` (§12.1) while the title lives on
+`listings.product_name`, and composing once at the route means the grids, the detail screens and
+the CSV exports cannot drift apart. See §12.3.
 
 ---
 
@@ -487,3 +517,110 @@ over to the real implementation.
 Not yet scoped: which mechanism drives the toggle (`prefers-color-scheme` vs. a
 `data-theme` attribute + stored preference), and the full sweep of the ~48 `apps/web` screens for
 hardcoded (non-token) colours. See doc 12 for when this becomes a build-plan phase.
+
+> Note: the toggle and token palette described above are already implemented in
+> `globals.css`/`layout.tsx` (a `data-theme` attribute + stored preference, matching the second
+> option this paragraph lists as unscoped) — this section is stale on that point and should be
+> reconciled with the code rather than trusted as "not yet built". Left as-is pending that
+> reconciliation rather than rewritten opportunistically here.
+
+**Native form controls (customer feedback 2026-08-25):** `<select>`'s closed box picked up the
+token colours because we style it directly, but its open dropdown list is rendered by the
+browser/OS and was still following the light UA default even under the dark palette — the
+missing piece was the `color-scheme` CSS property, which nothing in `:root` declared. Fixed by
+setting `color-scheme: light` on the default `:root` and `color-scheme: dark` in both places the
+dark palette is applied (the `prefers-color-scheme` media query and `[data-theme='dark']`), so
+native chrome (`<select>` popups, scrollbars, default control borders) tracks the same theme as
+everything else on the page. Any other native, browser-rendered control found off-palette later
+belongs to this same gap, not a new one.
+
+---
+
+## 12. Customer feedback backlog (2026-08-25)
+
+Both items below were proposals as of the first pass through this backlog; the product owner
+picked a direction for each (2026-08-25, recorded via the options below) and both are now
+**built**. Kept here as the design record — read this before touching either area again.
+
+### 12.1 Brand/category browsing — built
+
+*"Pazaryerlerindeki marka ve kategori bilgileri gelmeli. Marka/kategori üzerine basınca o
+markaya ait ürünler görünmeli."*
+
+Decided: **normalised `brands`/`categories` reference tables** (doc 05 §4), not a denormalised
+column on `listings`, and **a dedicated `/brands` screen** (§1 above) rather than a filter-only
+approach — both picked as the recommended option when reviewed.
+
+Sourced from Trendyol's product filter response (api-references.md §1.4 — `brand{id,name}`,
+`category{id,name}`), the same call `ImportListings` already makes; no new marketplace call.
+Hepsiburada's Listing service has neither field (api-references.md §2.4), so `brandId`/
+`categoryId` stay `null` there — not faked, not backfilled from anywhere else.
+
+`/brands` lists every brand with its (non-archived) listing count, descending; clicking one
+navigates to `/listings?brandId=…`, which the Listings screen shows as a dismissible filter
+chip rather than a hidden query-string state. `/categories` was not built as a separate screen
+in this pass — `categoryId` is captured and filterable via `listingsRepo.queryListings`, but has
+no browse UI yet. Copy the `/brands` pattern if that screen is wanted later.
+
+### 12.2 Competitor tracking for products we don't sell — built (v1: add-by-link)
+
+*"Satılmayan / ürün kartına girilmemiş ürünlerde de rakip takibi yapılabilmeli... sadece ürün
+linki ile ekleme yapılabilmeli."*
+
+Decided: **a new `tracked_products` table** (recommended option), refined during implementation
+into **its own parallel `tracked_product_observations` table** rather than the originally
+sketched "nullable `listings.competitor_observations.listing_id` + parallel
+`tracked_product_id`" — see doc 05 §5's `tracked_products` entry for why: it keeps
+`competitor_observations` and every query built against it (`observationsAsOf`, the §6/§6.1
+reports) completely untouched, and makes the pricing-path isolation *structural* rather than a
+guard someone has to remember to write — `Reprice`/`ObserveBuybox` (doc 07 §2.1/§2.2) query
+`listings` alone, and a tracked product has no row there at all, in any shape.
+
+Also decided: **v1 ships add-by-link only** — no brand-wide search UI. `parseProductLink`
+(`packages/adapters/src/parse-product-link.ts`) turns a pasted Trendyol or Hepsiburada product
+URL into a `ProductPageRef` offline (no request); `/tracked-products` is the list + add form.
+Scraping runs as the last step of each per-marketplace `ScrapeCompetitors` run
+(`pipeline/scrape-tracked-products.ts`), isolated by its own `try`/`catch`, and is subject to
+the same "disabled by default" switch as the rest of that job (doc 07 §7) — there is no separate
+toggle for tracked products.
+
+**Deferred, not decided against:** brand-wide search (picking a product from a marketplace
+brand's full catalogue rather than pasting a link) needs the public brand-page source
+(trendyol-merchants-scraping-guide.md), not the authenticated Product Integration API — that API
+only sees our own catalogue. Revisit as a follow-up if link-only proves too manual in practice.
+
+**Known gap:** `tracked_product_observations` has no retention window yet (doc 05 §10) and
+grows without bound. Low risk while the tracked-product set stays small and operator-curated,
+but should get a window before this sees sustained use.
+
+### 12.3 Brand first in every product name — built (R-UI-14)
+
+*"Bütün ürün gösterimlerinde Marka başta olsun."* — `Sığır Etli Kısırlaştırılmış Kedi Maması
+1,4 Kg` should read `Whiskas - Sığır Etli Kısırlaştırılmış Kedi Maması 1,4 Kg`.
+
+Composed at display time by `lib/product-name.ts`'s `withBrand`, from `brands.name` joined
+through `listings.brand_id` (§12.1). **Nothing is written back to `listings.product_name`** —
+that column stays exactly what the marketplace returned, so an import never has to reconcile our
+label with theirs and a brand rename shows up everywhere at once.
+
+Composed **server-side in each API route** rather than in each screen: ten screens name a
+product and only one shape of name is wanted. Routes covered: `/api/listings` (grid *and* its
+CSV export), `/api/listings/[id]`, `/api/alerts` (alert rows and listing-scoped rule labels),
+`/api/dashboard`, `/api/competitors`, `/api/competitors/listings`,
+`/api/competitors/sellers/[marketplace]/[ref]`, `/api/competitors/overlap` and
+`/api/settings/preview-impact`.
+
+The brand lookup is `catalogRepo.brandNamesByListingIds` — keyed by listing id so a route only
+needs ids it already has, instead of a brand join being threaded through a dozen
+dialect-triplicated report queries. `/api/competitors/overlap` is the one exception and joins
+`brands` in SQL, because that report is keyed by stock code and never names a listing.
+
+Two behaviours worth keeping: a title that already opens with its own brand is **normalised**,
+not prefixed twice (`Whiskas Sığır Etli Mama` → `Whiskas - Sığır Etli Mama`), and a listing with
+no brand — every Hepsiburada row today (§12.1) — shows the bare product name, unchanged. Brand
+matching folds case both Turkish-locale *and* invariant: Turkish folding maps `I`→`ı`, so on its
+own it fails to recognise the very common all-caps title `WHISKAS …` as already carrying the
+brand `Whiskas`. `withBrand`'s doc comment and its table-driven test carry the detail.
+
+**Out of scope:** `/stock` names stock items by the operator's own `stock_items.name`, which has
+no brand relationship at all — it is master data we key on, not a marketplace title.
