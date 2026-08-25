@@ -71,6 +71,70 @@ export async function latestBuyboxObservation(
 }
 
 /**
+ * The store name of whoever currently holds the buybox, for display on the Listings grid
+ * (doc 06 §4.1 "Mağaza Adı" — customer feedback 2026-08-25). **Reporting only**: it reads
+ * `competitor_observations`, the scrape-sourced archive, never `buybox_observations` (the
+ * API-sourced control signal pricing decisions read). A missing or stale scrape yields
+ * `undefined` rather than a wrong name, and that must never reach a pricing decision — it is
+ * display data next to the Sıra/Buybox Fiyatı columns, nothing else reads it.
+ *
+ * The most recent row is picked by `observedAt desc`, not by joining through `scrape_runs`
+ * (contrast `observationsAsOf`): observations are only written in whole batches sharing one
+ * `observedAt` when the seller set changes, so the newest row already belongs to the newest
+ * batch and a second query buys nothing here.
+ */
+export async function latestBuyboxSellerName(
+  appDb: AppDatabase,
+  listingId: string,
+): Promise<string | undefined> {
+  const result = await withDialect(appDb, {
+    sqlite: async (db) =>
+      (
+        await db
+          .select({ sellerName: sqliteSchema.competitorObservations.sellerName })
+          .from(sqliteSchema.competitorObservations)
+          .where(
+            and(
+              eq(sqliteSchema.competitorObservations.listingId, listingId),
+              eq(sqliteSchema.competitorObservations.rank, 1),
+            ),
+          )
+          .orderBy(desc(sqliteSchema.competitorObservations.observedAt))
+          .limit(1)
+      )[0],
+    postgres: async (db) =>
+      (
+        await db
+          .select({ sellerName: postgresSchema.competitorObservations.sellerName })
+          .from(postgresSchema.competitorObservations)
+          .where(
+            and(
+              eq(postgresSchema.competitorObservations.listingId, listingId),
+              eq(postgresSchema.competitorObservations.rank, 1),
+            ),
+          )
+          .orderBy(desc(postgresSchema.competitorObservations.observedAt))
+          .limit(1)
+      )[0],
+    mysql: async (db) =>
+      (
+        await db
+          .select({ sellerName: mysqlSchema.competitorObservations.sellerName })
+          .from(mysqlSchema.competitorObservations)
+          .where(
+            and(
+              eq(mysqlSchema.competitorObservations.listingId, listingId),
+              eq(mysqlSchema.competitorObservations.rank, 1),
+            ),
+          )
+          .orderBy(desc(mysqlSchema.competitorObservations.observedAt))
+          .limit(1)
+      )[0],
+  });
+  return result?.sellerName;
+}
+
+/**
  * Per-marketplace `max(observed_at)` — the dashboard's "last successful buybox observation"
  * proxy (doc 06 §2). Joins through `listings` because `buybox_observations` itself carries
  * no marketplace code.

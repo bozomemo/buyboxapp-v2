@@ -31,6 +31,7 @@ export {
 } from './ports/competitor-source.js';
 export type { IProductSource, ProductSourceCode, StockItemInput } from './ports/product-source.js';
 export { NotImplementedError } from './ports/product-source.js';
+export { parseProductLink, type ParsedProductLink } from './parse-product-link.js';
 
 // Contract test suites
 export {

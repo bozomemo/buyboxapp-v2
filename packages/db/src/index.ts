@@ -31,6 +31,8 @@ export { DEFAULT_RETENTION_WINDOWS, pruneHistory } from './prune-history.js';
 export * as configRepo from './repositories/config.js';
 export * as stockRepo from './repositories/stock.js';
 export * as listingsRepo from './repositories/listings.js';
+export * as catalogRepo from './repositories/catalog.js';
+export * as trackedProductsRepo from './repositories/tracked-products.js';
 export * as competitionRepo from './repositories/competition.js';
 export * as competitorSellersRepo from './repositories/competitor-sellers.js';
 export * as competitorReportsRepo from './repositories/competitor-reports.js';

@@ -177,6 +177,37 @@ export const bundleMembers = mysqlTable(
   ],
 );
 
+/** See the doc comment on `brands` in `schema/sqlite.ts` — identical shape and reasoning. */
+export const brands = mysqlTable(
+  'brands',
+  {
+    id: code('id', 36).primaryKey(),
+    marketplaceCode: code('marketplace_code', 20)
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    ref: code('ref', 64).notNull(),
+    name: text('name').notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('brands_marketplace_ref').on(t.marketplaceCode, t.ref)],
+);
+
+export const categories = mysqlTable(
+  'categories',
+  {
+    id: code('id', 36).primaryKey(),
+    marketplaceCode: code('marketplace_code', 20)
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    ref: code('ref', 64).notNull(),
+    name: text('name').notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('categories_marketplace_ref').on(t.marketplaceCode, t.ref)],
+);
+
 export const listings = mysqlTable(
   'listings',
   {
@@ -220,6 +251,9 @@ export const listings = mysqlTable(
     // listing without opting it into the pricing engine. Same operator-owned, starts-disabled
     // treatment as repriceEnabled — see the comment on `upsertListing` below.
     observationEnabled: bool('observation_enabled').notNull(),
+    // See the doc comment on this pair in `schema/sqlite.ts`.
+    brandId: code('brand_id', 36).references(() => brands.id, { onDelete: 'set null' }),
+    categoryId: code('category_id', 36).references(() => categories.id, { onDelete: 'set null' }),
     extra: json('extra'),
     firstSeenAt: timestampMs('first_seen_at').notNull(),
     lastSeenAt: timestampMs('last_seen_at').notNull(),
@@ -230,6 +264,8 @@ export const listings = mysqlTable(
     index('listings_base_stock_code').on(t.baseStockCode),
     index('listings_marketplace_salable_reprice').on(t.marketplaceCode, t.isSalable, t.repriceEnabled),
     index('listings_seller_stock_code').on(t.sellerStockCode),
+    index('listings_brand_id').on(t.brandId),
+    index('listings_category_id').on(t.categoryId),
   ],
 );
 
@@ -344,6 +380,43 @@ export const competitorSellers = mysqlTable(
     uniqueIndex('competitor_sellers_marketplace_ref').on(t.marketplaceCode, t.sellerRef),
     index('competitor_sellers_group').on(t.groupId),
   ],
+);
+
+/** See the doc comment on `trackedProducts` in `schema/sqlite.ts` — identical shape and reasoning. */
+export const trackedProducts = mysqlTable(
+  'tracked_products',
+  {
+    id: code('id', 36).primaryKey(),
+    marketplaceCode: code('marketplace_code', 20)
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    productRef: code('product_ref', 128).notNull(),
+    productUrl: text('product_url').notNull(),
+    label: text('label').notNull(),
+    isActive: bool('is_active').notNull(),
+    addedAt: timestampMs('added_at').notNull(),
+  },
+  (t) => [uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef)],
+);
+
+/** See the doc comment on `trackedProductObservations` in `schema/sqlite.ts`. */
+export const trackedProductObservations = mysqlTable(
+  'tracked_product_observations',
+  {
+    id: code('id', 36).primaryKey(),
+    trackedProductId: code('tracked_product_id', 36)
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    observedAt: timestampMs('observed_at').notNull(),
+    status: text('status').notNull(),
+    rank: int('rank'),
+    sellerName: text('seller_name'),
+    sellerRef: text('seller_ref'),
+    price: money('price'),
+    finalPrice: money('final_price'),
+    offeredStock: int('offered_stock'),
+  },
+  (t) => [index('tracked_product_observations_product_observed').on(t.trackedProductId, t.observedAt)],
 );
 
 export const priceSubmissions = mysqlTable(

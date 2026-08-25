@@ -175,6 +175,7 @@ could not express quantity (doc 09 §28).
 | `allow_increase`, `allow_decrease` | int, default 1 | operator switches |
 | `reprice_enabled` | int | per-listing override — starts DISABLED on import (doc 10 §6 step 8) |
 | `observation_enabled` | int | independent of `reprice_enabled` — lets an operator watch buybox rank / competitors on a listing without opting it into the pricing engine; also starts DISABLED on import. Drives `ObserveBuybox` / `ScrapeCompetitors`'s own candidate query, separate from `Reprice`'s (doc 07 §2.1) |
+| `brand_id`, `category_id` | text FK nullable, `ON DELETE SET NULL` | doc 06 §12.1. Trendyol only today (api-references §1.4, same response `ImportListings` already fetches); null on Hepsiburada (api-references §2.4 has no such field) |
 | `extra` | text (JSON) | marketplace-specific fields preserved verbatim |
 | `first_seen_at`, `last_seen_at`, `updated_at` | bigint | |
 
@@ -196,6 +197,23 @@ inactive rather than deleted.
 | `store_share_pct` | real |
 | `starts_at`, `ends_at` | bigint nullable |
 | `observed_at` | bigint |
+
+### `brands` / `categories` (doc 06 §12.1, customer feedback 2026-08-25)
+
+Normalised reference tables, not a `listings.brand_name` column — a brand rename updates one
+row rather than every listing that carries the old name, and the `/brands` screen's "click a
+brand, see its products" is a join rather than a `GROUP BY` over possibly-inconsistent text.
+Identical shape for both:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `marketplace_code` | text FK | |
+| `ref` | text | the marketplace's own id — Trendyol `brand.id` / `category.id` |
+| `name` | text | refreshed on every import; a marketplace rename shows up |
+| `created_at`, `updated_at` | bigint | |
+
+`UNIQUE(marketplace_code, ref)`.
 
 ---
 
@@ -318,6 +336,49 @@ and `operator_note` are **operator-owned** and a scrape must never clobber them 
 Only sellers the payload identified get a row. `competitor_observations.seller_ref` is
 nullable, and a seller with no id has no identity to be durable about; matching it by display
 name is exactly the mistake `competitor_seller_groups` refuses to make.
+
+### `tracked_products` / `tracked_product_observations` (doc 06 §12.2, customer feedback 2026-08-25)
+
+A marketplace product we do **not** sell, watched for price/rank only, added by pasting its
+link. Deliberately its own pair of tables rather than a `listings` row with the sale-facing
+fields left null: `Reprice` and `ObserveBuybox` (doc 07 §2.1/§2.2) only ever query `listings`,
+so a tracked product living here is structurally unreachable from a pricing decision — there is
+no flag to check because there is nothing here for that code to see.
+
+`tracked_products`:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `marketplace_code` | text FK | |
+| `product_ref` | text | Trendyol `contentId` or Hepsiburada SKU — the same identity `ProductPageRef.contentId` uses |
+| `product_url` | text | as parsed from the pasted link |
+| `label` | text | operator-entered (or the link, if none given); display only |
+| `is_active` | int | scraped while true; `ScrapeCompetitors` skips an inactive one |
+| `added_at` | bigint | |
+
+`UNIQUE(marketplace_code, product_ref)`.
+
+`tracked_product_observations` — the tracked-product analogue of `competitor_observations`, one
+row per offer per look:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `tracked_product_id` | text FK, cascade | |
+| `observed_at` | bigint | |
+| `status` | text | `ok` \| `parseFailed` \| `fetchFailed` |
+| `rank`, `seller_name`, `seller_ref`, `price`, `final_price`, `offered_stock` | nullable | null on a failed look |
+
+Index `(tracked_product_id, observed_at)`. Deliberately simpler than the two-tier
+`scrape_runs`/`competitor_observations` design: **every** successful look is written, with no
+change-detection hash and no separate proof-of-look row — acceptable because the tracked-product
+set is expected to be small and operator-curated, unlike the full catalogue. Revisit if that
+stops being true.
+
+Scraped as the last step of each per-marketplace `ScrapeCompetitors` run
+(`pipeline/scrape-tracked-products.ts`), under its own `try`/`catch` so a failure here can never
+fail the listings half of the same run.
 
 ---
 
@@ -493,8 +554,16 @@ re-probe the entire catalogue).
 | `app_events` warn/error | 1 year |
 | `job_runs` | 90 days |
 | `job_queue` done/failed | 7 days |
+| `tracked_product_observations` | **not yet enforced** — see note below |
 
 A `PruneHistory` job enforces these nightly. Every retention window is configurable.
+
+> **`tracked_product_observations` (doc 06 §12.2, added 2026-08-25) has no retention window
+> yet.** `PruneHistory` was not extended to it in this pass, so it currently grows without
+> bound. The tracked-product set is expected to be small and operator-curated, so this is a
+> lower-risk gap than the same oversight would be on `competitor_observations` above — but it is
+> a gap, and should get a window (a value similar to `competitor_observations`'s 90 days is the
+> obvious default) before this feature sees real, sustained use.
 
 > **`competitor_observations` was indefinite until 2026-08-18.** That policy was written for a
 > 64-listing catalogue. Measured against the live archive, the 2,000-listing target produces

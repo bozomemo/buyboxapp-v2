@@ -57,6 +57,13 @@
       "when": 1787037014930,
       "tag": "0007_dazzling_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787682322393,
+      "tag": "0008_steep_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

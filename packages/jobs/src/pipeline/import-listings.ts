@@ -5,7 +5,7 @@
  */
 import { getAdapter } from '../adapter-registry.js';
 import { parseStockCode, type MarketplaceCode } from '@buybox/core';
-import { eventsRepo, listingsRepo, newId } from '@buybox/db';
+import { catalogRepo, eventsRepo, listingsRepo, newId } from '@buybox/db';
 import { z } from 'zod';
 import type { JobContext, JobResult } from '../job.js';
 import { syncMerchantRef } from '../merchant-ref.js';
@@ -59,6 +59,29 @@ export async function importListings(ctx: JobContext): Promise<JobResult> {
           listing.marketplaceListingId,
         );
 
+        // doc 06 §12.1: upserted from the same response `fetchListings` already returned, so
+        // this never becomes a second marketplace call. `undefined` on the port (Hepsiburada)
+        // and a `null` result of upserting nothing both fall through to `null` on the listing —
+        // "we don't know" either way, never faked.
+        const brandId = listing.brand
+          ? await catalogRepo.upsertBrand(ctx.appDb, {
+              id: newId(),
+              marketplaceCode,
+              ref: listing.brand.ref,
+              name: listing.brand.name,
+              nowMs: runStartedAt,
+            })
+          : null;
+        const categoryId = listing.category
+          ? await catalogRepo.upsertCategory(ctx.appDb, {
+              id: newId(),
+              marketplaceCode,
+              ref: listing.category.ref,
+              name: listing.category.name,
+              nowMs: runStartedAt,
+            })
+          : null;
+
         await listingsRepo.upsertListing(ctx.appDb, {
           id: existing?.id ?? newId(),
           marketplaceCode,
@@ -105,6 +128,8 @@ export async function importListings(ctx: JobContext): Promise<JobResult> {
           // ScrapeCompetitors candidate query).
           repriceEnabled: false,
           observationEnabled: false,
+          brandId,
+          categoryId,
           // doc 05 §5: marketplace-specific fields preserved verbatim. Today that is the
           // public product-page reference the reporting scrape needs (doc 07 §7).
           extra: encodeListingExtra(listing.productPage),

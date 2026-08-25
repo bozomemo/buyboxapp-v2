@@ -491,6 +491,9 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     });
     const latestObs = await competitionRepo.latestBuyboxObservation(appDb, listingId);
     expect(latestObs?.rank).toBe(1);
+    // No scrape has run yet — buybox_observations (API-sourced) and competitor_observations
+    // (scrape-sourced) are separate tables, so a buybox_observations row alone is not enough.
+    expect(await competitionRepo.latestBuyboxSellerName(appDb, listingId)).toBeUndefined();
 
     const run1 = newId();
     await competitionRepo.recordScrapeRun(
@@ -599,6 +602,10 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
 
     const asOfLatest = await competitionRepo.observationsAsOf(appDb, listingId, NOW + 2000);
     expect(asOfLatest[0]?.price).toBe(1950n);
+
+    // Mağaza Adı (doc 06 §4.1): the rank-1 seller name from the newest scrape batch, reporting
+    // only — unaffected by pruning buybox_observations (the pricing-path table) below.
+    expect(await competitionRepo.latestBuyboxSellerName(appDb, listingId)).toBe('Farmaucuz');
 
     await competitionRepo.pruneBuyboxObservations(appDb, NOW + 500);
     expect(await competitionRepo.latestBuyboxObservation(appDb, listingId)).toBeUndefined();

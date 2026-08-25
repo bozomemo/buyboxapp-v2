@@ -38,6 +38,9 @@ export interface ListingRow {
   readonly allowDecrease: boolean;
   readonly repriceEnabled: boolean;
   readonly observationEnabled: boolean;
+  /** doc 06 §12.1 — Trendyol only today; null on Hepsiburada (api-references §2.4 has no such field). */
+  readonly brandId: string | null;
+  readonly categoryId: string | null;
   readonly extra: string | null;
   readonly firstSeenAt: number;
   readonly lastSeenAt: number;
@@ -137,6 +140,8 @@ export interface ListingQueryOptions {
   readonly isBlacklisted?: boolean;
   readonly repriceEnabled?: boolean;
   readonly observationEnabled?: boolean;
+  readonly brandId?: string;
+  readonly categoryId?: string;
   readonly excludeArchived?: boolean;
   readonly sort?: 'lastSeenAt' | 'productName' | 'price';
   readonly sortDir?: 'asc' | 'desc';
@@ -257,6 +262,8 @@ function buildListingsWhere(schema: any, options: ListingQueryOptions) {
   if (options.observationEnabled !== undefined) {
     conditions.push(eq(schema.listings.observationEnabled, options.observationEnabled));
   }
+  if (options.brandId) conditions.push(eq(schema.listings.brandId, options.brandId));
+  if (options.categoryId) conditions.push(eq(schema.listings.categoryId, options.categoryId));
   if (options.excludeArchived) conditions.push(eq(schema.listings.isArchived, false));
   if (options.text) {
     const term = `%${options.text}%`;

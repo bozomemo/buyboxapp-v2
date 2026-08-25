@@ -4,7 +4,8 @@
  * the port's vocabulary only (doc 10 §3).
  *
  * Field mapping verified against docs/api-references.md §1.4 ("Product filter — approved
- * products (V2)" and "Buybox check") on 2026-08-12.
+ * products (V2)" and "Buybox check") on 2026-08-12; `brand`/`category` (doc 06 §12.1) added
+ * 2026-08-25 from the same, already-verified response — no new endpoint.
  */
 import { Money } from '@buybox/shared';
 import type { BuyboxObservation, ListingSnapshot } from '../ports/marketplace.js';
@@ -36,6 +37,9 @@ export interface TrendyolProduct {
   readonly variants: readonly TrendyolVariant[];
   /** Identifies the *product page*, shared with competitors (doc 01 §5) — the scrape key. */
   readonly contentId?: number | string | null;
+  /** api-references §1.4 product-level fields, doc 06 §12.1. Already in this response. */
+  readonly brand?: { readonly id: number | string; readonly name: string } | null;
+  readonly category?: { readonly id: number | string; readonly name: string } | null;
 }
 
 export interface TrendyolProductFilterResponse {
@@ -86,6 +90,8 @@ export function mapVariantToListingSnapshot(
       contentId:
         product.contentId !== null && product.contentId !== undefined ? String(product.contentId) : null,
     },
+    brand: product.brand ? { ref: String(product.brand.id), name: product.brand.name } : null,
+    category: product.category ? { ref: String(product.category.id), name: product.category.name } : null,
   };
 }
 

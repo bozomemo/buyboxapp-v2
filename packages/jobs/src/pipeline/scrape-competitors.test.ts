@@ -11,7 +11,15 @@ import {
   type ICompetitorSource,
   type ProductPageRef,
 } from '@buybox/adapters';
-import { competitionRepo, competitorSellersRepo, configRepo, eventsRepo, repricingRepo } from '@buybox/db';
+import {
+  competitionRepo,
+  competitorSellersRepo,
+  configRepo,
+  eventsRepo,
+  listingsRepo,
+  repricingRepo,
+  trackedProductsRepo,
+} from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -430,6 +438,107 @@ describe('ScrapeCompetitors', () => {
 
     expect(calls).toHaveLength(2);
     expect(result.itemsTotal).toBe(2);
+  });
+});
+
+describe('tracked products (doc 06 §12.2) — customer feedback 2026-08-25', () => {
+  let db: TestDb;
+
+  beforeEach(async () => {
+    db = await createSqliteTestDb();
+    await seedMarketplace(db.appDb);
+  });
+
+  afterEach(() => db.cleanup());
+
+  async function run(source: ICompetitorSource): Promise<JobResult> {
+    const scheduler = new Scheduler({
+      appDb: db.appDb,
+      clock: new FakeClock(NOW),
+      adapters: buildAdapterRegistry([['trendyol', createFakeAdapter()]]),
+      competitorSources: buildCompetitorSourceRegistry([['trendyol', source]]),
+      instanceId: `tracked-${runCounter++}`,
+    });
+    let result: JobResult = { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
+    scheduler.register({
+      jobName: SCRAPE_COMPETITORS_JOB,
+      handler: async (ctx) => {
+        result = await scrapeCompetitors(ctx);
+        return result;
+      },
+    });
+    await scheduler.enqueueNow(
+      SCRAPE_COMPETITORS_JOB,
+      JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+    );
+    await scheduler.tick();
+    await scheduler.shutdown();
+    return result;
+  }
+
+  it('scrapes an active tracked product even with zero listing candidates, and never touches listings/repricing_state', async () => {
+    await trackedProductsRepo.addTrackedProduct(db.appDb, {
+      id: 'tracked-1',
+      marketplaceCode: 'trendyol',
+      productRef: '757251065',
+      productUrl: 'https://www.trendyol.com/x-p-757251065',
+      label: 'Rakip Ürün X',
+      isActive: true,
+      addedAt: NOW,
+    });
+    const { source } = fakeSource(() => [offer({ rank: 1, price: Money.fromKurus(99_00n) })]);
+
+    const result = await run(source);
+
+    expect(result.itemsOk).toBe(1);
+    expect(result.itemsFailed).toBe(0);
+    const obs = await trackedProductsRepo.latestTrackedProductObservations(db.appDb, 'tracked-1');
+    expect(obs).toHaveLength(1);
+    expect(obs[0]?.status).toBe('ok');
+    expect(obs[0]?.price).toBe(99_00n);
+    // Isolation is structural (a separate table `Reprice`/`ObserveBuybox` never query), asserted
+    // here rather than merely assumed: nothing about tracking this product created a listing.
+    const listings = await listingsRepo.queryListings(db.appDb, { limit: 10, offset: 0 });
+    expect(listings.total).toBe(0);
+  });
+
+  it('a fetch failure for a tracked product is recorded and does not fail the run', async () => {
+    await trackedProductsRepo.addTrackedProduct(db.appDb, {
+      id: 'tracked-2',
+      marketplaceCode: 'trendyol',
+      productRef: '1',
+      productUrl: 'https://www.trendyol.com/x-p-1',
+      label: 'Rakip Ürün Y',
+      isActive: true,
+      addedAt: NOW,
+    });
+    const { source } = fakeSource(() => new CompetitorSourceError('boom', 'fetchFailed'));
+
+    const result = await run(source);
+
+    expect(result.itemsFailed).toBe(1);
+    const obs = await trackedProductsRepo.latestTrackedProductObservations(db.appDb, 'tracked-2');
+    expect(obs).toHaveLength(1);
+    expect(obs[0]?.status).toBe('fetchFailed');
+    expect(obs[0]?.price).toBeNull();
+  });
+
+  it('an inactive tracked product is not scraped', async () => {
+    await trackedProductsRepo.addTrackedProduct(db.appDb, {
+      id: 'tracked-3',
+      marketplaceCode: 'trendyol',
+      productRef: '2',
+      productUrl: 'https://www.trendyol.com/x-p-2',
+      label: 'Pasif',
+      isActive: false,
+      addedAt: NOW,
+    });
+    const { source, calls } = fakeSource(() => [offer()]);
+
+    await run(source);
+
+    expect(calls).toHaveLength(0);
+    expect(await trackedProductsRepo.latestTrackedProductObservations(db.appDb, 'tracked-3')).toHaveLength(0);
   });
 });
 

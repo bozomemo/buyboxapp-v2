@@ -57,6 +57,13 @@
       "when": 1787037016013,
       "tag": "0007_charming_black_crow",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787682327676,
+      "tag": "0008_curvy_titanium_man",
+      "breakpoints": true
     }
   ]
 }

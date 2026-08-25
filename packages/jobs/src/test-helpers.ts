@@ -216,6 +216,8 @@ export async function seedListing(appDb: AppDatabase, options: SeedListingOption
     allowDecrease: true,
     repriceEnabled: options.repriceEnabled ?? true,
     observationEnabled: options.observationEnabled ?? true,
+    brandId: null,
+    categoryId: null,
     extra: options.extra ?? null,
     firstSeenAt: NOW,
     lastSeenAt: NOW,

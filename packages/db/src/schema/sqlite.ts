@@ -187,6 +187,44 @@ export const bundleMembers = sqliteTable(
   ],
 );
 
+/**
+ * A marketplace brand, keyed by the id the marketplace itself issues (doc 01 §6, customer
+ * feedback 2026-08-25 §12.1). Normalised — not a `brand_name` column on `listings` — so
+ * "click a brand, see its products" is a join against one row rather than a `GROUP BY` over
+ * possibly-inconsistent text, and a brand rename updates one row instead of every listing that
+ * carries the old name.
+ */
+export const brands = sqliteTable(
+  'brands',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    ref: text('ref').notNull(),
+    name: text('name').notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('brands_marketplace_ref').on(t.marketplaceCode, t.ref)],
+);
+
+/** Same shape and reasoning as {@link brands}, for the marketplace's category tree. */
+export const categories = sqliteTable(
+  'categories',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    ref: text('ref').notNull(),
+    name: text('name').notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('categories_marketplace_ref').on(t.marketplaceCode, t.ref)],
+);
+
 export const listings = sqliteTable(
   'listings',
   {
@@ -230,6 +268,13 @@ export const listings = sqliteTable(
     // listing without opting it into the pricing engine. Same operator-owned, starts-disabled
     // treatment as repriceEnabled — see the comment on `upsertListing` below.
     observationEnabled: bool('observation_enabled').notNull(),
+    // Nullable: only Trendyol's product-filter response carries these today (api-references.md
+    // §1.4 — already the endpoint ImportListings calls, so no new API call). Hepsiburada's
+    // Listing service has no such field (api-references.md §2.4); left null there rather than
+    // faked. `set null` on delete: a brand/category row disappearing must not take listings
+    // with it (doc 09 §25's "never delete-then-reload" applies here too).
+    brandId: text('brand_id').references(() => brands.id, { onDelete: 'set null' }),
+    categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
     extra: json('extra'),
     firstSeenAt: timestampMs('first_seen_at').notNull(),
     lastSeenAt: timestampMs('last_seen_at').notNull(),
@@ -240,6 +285,8 @@ export const listings = sqliteTable(
     index('listings_base_stock_code').on(t.baseStockCode),
     index('listings_marketplace_salable_reprice').on(t.marketplaceCode, t.isSalable, t.repriceEnabled),
     index('listings_seller_stock_code').on(t.sellerStockCode),
+    index('listings_brand_id').on(t.brandId),
+    index('listings_category_id').on(t.categoryId),
   ],
 );
 
@@ -366,6 +413,57 @@ export const competitorSellers = sqliteTable(
     uniqueIndex('competitor_sellers_marketplace_ref').on(t.marketplaceCode, t.sellerRef),
     index('competitor_sellers_group').on(t.groupId),
   ],
+);
+
+/**
+ * A marketplace product we do **not** sell, watched for price/rank only (doc 06 §12.2,
+ * customer feedback 2026-08-25). Deliberately its own table rather than a `listings` row with
+ * sale-facing fields left null: `Reprice` and `ObserveBuybox` (doc 07 §2.1/§2.2) both query
+ * `listings` alone, so a tracked product living in a wholly separate table can *structurally*
+ * never be selected for a price submission — there is no flag to check because there is
+ * nothing here for that code to see in the first place.
+ */
+export const trackedProducts = sqliteTable(
+  'tracked_products',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    /** Trendyol `contentId` or Hepsiburada SKU — same identity `ProductPageRef.contentId` uses. */
+    productRef: text('product_ref').notNull(),
+    productUrl: text('product_url').notNull(),
+    /** Operator-entered, for the list screen — never used as an identity. */
+    label: text('label').notNull(),
+    isActive: bool('is_active').notNull(),
+    addedAt: timestampMs('added_at').notNull(),
+  },
+  (t) => [uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef)],
+);
+
+/**
+ * One row per offer, per look — the tracked-product analogue of `competitor_observations`, but
+ * simpler on purpose: every successful scrape is written (no change-detection hash, no
+ * separate `scrape_runs` proof-of-look row), since the tracked-product set is expected to be
+ * small and operator-curated rather than a whole catalogue. Revisit if that stops being true.
+ */
+export const trackedProductObservations = sqliteTable(
+  'tracked_product_observations',
+  {
+    id: text('id').primaryKey(),
+    trackedProductId: text('tracked_product_id')
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    observedAt: timestampMs('observed_at').notNull(),
+    status: text('status').notNull(), // 'ok' | 'parseFailed' | 'fetchFailed'
+    rank: integer('rank'),
+    sellerName: text('seller_name'),
+    sellerRef: text('seller_ref'),
+    price: money('price'),
+    finalPrice: money('final_price'),
+    offeredStock: integer('offered_stock'),
+  },
+  (t) => [index('tracked_product_observations_product_observed').on(t.trackedProductId, t.observedAt)],
 );
 
 export const priceSubmissions = sqliteTable(

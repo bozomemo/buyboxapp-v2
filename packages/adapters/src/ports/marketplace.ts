@@ -86,6 +86,16 @@ export interface ListingSnapshot {
    * an error. Nothing on the control path reads it.
    */
   readonly productPage?: ProductPageRef | null;
+  /**
+   * The marketplace's own brand/category identity for this product (doc 06 §12.1). Optional:
+   * present on Trendyol's product filter (api-references §1.4 — `brand{id,name}`,
+   * `category{id,name}`, already part of the response `fetchListings` consumes, no extra
+   * call); absent on Hepsiburada, whose Listing service carries neither (api-references §2.4).
+   * `null` and "absent" both mean "unknown" here — there is no scenario where a product
+   * legitimately has no brand, so nothing reads absence as a negative the way `isFrozen` does.
+   */
+  readonly brand?: { readonly ref: string; readonly name: string } | null;
+  readonly category?: { readonly ref: string; readonly name: string } | null;
 }
 
 /** The control-path buybox read (doc 10 §5.1) — never the reporting scrape. */

@@ -174,6 +174,37 @@ export const bundleMembers = pgTable(
   ],
 );
 
+/** See the doc comment on `brands` in `schema/sqlite.ts` — identical shape and reasoning. */
+export const brands = pgTable(
+  'brands',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    ref: text('ref').notNull(),
+    name: text('name').notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('brands_marketplace_ref').on(t.marketplaceCode, t.ref)],
+);
+
+export const categories = pgTable(
+  'categories',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    ref: text('ref').notNull(),
+    name: text('name').notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('categories_marketplace_ref').on(t.marketplaceCode, t.ref)],
+);
+
 export const listings = pgTable(
   'listings',
   {
@@ -217,6 +248,9 @@ export const listings = pgTable(
     // listing without opting it into the pricing engine. Same operator-owned, starts-disabled
     // treatment as repriceEnabled — see the comment on `upsertListing` below.
     observationEnabled: bool('observation_enabled').notNull(),
+    // See the doc comment on this pair in `schema/sqlite.ts`.
+    brandId: text('brand_id').references(() => brands.id, { onDelete: 'set null' }),
+    categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
     extra: json('extra'),
     firstSeenAt: timestampMs('first_seen_at').notNull(),
     lastSeenAt: timestampMs('last_seen_at').notNull(),
@@ -227,6 +261,8 @@ export const listings = pgTable(
     index('listings_base_stock_code').on(t.baseStockCode),
     index('listings_marketplace_salable_reprice').on(t.marketplaceCode, t.isSalable, t.repriceEnabled),
     index('listings_seller_stock_code').on(t.sellerStockCode),
+    index('listings_brand_id').on(t.brandId),
+    index('listings_category_id').on(t.categoryId),
   ],
 );
 
@@ -337,6 +373,43 @@ export const competitorSellers = pgTable(
     uniqueIndex('competitor_sellers_marketplace_ref').on(t.marketplaceCode, t.sellerRef),
     index('competitor_sellers_group').on(t.groupId),
   ],
+);
+
+/** See the doc comment on `trackedProducts` in `schema/sqlite.ts` — identical shape and reasoning. */
+export const trackedProducts = pgTable(
+  'tracked_products',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    productRef: text('product_ref').notNull(),
+    productUrl: text('product_url').notNull(),
+    label: text('label').notNull(),
+    isActive: bool('is_active').notNull(),
+    addedAt: timestampMs('added_at').notNull(),
+  },
+  (t) => [uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef)],
+);
+
+/** See the doc comment on `trackedProductObservations` in `schema/sqlite.ts`. */
+export const trackedProductObservations = pgTable(
+  'tracked_product_observations',
+  {
+    id: text('id').primaryKey(),
+    trackedProductId: text('tracked_product_id')
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    observedAt: timestampMs('observed_at').notNull(),
+    status: text('status').notNull(),
+    rank: integer('rank'),
+    sellerName: text('seller_name'),
+    sellerRef: text('seller_ref'),
+    price: money('price'),
+    finalPrice: money('final_price'),
+    offeredStock: integer('offered_stock'),
+  },
+  (t) => [index('tracked_product_observations_product_observed').on(t.trackedProductId, t.observedAt)],
 );
 
 export const priceSubmissions = pgTable(

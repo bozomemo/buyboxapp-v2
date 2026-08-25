@@ -22,6 +22,10 @@
  *   (doc 07 §7: "per-failure silence");
  * - writes only `scrape_runs`, `competitor_observations` and `competitor_sellers`, never
  *   `repricing_state`, `price_submissions` or `buybox_observations`.
+ *
+ * Also runs the tracked-products half (doc 06 §12.2) at the end of each per-marketplace call —
+ * see `scrape-tracked-products.ts` for why that is a separate function over a separate table
+ * rather than folded into the loop above.
  */
 import { createHash } from 'node:crypto';
 import { CompetitorSourceError, type CompetitorOffer, type CompetitorPageSnapshot } from '@buybox/adapters';
@@ -49,6 +53,7 @@ import {
 import { evaluateAlertsForListing, toListingContext } from './evaluate-alerts.js';
 import { decodeProductPageRef } from './listing-extra.js';
 import { computeObservationTier, type ObservationTier } from './observe-buybox.js';
+import { scrapeTrackedProducts } from './scrape-tracked-products.js';
 
 export const SCRAPE_COMPETITORS_JOB = 'ScrapeCompetitors';
 
@@ -447,6 +452,34 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
     });
   }
 
+  // Tracked products (doc 06 §12.2) — a wholly separate table and candidate source, run last
+  // and isolated by its own `try`/`catch` so a failure there can never turn a clean listings
+  // scrape into a failed run, matching this job's own "never fail the run on one bad page"
+  // posture (see the module header) applied one level up.
+  let trackedOk = 0;
+  let trackedFailed = 0;
+  try {
+    const trackedResult = await scrapeTrackedProducts(ctx, marketplaceCode, source);
+    trackedOk = trackedResult.itemsOk;
+    trackedFailed = trackedResult.itemsFailed;
+  } catch (error) {
+    await eventsRepo.logEvent(ctx.appDb, {
+      id: newId(),
+      at: nowMs,
+      level: 'warn',
+      marketplaceCode,
+      listingId: null,
+      jobRunId: ctx.correlationId,
+      code: 'TrackedProductsScrapeAborted',
+      message: `Tracked-product scrape for ${marketplaceCode} aborted: ${error instanceof Error ? error.message : String(error)} — the listings scrape above is unaffected`,
+      context: null,
+    });
+  }
+
   // Deliberately no `error`: individual page failures never fail the run (see the header).
-  return { itemsTotal: due.length, itemsOk, itemsFailed };
+  return {
+    itemsTotal: due.length + trackedOk + trackedFailed,
+    itemsOk: itemsOk + trackedOk,
+    itemsFailed: itemsFailed + trackedFailed,
+  };
 }
