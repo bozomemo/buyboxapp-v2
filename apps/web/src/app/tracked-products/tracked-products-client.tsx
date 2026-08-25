@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney } from '@/lib/format';
+import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 
 interface Observation {
   status: 'ok' | 'parseFailed' | 'fetchFailed';
@@ -96,6 +97,7 @@ export function TrackedProductsClient() {
                   Etiket: p.label,
                   Pazaryeri: p.marketplaceCode,
                   Aktif: p.isActive ? 'evet' : 'hayır',
+                  'Satıcı Sayısı': p.latest.filter((o) => o.status === 'ok').length,
                   'Buybox Satıcı': bb?.sellerName ?? '',
                   'Buybox Fiyat': bb?.price ? (Number(bb.price) / 100).toFixed(2) : '',
                   'Son Bakış': p.latest[0] ? formatDateTime(p.latest[0].observedAt) : '',
@@ -110,10 +112,10 @@ export function TrackedProductsClient() {
       </div>
 
       <p className="max-w-2xl text-sm text-(--color-muted)">
-        Satmadığımız bir ürünün fiyat/sıra bilgisini izlemek için ürün linkini yapıştırın. Bu
-        liste <strong>raporlamadır</strong> — hiçbir fiyat kararını etkilemez (doc 07 §7&apos;nin
-        ScrapeCompetitors izolasyonuyla aynı ilke). Tarama, ScrapeCompetitors işi her çalıştığında
-        (varsayılan kapalı — Ayarlar&apos;dan açılmalı) bu listeyi de günceller.
+        Satmadığımız bir ürünün fiyat/sıra bilgisini izlemek için ürün linkini yapıştırın. Bu liste{' '}
+        <strong>raporlamadır</strong> — hiçbir fiyat kararını etkilemez (doc 07 §7&apos;nin ScrapeCompetitors
+        izolasyonuyla aynı ilke). Tarama, ScrapeCompetitors işi her çalıştığında (varsayılan kapalı —
+        Ayarlar&apos;dan açılmalı) bu listeyi de günceller.
       </p>
 
       <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) p-3">
@@ -148,10 +150,13 @@ export function TrackedProductsClient() {
 
       <TableFrame>
         <table className="w-full text-sm">
-          <thead className={`${STICKY_HEAD} bg-(--color-hover) text-left text-xs uppercase text-(--color-muted)`}>
+          <thead
+            className={`${STICKY_HEAD} bg-(--color-hover) text-left text-xs uppercase text-(--color-muted)`}
+          >
             <tr>
               <th className="px-2 py-2">Etiket</th>
               <th className="px-2 py-2">Pazaryeri</th>
+              <th className="px-2 py-2">Satıcı Sayısı</th>
               <th className="px-2 py-2">Buybox Satıcı</th>
               <th className="px-2 py-2">Buybox Fiyat</th>
               <th className="px-2 py-2">Son Bakış</th>
@@ -165,16 +170,37 @@ export function TrackedProductsClient() {
               return (
                 <tr key={p.id}>
                   <td className="px-2 py-1">
-                    <a href={p.productUrl} target="_blank" rel="noreferrer" className="text-(--color-accent) hover:underline">
+                    {/* Etiket detaya gider — ürün sayfasının kendisi ayrı bir bağlantı, çünkü
+                        operatörün asıl istediği bütün satıcıların fiyat/stokları (doc 06 §12.2). */}
+                    <Link
+                      href={`/tracked-products/${p.id}`}
+                      className="text-(--color-accent) hover:underline"
+                    >
                       {p.label}
+                    </Link>
+                    <a
+                      href={p.productUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Pazaryerindeki ürün sayfası"
+                      className="ml-1 text-(--color-muted) hover:text-(--color-accent)"
+                    >
+                      ↗
                     </a>
                   </td>
                   <td className="px-2 py-1">{p.marketplaceCode}</td>
+                  <td className="px-2 py-1">
+                    {formatNumber(p.latest.filter((o) => o.status === 'ok').length)}
+                  </td>
                   <td className="px-2 py-1">{bb?.sellerName ?? '—'}</td>
                   <td className="px-2 py-1">{bb?.price ? formatMoney(BigInt(bb.price)) : '—'}</td>
                   <td className="px-2 py-1">
                     {lastLook ? (
-                      <span title={lastLook.status !== 'ok' ? `Son bakış başarısız: ${lastLook.status}` : undefined}>
+                      <span
+                        title={
+                          lastLook.status !== 'ok' ? `Son bakış başarısız: ${lastLook.status}` : undefined
+                        }
+                      >
                         {formatDateTime(lastLook.observedAt)}
                         {lastLook.status !== 'ok' && <span className="ml-1 text-(--color-danger)">⚠</span>}
                       </span>
@@ -183,7 +209,11 @@ export function TrackedProductsClient() {
                     )}
                   </td>
                   <td className="px-2 py-1 text-right">
-                    <button type="button" onClick={() => void remove(p.id)} className="text-(--color-muted) hover:text-(--color-danger)">
+                    <button
+                      type="button"
+                      onClick={() => void remove(p.id)}
+                      className="text-(--color-muted) hover:text-(--color-danger)"
+                    >
                       Kaldır
                     </button>
                   </td>
@@ -192,7 +222,7 @@ export function TrackedProductsClient() {
             })}
             {products.length === 0 && !loading && (
               <tr>
-                <td colSpan={6} className="px-2 py-6 text-center text-(--color-muted)">
+                <td colSpan={7} className="px-2 py-6 text-center text-(--color-muted)">
                   Henüz takip edilen ürün yok.
                 </td>
               </tr>

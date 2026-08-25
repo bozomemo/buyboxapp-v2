@@ -4,7 +4,7 @@
  * `schema/sqlite.ts` for why this is a wholly separate table from `listings` rather than a
  * listing row with the sale-facing fields left null.
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, gte } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -97,12 +97,34 @@ export async function findTrackedProductByRef(
   });
 }
 
+export async function getTrackedProduct(
+  appDb: AppDatabase,
+  id: string,
+): Promise<TrackedProductRow | undefined> {
+  return withDialect(appDb, {
+    sqlite: async (db) =>
+      (
+        await db.select().from(sqliteSchema.trackedProducts).where(eq(sqliteSchema.trackedProducts.id, id))
+      )[0],
+    postgres: async (db) =>
+      (
+        await db
+          .select()
+          .from(postgresSchema.trackedProducts)
+          .where(eq(postgresSchema.trackedProducts.id, id))
+      )[0],
+    mysql: async (db) =>
+      (await db.select().from(mysqlSchema.trackedProducts).where(eq(mysqlSchema.trackedProducts.id, id)))[0],
+  });
+}
+
 /** Set by the operator removing a tracked product from the list (doc 06 §12.2) — a hard
  * delete, since its observation history has no other purpose once tracking stops. */
 export async function deleteTrackedProduct(appDb: AppDatabase, id: string): Promise<void> {
   await runDialect(appDb, {
     sqlite: (db) => db.delete(sqliteSchema.trackedProducts).where(eq(sqliteSchema.trackedProducts.id, id)),
-    postgres: (db) => db.delete(postgresSchema.trackedProducts).where(eq(postgresSchema.trackedProducts.id, id)),
+    postgres: (db) =>
+      db.delete(postgresSchema.trackedProducts).where(eq(postgresSchema.trackedProducts.id, id)),
     mysql: (db) => db.delete(mysqlSchema.trackedProducts).where(eq(mysqlSchema.trackedProducts.id, id)),
   });
 }
@@ -132,6 +154,68 @@ export async function insertTrackedProductObservations(
     postgres: (db) => db.insert(postgresSchema.trackedProductObservations).values([...rows]),
     mysql: (db) => db.insert(mysqlSchema.trackedProductObservations).values([...rows]),
   });
+}
+
+/**
+ * Every offer of every look since `sinceMs`, oldest first — the detail screen's whole payload
+ * (doc 06 §12.2): the newest look is its "all sellers now" table and the looks before it are the
+ * per-seller price history.
+ *
+ * Reading the window in one query rather than a look-at-a-time is what makes the per-seller
+ * series possible at all: a seller that disappears from the page has no row in the newer looks,
+ * and there is no other way to notice that than to have the older ones in hand. The window is
+ * the caller's to bound; the tracked set is operator-curated and small (see the doc comment on
+ * `trackedProductObservations` in `schema/sqlite.ts`).
+ */
+export async function trackedProductObservationsSince(
+  appDb: AppDatabase,
+  trackedProductId: string,
+  sinceMs: number,
+): Promise<TrackedProductObservationRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.trackedProductObservations)
+        .where(
+          and(
+            eq(sqliteSchema.trackedProductObservations.trackedProductId, trackedProductId),
+            gte(sqliteSchema.trackedProductObservations.observedAt, sinceMs),
+          ),
+        )
+        .orderBy(
+          asc(sqliteSchema.trackedProductObservations.observedAt),
+          asc(sqliteSchema.trackedProductObservations.rank),
+        ),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.trackedProductObservations)
+        .where(
+          and(
+            eq(postgresSchema.trackedProductObservations.trackedProductId, trackedProductId),
+            gte(postgresSchema.trackedProductObservations.observedAt, sinceMs),
+          ),
+        )
+        .orderBy(
+          asc(postgresSchema.trackedProductObservations.observedAt),
+          asc(postgresSchema.trackedProductObservations.rank),
+        ),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.trackedProductObservations)
+        .where(
+          and(
+            eq(mysqlSchema.trackedProductObservations.trackedProductId, trackedProductId),
+            gte(mysqlSchema.trackedProductObservations.observedAt, sinceMs),
+          ),
+        )
+        .orderBy(
+          asc(mysqlSchema.trackedProductObservations.observedAt),
+          asc(mysqlSchema.trackedProductObservations.rank),
+        ),
+  }) as Promise<TrackedProductObservationRow[]>;
 }
 
 /** The latest look's offers (or its lone failure row) — the list screen's "current price/rank". */

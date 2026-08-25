@@ -589,9 +589,42 @@ brand's full catalogue rather than pasting a link) needs the public brand-page s
 (trendyol-merchants-scraping-guide.md), not the authenticated Product Integration API — that API
 only sees our own catalogue. Revisit as a follow-up if link-only proves too manual in practice.
 
+**Detail screen `/tracked-products/[id]`** (customer feedback 2026-08-25, follow-up: *"onların da
+aynı şekilde `/listings/[id]` tarzı bir ekranı olsun ve bütün satıcılarının fiyatlarını ve
+stoklarını görmek istiyorum"*). Every seller was already being recorded — `scrapeTrackedProducts`
+writes one `tracked_product_observations` row per offer per look — and the list screen was showing
+only the rank-1 row, so this screen surfaces what was already there rather than collecting
+anything new.
+
+Four things the listing detail (§5) has that this one deliberately does **not**: the cost
+waterfall, the engine panel, the manual-price form and the min/max bounds. We do not sell this
+product, so there is no cost, no engine state and nothing to submit — the screen is
+reporting-only, in the same sense as §6.
+
+What it shows: a *Şu An* summary (buybox seller and price, cheapest offer, seller count, total
+visible stock, last look and its status), a **sellers table** — rank, seller, price, price move
+since the previous look, customer price, stock, last seen — and a buybox price history with the
+same dependency-free inline sparkline §5 uses. A seller row expands to that seller's own series
+across the window.
+
+Two decisions inside it:
+
+- **A seller that leaves the page keeps its row**, greyed and marked *teklifte değil*, ordered
+  after the current offers. A competitor withdrawing is information; dropping the row would
+  render it as an absence the operator cannot see.
+- **Seller identity is `seller_ref`**, with a fallback to the folded display name **only** when
+  the payload carried no id — and the expanded row says so. That fallback groups rows within one
+  product's own history for display; it is never an identity claim, which is the distinction
+  `competitor_seller_groups` (doc 05 §5) exists to protect across marketplaces.
+
+Fed by `trackedProductsRepo.trackedProductObservationsSince`, which reads the whole 30-day window
+in one query: a seller that vanishes has no row in the newer looks, so there is no way to notice
+its absence except to hold the older ones.
+
 **Known gap:** `tracked_product_observations` has no retention window yet (doc 05 §10) and
 grows without bound. Low risk while the tracked-product set stays small and operator-curated,
-but should get a window before this sees sustained use.
+but should get a window before this sees sustained use — and the detail screen above now reads
+that whole history per view, so the window matters a little more than it did.
 
 ### 12.3 Brand first in every product name — built (R-UI-14)
 
