@@ -1,8 +1,19 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { DEFAULT_PAGE_SIZE, Pagination, STICKY_HEAD, TableFrame } from '@/components/table';
+import {
+  type ColumnDef,
+  ColumnMenu,
+  DEFAULT_PAGE_SIZE,
+  Pagination,
+  resizableTableStyle,
+  ResizableTh,
+  STICKY_HEAD,
+  TableFrame,
+  useColumnPrefs,
+} from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 
 interface Row {
@@ -34,9 +45,58 @@ interface Row {
   secondPrice: string | null;
   thirdPrice: string | null;
   rank: number | null;
+  /** Reporting only (competitor_observations, not the pricing-path buybox_observations). */
+  buyboxSellerName: string | null;
 }
 
 const PHASES = ['SEEKING', 'CLIMBING', 'REFINING', 'OPTIMUM', 'BLOCKED'] as const;
+
+/** Mirrors `CSV_EXPORT_LIMIT` in `api/listings/route.ts` — shown in the export button's title. */
+const CSV_EXPORT_ROW_CAP = 5000;
+
+/** The select-all checkbox column: not operator-resizable, but `table-layout: fixed` still needs
+ * its width counted in the table's total (see `resizableTableStyle`). */
+const SELECT_COLUMN_PX = 36;
+
+type ColumnId =
+  | 'marketplace'
+  | 'productName'
+  | 'stockCode'
+  | 'floorPrice'
+  | 'price'
+  | 'rank'
+  | 'buyboxPrice'
+  | 'buyboxSeller'
+  | 'phase'
+  | 'offeredStock'
+  | 'minMax'
+  | 'autoBB'
+  | 'observation';
+
+/** Server-sortable columns — the `sort` values `/api/listings` accepts (doc 06 §4.1). Every
+ * other column is display-only; expanding this list means expanding the API's `sort` union. */
+const SORTABLE: Partial<Record<ColumnId, 'lastSeenAt' | 'productName' | 'price'>> = {
+  productName: 'productName',
+  price: 'price',
+};
+
+/** The reference column-customisation setup (doc 06 §4.1) — see `useColumnPrefs`'s doc comment
+ * for why this is the pattern other grids should copy rather than reinvent. */
+const COLUMN_DEFS: ColumnDef<ColumnId>[] = [
+  { id: 'marketplace', label: 'Pazaryeri', defaultWidth: 90 },
+  { id: 'productName', label: 'Ürün Adı', defaultWidth: 260 },
+  { id: 'stockCode', label: 'Stok Kodu', defaultWidth: 100 },
+  { id: 'floorPrice', label: 'Dip Fiyat', defaultWidth: 90 },
+  { id: 'price', label: 'Satış Fiyatı', defaultWidth: 140 },
+  { id: 'rank', label: 'Sıra', defaultWidth: 60 },
+  { id: 'buyboxPrice', label: 'Buybox Fiyatı', defaultWidth: 100 },
+  { id: 'buyboxSeller', label: 'Buybox Mağaza', defaultWidth: 140 },
+  { id: 'phase', label: 'Faz', defaultWidth: 90 },
+  { id: 'offeredStock', label: 'Satış Stok', defaultWidth: 80 },
+  { id: 'minMax', label: 'Min/Max', defaultWidth: 130 },
+  { id: 'autoBB', label: 'Oto BB', defaultWidth: 60 },
+  { id: 'observation', label: 'Gözlem', defaultWidth: 60 },
+];
 
 interface Filters {
   marketplaceCode: string;
@@ -219,6 +279,73 @@ function MinMaxCell({ row, onChanged }: { row: Row; onChanged: () => void }) {
   );
 }
 
+/** One cell per column id — kept in one place so `COLUMN_DEFS` stays the single source of
+ * truth for both the header row and the body row rather than two parallel lists drifting apart. */
+function renderCell(id: ColumnId, row: Row, onChanged: () => void): React.ReactNode {
+  switch (id) {
+    case 'marketplace':
+      return row.marketplaceCode;
+    case 'productName':
+      return (
+        <Link href={`/listings/${row.id}`} className="text-(--color-accent) hover:underline">
+          {row.productName}
+        </Link>
+      );
+    case 'stockCode':
+      return row.baseStockCode ?? '—';
+    case 'floorPrice':
+      return row.floorPrice ? formatMoney(BigInt(row.floorPrice)) : '—';
+    case 'price':
+      return <ManualPriceCell row={row} onChanged={onChanged} />;
+    case 'rank':
+      return row.rank ?? '—';
+    case 'buyboxPrice':
+      return row.buyboxPrice ? formatMoney(BigInt(row.buyboxPrice)) : '—';
+    case 'buyboxSeller':
+      return row.buyboxSellerName ?? '—';
+    case 'phase':
+      return row.phase ?? '—';
+    case 'offeredStock':
+      return formatNumber(row.offeredStock);
+    case 'minMax':
+      return <MinMaxCell row={row} onChanged={onChanged} />;
+    case 'autoBB':
+      return (
+        <input
+          type="checkbox"
+          checked={row.repriceEnabled}
+          onChange={(e) => {
+            void fetch('/api/listings/bulk', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: e.target.checked ? 'enableAutomation' : 'disableAutomation',
+                ids: [row.id],
+              }),
+            }).then(onChanged);
+          }}
+        />
+      );
+    case 'observation':
+      return (
+        <input
+          type="checkbox"
+          checked={row.observationEnabled}
+          onChange={(e) => {
+            void fetch('/api/listings/bulk', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: e.target.checked ? 'enableObservation' : 'disableObservation',
+                ids: [row.id],
+              }),
+            }).then(onChanged);
+          }}
+        />
+      );
+  }
+}
+
 export function ListingsClient() {
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
@@ -227,9 +354,21 @@ export function ListingsClient() {
   const [filters, setFilters] = useState<Filters>({ marketplaceCode: '', phases: [], text: '' });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [sort, setSort] = useState<{ key: ColumnId; dir: 'asc' | 'desc' } | null>(null);
+  const columns = useColumnPrefs('listings-columns-v1', COLUMN_DEFS);
 
-  function load() {
-    setLoading(true);
+  // Cross-navigation from /brands (doc 06 §12.1, §4.5's stock-code pattern applied to brand):
+  // `brandId` arrives via the URL rather than component state, and is cleared locally once the
+  // operator dismisses the chip below — reopening the same link later still re-applies it.
+  const searchParams = useSearchParams();
+  const [brandFilter, setBrandFilter] = useState<{ id: string; name: string } | null>(() => {
+    const id = searchParams.get('brandId');
+    const name = searchParams.get('brandName');
+    return id ? { id, name: name ?? id } : null;
+  });
+
+  /** Shared with the CSV export link below, so a filtered export matches the filtered grid. */
+  function filterParams(): URLSearchParams {
     const params = new URLSearchParams();
     if (filters.marketplaceCode) params.set('marketplaceCode', filters.marketplaceCode);
     if (filters.phases.length > 0) params.set('phases', filters.phases.join(','));
@@ -240,6 +379,17 @@ export function ListingsClient() {
     if (filters.observationEnabled !== undefined) {
       params.set('observationEnabled', String(filters.observationEnabled));
     }
+    if (brandFilter) params.set('brandId', brandFilter.id);
+    if (sort) {
+      params.set('sort', SORTABLE[sort.key]!);
+      params.set('sortDir', sort.dir);
+    }
+    return params;
+  }
+
+  function load() {
+    setLoading(true);
+    const params = filterParams();
     params.set('limit', String(pageSize));
     params.set('offset', String(page * pageSize));
     fetch(`/api/listings?${params.toString()}`)
@@ -251,7 +401,18 @@ export function ListingsClient() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, [filters, page, pageSize]);
+  useEffect(load, [filters, page, pageSize, sort, brandFilter]);
+
+  /** Header click for the columns `SORTABLE` covers: none → asc → desc → none. */
+  function toggleSort(columnId: ColumnId) {
+    if (!SORTABLE[columnId]) return;
+    setPage(0);
+    setSort((prev) => {
+      if (prev?.key !== columnId) return { key: columnId, dir: 'asc' };
+      if (prev.dir === 'asc') return { key: columnId, dir: 'desc' };
+      return null;
+    });
+  }
 
   function togglePhase(phase: string) {
     setPage(0);
@@ -291,7 +452,42 @@ export function ListingsClient() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">İlanlar</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">İlanlar</h1>
+        <div className="flex items-center gap-2">
+          <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+          <a
+            href={`/api/listings?${(() => {
+              const p = filterParams();
+              p.set('format', 'csv');
+              return p.toString();
+            })()}`}
+            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+            title={`Geçerli filtreyle eşleşen ilk ${CSV_EXPORT_ROW_CAP.toLocaleString('tr-TR')} ilanı indirir`}
+          >
+            Excel&apos;e Aktar
+          </a>
+        </div>
+      </div>
+
+      {brandFilter && (
+        <div className="flex items-center gap-2 rounded border border-(--color-accent-border) bg-(--color-accent-bg) px-3 py-1.5 text-sm">
+          <span>
+            Marka: <strong>{brandFilter.name}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setPage(0);
+              setBrandFilter(null);
+            }}
+            className="text-(--color-muted) hover:text-(--color-text)"
+            title="Marka filtresini kaldır"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-end gap-3 rounded border border-(--color-border) p-3">
         <label className="flex flex-col text-xs">
@@ -412,28 +608,32 @@ export function ListingsClient() {
       )}
 
       <TableFrame>
-        <table className="w-full text-xs">
+        <table className="text-xs" style={resizableTableStyle(COLUMN_DEFS, columns, SELECT_COLUMN_PX)}>
           <thead className={`${STICKY_HEAD} bg-(--color-hover) text-left uppercase text-(--color-muted)`}>
             <tr>
-              <th className="px-2 py-2">
+              <th className="px-2 py-2" style={{ width: SELECT_COLUMN_PX }}>
                 <input
                   type="checkbox"
                   checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
                   onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())}
                 />
               </th>
-              <th className="px-2 py-2">Pazaryeri</th>
-              <th className="px-2 py-2">Ürün Adı</th>
-              <th className="px-2 py-2">Stok Kodu</th>
-              <th className="px-2 py-2">Dip Fiyat</th>
-              <th className="px-2 py-2">Satış Fiyatı</th>
-              <th className="px-2 py-2">Sıra</th>
-              <th className="px-2 py-2">Buybox Fiyatı</th>
-              <th className="px-2 py-2">Faz</th>
-              <th className="px-2 py-2">Satış Stok</th>
-              <th className="px-2 py-2">Min/Max</th>
-              <th className="px-2 py-2">Oto BB</th>
-              <th className="px-2 py-2">Gözlem</th>
+              {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-2 py-2">
+                  {SORTABLE[d.id] ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(d.id)}
+                      className="flex items-center gap-1 hover:text-(--color-text)"
+                    >
+                      {d.label}
+                      {sort?.key === d.id && <span>{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+                    </button>
+                  ) : (
+                    d.label
+                  )}
+                </ResizableTh>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-(--color-border)">
@@ -446,61 +646,19 @@ export function ListingsClient() {
                     onChange={() => toggleSelected(row.id)}
                   />
                 </td>
-                <td className="px-2 py-1">{row.marketplaceCode}</td>
-                <td className="px-2 py-1">
-                  <Link href={`/listings/${row.id}`} className="text-(--color-accent) hover:underline">
-                    {row.productName}
-                  </Link>
-                </td>
-                <td className="px-2 py-1">{row.baseStockCode ?? '—'}</td>
-                <td className="px-2 py-1">{row.floorPrice ? formatMoney(BigInt(row.floorPrice)) : '—'}</td>
-                <td className="px-2 py-1">
-                  <ManualPriceCell row={row} onChanged={load} />
-                </td>
-                <td className={`px-2 py-1 ${row.rank === 1 ? 'row-success' : ''}`}>{row.rank ?? '—'}</td>
-                <td className="px-2 py-1">{row.buyboxPrice ? formatMoney(BigInt(row.buyboxPrice)) : '—'}</td>
-                <td className="px-2 py-1">{row.phase ?? '—'}</td>
-                <td className="px-2 py-1">{formatNumber(row.offeredStock)}</td>
-                <td className="px-2 py-1">
-                  <MinMaxCell row={row} onChanged={load} />
-                </td>
-                <td className="px-2 py-1">
-                  <input
-                    type="checkbox"
-                    checked={row.repriceEnabled}
-                    onChange={(e) => {
-                      void fetch('/api/listings/bulk', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          action: e.target.checked ? 'enableAutomation' : 'disableAutomation',
-                          ids: [row.id],
-                        }),
-                      }).then(load);
-                    }}
-                  />
-                </td>
-                <td className="px-2 py-1">
-                  <input
-                    type="checkbox"
-                    checked={row.observationEnabled}
-                    onChange={(e) => {
-                      void fetch('/api/listings/bulk', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          action: e.target.checked ? 'enableObservation' : 'disableObservation',
-                          ids: [row.id],
-                        }),
-                      }).then(load);
-                    }}
-                  />
-                </td>
+                {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                  <td key={d.id} className={`px-2 py-1 ${d.id === 'rank' && row.rank === 1 ? 'row-success' : ''}`}>
+                    {renderCell(d.id, row, load)}
+                  </td>
+                ))}
               </tr>
             ))}
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={13} className="px-2 py-6 text-center text-(--color-muted)">
+                <td
+                  colSpan={1 + COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).length}
+                  className="px-2 py-6 text-center text-(--color-muted)"
+                >
                   Filtreyle eşleşen ilan yok.
                 </td>
               </tr>

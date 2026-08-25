@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { downloadCsv } from '@/lib/csv';
 import { formatDate, formatDateTime, formatDuration, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge, type Coverage } from './coverage-badge';
 
@@ -49,27 +50,6 @@ interface Report {
     lastSeen: number;
   } | null;
   observationCoverage: { date: string; ok: number; parseFailed: number; fetchFailed: number }[];
-}
-
-function toCsv(rows: Record<string, unknown>[]): string {
-  if (rows.length === 0) return '';
-  const headers = Object.keys(rows[0]!);
-  const lines = [headers.join(',')];
-  for (const row of rows) {
-    lines.push(headers.map((h) => JSON.stringify(row[h] ?? '')).join(','));
-  }
-  return lines.join('\n');
-}
-
-function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
-  const csv = toCsv(rows);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 function daysAgo(n: number): number {

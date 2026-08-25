@@ -2,7 +2,18 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import {
+  type ColumnDef,
+  ColumnMenu,
+  Pagination,
+  resizableTableStyle,
+  ResizableTh,
+  STICKY_HEAD,
+  TableFrame,
+  useColumnPrefs,
+  usePagedRows,
+} from '@/components/table';
+import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge } from '../coverage-badge';
 
@@ -59,6 +70,75 @@ function daysAgo(n: number): number {
 /** Stable identity for "the report has not arrived yet". */
 const NO_SELLERS: never[] = [];
 
+type ColumnId =
+  | 'sellerName'
+  | 'marketplace'
+  | 'listingCount'
+  | 'observationCount'
+  | 'buyboxCount'
+  | 'avgRank'
+  | 'priceRange'
+  | 'firstSeenAt'
+  | 'lastSeenAt';
+
+/** Column customisation (doc 06 §4.1) — same `useColumnPrefs` setup as `/listings`. */
+const COLUMN_DEFS: ColumnDef<ColumnId>[] = [
+  { id: 'sellerName', label: 'Satıcı', defaultWidth: 220 },
+  { id: 'marketplace', label: 'Pazaryeri', defaultWidth: 100 },
+  { id: 'listingCount', label: 'Ürünümüz', defaultWidth: 90 },
+  { id: 'observationCount', label: 'Teklif', defaultWidth: 90 },
+  { id: 'buyboxCount', label: 'Buybox', defaultWidth: 110 },
+  { id: 'avgRank', label: 'Ort. sıra', defaultWidth: 80 },
+  { id: 'priceRange', label: 'Fiyat aralığı', defaultWidth: 150 },
+  { id: 'firstSeenAt', label: 'İlk görülme', defaultWidth: 130 },
+  { id: 'lastSeenAt', label: 'Son görülme', defaultWidth: 130 },
+];
+
+function renderSellerCell(id: ColumnId, s: Seller): React.ReactNode {
+  switch (id) {
+    case 'sellerName':
+      return (
+        <>
+          <Link
+            className="font-medium text-(--color-accent) hover:underline"
+            href={`/competitors/sellers/${s.marketplaceCode}/${encodeURIComponent(s.sellerRef)}`}
+          >
+            {s.sellerName || s.sellerRef}
+          </Link>
+          {s.groupName && (
+            <span className="ml-2 rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)">
+              {s.groupName}
+            </span>
+          )}
+          {s.operatorNote && <div className="text-xs text-(--color-muted)">{s.operatorNote}</div>}
+        </>
+      );
+    case 'marketplace':
+      return s.marketplaceCode;
+    case 'listingCount':
+      return formatNumber(s.listingCount);
+    case 'observationCount':
+      return formatNumber(s.observationCount);
+    case 'buyboxCount':
+      return (
+        <>
+          {formatNumber(s.buyboxCount)}
+          <span className="ml-1 text-xs text-(--color-muted)">({formatPercent(s.buyboxRate * 100)})</span>
+        </>
+      );
+    case 'avgRank':
+      return s.avgRank === null ? '—' : s.avgRank.toFixed(1);
+    case 'priceRange':
+      return s.minPrice === null
+        ? '—'
+        : `${formatMoney(BigInt(s.minPrice))} – ${formatMoney(BigInt(s.maxPrice ?? s.minPrice))}`;
+    case 'firstSeenAt':
+      return <>≥ {formatDateTime(s.firstSeenAt)}</>;
+    case 'lastSeenAt':
+      return formatDateTime(s.lastSeenAt);
+  }
+}
+
 export function SellersClient() {
   const [sinceMs, setSinceMs] = useState(daysAgo(30));
   const [marketplaceCode, setMarketplaceCode] = useState('');
@@ -68,6 +148,7 @@ export function SellersClient() {
   const paged = usePagedRows(report?.sellers ?? NO_SELLERS, {
     resetKey: `${sinceMs}|${marketplaceCode}`,
   });
+  const columns = useColumnPrefs('competitor-sellers-columns-v1', COLUMN_DEFS);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -184,68 +265,70 @@ export function SellersClient() {
             </div>
           )}
 
+          <div className="flex items-center justify-end gap-2">
+            <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+            <button
+              type="button"
+              onClick={() =>
+                downloadCsv(
+                  'rakip-saticilar.csv',
+                  report.sellers.map((s) => ({
+                    Satıcı: s.sellerName,
+                    Pazaryeri: s.marketplaceCode,
+                    Grup: s.groupName ?? '',
+                    Ürünümüz: s.listingCount,
+                    Teklif: s.observationCount,
+                    Buybox: s.buyboxCount,
+                    'Buybox %': (s.buyboxRate * 100).toFixed(1),
+                    'Ort. Sıra': s.avgRank ?? '',
+                    'Min Fiyat': s.minPrice ? (Number(s.minPrice) / 100).toFixed(2) : '',
+                    'Max Fiyat': s.maxPrice ? (Number(s.maxPrice) / 100).toFixed(2) : '',
+                    'İlk Görülme': formatDateTime(s.firstSeenAt),
+                    'Son Görülme': formatDateTime(s.lastSeenAt),
+                  })),
+                )
+              }
+              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+            >
+              Excel&apos;e Aktar
+            </button>
+          </div>
+
           <TableFrame>
-            <table className="min-w-full text-sm">
+            <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
               <thead className={`${STICKY_HEAD} text-left`}>
                 <tr>
-                  <th className="px-3 py-2">Satıcı</th>
-                  <th className="px-3 py-2">Pazaryeri</th>
-                  <th className="px-3 py-2 text-right">Ürünümüz</th>
-                  <th className="px-3 py-2 text-right">Teklif</th>
-                  <th className="px-3 py-2 text-right">Buybox</th>
-                  <th className="px-3 py-2 text-right">Ort. sıra</th>
-                  <th className="px-3 py-2 text-right">Fiyat aralığı</th>
-                  <th className="px-3 py-2">İlk görülme</th>
-                  <th className="px-3 py-2">Son görülme</th>
+                  {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                    <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-3 py-2">
+                      {d.label}
+                    </ResizableTh>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {paged.rows.map((s) => (
                   <tr key={`${s.marketplaceCode}:${s.sellerRef}`} className="border-t border-(--color-border)">
-                    <td className="px-3 py-2">
-                      <Link
-                        className="font-medium text-(--color-accent) hover:underline"
-                        href={`/competitors/sellers/${s.marketplaceCode}/${encodeURIComponent(s.sellerRef)}`}
+                    {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                      <td
+                        key={d.id}
+                        className={`px-3 py-2 ${
+                          d.id === 'listingCount' || d.id === 'observationCount' || d.id === 'buyboxCount' ||
+                          d.id === 'avgRank' || d.id === 'priceRange'
+                            ? 'text-right'
+                            : ''
+                        } ${d.id === 'listingCount' ? 'font-medium' : ''}`}
                       >
-                        {s.sellerName || s.sellerRef}
-                      </Link>
-                      {s.groupName && (
-                        <span className="ml-2 rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)">
-                          {s.groupName}
-                        </span>
-                      )}
-                      {s.operatorNote && (
-                        <div className="text-xs text-(--color-muted)">{s.operatorNote}</div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">{s.marketplaceCode}</td>
-                    <td className="px-3 py-2 text-right font-medium">{formatNumber(s.listingCount)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(s.observationCount)}</td>
-                    <td className="px-3 py-2 text-right">
-                      {formatNumber(s.buyboxCount)}
-                      <span className="ml-1 text-xs text-(--color-muted)">
-                        ({formatPercent(s.buyboxRate * 100)})
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {s.avgRank === null ? '—' : s.avgRank.toFixed(1)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {s.minPrice === null
-                        ? '—'
-                        : `${formatMoney(BigInt(s.minPrice))} – ${formatMoney(BigInt(s.maxPrice ?? s.minPrice))}`}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-(--color-muted)">
-                      ≥ {formatDateTime(s.firstSeenAt)}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-(--color-muted)">
-                      {formatDateTime(s.lastSeenAt)}
-                    </td>
+                        {renderSellerCell(d.id, s)}
+                      </td>
+                    ))}
                   </tr>
                 ))}
                 {report.sellers.length === 0 && (
                   <tr>
-                    <td className="px-3 py-6 text-center text-(--color-muted)" colSpan={9}>
+                    <td
+                      className="px-3 py-6 text-center text-(--color-muted)"
+                      colSpan={COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).length}
+                    >
                       Bu dönemde kayıtlı rakip teklifi yok.
                     </td>
                   </tr>

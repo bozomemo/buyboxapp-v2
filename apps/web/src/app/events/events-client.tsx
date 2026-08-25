@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { downloadCsv } from '@/lib/csv';
 import { formatDateTime } from '@/lib/format';
 
 interface EventRow {
@@ -86,6 +87,28 @@ export function EventsClient() {
   return (
     <div className="space-y-4">
       {error && <p className="text-(--color-danger)">{error}</p>}
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          disabled={events.length === 0}
+          onClick={() =>
+            downloadCsv(
+              'olay-gunlugu.csv',
+              events.map((e) => ({
+                Zaman: formatDateTime(e.at),
+                Seviye: LEVEL_LABELS[e.level] ?? e.level,
+                Pazaryeri: e.marketplaceCode ?? '',
+                Kod: e.code,
+                Mesaj: e.message,
+              })),
+            )
+          }
+          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
+        >
+          Excel&apos;e Aktar
+        </button>
+      </div>
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs text-(--color-muted)">

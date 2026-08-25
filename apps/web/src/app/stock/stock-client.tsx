@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { downloadCsv } from '@/lib/csv';
 import { formatMoney, formatNumber } from '@/lib/format';
 
 interface MarketplaceOption {
@@ -477,9 +478,44 @@ export function StockClient() {
   }
   useEffect(load, []);
 
+  function exportCsv() {
+    // Whole in-memory `items` (doc 06 §3's grid loads the full stock catalogue up front,
+    // unlike the server-paged Listings grid), so no export-size cap is needed here.
+    downloadCsv(
+      'stok.csv',
+      items.map((item) => {
+        const row: Record<string, unknown> = {
+          'Stok Kodu': item.baseStockCode,
+          'Ürün İsmi': item.name,
+          'Birim Fiyat': (Number(item.unitCost) / 100).toFixed(2),
+          'Stok Miktarı': item.unitStock,
+          Kaynak: item.sourceCode,
+        };
+        for (const m of marketplaces) {
+          const pref = item.prefs[m.code];
+          row[`${m.displayName} Çarpan`] = pref?.priceMultiplier ?? '';
+          row[`${m.displayName} Oto BB`] = pref?.autoRepriceEnabled ? 'evet' : 'hayır';
+          row[`${m.displayName} Satış Stok`] = item.offeredStock[m.code] ?? 0;
+        }
+        return row;
+      }),
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Stok</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Stok</h1>
+        {loaded && (
+          <button
+            type="button"
+            onClick={exportCsv}
+            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+          >
+            Excel&apos;e Aktar
+          </button>
+        )}
+      </div>
       <div className="flex flex-wrap gap-3">
         <AddItemForm onAdded={load} />
       </div>

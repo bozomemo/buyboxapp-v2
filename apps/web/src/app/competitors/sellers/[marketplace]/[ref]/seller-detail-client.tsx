@@ -2,7 +2,18 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import {
+  type ColumnDef,
+  ColumnMenu,
+  Pagination,
+  resizableTableStyle,
+  ResizableTh,
+  STICKY_HEAD,
+  TableFrame,
+  useColumnPrefs,
+  usePagedRows,
+} from '@/components/table';
+import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge, type Coverage } from '../../../coverage-badge';
 
@@ -48,6 +59,60 @@ function daysAgo(n: number): number {
 /** Stable identity for "the detail has not arrived yet". */
 const NO_LISTINGS: never[] = [];
 
+type ColumnId =
+  | 'productName'
+  | 'ourPrice'
+  | 'priceRange'
+  | 'observationCount'
+  | 'buyboxCount'
+  | 'avgRank'
+  | 'firstSeenAt'
+  | 'lastSeenAt';
+
+/** Column customisation (doc 06 §4.1) — same `useColumnPrefs` setup as `/listings`. */
+const COLUMN_DEFS: ColumnDef<ColumnId>[] = [
+  { id: 'productName', label: 'Ürün', defaultWidth: 260 },
+  { id: 'ourPrice', label: 'Bizim fiyatımız', defaultWidth: 130 },
+  { id: 'priceRange', label: 'Onun fiyat aralığı', defaultWidth: 150 },
+  { id: 'observationCount', label: 'Teklif', defaultWidth: 80 },
+  { id: 'buyboxCount', label: 'Buybox', defaultWidth: 80 },
+  { id: 'avgRank', label: 'Ort. sıra', defaultWidth: 80 },
+  { id: 'firstSeenAt', label: 'İlk görülme', defaultWidth: 130 },
+  { id: 'lastSeenAt', label: 'Son görülme', defaultWidth: 130 },
+];
+
+const RIGHT_ALIGNED = new Set<ColumnId>(['ourPrice', 'priceRange', 'observationCount', 'buyboxCount', 'avgRank']);
+
+function renderListingCell(id: ColumnId, l: SellerListing): React.ReactNode {
+  switch (id) {
+    case 'productName':
+      return (
+        <>
+          <Link className="text-(--color-accent) hover:underline" href={`/listings/${l.listingId}`}>
+            {l.productName}
+          </Link>
+          <div className="text-xs text-(--color-muted)">{l.baseStockCode ?? l.marketplaceListingId}</div>
+        </>
+      );
+    case 'ourPrice':
+      return formatMoney(BigInt(l.ourPrice));
+    case 'priceRange':
+      return l.minPrice === null
+        ? '—'
+        : `${formatMoney(BigInt(l.minPrice))} – ${formatMoney(BigInt(l.maxPrice ?? l.minPrice))}`;
+    case 'observationCount':
+      return formatNumber(l.observationCount);
+    case 'buyboxCount':
+      return formatNumber(l.buyboxCount);
+    case 'avgRank':
+      return l.avgRank === null ? '—' : l.avgRank.toFixed(1);
+    case 'firstSeenAt':
+      return <>≥ {formatDateTime(l.firstSeenAt)}</>;
+    case 'lastSeenAt':
+      return formatDateTime(l.lastSeenAt);
+  }
+}
+
 export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: string; sellerRef: string }) {
   const [sinceMs, setSinceMs] = useState(daysAgo(30));
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -56,6 +121,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
   const [error, setError] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
   const paged = usePagedRows(detail?.listings ?? NO_LISTINGS, { resetKey: String(sinceMs) });
+  const columns = useColumnPrefs('competitor-seller-detail-columns-v1', COLUMN_DEFS);
 
   const load = useCallback(() => {
     setError(null);
@@ -230,53 +296,61 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
         )}
       </section>
 
+      <div className="flex items-center justify-end gap-2">
+        <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+        <button
+          type="button"
+          disabled={detail.listings.length === 0}
+          onClick={() =>
+            downloadCsv(
+              `rakip-satici-${detail.seller.sellerRef}.csv`,
+              detail.listings.map((l) => ({
+                Ürün: l.productName,
+                'Stok Kodu': l.baseStockCode ?? l.marketplaceListingId,
+                'Bizim Fiyatımız': (Number(l.ourPrice) / 100).toFixed(2),
+                'Min Fiyat': l.minPrice ? (Number(l.minPrice) / 100).toFixed(2) : '',
+                'Max Fiyat': l.maxPrice ? (Number(l.maxPrice) / 100).toFixed(2) : '',
+                Teklif: l.observationCount,
+                Buybox: l.buyboxCount,
+                'Ort. Sıra': l.avgRank ?? '',
+                'İlk Görülme': formatDateTime(l.firstSeenAt),
+                'Son Görülme': formatDateTime(l.lastSeenAt),
+              })),
+            )
+          }
+          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
+        >
+          Excel&apos;e Aktar
+        </button>
+      </div>
+
       <TableFrame>
-        <table className="min-w-full text-sm">
+        <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
           <thead className={`${STICKY_HEAD} text-left`}>
             <tr>
-              <th className="px-3 py-2">Ürün</th>
-              <th className="px-3 py-2 text-right">Bizim fiyatımız</th>
-              <th className="px-3 py-2 text-right">Onun fiyat aralığı</th>
-              <th className="px-3 py-2 text-right">Teklif</th>
-              <th className="px-3 py-2 text-right">Buybox</th>
-              <th className="px-3 py-2 text-right">Ort. sıra</th>
-              <th className="px-3 py-2">İlk görülme</th>
-              <th className="px-3 py-2">Son görülme</th>
+              {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-3 py-2">
+                  {d.label}
+                </ResizableTh>
+              ))}
             </tr>
           </thead>
           <tbody>
             {paged.rows.map((l) => (
               <tr key={l.listingId} className="border-t border-(--color-border)">
-                <td className="px-3 py-2">
-                  <Link className="text-(--color-accent) hover:underline" href={`/listings/${l.listingId}`}>
-                    {l.productName}
-                  </Link>
-                  <div className="text-xs text-(--color-muted)">
-                    {l.baseStockCode ?? l.marketplaceListingId}
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right">{formatMoney(BigInt(l.ourPrice))}</td>
-                <td className="px-3 py-2 text-right">
-                  {l.minPrice === null
-                    ? '—'
-                    : `${formatMoney(BigInt(l.minPrice))} – ${formatMoney(BigInt(l.maxPrice ?? l.minPrice))}`}
-                </td>
-                <td className="px-3 py-2 text-right">{formatNumber(l.observationCount)}</td>
-                <td className="px-3 py-2 text-right">{formatNumber(l.buyboxCount)}</td>
-                <td className="px-3 py-2 text-right">
-                  {l.avgRank === null ? '—' : l.avgRank.toFixed(1)}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-(--color-muted)">
-                  ≥ {formatDateTime(l.firstSeenAt)}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-(--color-muted)">
-                  {formatDateTime(l.lastSeenAt)}
-                </td>
+                {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                  <td key={d.id} className={`px-3 py-2 ${RIGHT_ALIGNED.has(d.id) ? 'text-right' : ''}`}>
+                    {renderListingCell(d.id, l)}
+                  </td>
+                ))}
               </tr>
             ))}
             {detail.listings.length === 0 && (
               <tr>
-                <td className="px-3 py-6 text-center text-(--color-muted)" colSpan={8}>
+                <td
+                  className="px-3 py-6 text-center text-(--color-muted)"
+                  colSpan={COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).length}
+                >
                   Bu dönemde bu satıcıya ait teklif kaydı yok.
                 </td>
               </tr>

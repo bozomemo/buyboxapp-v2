@@ -12,6 +12,16 @@
  * always reach for `-ink` next to a solid status fill, never hardcode `text-white`).
  */
 :root {
+  /*
+   * Tells the browser which palette its own UA-rendered chrome should use — the native
+   * `<select>` popup, scrollbars, form control default borders. Everything above this line is
+   * our own CSS and follows the tokens regardless; this line is what the parts of the page the
+   * browser draws itself (not us) follow. Without it those pieces keep rendering with the OS
+   * light scheme even while every token here has already flipped to dark, which is why a select's
+   * closed box looked themed but its open dropdown list did not (customer feedback 2026-08-25).
+   */
+  color-scheme: light;
+
   --color-bg: #f8fafc;
   --color-surface: #ffffff;
   --color-border: #e2e8f0;
@@ -55,6 +65,8 @@
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    color-scheme: dark;
+
     --color-bg: #05070a;
     --color-surface: #0a0e15;
     --color-border: #1c2430;
@@ -88,6 +100,8 @@
   }
 }
 :root[data-theme='dark'] {
+  color-scheme: dark;
+
   --color-bg: #05070a;
   --color-surface: #0a0e15;
   --color-border: #1c2430;

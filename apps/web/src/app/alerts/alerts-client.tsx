@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Pagination, usePagedRows } from '@/components/table';
+import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatMoney, parseMoneyToKurus } from '@/lib/format';
 
 interface AlertSeller {
@@ -743,12 +744,37 @@ export function AlertsClient() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-medium">
-          Açık alarmlar{' '}
-          <span className="rounded bg-(--color-strong-bg) px-2 py-0.5 text-sm text-(--color-strong-ink)">
-            {data.alerts.length}
-          </span>
-        </h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-medium">
+            Açık alarmlar{' '}
+            <span className="rounded bg-(--color-strong-bg) px-2 py-0.5 text-sm text-(--color-strong-ink)">
+              {data.alerts.length}
+            </span>
+          </h2>
+          {data.alerts.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                downloadCsv(
+                  'alarmlar.csv',
+                  data.alerts.map((a) => ({
+                    Kural: a.ruleName,
+                    Ürün: a.productName,
+                    Pazaryeri: a.marketplaceCode ?? '',
+                    'Bizim Fiyat': a.ourPrice ? (Number(a.ourPrice) / 100).toFixed(2) : '',
+                    Durum: a.state,
+                    'İlk Görülme': formatDateTime(a.firstSeenAt),
+                    'Son Görülme': formatDateTime(a.lastSeenAt),
+                    'Satıcı Sayısı': a.sellers.length,
+                  })),
+                )
+              }
+              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+            >
+              Excel&apos;e Aktar
+            </button>
+          )}
+        </div>
 
         {data.alerts.length === 0 ? (
           <div className="rounded border border-(--color-border) p-6 text-center text-sm text-(--color-muted)">
