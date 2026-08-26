@@ -484,7 +484,7 @@ the CSV exports cannot drift apart. See §12.3.
 
 ---
 
-## 11. Dark mode (direction chosen, not yet built)
+## 11. Dark mode (built)
 
 A Light / Dark / System theme toggle is planned. On 2026-08-18 four dark-mode directions were
 mocked up against the real Dashboard layout (sidebar, KPI cards, the price-monitoring grid) and
@@ -514,15 +514,47 @@ Numeric table columns (prices) use a monospace/tabular-nums treatment
 light theme's default sans stack — this is specific to the chosen direction and should carry
 over to the real implementation.
 
-Not yet scoped: which mechanism drives the toggle (`prefers-color-scheme` vs. a
-`data-theme` attribute + stored preference), and the full sweep of the ~48 `apps/web` screens for
-hardcoded (non-token) colours. See doc 12 for when this becomes a build-plan phase.
+Both things this section once listed as unscoped are now settled. The toggle is a `data-theme`
+attribute plus a stored preference, stamped on `<html>` before first paint by the inline script
+in `theme-init-script.ts`, with the `prefers-color-scheme` media query covering "Sistem"; the
+palette lives in `globals.css` and is applied twice, once per mechanism. And the sweep of the
+`apps/web` screens for hardcoded (non-token) colours was carried out on 2026-08-26 — see §11.1.
 
-> Note: the toggle and token palette described above are already implemented in
-> `globals.css`/`layout.tsx` (a `data-theme` attribute + stored preference, matching the second
-> option this paragraph lists as unscoped) — this section is stale on that point and should be
-> reconciled with the code rather than trusted as "not yet built". Left as-is pending that
-> reconciliation rather than rewritten opportunistically here.
+**One token is still unimplemented:** the table above lists a *surface-2* (`#0d1220`) for the
+sticky table header and sidebar-adjacent panels. `globals.css` has no such token, and
+`.table-sticky-head th` paints `--color-bg` instead. That is correct today because the grids sit
+directly on the page background rather than inside a surface card, so a header painted
+`--color-surface` would be the odd one out; add surface-2 when a grid is first placed inside a
+card, not before.
+
+### 11.1 Colour sweep and contrast audit (2026-08-26)
+
+Every `.tsx` under `apps/web/src` was swept for colour that does not come from a token — Tailwind
+palette utilities (`bg-white`, `text-gray-500`, …), hex and `rgb()`/`hsl()` literals, and inline
+`style` colour props. **There are none**: the only colour any screen names is a
+`…-(--color-…)` token, and the two inline sparklines pass tokens through `stroke`. Nothing
+needed changing for the sweep itself.
+
+The token pairs were then measured for WCAG AA contrast (4.5:1 for body text) in both themes —
+each status hue on `--color-bg`, on `--color-surface`, on its own `-bg` tint and on `--color-hover`,
+each `-ink` on its solid fill, and `--color-muted` on every surface it lands on:
+
+- **The dark palette passes**, mostly comfortably (status hues 5.5–11:1).
+- **The light palette's warning and success failed outright** — `#d97706` and `#16a34a` measured
+  3.0–3.3:1 everywhere, including white `-ink` on the solid fill, because both are read as text
+  far more often than they are used as a fill. Both moved one step darker, to the 700 weight
+  (`#b45309`, `#15803d`), and `--color-danger` went with them (`#dc2626` → `#b91c1c`, which was
+  the one that dipped to 4.41:1 on its own tint) so the three behave as one family. Every light
+  pair now clears 4.5:1.
+- **Left alone, deliberately:** `--color-muted` reaches 4.34:1 in its worst composite (light
+  mode, on a hover row or a danger tint) and 4.44:1 in dark (on the success tint). Darkening it
+  would touch the ~230 places muted text is used and flatten the hierarchy against
+  `--color-text`, to close a gap of under 0.2. Revisit only as part of a deliberate pass on
+  secondary text.
+
+When adding a status colour or changing one of these, hold the rule the light palette's comment
+in `globals.css` states: at or above 4.5:1 on `--color-bg`, on `--color-surface` and on the hue's
+own `-bg` tint, with `-ink` clearing 4.5:1 on the solid fill.
 
 **Native form controls (customer feedback 2026-08-25):** `<select>`'s closed box picked up the
 token colours because we style it directly, but its open dropdown list is rendered by the
@@ -533,6 +565,18 @@ dark palette is applied (the `prefers-color-scheme` media query and `[data-theme
 native chrome (`<select>` popups, scrollbars, default control borders) tracks the same theme as
 everything else on the page. Any other native, browser-rendered control found off-palette later
 belongs to this same gap, not a new one.
+
+**Follow-up (customer feedback 2026-08-26):** `color-scheme` was necessary and not sufficient.
+The dropdown list came back a second time — dark box, but options in dim, near-illegible text —
+because Tailwind's preflight resets `select` to `background-color: transparent`, and the popup
+takes its colours from the `<select>`'s own computed background and colour. A control with no
+background of its own leaves the browser to pick, and it picked the platform default. Fixed in
+`globals.css` by painting `select`, `option` and `optgroup` with `--color-surface`/`--color-text`
+directly — once, globally, since every filter on every screen is a bare `<select>` carrying only
+border and spacing classes, and repeated on `option`/`optgroup` because Windows needs the rows
+painted explicitly rather than inheriting from the control. The lesson generalises: for a
+browser-rendered control, `color-scheme` sets the *theme* but only an explicit
+background/colour on the element sets the *palette*.
 
 ---
 
@@ -557,8 +601,12 @@ Hepsiburada's Listing service has neither field (api-references.md §2.4), so `b
 `categoryId` stay `null` there — not faked, not backfilled from anywhere else.
 
 `/brands` lists every brand with its (non-archived) listing count, descending; clicking one
-navigates to `/listings?brandId=…`, which the Listings screen shows as a dismissible filter
-chip rather than a hidden query-string state. `/categories` was not built as a separate screen
+navigates to `/listings?brandId=…`, which the Listings screen seeds into its own **brand
+dropdown** in the filter bar rather than leaving as hidden query-string state. (The first cut
+showed it as a dismissible chip instead; that was replaced on 2026-08-26 because an operator
+already on the Listings screen had no way to narrow by brand without leaving it and coming back.
+Link and dropdown share one piece of state, which is what stops the visible control and the
+filtered grid from disagreeing.) `/categories` was not built as a separate screen
 in this pass — `categoryId` is captured and filterable via `listingsRepo.queryListings`, but has
 no browse UI yet. Copy the `/brands` pattern if that screen is wanted later.
 

@@ -38,17 +38,26 @@
   --color-accent-bg: #eff6ff;
   --color-accent-border: #93c5fd;
 
-  --color-danger: #dc2626;
+  /*
+   * The three status hues are a step darker than the palette they are named after (700 rather
+   * than 600) because they are read as *text* far more often than they are used as a fill —
+   * "Stok yok", a phase label, a failed-job row — and the 600 weights measured 3.0-3.3:1 against
+   * both `--color-bg` and `--color-surface`, under WCAG AA's 4.5:1 for body text (contrast sweep
+   * 2026-08-26). The dark palette needs no equivalent shift: its status hues sit at 5.5-11:1.
+   * Any replacement stays at or above 4.5:1 on `--color-bg`, on `--color-surface` and on its own
+   * `-bg` tint, and white `-ink` must clear 4.5:1 on the solid fill.
+   */
+  --color-danger: #b91c1c;
   --color-danger-ink: #ffffff;
   --color-danger-bg: #fef2f2;
   --color-danger-border: #fca5a5;
 
-  --color-warning: #d97706;
+  --color-warning: #b45309;
   --color-warning-ink: #ffffff;
   --color-warning-bg: #fffbeb;
   --color-warning-border: #fcd34d;
 
-  --color-success: #16a34a;
+  --color-success: #15803d;
   --color-success-ink: #ffffff;
   --color-success-bg: #f0fdf4;
   --color-success-border: #86efac;
@@ -190,13 +199,7 @@ body {
  */
 .tabular-figures {
   font-variant-numeric: tabular-nums;
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    'JetBrains Mono',
-    Menlo,
-    Consolas,
-    monospace;
+  font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace;
 }
 
 /*
