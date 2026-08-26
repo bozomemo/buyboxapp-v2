@@ -52,7 +52,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     label: 'Buybox Gözlemi',
     cadenceMs: 60_000,
     perMarketplace: true,
-    defaultPayload: { cycleNumber: 0 },
+    defaultPayload: {},
     defaultEnabled: true,
   },
   {
@@ -118,7 +118,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     label: 'Rakip Verisi Toplama (raporlama)',
     cadenceMs: SCRAPE_CYCLE_MS,
     perMarketplace: true,
-    defaultPayload: { cycleNumber: 0 },
+    defaultPayload: {},
     // Off until an operator turns it on: scraping needs an explicit business decision
     // (api-references §1.6, doc 04 §1.5), and nothing depends on it (doc 12 Phase 7 DoD).
     defaultEnabled: false,

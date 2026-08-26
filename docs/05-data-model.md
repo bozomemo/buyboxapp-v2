@@ -554,16 +554,17 @@ re-probe the entire catalogue).
 | `app_events` warn/error | 1 year |
 | `job_runs` | 90 days |
 | `job_queue` done/failed | 7 days |
-| `tracked_product_observations` | **not yet enforced** — see note below |
+| `tracked_product_observations` | 90 days (added 2026-08-26) |
 
 A `PruneHistory` job enforces these nightly. Every retention window is configurable.
 
-> **`tracked_product_observations` (doc 06 §12.2, added 2026-08-25) has no retention window
-> yet.** `PruneHistory` was not extended to it in this pass, so it currently grows without
-> bound. The tracked-product set is expected to be small and operator-curated, so this is a
-> lower-risk gap than the same oversight would be on `competitor_observations` above — but it is
-> a gap, and should get a window (a value similar to `competitor_observations`'s 90 days is the
-> obvious default) before this feature sees real, sustained use.
+> **`tracked_product_observations` had no retention window until 2026-08-26** and grew without
+> bound; `PruneHistory` now applies 90 days to it, matching `competitor_observations` because it
+> is the same kind of data read by the same kind of report. Note it is written *more* densely
+> than that table, not less: there is no change-detection hash here, so every offer of every
+> successful look is stored (§5 explains why that trade is right for a small, operator-curated
+> set). The detail screen also reads a whole 30-day window per view, so the window bounds a read
+> cost as well as a write one.
 
 > **`competitor_observations` was indefinite until 2026-08-18.** That policy was written for a
 > 64-listing catalogue. Measured against the live archive, the 2,000-listing target produces

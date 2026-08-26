@@ -115,7 +115,7 @@ describe('competitor alerts', () => {
     });
     await scheduler.enqueueNow(
       SCRAPE_COMPETITORS_JOB,
-      JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+      JSON.stringify({ marketplaceCode: 'trendyol' }),
     );
     await scheduler.tick();
     await scheduler.shutdown();

@@ -199,10 +199,10 @@ describe('startWorker', () => {
         },
       });
 
-      expect(await jobsRepo.countActiveJobsForPayload(appDb, IMPORT_LISTINGS_JOB, trendyolPayload)).toBe(1);
+      expect(await jobsRepo.countActiveJobsForTarget(appDb, IMPORT_LISTINGS_JOB, 'trendyol')).toBe(1);
       // A job with no active copy is still enqueued by the same catch-up pass — the guard
       // suppresses duplicates, it does not stop the tickers.
-      expect(await jobsRepo.countActiveJobsForPayload(appDb, REPRICE_JOB, JSON.stringify({ marketplaceCode: 'trendyol', mode: 'live' }))).toBe(1);
+      expect(await jobsRepo.countActiveJobsForTarget(appDb, REPRICE_JOB, 'trendyol')).toBe(1);
 
       await handle.shutdown();
     } finally {

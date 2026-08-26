@@ -79,67 +79,86 @@ export async function countActiveJobs(appDb: AppDatabase, jobName: string): Prom
 }
 
 /**
- * Ready or locked rows for one job name **and one exact payload** — the per-target equivalent of
- * `countActiveJobs` above.
+ * Ready or locked rows for one job name **and one target marketplace** — the per-target
+ * equivalent of `countActiveJobs` above.
  *
  * `countActiveJobs` keys on the job name alone, which is right for the scheduler's own cadence
  * loop (those jobs take no payload) but wrong for `apps/worker`'s per-marketplace tickers: a
  * running Trendyol `ImportListings` would suppress the Hepsiburada one, starving whichever
- * marketplace happened to be slower. Matching the payload too keeps the two targets independent
- * while still preventing a target from being queued behind itself.
+ * marketplace happened to be slower. Scoping to the target keeps the two independent while
+ * still preventing a target from being queued behind itself.
  *
- * Payload equality is exact string equality, which is sound here because every caller builds the
- * payload with the same `JSON.stringify` of the same literal shape on every tick, so the same
- * target always produces byte-identical JSON. It is deliberately not a semantic JSON comparison:
- * a payload that does not match exactly enqueues, which is the safe direction to err in — a
- * duplicate run wastes quota, a wrongly-suppressed one silently stops repricing a marketplace.
+ * **The target is read out of the payload, not compared as a string.** This used to be exact
+ * payload equality, on the reasoning that every tick builds the same literal shape and so
+ * produces byte-identical JSON. That holds within one build and silently stops holding across
+ * one: on 2026-08-26 `cycleNumber` was removed from these payloads, a queued row written by the
+ * previous build survived the upgrade, and its old payload matched nothing the new build
+ * produced — so the guard admitted a second concurrent `ScrapeCompetitors` against the same
+ * marketplace, which is precisely the aggressive pattern api-references §1.6 warns about. Any
+ * future field added to or removed from a payload would do the same thing, silently.
+ *
+ * Rows whose payload is absent or unparseable are counted as **matching**, so a row we cannot
+ * read suppresses rather than admits. That is the safe direction here: a wrongly-suppressed tick
+ * costs one cycle of latency and is logged by the caller, while a wrongly-admitted one puts two
+ * scrapers on the same marketplace at once.
  */
-export async function countActiveJobsForPayload(
+export async function countActiveJobsForTarget(
   appDb: AppDatabase,
   jobName: string,
-  payload: string,
+  marketplaceCode: string,
 ): Promise<number> {
-  return withDialect(appDb, {
-    sqlite: async (db) =>
-      (
-        await db
-          .select()
-          .from(sqliteSchema.jobQueue)
-          .where(
-            and(
-              eq(sqliteSchema.jobQueue.jobName, jobName),
-              eq(sqliteSchema.jobQueue.payload, payload),
-              inArray(sqliteSchema.jobQueue.state, ['ready', 'locked']),
-            ),
-          )
-      ).length,
-    postgres: async (db) =>
-      (
-        await db
-          .select()
-          .from(postgresSchema.jobQueue)
-          .where(
-            and(
-              eq(postgresSchema.jobQueue.jobName, jobName),
-              eq(postgresSchema.jobQueue.payload, payload),
-              inArray(postgresSchema.jobQueue.state, ['ready', 'locked']),
-            ),
-          )
-      ).length,
-    mysql: async (db) =>
-      (
-        await db
-          .select()
-          .from(mysqlSchema.jobQueue)
-          .where(
-            and(
-              eq(mysqlSchema.jobQueue.jobName, jobName),
-              eq(mysqlSchema.jobQueue.payload, payload),
-              inArray(mysqlSchema.jobQueue.state, ['ready', 'locked']),
-            ),
-          )
-      ).length,
+  const rows = await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({ payload: sqliteSchema.jobQueue.payload })
+        .from(sqliteSchema.jobQueue)
+        .where(
+          and(
+            eq(sqliteSchema.jobQueue.jobName, jobName),
+            inArray(sqliteSchema.jobQueue.state, ['ready', 'locked']),
+          ),
+        ),
+    postgres: (db) =>
+      db
+        .select({ payload: postgresSchema.jobQueue.payload })
+        .from(postgresSchema.jobQueue)
+        .where(
+          and(
+            eq(postgresSchema.jobQueue.jobName, jobName),
+            inArray(postgresSchema.jobQueue.state, ['ready', 'locked']),
+          ),
+        ),
+    mysql: (db) =>
+      db
+        .select({ payload: mysqlSchema.jobQueue.payload })
+        .from(mysqlSchema.jobQueue)
+        .where(
+          and(
+            eq(mysqlSchema.jobQueue.jobName, jobName),
+            inArray(mysqlSchema.jobQueue.state, ['ready', 'locked']),
+          ),
+        ),
   });
+
+  // Filtered here rather than in SQL: the payload is a JSON *document* and the three engines
+  // disagree on how to reach into one. The candidate set is bounded by the guard this feeds —
+  // active rows for a single job name — so it is a handful of rows, not a scan.
+  let count = 0;
+  for (const row of rows as { payload: string | null }[]) {
+    if (row.payload === null) {
+      count += 1;
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(row.payload) as { marketplaceCode?: unknown };
+      if (parsed.marketplaceCode === undefined || parsed.marketplaceCode === marketplaceCode) {
+        count += 1;
+      }
+    } catch {
+      count += 1; // unreadable ⇒ suppress, per the note above
+    }
+  }
+  return count;
 }
 
 /**

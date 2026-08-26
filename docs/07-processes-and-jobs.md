@@ -83,8 +83,8 @@ marketplace's official buybox API and writes `buybox_observations` (rank, buybox
 price). Candidates come from `listObservableListings` (`observation_enabled = 1`, §2.2) —
 **not** `Reprice`'s eligibility query. Each candidate is assigned an observation tier (Hot /
 Warm / Cold / Frozen, doc 07 §4) from its repricing phase, lock state, offered stock and
-whether it recently lost the buybox; only listings due this tier on the current `cycleNumber`
-are actually polled. Skips outbound calls entirely while the marketplace's circuit breaker is
+whether it recently lost the buybox; only listings whose tier interval has elapsed since they
+were last observed are actually polled (§4.1). Skips outbound calls entirely while the marketplace's circuit breaker is
 open (doc 07 §3). Per marketplace, ticked every 60 s by default (the tiering, not the tick
 rate, is what keeps this cheap).
 
@@ -279,41 +279,57 @@ why a listing is polled at its rate.
 > at 1,000 calls/min; the constraint is not the API but the wasted work of re-observing
 > thousands of listings that are sitting quietly at their optimum.
 
-### 4.1 Not yet implemented — two gaps that only appear above ~200 listings
+### 4.1 Two scaling gaps — found 2026-08-24, both fixed 2026-08-26
 
-Measured against the running 0.1.3 build, 2026-08-24. Neither shows up on a small catalogue,
-and neither reports an error when it does bite: the job completes, and some listings simply
-never appear in the data.
+Neither showed up on a small catalogue, and neither reported an error when it bit: the job
+completed, and some listings simply never appeared in the data. Recorded here in full because
+the shape of each mistake is worth keeping, and because the fix for G-1 deliberately departs
+from what this section originally proposed.
 
-**G-1 — the cycle counter is always zero, so the tier cadences above do nothing.**
-`apps/worker` passes a literal `{ cycleNumber: 0 }` on every `ObserveBuybox` and
-`ScrapeCompetitors` trigger. The counter is never incremented and never persisted, so
-`isDueThisCycle` / `isDueForScrape` evaluate `0 % 24 === 0` and `0 % 168 === 0` — both true,
-every time. **Warm is not daily and Cold is not weekly; every non-Frozen listing is treated as
-due on every cycle.** The table above describes an intent the code does not implement.
+**G-1 — the cycle counter was always zero, so the tier cadences above did nothing.** ✅ Fixed.
+`apps/worker` passed a literal `{ cycleNumber: 0 }` on every `ObserveBuybox` and
+`ScrapeCompetitors` trigger. It was never incremented and never persisted, so the due-ness
+tests evaluated `0 % 24 === 0` and `0 % 168 === 0` — both true, every time. Warm was not daily
+and Cold was not weekly; every non-Frozen listing was treated as due on every cycle. It cost
+calls, not correctness.
 
-*Consequence:* work and marketplace quota are spent at Hot rates on the entire observable
-catalogue. No price is wrong as a result — this costs calls, not correctness — but the scaling
-argument in the quote above does not currently hold.
+*Fixed not with a counter but with elapsed time.* A listing is due when the time since it was
+last observed (or last **successfully** scraped) reaches `N × cycleMs`. The counter this
+section originally proposed was rejected on implementation for three reasons:
 
-*Fix:* persist a per-marketplace cycle counter (an `app_settings` row is enough), increment it
-on each trigger, and pass it through. Table-driven tests per tier and cadence.
+- It has to survive restarts to mean anything, and persisting it makes a per-tick
+  `app_settings` write whose audit trail is noise. Putting it in the job payload instead breaks
+  `countActiveJobsForPayload`'s one-run-at-a-time guard (§8) — the payload would differ on
+  every tick, so the guard would never match and a slow run would queue duplicates.
+- It measures firings, not time. After the worker is down for three days a counter says one
+  cycle has passed, so a Cold listing waits another week having already gone ten days unseen.
+- `% N === 0` is not "every N cycles" per listing; it is "on cycles divisible by N" for the
+  whole catalogue, so every Warm listing falls due in the same tick and none in the other 23 —
+  exactly the burst tiering exists to avoid.
 
-**G-2 — nothing rotates past `SCRAPE_MAX_LISTINGS_PER_RUN`, so listings beyond it are never
-scraped at all.** `listObservableListings` has no `ORDER BY` and takes no offset, and
-`scrapeCompetitors` breaks out of its loop once `due` reaches the ceiling (200). The same first
-200 rows are therefore selected on every run, in whatever order the engine returns them.
-`scrape-config.ts` claims "listings beyond the ceiling are picked up on the next cycle"; that
-rotation does not exist.
+The tier intervals are **absolute durations**, resolved from each handler's own `cycleMs`
+default rather than from the ticker's cadence. Tying them to the cadence would mean an operator
+lowering it to 15 minutes (§8.1 permits this) silently turned "daily" into "six-hourly": the
+tick rate is the resolution at which due-ness is checked, not the tier interval itself.
 
-*Consequence:* at 1,000 observable listings, 200 are scraped hourly and **800 are never scraped**.
-The run reports `completed` with no failures, so nothing surfaces it. Reporting-only, so no
-pricing decision is wrong — but the competitor reports are silently partial. Note that
-`ObserveBuybox`, which *is* on the pricing path, has no such ceiling and is unaffected.
+**G-2 — nothing rotated past `SCRAPE_MAX_LISTINGS_PER_RUN`, so listings beyond it were never
+scraped at all.** ✅ Fixed. `listObservableListings` has no `ORDER BY` and takes no offset, and
+`scrapeCompetitors` breaks out of its loop once `due` reaches the ceiling (200), so the same
+first 200 rows were selected on every run, in whatever order the engine returned them. At 1,000
+observable listings, 200 were scraped hourly and **800 were never scraped** — with the run
+reporting `completed` and no failures, so nothing surfaced it. Reporting-only, so no pricing
+decision was wrong, but the competitor reports were silently partial. `ObserveBuybox`, which
+*is* on the pricing path, has no such ceiling and was unaffected.
 
-*Fix:* order the candidate query by last successful scrape (oldest first, nulls first) so the
-ceiling becomes a rotation rather than a permanent cut-off. Test with more candidates than the
-ceiling, asserting that two consecutive runs cover disjoint sets.
+*Fixed* by sorting candidates on last successful scrape (oldest first, never-scraped first)
+before the ceiling is applied, so the cut-off rotates through the catalogue. The ordering key
+comes from one grouped aggregate (`competitionRepo.lastSuccessfulScrapeAtByListing`), not N
+per-listing queries. Asserted by `scrape-competitors.test.ts`'s "the per-run ceiling rotates":
+four candidates, a ceiling of two, two consecutive runs, disjoint sets covering all four.
+
+Measured from the last **successful** scrape for the same reason change detection is (§7): a
+failed run tells us nothing about the listing, and counting it as a look would let a listing
+that fails every time drift out of the rotation permanently.
 
 ---
 
@@ -402,7 +418,7 @@ kinds of thing:
 | Marketplace | Source | Specified in | Status |
 |---|---|---|---|
 | Trendyol | product page with embedded state | api-references §1.6 + `trendyol-merchants-scraping-guide.md` | implemented, collects data |
-| Hepsiburada | public JSON listings endpoint | api-references §2.11 | implemented, **dormant** — it is keyed by product SKU, which `HepsiburadaAdapter.fetchListings` will supply once doc 12 Phase 4.4 is unblocked |
+| Hepsiburada | public JSON listings endpoint | api-references §2.11 | implemented and **live** since Phase 4.4 (2026-08-14): `fetchListings` now carries the product SKU it keys on as `ProductPageRef.contentId`. Collects nothing until real merchant credentials are configured, which is a supported state, not a failure |
 
 Nothing in this job differs between them: tiering, change detection, failure-rate alerting and
 the per-run ceiling are all marketplace-agnostic, and a source that collects nothing is a
@@ -431,10 +447,22 @@ The scheduler is DB-backed (doc 10 §1.2). Guarantees:
 - **One run at a time, per target.** A cadence-driven job is never enqueued while a copy of it
   is still `ready` or `locked`. `Scheduler.tick` enforces this for the jobs it cadences itself
   (`countActiveJobs`, keyed on job name); `apps/worker`'s per-marketplace tickers call
-  `enqueueNow` directly and so enforce it themselves with `countActiveJobsForPayload`, keyed on
-  job name **and payload**. The payload half is not optional: keying on the name alone would let
-  a slow Trendyol run suppress the Hepsiburada one, which stops repricing a marketplace instead
-  of merely wasting quota. Without the guard a job slower than its own cadence gains a queue row
+  `enqueueNow` directly and so enforce it themselves with `countActiveJobsForTarget`, keyed on
+  job name **and the target marketplace**. The target half is not optional: keying on the name
+  alone would let a slow Trendyol run suppress the Hepsiburada one, which stops repricing a
+  marketplace instead of merely wasting quota.
+
+  **The target is parsed out of the payload, not compared as a string** — a distinction that
+  cost a real incident. Until 2026-08-26 this compared payloads for exact string equality, on
+  the reasoning that each tick builds the same literal shape and so emits byte-identical JSON.
+  That holds within a build and stops holding across one. When `cycleNumber` was removed from
+  the observation payloads (§4.1 G-1), a queued row written by the previous build survived the
+  upgrade and matched nothing the new build produced, so the guard admitted a **second
+  concurrent `ScrapeCompetitors` against the same marketplace** — the exact pattern
+  api-references §1.6 warns about, and it produced an immediate run of fetch failures. Any
+  future payload field added or removed would have done the same, silently. A row whose payload
+  is missing or unparseable now counts as a match, so an unreadable row suppresses rather than
+  admits. Without the guard a job slower than its own cadence gains a queue row
   on every tick and the backlog grows without bound — reachable in practice since cadence became
   operator-editable (§8.1), whose 10 s floor is well under a real catalogue import. A skipped
   tick is logged (`ticker.skippedStillActive`), because silently dropping every tick is

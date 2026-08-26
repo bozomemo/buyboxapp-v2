@@ -4,7 +4,7 @@
  * `schema/sqlite.ts` for why this is a wholly separate table from `listings` rather than a
  * listing row with the sale-facing fields left null.
  */
-import { and, asc, desc, eq, gte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -288,4 +288,36 @@ export async function latestTrackedProductObservations(
         .orderBy(mysqlSchema.trackedProductObservations.rank);
     },
   }) as Promise<TrackedProductObservationRow[]>;
+}
+
+/**
+ * Retention for `tracked_product_observations` (doc 05 §10).
+ *
+ * This table had no window until 2026-08-26 and grew without bound. It is written more densely
+ * than `competitor_observations`, not less: there is no change-detection hash here, so **every**
+ * offer of **every** successful look is stored (doc 05 §5 explains why that trade is acceptable
+ * for a small, operator-curated set). The detail screen also reads a whole 30-day window per
+ * view, so the window bounds a read cost as well as a write one.
+ *
+ * There is no proof-of-look row to preserve here, unlike `scrape_runs` — a failed look writes
+ * its own row in this same table — so pruning is a plain cutoff.
+ */
+export async function pruneTrackedProductObservations(
+  appDb: AppDatabase,
+  cutoffMs: number,
+): Promise<void> {
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .delete(sqliteSchema.trackedProductObservations)
+        .where(lte(sqliteSchema.trackedProductObservations.observedAt, cutoffMs)),
+    postgres: (db) =>
+      db
+        .delete(postgresSchema.trackedProductObservations)
+        .where(lte(postgresSchema.trackedProductObservations.observedAt, cutoffMs)),
+    mysql: (db) =>
+      db
+        .delete(mysqlSchema.trackedProductObservations)
+        .where(lte(mysqlSchema.trackedProductObservations.observedAt, cutoffMs)),
+  });
 }

@@ -17,8 +17,11 @@ export const OBSERVE_BUYBOX_JOB = 'ObserveBuybox';
 
 export const ObserveBuyboxPayloadSchema = z.object({
   marketplaceCode: z.enum(['trendyol', 'hepsiburada']),
-  /** Monotonically increasing cycle counter the caller advances each time this job runs. */
-  cycleNumber: z.number().int().min(0),
+  /**
+   * Length of one "cycle" in milliseconds — this job's own tick cadence, supplied by the
+   * caller that owns it (`apps/worker`). The tier multipliers below are expressed in these.
+   */
+  cycleMs: z.number().int().min(1).default(60_000),
   warmEveryNCycles: z.number().int().min(1).default(5),
   coldEveryNCycles: z.number().int().min(1).default(20),
 });
@@ -56,16 +59,41 @@ export function computeObservationTier(input: TieringInput): ObservationTier {
   return 'warm'; // OPTIMUM
 }
 
-function isDueThisCycle(
+/**
+ * doc 07 §4's tier cadences, decided from **how long it has been since we last looked at this
+ * listing** rather than from a counter of how many times the job has fired.
+ *
+ * The counter is what doc 07 §4.1 gap G-1 proposed, and it was the obvious reading of the §4
+ * table's "every N cycles". It was rejected on implementation (2026-08-26) for three reasons,
+ * all of which the elapsed-time form gets right for free:
+ *
+ * - **A counter has to survive restarts to mean anything.** Persisting it makes a per-tick
+ *   `app_settings` write whose audit trail is noise, and putting it in the job payload breaks
+ *   `countActiveJobsForTarget`'s "one run at a time" guard (doc 07 §8) — the payload would
+ *   differ on every tick, so the guard would never match and a slow run would queue duplicates.
+ * - **A counter measures firings, not time.** After the worker is down for three days a counter
+ *   says one cycle has passed; a Cold listing is then not re-scraped for another week, having
+ *   already gone ten days unobserved.
+ * - **`% N === 0` is not "every N cycles" per listing, it is "on cycles divisible by N" for the
+ *   whole catalogue.** Every Warm listing becomes due in the same tick and none in the other 23,
+ *   which is exactly the burst the tiering exists to avoid.
+ *
+ * A listing that has never been observed is always due — never having looked is staler than any
+ * timestamp, and it is the state every listing starts in.
+ */
+export function isDueForObservation(
   tier: ObservationTier,
-  cycleNumber: number,
+  lastObservedAtMs: number | null,
+  nowMs: number,
+  cycleMs: number,
   warmEveryN: number,
   coldEveryN: number,
 ): boolean {
   if (tier === 'frozen') return false;
   if (tier === 'hot') return true;
-  if (tier === 'warm') return cycleNumber % warmEveryN === 0;
-  return cycleNumber % coldEveryN === 0;
+  if (lastObservedAtMs === null) return true;
+  const everyN = tier === 'warm' ? warmEveryN : coldEveryN;
+  return nowMs - lastObservedAtMs >= everyN * cycleMs;
 }
 
 export async function observeBuybox(ctx: JobContext): Promise<JobResult> {
@@ -88,7 +116,16 @@ export async function observeBuybox(ctx: JobContext): Promise<JobResult> {
       offeredStock: listing.offeredStock,
       recentlyLostBuybox,
     });
-    if (isDueThisCycle(tier, payload.cycleNumber, payload.warmEveryNCycles, payload.coldEveryNCycles)) {
+    if (
+      isDueForObservation(
+        tier,
+        latestObservation?.observedAt ?? null,
+        nowMs,
+        payload.cycleMs,
+        payload.warmEveryNCycles,
+        payload.coldEveryNCycles,
+      )
+    ) {
       dueListingIds.push(listing.marketplaceListingId);
       listingByMarketplaceId.set(listing.marketplaceListingId, listing.id);
     }

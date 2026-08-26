@@ -45,6 +45,7 @@ import { getCompetitorSource } from '../competitor-source-registry.js';
 import type { JobContext, JobResult } from '../job.js';
 import {
   SCRAPE_COLD_EVERY_N_CYCLES,
+  SCRAPE_CYCLE_MS,
   SCRAPE_FAILURE_RATE_ALERT_THRESHOLD,
   SCRAPE_FAILURE_RATE_MIN_SAMPLE,
   SCRAPE_MAX_LISTINGS_PER_RUN,
@@ -52,15 +53,15 @@ import {
 } from '../scrape-config.js';
 import { evaluateAlertsForListing, toListingContext } from './evaluate-alerts.js';
 import { decodeProductPageRef } from './listing-extra.js';
-import { computeObservationTier, type ObservationTier } from './observe-buybox.js';
+import { computeObservationTier, isDueForObservation, type ObservationTier } from './observe-buybox.js';
 import { scrapeTrackedProducts } from './scrape-tracked-products.js';
 
 export const SCRAPE_COMPETITORS_JOB = 'ScrapeCompetitors';
 
 export const ScrapeCompetitorsPayloadSchema = z.object({
   marketplaceCode: z.enum(['trendyol', 'hepsiburada']),
-  /** Monotonically increasing cycle counter, as `ObserveBuybox` uses (doc 07 §4). */
-  cycleNumber: z.number().int().min(0),
+  /** Length of one "cycle" in ms; the tier multipliers below are expressed in these. */
+  cycleMs: z.number().int().min(1).default(SCRAPE_CYCLE_MS),
   warmEveryNCycles: z.number().int().min(1).default(SCRAPE_WARM_EVERY_N_CYCLES),
   coldEveryNCycles: z.number().int().min(1).default(SCRAPE_COLD_EVERY_N_CYCLES),
   maxListings: z.number().int().min(1).default(SCRAPE_MAX_LISTINGS_PER_RUN),
@@ -71,17 +72,23 @@ export type ScrapeCompetitorsPayload = z.infer<typeof ScrapeCompetitorsPayloadSc
 /**
  * doc 07 §4's *Scrape* column — a different cadence from the same tier that drives the buybox
  * poll: Hot every cycle, Warm daily, Cold weekly, Frozen never.
+ *
+ * Measured from the last **successful** scrape, for the same reason change detection is
+ * (doc 07 §7): a failed run tells us nothing about the listing, and treating it as a look
+ * would let a listing that fails every time drift out of the rotation entirely.
+ *
+ * `isDueForObservation` carries the full reasoning for why this is elapsed time rather than a
+ * cycle counter.
  */
 export function isDueForScrape(
   tier: ObservationTier,
-  cycleNumber: number,
+  lastScrapedAtMs: number | null,
+  nowMs: number,
+  cycleMs: number,
   warmEveryN: number,
   coldEveryN: number,
 ): boolean {
-  if (tier === 'frozen') return false;
-  if (tier === 'hot') return true;
-  if (tier === 'warm') return cycleNumber % warmEveryN === 0;
-  return cycleNumber % coldEveryN === 0;
+  return isDueForObservation(tier, lastScrapedAtMs, nowMs, cycleMs, warmEveryN, coldEveryN);
 }
 
 /**
@@ -164,7 +171,22 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
     };
   }
 
-  const candidates = await listingsRepo.listObservableListings(ctx.appDb, marketplaceCode);
+  const unorderedCandidates = await listingsRepo.listObservableListings(ctx.appDb, marketplaceCode);
+
+  // doc 07 §4.1 gap G-2: the `maxListings` ceiling below is only a *rotation* if the candidates
+  // are ordered by how long it has been since we last looked. Unordered, the engine returns the
+  // same first rows every run and everything past the ceiling is never scraped at all — while
+  // the run still reports `completed`, so nothing surfaces it. Oldest first, never-scraped
+  // first: not having looked is staler than any timestamp.
+  const lastScrapedAt = await competitionRepo.lastSuccessfulScrapeAtByListing(ctx.appDb, marketplaceCode);
+  const candidates = [...unorderedCandidates].sort((a, b) => {
+    const aAt = lastScrapedAt.get(a.id) ?? -1;
+    const bAt = lastScrapedAt.get(b.id) ?? -1;
+    if (aAt !== bAt) return aAt - bAt;
+    // Stable tie-break so two runs in the same millisecond can't interleave differently and
+    // re-select the same subset. Ids are UUID v7, so this is creation order.
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
 
   const due: {
     readonly listingId: string;
@@ -184,7 +206,16 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
       offeredStock: listing.offeredStock,
       recentlyLostBuybox: latestObservation !== undefined && latestObservation.rank !== 1,
     });
-    if (!isDueForScrape(tier, payload.cycleNumber, payload.warmEveryNCycles, payload.coldEveryNCycles)) {
+    if (
+      !isDueForScrape(
+        tier,
+        lastScrapedAt.get(listing.id) ?? null,
+        nowMs,
+        payload.cycleMs,
+        payload.warmEveryNCycles,
+        payload.coldEveryNCycles,
+      )
+    ) {
       continue;
     }
     due.push({

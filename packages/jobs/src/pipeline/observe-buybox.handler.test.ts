@@ -40,7 +40,7 @@ describe('observeBuybox (handler)', () => {
       scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
       await scheduler.enqueueNow(
         OBSERVE_BUYBOX_JOB,
-        JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+        JSON.stringify({ marketplaceCode: 'trendyol' }),
       );
       const tick = await scheduler.tick();
       expect(tick.ran).toEqual([{ jobName: OBSERVE_BUYBOX_JOB, ok: true }]);
@@ -96,7 +96,7 @@ describe('observeBuybox (handler)', () => {
       scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
       await scheduler.enqueueNow(
         OBSERVE_BUYBOX_JOB,
-        JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+        JSON.stringify({ marketplaceCode: 'trendyol' }),
       );
       await scheduler.tick();
 
@@ -108,12 +108,27 @@ describe('observeBuybox (handler)', () => {
     }
   });
 
-  it('a Cold-tier listing (BLOCKED) is skipped on a cycle where it is not due', async () => {
+  it('a Cold-tier listing (BLOCKED) observed recently is not yet due', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {
       await seedMarketplace(appDb);
       const listingId = await seedListing(appDb);
       const clock = new FakeClock(NOW);
+
+      // Cold is every 20 cycles of 60 s = 20 minutes. This one was observed a minute ago, so
+      // it is inside that window. Without an observation at all it would be due regardless of
+      // tier — never having looked is staler than any timestamp.
+      await competitionRepo.insertBuyboxObservation(appDb, {
+        id: 'obs-recent',
+        listingId,
+        observedAt: NOW - 60_000,
+        rank: 1,
+        buyboxPrice: null,
+        secondPrice: null,
+        thirdPrice: null,
+        hasMultipleSeller: false,
+        source: 'api',
+      });
 
       // Establish BLOCKED phase so the tier becomes Cold (polled every 20 cycles by default).
       await repricingRepo.upsertRepricingState(appDb, {
@@ -157,10 +172,9 @@ describe('observeBuybox (handler)', () => {
         instanceId: 'test',
       });
       scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
-      // cycle 1 is not a multiple of the default coldEveryNCycles (20) — not due.
       await scheduler.enqueueNow(
         OBSERVE_BUYBOX_JOB,
-        JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 1 }),
+        JSON.stringify({ marketplaceCode: 'trendyol' }),
       );
       await scheduler.tick();
 
@@ -190,7 +204,7 @@ describe('observeBuybox (handler)', () => {
       scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
       await scheduler.enqueueNow(
         OBSERVE_BUYBOX_JOB,
-        JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+        JSON.stringify({ marketplaceCode: 'trendyol' }),
       );
       const tick = await scheduler.tick();
       expect(tick.ran).toEqual([{ jobName: OBSERVE_BUYBOX_JOB, ok: false }]); // job-level failure, retried by JobRunner
@@ -225,7 +239,7 @@ describe('observeBuybox (handler)', () => {
       scheduler2.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
       await scheduler2.enqueueNow(
         OBSERVE_BUYBOX_JOB,
-        JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+        JSON.stringify({ marketplaceCode: 'trendyol' }),
       );
       const tick2 = await scheduler2.tick();
       // Returns cleanly (doesn't throw) but reports the skip via JobResult.error, same as

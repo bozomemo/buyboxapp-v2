@@ -244,8 +244,13 @@ rows are written.
 `payload_hash` makes change detection a single comparison, and lets a future migration
 reconstruct exactly which runs were no-ops.
 
-**Retention:** `competitor_observations` and `scrape_runs` are kept **indefinitely** — they are
-the reporting asset. Our own `price_submissions` are pruned after **60 days**.
+**Retention:** `scrape_runs` is kept **indefinitely** — it is one row per scrape rather than one
+per seller, and it is the **coverage denominator**: without it "no sellers were observed" cannot
+be told from "we no longer keep who they were". `competitor_observations` is kept **90 days**
+(revised 2026-08-18: indefinite retention was written for a 64-listing catalogue and costs ~12M
+rows a year at the 2,000-listing target; doc 05 §10 records the measurement and names the daily
+rollup as the long-term memory that replaces it). Our own `price_submissions` are pruned after
+**60 days**.
 
 ### 5.1 Two data paths, two purposes
 

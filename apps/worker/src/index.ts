@@ -21,8 +21,9 @@
  *
  * One run at a time, per target: these tickers call `scheduler.enqueueNow` directly and so do
  * not pass through `Scheduler.tick`'s own `countActiveJobs` guard. Each `fire` therefore checks
- * `countActiveJobsForPayload` itself before enqueueing, keying on job name *and* payload so that
- * a slow Trendyol run never suppresses the Hepsiburada one. Without it a job slower than its own
+ * `countActiveJobsForTarget` itself before enqueueing, keying on job name *and* the target
+ * marketplace read out of the payload, so that a slow Trendyol run never suppresses the
+ * Hepsiburada one. Without it a job slower than its own
  * cadence enqueues a fresh copy on every tick and the backlog grows without bound — reachable
  * since cadence became operator-editable (doc 07 §8.1), whose 10 s floor is well under a real
  * catalogue import.
@@ -464,7 +465,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         // itself on every tick and the backlog only ever grows. Reachable in practice since
         // cadence became operator-editable (doc 07 §8.1): `MIN_JOB_CADENCE_MS` allows 10 s,
         // which is shorter than a real `ImportListings` over a full catalogue.
-        if ((await jobsRepo.countActiveJobsForPayload(appDb, jobName, payload)) > 0) {
+        if ((await jobsRepo.countActiveJobsForTarget(appDb, jobName, marketplaceCode)) > 0) {
           // Not an error: a slower-than-cadence job is a legitimate state. Logged because the
           // alternative — silently dropping every tick — is how "the job never runs" looks from
           // the outside.
@@ -488,18 +489,21 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     );
   };
   everyMarketplace(IMPORT_LISTINGS_JOB, importListingsCadenceMs);
-  // !! `cycleNumber: 0` is a literal, here and on the scrape ticker below, and it is never
-  // incremented or persisted. Both jobs' tier cadences are `cycleNumber % N === 0`, so a
-  // permanent zero makes every tier due on every cycle: Warm is not daily and Cold is not
-  // weekly (doc 07 §4 describes the intent, §4.1 gap G-1 records that this does not implement
-  // it). Costs quota, not correctness. Fix is a per-marketplace counter in `app_settings`.
-  everyMarketplace(OBSERVE_BUYBOX_JOB, observeBuyboxCadenceMs, { cycleNumber: 0 });
+  // No cycle field is passed: the tier cadences are **absolute durations** resolved from each
+  // handler's own `cycleMs` default (doc 07 §4.1). They used to be a literal `cycleNumber: 0`
+  // that was never incremented, which made every tier due on every tick — gap G-1.
+  //
+  // Deliberately not this ticker's cadence, though that was the first shape tried: it would tie
+  // "Warm is daily" to how often the job happens to fire, so an operator lowering the cadence to
+  // 15 minutes (doc 07 §8.1 lets them) would silently turn daily into six-hourly. The tick rate
+  // is the resolution at which due-ness is checked; it is not the tier interval.
+  everyMarketplace(OBSERVE_BUYBOX_JOB, observeBuyboxCadenceMs);
   everyMarketplace(REPRICE_JOB, repriceCadenceMs, { mode: 'live' });
   everyMarketplace(SUBMIT_PRICE_CHANGES_JOB, submitPriceChangesCadenceMs);
   everyMarketplace(CONFIRM_SUBMISSIONS_JOB, confirmSubmissionsCadenceMs);
   everyMarketplace(RESET_BUDGET_JOB, resetBudgetCadenceMs);
   // Off unless the operator enabled it — `isJobEnabled` inside `everyMarketplace` gates this.
-  everyMarketplace(SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs, { cycleNumber: 0 });
+  everyMarketplace(SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs);
 
   const fireImportStockItems = async (): Promise<void> => {
     if (!(await isJobEnabled(appDb, IMPORT_STOCK_ITEMS_JOB))) return;
@@ -511,8 +515,10 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     };
     const payload = JSON.stringify({ sourceCode, sourceConfig });
     // Same "one run at a time" guard as `everyMarketplace` above — this job reads a whole
-    // product catalogue and is the likeliest of all of them to outlast its own cadence.
-    if ((await jobsRepo.countActiveJobsForPayload(appDb, IMPORT_STOCK_ITEMS_JOB, payload)) > 0) {
+    // product catalogue and is the likeliest of all of them to outlast its own cadence. Keyed on
+    // the job name alone, not a target: this one is global rather than per marketplace, so two
+    // concurrent runs are never wanted whatever their payloads say.
+    if ((await jobsRepo.countActiveJobs(appDb, IMPORT_STOCK_ITEMS_JOB)) > 0) {
       logger.info('ticker.skippedStillActive', { jobName: IMPORT_STOCK_ITEMS_JOB });
       return;
     }

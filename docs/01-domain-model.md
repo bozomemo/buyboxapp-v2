@@ -20,7 +20,7 @@ entire cost model depends on. Get this wrong and every price is wrong.
         (basket campaign,
          commission)
 
-        Bundle  ── composed of ──▶ StockItem (1..5)
+        Bundle  ── composed of ──▶ StockItem (1..N, with quantity)
         PK: bundleStockCode
 
         PriceChangeRecord  ── audit of every automated price move

@@ -17,11 +17,13 @@ import { prunePriceSubmissions } from './repositories/repricing.js';
 import { pruneBuyboxObservations, pruneCompetitorObservations } from './repositories/competition.js';
 import { pruneFinishedJobs, pruneJobRuns } from './repositories/jobs.js';
 import { pruneEvents } from './repositories/events.js';
+import { pruneTrackedProductObservations } from './repositories/tracked-products.js';
 
 export interface RetentionWindows {
   readonly priceSubmissionsDays: number;
   readonly buyboxObservationsDays: number;
   readonly competitorObservationsDays: number;
+  readonly trackedProductObservationsDays: number;
   readonly appEventsInfoDebugDays: number;
   readonly appEventsWarnErrorDays: number;
   readonly jobRunsDays: number;
@@ -33,6 +35,10 @@ export const DEFAULT_RETENTION_WINDOWS: RetentionWindows = {
   priceSubmissionsDays: 60,
   buyboxObservationsDays: 90,
   competitorObservationsDays: 90,
+  // Matches `competitorObservationsDays`: it is the same kind of data, observed the same way,
+  // and read by the same kind of report. Added 2026-08-26 — this table previously had no
+  // window at all and grew without bound (doc 05 §10's note).
+  trackedProductObservationsDays: 90,
   appEventsInfoDebugDays: 90,
   appEventsWarnErrorDays: 365,
   jobRunsDays: 90,
@@ -51,6 +57,10 @@ export async function pruneHistory(
   await prunePriceSubmissions(appDb, daysAgo(nowMs, windows.priceSubmissionsDays));
   await pruneBuyboxObservations(appDb, daysAgo(nowMs, windows.buyboxObservationsDays));
   await pruneCompetitorObservations(appDb, daysAgo(nowMs, windows.competitorObservationsDays));
+  await pruneTrackedProductObservations(
+    appDb,
+    daysAgo(nowMs, windows.trackedProductObservationsDays),
+  );
   await pruneEvents(
     appDb,
     daysAgo(nowMs, windows.appEventsInfoDebugDays),

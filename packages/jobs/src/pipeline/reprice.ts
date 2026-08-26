@@ -126,21 +126,49 @@ async function loadState(
  *    configured, nothing is removed and the top competitor is still whoever the page ranks
  *    first — at worst the trigger sees our own identity, which is stable and so never fires
  *    a spurious re-probe.
+ *
+ * The same three rules govern `buyboxStock`, the other field on this shape. It is the offered
+ * stock of the best competing offer — the buybox holder, in the `SEEKING` phase where doc 03
+ * §6.1's low-stock guard is the only thing that reads it. Neither official buybox API exposes
+ * competitor stock (`capabilities.exposesCompetitorStock` is `false` on both adapters), so it
+ * has the identical provenance, the identical staleness rule, and the identical duty to degrade
+ * to `null` rather than to a guess.
+ *
+ * Until 2026-08-26 this was hard-coded `null` at the call site, which left the guard — a
+ * specified, operator-configurable policy (doc 03 §3, doc 11 F-25) — unable to fire at all. An
+ * operator could switch it on, save it, and nothing would happen. That is worse than not
+ * offering it: the setting read as active while being inert.
  */
-async function loadSecondSellerId(
+interface CompetitorSignals {
+  readonly secondSellerId: string | null;
+  readonly buyboxStock: number | null;
+}
+
+const NO_COMPETITOR_SIGNALS: CompetitorSignals = { secondSellerId: null, buyboxStock: null };
+
+async function loadCompetitorSignals(
   appDb: Parameters<typeof competitionRepo.observationsAsOf>[0],
   listingId: string,
   ourSellerRef: string | null,
   nowMs: number,
-): Promise<string | null> {
+): Promise<CompetitorSignals> {
   const latestRun = await competitionRepo.latestSuccessfulScrapeRun(appDb, listingId);
-  if (!latestRun || nowMs - latestRun.observedAt > SELLER_IDENTITY_MAX_AGE_MS) return null;
+  if (!latestRun || nowMs - latestRun.observedAt > SELLER_IDENTITY_MAX_AGE_MS) {
+    return NO_COMPETITOR_SIGNALS;
+  }
 
   const offers = await competitionRepo.observationsAsOf(appDb, listingId, nowMs);
   const competitors = offers
     .filter((offer) => offer.sellerRef !== null && offer.sellerRef !== ourSellerRef)
     .sort((a, b) => a.rank - b.rank);
-  return competitors[0]?.sellerRef ?? null;
+  const best = competitors[0];
+  return {
+    secondSellerId: best?.sellerRef ?? null,
+    // `offered_stock` is nullable in the archive (doc 05 §5) and a marketplace that does not
+    // publish it stores null, not zero — zero would read as "out of stock" and make the guard
+    // fire on every listing on that marketplace.
+    buyboxStock: best?.offeredStock ?? null,
+  };
 }
 
 function campaignRatioAt(
@@ -232,9 +260,14 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
       const observationRow = await competitionRepo.latestBuyboxObservation(ctx.appDb, listing.id);
       // doc 12 7.4: reporting data, joined in here and nowhere else. `null` whenever the
       // scrape is off, absent or stale — the decision proceeds either way (doc 03 T-22).
-      const secondSellerId = policy.useSellerIdentityTrigger
-        ? await loadSecondSellerId(ctx.appDb, listing.id, ourSellerRef, nowMs)
-        : null;
+      // Loaded when *either* consumer wants it: the identity trigger (doc 03 §6.5) and the
+      // low-stock guard (§6.1) are independent policy switches over one scrape read.
+      const signals =
+        policy.useSellerIdentityTrigger || policy.lowStockGuardEnabled
+          ? await loadCompetitorSignals(ctx.appDb, listing.id, ourSellerRef, nowMs)
+          : NO_COMPETITOR_SIGNALS;
+      const secondSellerId = policy.useSellerIdentityTrigger ? signals.secondSellerId : null;
+      const competitorStock = policy.lowStockGuardEnabled ? signals.buyboxStock : null;
       const observation = observationRow
         ? {
             rank: observationRow.rank,
@@ -245,8 +278,11 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
             thirdPrice:
               observationRow.thirdPrice !== null ? Money.fromKurus(observationRow.thirdPrice) : null,
             hasMultipleSeller: observationRow.hasMultipleSeller,
-            secondSellerId, // reporting-only input (doc 10 §5.1); never gates the decision
-            competitorStock: null, // same — Trendyol only via scrape, Hepsiburada TBC
+            // Both are reporting-only inputs (doc 10 §5.1) and neither gates the decision:
+            // absent or stale scrape data leaves them null and the price-based logic runs
+            // unchanged (doc 03 T-22).
+            secondSellerId,
+            competitorStock,
             observedAt: new Date(observationRow.observedAt),
           }
         : {

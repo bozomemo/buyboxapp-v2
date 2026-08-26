@@ -304,7 +304,49 @@ Four things the shape gets wrong if assumed rather than read:
 
 `value` is in **lira** and is converted to exact kuruş once, at the adapter boundary.
 
-### Open question — `couponApplicablePrice` has never once been observed *(raised 2026-08-18)*
+### ✅ Resolved 2026-08-26 — `discountedPrice` is already the discounted price
+
+The question below is **closed, in favour of reading 1**. Settled by fetching two live product
+pages through the production Playwright transport and dumping every key of the price node —
+which the archive could never have settled, because it only ever stored the two fields already
+in question.
+
+`couponApplicablePrice` **is present on every offer and is read correctly.** It is not a
+mapping defect. It equals `discountedPrice` because on this marketplace `discountedPrice` has
+*already had the promotion applied*.
+
+The proof is a fourth field nobody had looked at, on our own offer (merchant `722974`, product
+`859939211`, 2026-08-26):
+
+```jsonc
+{ "discountedPrice":                        { "value": 420 },   // what we store as `price`
+  "couponApplicablePrice":                  { "value": 420 },   // → `finalPrice`, hence identical
+  "discountedPriceAfterNoLimitPromotions":  { "value": 450 },   // the shelf price
+  "promotions": ["350 TL ve Üzeri Kargo Bedava", "300 TL'ye 30 TL İndirim"] }
+```
+
+450 − 30 = 420. The promotion text names the discount, and `discountedPrice` already carries it.
+
+Three consequences, all of which stand until Trendyol's payload changes:
+
+1. **`final_price` being equal to `price` on all 6,039 archived observations is correct**, not a
+   silent failure — including on the 166 that carry an explicit `Sepette %N İndirim`. The
+   `finalPrice ?? price` rule §2.11 imposes for Hepsiburada is harmless here rather than
+   load-bearing.
+2. **We store no shelf price.** `discountedPriceAfterNoLimitPromotions` is not mapped, so
+   "what was it before the campaign?" is unanswerable from our archive. Reading 1 predicted
+   exactly this. Worth adding if a report ever needs discount *depth*; not needed for a pricing
+   decision, which cares only about the price a customer actually pays.
+3. **`tyPlusCouponApplicablePrice` is a real, sometimes-different price that we do not read.**
+   Product `1149754452`, merchant `1267732`: `discountedPrice` 720, `tyPlusCouponApplicablePrice`
+   684, promotion `Trendyol Plus'a Özel Fiyat`. It is a membership-gated price, so it is not the
+   price every customer sees and must **not** silently replace `price`. Recorded here as a known,
+   deliberate omission rather than an oversight — mapping it would need its own field and its own
+   decision about which audience a competitor report is written for.
+
+The original question and its evidence follow, unedited.
+
+### Open question — `couponApplicablePrice` has never once been observed *(raised 2026-08-18, closed 2026-08-26 — see above)*
 
 The normaliser maps `finalPrice` to `couponApplicablePrice`, falling back to `discountedPrice`
 when no coupon price exists (guide §14, §26). Across the entire live archive — **1,799
@@ -1080,3 +1122,4 @@ rank (§2.5), exactly as designed.
 | 2026-08-14 | Hepsiburada | **§2.2, §2.4, §2.6, §2.10 — the whole listing integration.** Basic-only auth with a mandatory `User-Agent`; all 9 listing query parameters and the complete `Listing` schema; JSON accepted on uploads; `price-uploads` chosen over `inventory-uploads`; `{id}`-only accepted response; `Error` + `PriceValidation` item-level schema with 1-based `elementNo`; **`MinLock`/`MaxLock` price locking**; `priceIncrease/DecreaseDisabled` kill switches; the full 18-operation surface; commission ≤50 SKU / ~240 req-min and buybox ≤10 SKU limits; the `OutOfPriceRange` bands | assistant, from the vendor's own OpenAPI 3.0.1 document and portal guide, retrieved via the portal's public content API (§2.12) after the product owner suggested applying the §2.11 browser-header technique; both artefacts stored verbatim in `docs/vendor/` |
 | 2026-08-18 | Trendyol | §1.6 — **open question raised, not closed.** `couponApplicablePrice` never observed across 1,799 archived observations (`final_price` never once differs from `price`), yet the site shows a real shelf→basket delta (product `844564577`: 3.000,00 ₺ shelf → 2.990,00 ₺ basket). Separately **confirmed correct**: quantity-tiered promotions move no price field (product `1145880513`, 2.790,00 ₺ for a single unit) | operator checked both products live in a browser; archive figures measured by the assistant against `apps/web/data/app.db`. **Needs a fresh payload comparison to settle** |
 | 2026-08-18 | Hepsiburada | §2.11 — recorded that `finalPrice` is hard-coded `null` for every offer, so it is null by design rather than by absence, and consumers must read `finalPrice ?? price`. Re-check deferred: the connected store is a test environment whose prices the product owner does not trust | product owner decision; code inspection of `public-listings/normalize.ts` |
+| 2026-08-26 | Trendyol | §1.6 — **2026-08-18's open question closed.** Two live product pages (`1149754452`, `859939211`) fetched through the production Playwright transport with every price-node key dumped. `couponApplicablePrice` is present and correctly read; it equals `discountedPrice` because `discountedPrice` already has the promotion applied, proved by `discountedPriceAfterNoLimitPromotions` (450) sitting beside `discountedPrice` (420) under a `300 TL'ye 30 TL İndirim` promotion on our own offer. Also found: `tyPlusCouponApplicablePrice`, a membership-gated price that genuinely differs (720 → 684 on merchant `1267732`) and is deliberately not mapped | assistant, read-only live fetch; no credential sent, nothing written |

@@ -68,6 +68,22 @@ interface OfferPrices {
  * doc 01 §7's competitor mapping: the domain's `sellingPrice` is the page's `discountedPrice`
  * and its `basketDiscountPrice` is `couponApplicablePrice`. Where no coupon price exists the
  * final price is the shelf price — not `null`, which would read as "unknown" downstream.
+ *
+ * **`finalPrice` is expected to equal `price` on this marketplace, and that is not a bug**
+ * (api-references §1.6, settled 2026-08-26 against two live pages). `discountedPrice` already
+ * has the promotion applied: an offer under a `300 TL'ye 30 TL İndirim` promotion carries
+ * `discountedPrice` 420 next to `discountedPriceAfterNoLimitPromotions` 450. So
+ * `couponApplicablePrice` is genuinely redundant here, and the fallback firing every time is
+ * the correct outcome rather than evidence of a missing field.
+ *
+ * Two fields on this node are read deliberately *not* at all:
+ *
+ * - `discountedPriceAfterNoLimitPromotions` — the pre-promotion shelf price. We keep the price
+ *   a customer pays, not the one they don't; mapping it would need its own column, and no
+ *   pricing decision wants it.
+ * - `tyPlusCouponApplicablePrice` — a Trendyol Plus membership price, observed genuinely lower
+ *   (720 → 684). It must never replace `price`: it is not the price every customer sees, so
+ *   undercutting it would mean undercutting an offer most buyers cannot take.
  */
 function readPrices(priceNode: unknown): OfferPrices {
   const object = asObject(priceNode);

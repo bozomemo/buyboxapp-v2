@@ -236,6 +236,13 @@ if lowStockGuardEnabled and competitorStock < lowStockThreshold:
     if guard > buyboxPrice: → none
         explanation: "Buybox holder is low on stock; not worth undercutting at this margin."
 
+> `competitorStock` is the buybox holder's offered stock, and **neither official buybox API
+> exposes it** (`capabilities.exposesCompetitorStock` is `false` on both adapters). Like
+> `secondSellerId` in §6.5 it comes from the reporting scrape and degrades the same way: absent,
+> stale or scraper-off leaves it `null` and the guard is simply not evaluated. It is never
+> inferred, and `0` is never assumed for a marketplace that does not publish stock — that would
+> read as "out of stock" and fire the guard on every listing there.
+
 next = policy.seekStrategy == 'direct'
        ? clamp(target)
        : clamp(max(currentPrice − seekStep, target))

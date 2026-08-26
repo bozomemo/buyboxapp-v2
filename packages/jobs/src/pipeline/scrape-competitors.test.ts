@@ -156,7 +156,7 @@ describe('ScrapeCompetitors', () => {
     });
     await scheduler.enqueueNow(
       SCRAPE_COMPETITORS_JOB,
-      JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0, ...payload }),
+      JSON.stringify({ marketplaceCode: 'trendyol', ...payload }),
     );
     await scheduler.tick();
     await scheduler.shutdown();
@@ -164,12 +164,61 @@ describe('ScrapeCompetitors', () => {
   }
 
   it('doc 07 §4: hot every cycle, warm daily, cold weekly, frozen never', () => {
-    expect(isDueForScrape('hot', 7, 24, 168)).toBe(true);
-    expect(isDueForScrape('warm', 24, 24, 168)).toBe(true);
-    expect(isDueForScrape('warm', 25, 24, 168)).toBe(false);
-    expect(isDueForScrape('cold', 168, 24, 168)).toBe(true);
-    expect(isDueForScrape('cold', 24, 24, 168)).toBe(false);
-    expect(isDueForScrape('frozen', 0, 24, 168)).toBe(false);
+    const HOUR = 60 * 60_000;
+    const now = 1_000 * HOUR; // any "now" well past the longest window
+    const agoHours = (h: number): number => now - h * HOUR;
+    // (tier, lastScrapedAt, now, cycleMs = 1h, warm = 24 cycles, cold = 168 cycles)
+    const due = (tier: Parameters<typeof isDueForScrape>[0], last: number | null): boolean =>
+      isDueForScrape(tier, last, now, HOUR, 24, 168);
+
+    expect(due('hot', agoHours(0))).toBe(true); // hot ignores elapsed time entirely
+    expect(due('frozen', null)).toBe(false); // frozen ignores it too, in the other direction
+
+    // Never looked is always due, at every tier — this is the state every listing starts in,
+    // and it is what gap G-2's rotation depends on to reach listings past the ceiling.
+    expect(due('warm', null)).toBe(true);
+    expect(due('cold', null)).toBe(true);
+
+    expect(due('warm', agoHours(24))).toBe(true); // exactly at the window
+    expect(due('warm', agoHours(23))).toBe(false); // inside it
+    expect(due('cold', agoHours(168))).toBe(true);
+    expect(due('cold', agoHours(24))).toBe(false); // a warm-length wait is not a cold one
+  });
+
+  it('doc 07 §4.1 G-2: the per-run ceiling rotates — two consecutive runs cover disjoint listings', async () => {
+    // Four candidates, ceiling of two. Unordered, the same two would be picked both times and
+    // the other two would never be scraped at all, with both runs reporting `completed`.
+    const listingIds: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      listingIds.push(
+        await seedListing(db.appDb, { marketplaceListingId: `barcode-${i}`, extra: PAGE_EXTRA }),
+      );
+    }
+
+    // Which listings a run touched is read back from `scrape_runs`, not from the fake source:
+    // all four listings share one product ref (they are variants of one page), so the ref the
+    // source was called with cannot tell them apart. The run rows can.
+    const scrapedIn = async (nowMs: number): Promise<string[]> => {
+      const { source } = fakeSource(() => [offer()]);
+      await run(source, { maxListings: 2 }, nowMs);
+      const touched: string[] = [];
+      for (const listingId of listingIds) {
+        const latest = await competitionRepo.latestScrapeRun(db.appDb, listingId);
+        if (latest?.observedAt === nowMs) touched.push(listingId);
+      }
+      return touched;
+    };
+
+    const first = await scrapedIn(NOW);
+    // A cycle later. Everything the first run touched now has a fresh successful scrape, so
+    // the staleness ordering puts the two it never reached at the front of the queue.
+    const second = await scrapedIn(NOW + 60 * 60_000);
+
+    expect(first).toHaveLength(2);
+    expect(second).toHaveLength(2);
+    expect(second.filter((id) => first.includes(id))).toEqual([]);
+    expect(new Set([...first, ...second]).size).toBe(4); // the whole catalogue, in two runs
+    expect(listingIds).toHaveLength(4);
   });
 
   it('doc 07 §7: writes a scrape_runs row on every run and observations on the first', async () => {
@@ -469,7 +518,7 @@ describe('tracked products (doc 06 §12.2) — customer feedback 2026-08-25', ()
     });
     await scheduler.enqueueNow(
       SCRAPE_COMPETITORS_JOB,
-      JSON.stringify({ marketplaceCode: 'trendyol', cycleNumber: 0 }),
+      JSON.stringify({ marketplaceCode: 'trendyol' }),
     );
     await scheduler.tick();
     await scheduler.shutdown();
@@ -654,6 +703,94 @@ describe('doc 12 Phase 7 definition of done — repricing without the scraper', 
     // Stale identity is never written into the optimum context — it would fire a spurious
     // re-probe against a seller who has since left.
     expect(state?.optimumCtxSecondSellerRef ?? null).toBeNull();
+  });
+
+  it('doc 03 §6.1 / F-25: the low-stock guard is fed from the scrape, and is skipped when it is stale', async () => {
+    const basePolicy = (await configRepo.getRepricingPolicy(db.appDb, 'trendyol'))!;
+    await configRepo.upsertRepricingPolicy(db.appDb, {
+      ...basePolicy,
+      lowStockGuardEnabled: true,
+      lowStockThreshold: 5,
+      // Large enough that the guard price clears the buybox price and suppresses the undercut.
+      lowStockMarginPct: 400,
+    });
+
+    // Rank 2 with the buybox above our floor — SEEKING, the only phase that reads the guard.
+    const seedSeeking = async (listingId: string, obsId: string): Promise<void> => {
+      await competitionRepo.insertBuyboxObservation(db.appDb, {
+        id: obsId,
+        listingId,
+        observedAt: NOW,
+        rank: 2,
+        buyboxPrice: 180_000n,
+        secondPrice: 190_000n,
+        thirdPrice: null,
+        hasMultipleSeller: true,
+        source: 'api',
+      });
+    };
+
+    const seedScrape = async (listingId: string, at: number, suffix: string): Promise<void> => {
+      await competitionRepo.recordScrapeRun(
+        db.appDb,
+        {
+          id: `run-${suffix}`,
+          listingId,
+          observedAt: at,
+          source: 'publicPage',
+          sellerCount: 1,
+          payloadHash: `hash-${suffix}`,
+          status: 'ok',
+          changed: true,
+        },
+        [
+          {
+            id: `obs-${suffix}`,
+            listingId,
+            scrapeRunId: `run-${suffix}`,
+            observedAt: at,
+            rank: 1,
+            sellerName: 'Az Stoklu Rakip',
+            sellerRef: 'low-stock-seller',
+            price: 180_000n,
+            finalPrice: 180_000n,
+            rating: 9,
+            dispatchTime: null,
+            offeredStock: 2, // below lowStockThreshold — this is the whole point
+            hasPromotion: false,
+            promotionText: null,
+          },
+        ],
+      );
+    };
+
+    const fresh = await seedListing(db.appDb, {
+      marketplaceListingId: 'fresh',
+      price: 200_000n,
+      unitCost: 10_000n,
+      extra: PAGE_EXTRA,
+    });
+    const stale = await seedListing(db.appDb, {
+      marketplaceListingId: 'stale',
+      price: 200_000n,
+      unitCost: 10_000n,
+      extra: PAGE_EXTRA,
+    });
+    await seedSeeking(fresh, 'bb-fresh');
+    await seedSeeking(stale, 'bb-stale');
+    await seedScrape(fresh, NOW, 'fresh');
+    await seedScrape(stale, NOW - 90 * 24 * 60 * 60_000, 'stale'); // far past the trust window
+
+    expect((await runReprice()).itemsFailed).toBe(0);
+
+    // Fresh stock data: the guard fires, so no undercut is queued for that listing. Before the
+    // 2026-08-26 wiring `competitorStock` was hard-coded null and this was impossible.
+    const submissions = await repricingRepo.drainOutbox(db.appDb, 'trendyol', 50);
+    const submittedFor = new Set(submissions.map((s) => s.listingId));
+    expect(submittedFor.has(fresh)).toBe(false);
+    // Stale stock data degrades to "unknown", exactly as the identity trigger does: the guard is
+    // skipped rather than assumed, and the ordinary seek still happens.
+    expect(submittedFor.has(stale)).toBe(true);
   });
 
   it('doc 12 7.4: a fresh scrape showing a new runner-up invalidates the optimum', async () => {

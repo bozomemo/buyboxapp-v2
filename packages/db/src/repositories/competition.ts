@@ -374,6 +374,86 @@ export async function latestSuccessfulScrapeRun(
   return result as ScrapeRunRow | undefined; // see the note in latestBuyboxObservation
 }
 
+/**
+ * Last **successful** scrape time per listing, for every listing that has ever had one.
+ *
+ * This is `ScrapeCompetitors`'s rotation key (doc 07 §4.1 gap G-2). The ceiling
+ * `SCRAPE_MAX_LISTINGS_PER_RUN` only behaves as "the rest are picked up next cycle" if the
+ * candidates are ordered oldest-first; without an order the same first rows are selected on
+ * every run and everything past the ceiling is never scraped at all, with the run still
+ * reporting `completed`.
+ *
+ * One grouped aggregate rather than a per-listing `latestSuccessfulScrapeRun` call: the caller
+ * needs the whole set to sort it, and N round-trips to answer one ranking question is the shape
+ * doc 06 §6.1 already rejected for the seller reports.
+ *
+ * A listing absent from the returned map has never been scraped successfully and therefore
+ * sorts **first** — never having looked is staler than any timestamp.
+ */
+export async function lastSuccessfulScrapeAtByListing(
+  appDb: AppDatabase,
+  marketplaceCode: string,
+): Promise<Map<string, number>> {
+  const rows = await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({
+          listingId: sqliteSchema.scrapeRuns.listingId,
+          lastAt: sql<number>`max(${sqliteSchema.scrapeRuns.observedAt})`,
+        })
+        .from(sqliteSchema.scrapeRuns)
+        .innerJoin(sqliteSchema.listings, eq(sqliteSchema.listings.id, sqliteSchema.scrapeRuns.listingId))
+        .where(
+          and(
+            eq(sqliteSchema.scrapeRuns.status, 'ok'),
+            eq(sqliteSchema.listings.marketplaceCode, marketplaceCode),
+          ),
+        )
+        .groupBy(sqliteSchema.scrapeRuns.listingId),
+    postgres: (db) =>
+      db
+        .select({
+          listingId: postgresSchema.scrapeRuns.listingId,
+          lastAt: sql<number>`max(${postgresSchema.scrapeRuns.observedAt})`,
+        })
+        .from(postgresSchema.scrapeRuns)
+        .innerJoin(
+          postgresSchema.listings,
+          eq(postgresSchema.listings.id, postgresSchema.scrapeRuns.listingId),
+        )
+        .where(
+          and(
+            eq(postgresSchema.scrapeRuns.status, 'ok'),
+            eq(postgresSchema.listings.marketplaceCode, marketplaceCode),
+          ),
+        )
+        .groupBy(postgresSchema.scrapeRuns.listingId),
+    mysql: (db) =>
+      db
+        .select({
+          listingId: mysqlSchema.scrapeRuns.listingId,
+          lastAt: sql<number>`max(${mysqlSchema.scrapeRuns.observedAt})`,
+        })
+        .from(mysqlSchema.scrapeRuns)
+        .innerJoin(mysqlSchema.listings, eq(mysqlSchema.listings.id, mysqlSchema.scrapeRuns.listingId))
+        .where(
+          and(
+            eq(mysqlSchema.scrapeRuns.status, 'ok'),
+            eq(mysqlSchema.listings.marketplaceCode, marketplaceCode),
+          ),
+        )
+        .groupBy(mysqlSchema.scrapeRuns.listingId),
+  });
+
+  const byListing = new Map<string, number>();
+  for (const row of rows as { listingId: string; lastAt: number | string | null }[]) {
+    if (row.lastAt === null) continue;
+    // MySQL returns MAX() over a bigint column as a string; the other two return a number.
+    byListing.set(row.listingId, Number(row.lastAt));
+  }
+  return byListing;
+}
+
 export async function latestScrapeRun(
   appDb: AppDatabase,
   listingId: string,

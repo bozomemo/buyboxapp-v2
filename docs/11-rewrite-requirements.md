@@ -40,7 +40,7 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | F-22 | M | Per-listing `minPrice`/`maxPrice` are enforced; a `maxPrice` below the floor alerts | 03 §5 |
 | F-23 | M | Sole-seller target uses an operator-configured margin, not a constant | 03 §6.6 |
 | F-24 | M | Stock mode `respectStock` / `ignoreStock` is an operator setting | 03 §3 |
-| F-25 | S | Competitor low-stock guard, off by default, applied uniformly at all ranks | 03 §6.1 |
+| F-25 | S | Competitor low-stock guard, off by default, applied uniformly at all ranks. Its `competitorStock` input was hard-coded `null` until 2026-08-26, so the guard could not fire at all; it is now fed from the reporting scrape under the same absent/stale ⇒ `null` rules as the seller-identity trigger | 03 §6.1, §6.5 |
 | F-26 | M | Every decision carries a machine-readable reason and a human-readable explanation, both persisted | 03 §2 |
 | F-27 | M | Shadow mode computes and records decisions without submitting | 07 §10 |
 
@@ -94,7 +94,7 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | F-56 | M | No presentation formatting in the database | 09 §29 |
 | F-57 | M | Competitor data stored as typed rows, never JSON blobs or composite strings | 05 §5 |
 | F-58 | M | `scrape_runs` written on every scrape; `competitor_observations` only on change | 05 §5, 10 §5 |
-| F-59 | M | Competitor and scrape history retained indefinitely | 05 §10 |
+| F-59 | M | `scrape_runs` (the proof-of-look row, and the coverage denominator) retained indefinitely; `competitor_observations` retained 90 days — **revised 2026-08-18**, see 05 §10 for the measurement that changed it | 05 §10 |
 | F-60 | M | Our price submissions retained 60 days | 05 §10 |
 | F-61 | M | `price_submissions` stores a decision-time snapshot sufficient to replay the decision | 05 §6 |
 | F-62 | M | Retention enforced nightly and configurable | 05 §10, 07 §1 |

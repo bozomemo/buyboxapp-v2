@@ -240,7 +240,11 @@ Additional decisions taken in this phase, beyond the tasks above:
   of this runs. It is the only job in doc 07 §1 that defaults to off.
 - **Browser impersonation for Hepsiburada only.** Its endpoint returns 403 to the honest user
   agent doc 04 §1.5's policy mandates; the ablation is recorded in §2.11 and the product owner
-  authorised the exception on 2026-08-13. Trendyol continues to identify itself honestly.
+  authorised the exception on 2026-08-13. **Trendyol was granted the identical exception on
+  2026-08-17** — an honest agent was measured to get a 403 there too, and the cause turned out
+  to be TLS fingerprinting rather than the user-agent string, so its scraper runs a real headless
+  Chromium (api-references §1.6). Neither public source identifies itself honestly any more;
+  `SCRAPER_USER_AGENT` survives only for a future source that can (doc 08 §12).
 
 ---
 

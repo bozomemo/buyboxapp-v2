@@ -210,9 +210,9 @@ aggressive risks a block.
 | cache TTL | 10 min | same | As Trendyol; several of our listings can share one marketplace SKU. |
 | request timeout | 15 s | same | As Trendyol. |
 | `SCRAPE_CYCLE_MS` | 1 h | `packages/jobs/scrape-config.ts` | The cycle the tier multipliers below are expressed in. |
-| `SCRAPE_WARM_EVERY_N_CYCLES` | 24 | same | doc 07 §4: Warm is scraped daily. |
-| `SCRAPE_COLD_EVERY_N_CYCLES` | 168 | same | doc 07 §4: Cold is scraped weekly. |
-| `SCRAPE_MAX_LISTINGS_PER_RUN` | 200 | same | Ceiling so one cycle can never crawl the whole catalogue — the legacy scraper's dominant cost (doc 04 §1.5). |
+| `SCRAPE_WARM_EVERY_N_CYCLES` | 24 | same | doc 07 §4: Warm is scraped daily. Since 2026-08-26 this is an **elapsed-time** window (24 × `SCRAPE_CYCLE_MS` since the listing was last successfully scraped), not a modulus over a cycle counter — doc 07 §4.1 G-1 records why. |
+| `SCRAPE_COLD_EVERY_N_CYCLES` | 168 | same | doc 07 §4: Cold is scraped weekly. Same elapsed-time treatment. |
+| `SCRAPE_MAX_LISTINGS_PER_RUN` | 200 | same | Ceiling so one cycle can never crawl the whole catalogue — the legacy scraper's dominant cost (doc 04 §1.5). Candidates are ordered oldest-scraped-first, so this is a rotation rather than a cut-off (doc 07 §4.1 G-2, fixed 2026-08-26). |
 | `SCRAPE_FAILURE_RATE_ALERT_THRESHOLD` | 0.25 | same | doc 07 §7: the failure *rate* alerts, not each failure. |
 | `SCRAPE_FAILURE_RATE_MIN_SAMPLE` | 10 | same | Below this a rate is noise; no alert is raised at all. |
 | `ALERT_STALE_AFTER_MS` | 24 h | same | doc 06 §6.2: past this, the alerts screen leads with "this data is not current" instead of the open count. Measured from `scrape_runs.status = 'ok'` only — a job failing every hour is not fresh data. |
