@@ -198,3 +198,20 @@ body {
     Consolas,
     monospace;
 }
+
+/*
+ * Native form controls. `color-scheme` above tells the browser to draw its own chrome dark, but
+ * it does not colour a control that has no background of its own: a `<select>` left transparent
+ * inherits the page's light text while its popup list is drawn on the platform's default light
+ * surface, so the options came out light-on-light and unreadable in dark mode (customer feedback
+ * 2026-08-26). The popup takes its colours from the `<select>`'s own computed background/colour,
+ * and Windows additionally needs them repeated on `option`/`optgroup`, so both are set here —
+ * once, globally, rather than per control, because every screen builds its filters from bare
+ * `<select>` elements carrying only border and spacing classes.
+ */
+select,
+option,
+optgroup {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+}
