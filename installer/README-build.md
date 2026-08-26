@@ -69,12 +69,17 @@ the customer's machine at install time, and the third is pasted into the browser
 ## Testing an installation
 
 Use a clean Windows VM with **no** Node, **no** Chromium and, for at least one run, **no**
-network. The checks that matter are D-1 … D-13 in doc 14 §10. The two worth running on every
+network. The checks that matter are D-1 … D-14 in doc 14 §10. The two worth running on every
 release, because they are the ones that lose data rather than merely fail:
 
 - **D-4** — install, finish the setup wizard, then install a newer package over it. Confirm
   `C:\ProgramData\BuyBox\.env.local` still holds the **same** `SECRET_STORE_KEY`, that the
   marketplace credentials still decrypt, and that `C:\ProgramData\BuyBox\backups\` gained a file.
+- **D-14** — run the upgrade of D-4 **without stopping the service first**, which is what a
+  customer does. There must be no "file in use" prompt and no copy deferred to a reboot, and
+  when the wizard finishes `C:\Program Files\BuyBox\app` must hold the new build's files.
+  Installing over a running service is the case that fails on a customer machine and never on a
+  developer one, where the service is usually already stopped.
 - **D-7** — from a second machine on the same LAN, confirm `http://<vm-ip>:3000` does not
   connect. It must not, until authentication exists (doc 14 §4.4).
 

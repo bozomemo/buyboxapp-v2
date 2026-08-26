@@ -189,7 +189,7 @@ try {
 # --- 7. Scripts and the service wrapper -------------------------------------------------------------------
 $scriptsDir = Join-Path $staging 'scripts'
 New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
-foreach ($name in @('preflight.ps1', 'configure-env.ps1', 'install-service.ps1', 'verify-health.ps1', 'uninstall-service.ps1')) {
+foreach ($name in @('preflight.ps1', 'stop-service.ps1', 'configure-env.ps1', 'install-service.ps1', 'verify-health.ps1', 'uninstall-service.ps1')) {
   $source = Join-Path $PSScriptRoot $name
   # These scripts must be pure ASCII. Windows PowerShell 5.1 -- which is what a customer machine
   # runs, and what the installer invokes -- reads a BOM-less UTF-8 file as ANSI, so a single

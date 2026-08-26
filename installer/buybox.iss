@@ -44,9 +44,26 @@ Source: "staging\node\*";     DestDir: "{app}\node";     Flags: recursesubdirs c
 Source: "staging\chromium\*"; DestDir: "{app}\chromium"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "staging\scripts\*";  DestDir: "{app}\scripts";  Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "staging\service\*";  DestDir: "{app}\service";  Flags: recursesubdirs createallsubdirs ignoreversion
-; Preflight runs before anything is installed (InitializeSetup), so it needs a copy the wizard
-; can extract to {tmp} rather than one that only exists after the files are laid down.
-Source: "preflight.ps1"; Flags: dontcopy
+; Preflight runs before anything is installed (InitializeSetup), and stop-service before the
+; first file is replaced (PrepareToInstall). Both need a copy the wizard can extract to {tmp}
+; rather than one that only exists after the files are laid down -- and on an upgrade the copy
+; under {app} is the *previous* version's, which is not the one we want to run either.
+Source: "preflight.ps1";    Flags: dontcopy
+Source: "stop-service.ps1"; Flags: dontcopy
+
+[InstallDelete]
+; Doc 14 section 5 step 3: on an upgrade {app} is emptied before the new payload lands, so a file
+; this version no longer ships cannot survive into it -- a stale Next chunk or an orphaned
+; Chromium file is loaded exactly as if it belonged. Safe only because PrepareToInstall has
+; already stopped the service.
+;
+; {app}\service is deliberately not here: it holds BuyBoxApp.xml, which install-service.ps1
+; renders and refreshes, and its two shipped files are overwritten by [Files] anyway. Deleting a
+; registered service's own executable buys nothing and risks a "marked for deletion" service.
+Type: filesandordirs; Name: "{app}\app"
+Type: filesandordirs; Name: "{app}\node"
+Type: filesandordirs; Name: "{app}\chromium"
+Type: filesandordirs; Name: "{app}\scripts"
 
 [Dirs]
 ; Data lives outside {app} so an upgrade, which replaces {app} wholesale, cannot reach it
@@ -102,7 +119,7 @@ var
   Lines: TArrayOfString;
   I: Integer;
 begin
-  TempFile := ExpandConstant('{tmp}\buybox-preflight.txt');
+  TempFile := ExpandConstant('{tmp}\buybox-script-output.txt');
   Exec('powershell.exe',
        '-NoProfile -ExecutionPolicy Bypass -Command "& { & ''' + ScriptPath + ''' ' + Args +
        ' } 2>&1 | Out-File -FilePath ''' + TempFile + ''' -Encoding utf8"',
@@ -129,6 +146,28 @@ begin
     exit;
   end;
   Result := True;
+end;
+
+{ Doc 14 §5 step 3. Runs after the wizard and before the first file is replaced. On an upgrade
+  the previous version is still running out of the install directory, holding node.exe, the
+  WinSW executable and the Chromium payload open, and Windows will not let the wizard overwrite
+  a file that is in use; install-service.ps1 starts the service again at the end. A non-empty
+  result aborts the install and is shown to the operator, so the script's own Turkish output is
+  the message.
+
+  Note for anyone editing this comment: Pascal braces do not nest, so an Inno constant written
+  out in full would end it early and turn the rest into code. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ScriptPath, Output: string;
+begin
+  Result := '';
+  ScriptPath := ExpandConstant('{tmp}\stop-service.ps1');
+  ExtractTemporaryFile('stop-service.ps1');
+  { Single quotes around the path, not double: RunPowerShell already wraps the whole command in
+    double quotes, and a second pair inside would end it early. }
+  if RunPowerShell(ScriptPath, '-InstallDir ''' + ExpandConstant('{app}') + '''', Output) <> 0 then
+    Result := Output;
 end;
 
 { Doc 14 §5 step 2: a machine with something already on 3000 is common and is not an error. }

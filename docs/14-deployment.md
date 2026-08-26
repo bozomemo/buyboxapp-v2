@@ -211,8 +211,23 @@ elevation (it writes to `Program Files` and registers a service).
    continues in a degraded mode.
 2. **Port.** Probe `3000`. If it is in use, ask for another port rather than failing — a
    developer machine with something already on 3000 is common and is not an error.
-3. **Files.** Unpack into the two directories of §4. On upgrade, `Program Files\BuyBox` is
-   emptied first; `ProgramData\BuyBox` is never touched.
+3. **Stop and files.** On an upgrade the previous version is *running out of the directory
+   about to be overwritten*: `node.exe`, the WinSW executable and the bundled Chromium are all
+   held open, and Windows will not let the wizard replace a file that is in use. So the service
+   is stopped first (`stop-service.ps1`, from Inno's `PrepareToInstall`, before a single file is
+   touched), and only then is `Program Files\BuyBox` emptied and unpacked per §4;
+   `ProgramData\BuyBox` is never touched. The stop goes through the SCM rather than
+   `BuyBoxApp.exe stop`, so WinSW performs its normal graceful shutdown and the step does not
+   depend on the old installation's files. `install-service.ps1` starts the service again at
+   step 7.
+
+   Emptying `{app}` first (Inno's `[InstallDelete]`) matters beyond tidiness: the payload is a
+   Next standalone build, and a chunk the new version no longer ships is loaded exactly as if it
+   belonged if it is left behind.
+
+   Added 2026-08-26 — the first cut of the installer performed neither, so a second install on a
+   machine hit "file in use" and, where Windows deferred the copy to a reboot, left the old code
+   running against a database the new build had already migrated.
 4. **Environment.** Write `.env.local` per §4.3 — but on an upgrade, **preserve every key that
    already exists**, in particular `SECRET_STORE_KEY`. Regenerating it would render the existing
    `secrets.enc.json` undecryptable and silently destroy the customer's stored marketplace
@@ -445,6 +460,7 @@ Files under `installer\`:
 | `build-package.ps1` | The pipeline above, runnable locally and from CI |
 | `buybox.iss` | Inno Setup script. Thin — it sequences the scripts below rather than reimplementing them in Pascal |
 | `preflight.ps1` | §5 step 1 |
+| `stop-service.ps1` | §5 step 3 — stops the running service before its files are replaced, and waits for the processes under `{app}` to actually exit |
 | `configure-env.ps1` | §5 step 4, including the upgrade-preservation rule |
 | `install-service.ps1` | §5 step 7; renders `BuyBoxApp.xml.template` |
 | `verify-health.ps1` | §5 step 8 |
@@ -609,6 +625,7 @@ so it is a development workaround and never a release check. D-1 still requires 
 | D-3 | Rebooting the VM brings the service back without a login |
 | D-4 | Upgrading over an existing install preserves `SECRET_STORE_KEY`, `app.db`, `secrets.enc.json` and the licence, and applies pending migrations |
 | D-5 | A deliberately broken build (bad `DATABASE_URL`) makes the installer **fail** at step 8 and name the log file |
+| D-14 | Installing over a **running** install succeeds: no "file in use" prompt, no deferred-to-reboot copy, and the service is running the new build when the wizard finishes (§5 step 3) |
 | D-10 | A fresh install creates the schema on first boot with no migration step in the installer (§5.2) |
 | D-11 | An upgrade carrying a new migration applies it on the first service start, and a SQLite backup file exists afterwards |
 | D-12 | An older build pointed at a newer database refuses to start and says so, rather than migrating (§5.2a) |
