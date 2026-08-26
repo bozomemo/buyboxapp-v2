@@ -404,9 +404,7 @@ export const trackedProductObservations = mysqlTable(
   'tracked_product_observations',
   {
     id: code('id', 36).primaryKey(),
-    trackedProductId: code('tracked_product_id', 36)
-      .notNull()
-      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    trackedProductId: code('tracked_product_id', 36).notNull(),
     observedAt: timestampMs('observed_at').notNull(),
     status: text('status').notNull(),
     rank: int('rank'),
@@ -416,7 +414,15 @@ export const trackedProductObservations = mysqlTable(
     finalPrice: money('final_price'),
     offeredStock: int('offered_stock'),
   },
-  (t) => [index('tracked_product_observations_product_observed').on(t.trackedProductId, t.observedAt)],
+  (t) => [
+    index('tracked_product_observations_product_observed').on(t.trackedProductId, t.observedAt),
+    // Named explicitly: the auto-generated name exceeds MySQL's 64-char identifier limit.
+    foreignKey({
+      name: 'fk_tpo_tracked_product_id',
+      columns: [t.trackedProductId],
+      foreignColumns: [trackedProducts.id],
+    }).onDelete('cascade'),
+  ],
 );
 
 export const priceSubmissions = mysqlTable(
