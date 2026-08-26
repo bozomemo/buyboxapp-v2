@@ -49,6 +49,14 @@ interface Row {
   buyboxSellerName: string | null;
 }
 
+/** `/api/brands` row — the brand filter's option list. */
+interface Brand {
+  id: string;
+  marketplaceCode: string;
+  name: string;
+  listingCount: number;
+}
+
 const PHASES = ['SEEKING', 'CLIMBING', 'REFINING', 'OPTIMUM', 'BLOCKED'] as const;
 
 /** Mirrors `CSV_EXPORT_LIMIT` in `api/listings/route.ts` — shown in the export button's title. */
@@ -357,15 +365,38 @@ export function ListingsClient() {
   const [sort, setSort] = useState<{ key: ColumnId; dir: 'asc' | 'desc' } | null>(null);
   const columns = useColumnPrefs('listings-columns-v1', COLUMN_DEFS);
 
-  // Cross-navigation from /brands (doc 06 §12.1, §4.5's stock-code pattern applied to brand):
-  // `brandId` arrives via the URL rather than component state, and is cleared locally once the
-  // operator dismisses the chip below — reopening the same link later still re-applies it.
+  // The brand filter is one piece of state with two ways in: the dropdown in the filter bar
+  // below, and cross-navigation from /brands (doc 06 §12.1, §4.5's stock-code pattern applied
+  // to brand), which arrives as `?brandId=` and seeds the dropdown's initial value. Keeping
+  // them on the same state is what stops an arrived-by-link filter and the visible control
+  // from disagreeing about what the grid is showing.
   const searchParams = useSearchParams();
   const [brandFilter, setBrandFilter] = useState<{ id: string; name: string } | null>(() => {
     const id = searchParams.get('brandId');
     const name = searchParams.get('brandName');
     return id ? { id, name: name ?? id } : null;
   });
+  const [brands, setBrands] = useState<Brand[]>([]);
+
+  // Fetched once, not per filter change: /api/brands is the whole (unpaged) brand list, which
+  // its own route comment records as tens to low hundreds of rows even at catalogue scale.
+  useEffect(() => {
+    fetch('/api/brands')
+      .then((r) => r.json())
+      .then((d: { brands: Brand[] }) => setBrands(d.brands))
+      .catch(() => setBrands([]));
+  }, []);
+
+  // Brands are per-marketplace rows, so the options narrow with the marketplace filter. Today
+  // only Trendyol carries them — Hepsiburada's listing service returns no brand (doc 06 §12.1).
+  // Re-sorted by name: /api/brands orders by listing count, which is what the /brands table
+  // wants and the opposite of what a long dropdown wants — `tr` collation so İ/ı/Ş/Ğ/Ö/Ç land
+  // where a Turkish operator looks for them.
+  const brandOptions = (
+    filters.marketplaceCode ? brands.filter((b) => b.marketplaceCode === filters.marketplaceCode) : brands
+  )
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'));
 
   /** Shared with the CSV export link below, so a filtered export matches the filtered grid. */
   function filterParams(): URLSearchParams {
@@ -470,39 +501,51 @@ export function ListingsClient() {
         </div>
       </div>
 
-      {brandFilter && (
-        <div className="flex items-center gap-2 rounded border border-(--color-accent-border) bg-(--color-accent-bg) px-3 py-1.5 text-sm">
-          <span>
-            Marka: <strong>{brandFilter.name}</strong>
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setPage(0);
-              setBrandFilter(null);
-            }}
-            className="text-(--color-muted) hover:text-(--color-text)"
-            title="Marka filtresini kaldır"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       <div className="flex flex-wrap items-end gap-3 rounded border border-(--color-border) p-3">
         <label className="flex flex-col text-xs">
           Pazaryeri
           <select
             value={filters.marketplaceCode}
             onChange={(e) => {
+              const code = e.target.value;
               setPage(0);
-              setFilters((f) => ({ ...f, marketplaceCode: e.target.value }));
+              setFilters((f) => ({ ...f, marketplaceCode: code }));
+              // A brand belongs to one marketplace; keeping it selected under another would
+              // filter the grid to nothing with no visible reason why.
+              setBrandFilter((b) =>
+                b && code && !brands.some((x) => x.id === b.id && x.marketplaceCode === code) ? null : b,
+              );
             }}
             className="rounded border border-(--color-border) px-2 py-1 text-sm"
           >
             <option value="">Tümü</option>
             <option value="trendyol">Trendyol</option>
             <option value="hepsiburada">Hepsiburada</option>
+          </select>
+        </label>
+        <label className="flex flex-col text-xs">
+          Marka
+          <select
+            value={brandFilter?.id ?? ''}
+            onChange={(e) => {
+              const id = e.target.value;
+              setPage(0);
+              const picked = brands.find((b) => b.id === id);
+              setBrandFilter(id ? { id, name: picked?.name ?? id } : null);
+            }}
+            className="w-48 rounded border border-(--color-border) px-2 py-1 text-sm"
+          >
+            <option value="">Tümü</option>
+            {/* A brand arriving by link is listed even if the fetch has not landed yet, so the
+                control never shows "Tümü" while the grid is in fact filtered. */}
+            {brandFilter && !brandOptions.some((b) => b.id === brandFilter.id) && (
+              <option value={brandFilter.id}>{brandFilter.name}</option>
+            )}
+            {brandOptions.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.listingCount})
+              </option>
+            ))}
           </select>
         </label>
         <label className="flex flex-col text-xs">
@@ -647,7 +690,10 @@ export function ListingsClient() {
                   />
                 </td>
                 {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
-                  <td key={d.id} className={`px-2 py-1 ${d.id === 'rank' && row.rank === 1 ? 'row-success' : ''}`}>
+                  <td
+                    key={d.id}
+                    className={`px-2 py-1 ${d.id === 'rank' && row.rank === 1 ? 'row-success' : ''}`}
+                  >
                     {renderCell(d.id, row, load)}
                   </td>
                 ))}
