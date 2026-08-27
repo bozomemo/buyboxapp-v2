@@ -211,6 +211,16 @@ elevation (it writes to `Program Files` and registers a service).
    continues in a degraded mode.
 2. **Port.** Probe `3000`. If it is in use, ask for another port rather than failing — a
    developer machine with something already on 3000 is common and is not an error.
+
+   On an upgrade two things change, both added 2026-08-27. The port offered is the one the
+   installed service is already using, read from the previous installation's
+   `service\BuyBoxApp.xml`, not `3000`: defaulting back would silently move a customer who chose
+   `3500` at first install, taking the service and both shortcuts with it. And a listener whose
+   executable lives under the previous installation **counts as free**, because the port is held
+   by our own still-running service — step 3 stops it, and step 3 runs after the wizard. Without
+   that exception the in-use check made it impossible to upgrade onto the port the product was
+   already using: the operator was told to enter a different value and could not proceed
+   otherwise. Any other program on the port still blocks, as before.
 3. **Stop and files.** On an upgrade the previous version is *running out of the directory
    about to be overwritten*: `node.exe`, the WinSW executable and the bundled Chromium are all
    held open, and Windows will not let the wizard replace a file that is in use. So the service
@@ -626,6 +636,7 @@ so it is a development workaround and never a release check. D-1 still requires 
 | D-4 | Upgrading over an existing install preserves `SECRET_STORE_KEY`, `app.db`, `secrets.enc.json` and the licence, and applies pending migrations |
 | D-5 | A deliberately broken build (bad `DATABASE_URL`) makes the installer **fail** at step 8 and name the log file |
 | D-14 | Installing over a **running** install succeeds: no "file in use" prompt, no deferred-to-reboot copy, and the service is running the new build when the wizard finishes (§5 step 3) |
+| D-15 | Upgrading an install made on a non-default port offers that port, accepts it while the old service still holds it, and finishes with the service and both shortcuts still on it (§5 step 2) |
 | D-10 | A fresh install creates the schema on first boot with no migration step in the installer (§5.2) |
 | D-11 | An upgrade carrying a new migration applies it on the first service start, and a SQLite backup file exists afterwards |
 | D-12 | An older build pointed at a newer database refuses to start and says so, rather than migrating (§5.2a) |

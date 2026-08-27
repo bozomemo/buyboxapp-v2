@@ -170,19 +170,93 @@ begin
     Result := Output;
 end;
 
-{ Doc 14 §5 step 2: a machine with something already on 3000 is common and is not an error. }
+{ The directory a previous version installed itself into, or '' on a fresh machine. Read from
+  Inno's own uninstall key rather than from the app directory constant: this runs while the
+  wizard is being built, before the directory page would have set that constant, and on an
+  upgrade the value we want is precisely the one the previous install recorded.
+
+  As the PrepareToInstall comment above says, Pascal braces do not nest -- an Inno constant
+  written out in full here would end this comment early. }
+function PreviousInstallDir(): String;
+var
+  Key, Dir: string;
+begin
+  Result := '';
+  { The AppId above, spelled out: SetupSetting would hand back the doubled leading brace the
+    setup section needs to escape it, which is not what the registry key is called. Keep the
+    two in step if the AppId ever changes. (A line here may not *begin* with a bracketed word:
+    the script is split into sections before the code is parsed, so it would be read as a
+    section tag even inside this comment.) }
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
+         '{8C4F1E62-3D7A-4B21-9E55-0A6B7C2D9F31}_is1';
+  if RegQueryStringValue(HKLM, Key, 'InstallLocation', Dir) or
+     RegQueryStringValue(HKLM, Key, 'Inno Setup: App Path', Dir) then
+    Result := RemoveBackslashUnlessRoot(Dir);
+end;
+
+{ The port the installed service is actually listening on, taken from the WinSW definition the
+  previous install rendered (install-service.ps1 writes PORT into it). Returns '' if there is no
+  previous install, or its config cannot be read. Parsed by hand because the Pascal here has no
+  regular expressions -- the line is written by us and always reads:
+    <env name="PORT" value="3000" /> }
+function InstalledPort(): String;
+var
+  ConfigPath, Line, Marker: string;
+  Lines: TArrayOfString;
+  I, P, Q: Integer;
+begin
+  Result := '';
+  if PreviousInstallDir() = '' then exit;
+  ConfigPath := PreviousInstallDir() + '\service\BuyBoxApp.xml';
+  if not FileExists(ConfigPath) then exit;
+  if not LoadStringsFromFile(ConfigPath, Lines) then exit;
+
+  Marker := 'name="PORT" value="';
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Line := Lines[I];
+    P := Pos(Marker, Line);
+    if P > 0 then
+    begin
+      Line := Copy(Line, P + Length(Marker), Length(Line));
+      Q := Pos('"', Line);
+      if Q > 1 then
+        Result := Copy(Line, 1, Q - 1);
+      exit;
+    end;
+  end;
+end;
+
+{ Doc 14 §5 step 2: a machine with something already on 3000 is common and is not an error.
+
+  On an upgrade the thing holding the port is our own service, which is still running because
+  the wizard has not reached PrepareToInstall yet -- stop-service.ps1 runs after this page, not
+  before it. Treating that as a conflict would make it impossible to upgrade onto the port the
+  product is already using, so a listener whose executable lives under the previous installation
+  counts as free. Anything else still blocks. }
 function IsPortFree(Port: Integer): Boolean;
 var
   ResultCode: Integer;
+  PrevDir, Command: string;
 begin
-  Exec('powershell.exe',
-       '-NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort ' +
-       IntToStr(Port) + ' -State Listen -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }"',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  PrevDir := PreviousInstallDir();
+  Command :=
+    '-NoProfile -ExecutionPolicy Bypass -Command "' +
+    '$ours = ''' + PrevDir + '''; ' +
+    '$listeners = @(Get-NetTCPConnection -LocalPort ' + IntToStr(Port) +
+      ' -State Listen -ErrorAction SilentlyContinue); ' +
+    'if ($listeners.Count -eq 0) { exit 0 }; ' +
+    'if ($ours) { foreach ($l in $listeners) { ' +
+      '$p = Get-Process -Id $l.OwningProcess -ErrorAction SilentlyContinue; ' +
+      'if ($p -and $p.Path -and $p.Path.StartsWith($ours, [StringComparison]::OrdinalIgnoreCase)) { exit 0 } } }; ' +
+    'exit 1"';
+  Exec('powershell.exe', Command, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := (ResultCode = 0);
 end;
 
 procedure InitializeWizard();
+var
+  Port: string;
 begin
   PortPage := CreateInputQueryPage(wpSelectTasks,
     'Baglanti noktasi',
@@ -190,7 +264,13 @@ begin
     'Uygulamaya bu bilgisayardan http://127.0.0.1:<baglanti noktasi> adresiyle erisilir. ' +
     'Varsayilan degeri baska bir program kullaniyorsa degistirin.');
   PortPage.Add('Baglanti noktasi:', False);
-  PortPage.Values[0] := '3000';
+  { On an upgrade, offer the port the installation already uses -- not 3000. Defaulting back to
+    3000 would silently move a customer who chose 3500 at first install, taking the service and
+    both shortcuts with it. }
+  Port := InstalledPort();
+  if Port = '' then
+    Port := '3000';
+  PortPage.Values[0] := Port;
 end;
 
 function GetPort(Param: string): string;
