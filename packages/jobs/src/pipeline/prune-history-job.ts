@@ -18,6 +18,9 @@ const RetentionWindowsSchema = z.object({
   // worse outcome than one window falling back to its documented default.
   competitorObservationsDays: z.number().int().min(1).default(90),
   trackedProductObservationsDays: z.number().int().min(1).default(90),
+  // Defaulted for the same reason as the two above: a stored payload written before this
+  // window existed must keep pruning everything else rather than failing the whole run.
+  trackedProductMetricsDays: z.number().int().min(1).default(365),
   appEventsInfoDebugDays: z.number().int().min(1),
   appEventsWarnErrorDays: z.number().int().min(1),
   jobRunsDays: z.number().int().min(1),
