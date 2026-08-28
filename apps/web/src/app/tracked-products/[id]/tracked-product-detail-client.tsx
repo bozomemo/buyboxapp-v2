@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { marketplaceProductUrl } from '@/lib/product-url';
 
 interface SellerPoint {
   observedAt: number;
@@ -35,6 +36,7 @@ interface Detail {
     label: string;
     isActive: boolean;
     addedAt: number;
+    lastScrapedAt: number | null;
   };
   window: { sinceMs: number; untilMs: number };
   latestLook: { observedAt: number; status: string; offers: number } | null;
@@ -127,6 +129,8 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
     .sort((a, b) => (BigInt(a.current!.price!) < BigInt(b.current!.price!) ? -1 : 1))[0];
   const activeSellers = ordered.filter((s) => s.current !== null);
   const totalStock = activeSellers.reduce((sum, s) => sum + (s.current?.offeredStock ?? 0), 0);
+  // Stored links are absolute when pasted and path-only when swept — see marketplaceProductUrl.
+  const pageUrl = marketplaceProductUrl(product.marketplaceCode, product.productUrl);
 
   return (
     <div className="space-y-6">
@@ -136,15 +140,20 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
         </Link>
         <h1 className="text-2xl font-semibold">{product.label}</h1>
         <p className="text-sm text-(--color-muted)">
-          {product.marketplaceCode} · {product.productRef} ·{' '}
-          <a
-            href={product.productUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-(--color-accent) hover:underline"
-          >
-            Ürün sayfasını aç
-          </a>
+          {product.marketplaceCode} · {product.productRef}
+          {pageUrl && (
+            <>
+              {' · '}
+              <a
+                href={pageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-(--color-accent) hover:underline"
+              >
+                Ürün sayfasını aç
+              </a>
+            </>
+          )}
           {!product.isActive && (
             <span className="ml-2 row-muted rounded px-1 text-xs">Takip duraklatıldı</span>
           )}
@@ -180,15 +189,24 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
             <div className="text-lg">{formatNumber(totalStock)}</div>
           </div>
           <div>
+            {/* İki ayrı olgu, iki ayrı satır: ne zaman baktık, ve en son ne zaman bir şey
+                değişti. Faz 4'ten beri bakış ancak teklif seti kıpırdadığında kaydediliyor,
+                yani fiyatı bir haftadır sabit olan ürün "bir haftadır bakılmamış" gibi
+                okunurdu — okunmasın diye ikisi ayrı gösteriliyor. */}
             <div className="text-xs text-(--color-muted)">Son Bakış</div>
             <div className="text-sm">
-              {latestLook ? formatDateTime(latestLook.observedAt) : 'henüz taranmadı'}
+              {product.lastScrapedAt ? formatDateTime(product.lastScrapedAt) : 'henüz taranmadı'}
               {latestLook && latestLook.status !== 'ok' && (
                 <span className="ml-1 text-(--color-danger)">
                   ⚠ {STATUS_LABELS[latestLook.status] ?? latestLook.status}
                 </span>
               )}
             </div>
+            {latestLook && (
+              <div className="text-xs text-(--color-muted)">
+                son değişiklik: {formatDateTime(latestLook.observedAt)}
+              </div>
+            )}
           </div>
         </div>
       </section>

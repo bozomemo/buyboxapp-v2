@@ -532,3 +532,71 @@ export function ResizableTh<K extends string>({
     </th>
   );
 }
+
+/**
+ * Saved filter presets, remembered per browser (doc 06 §4.4's "Saved filter presets").
+ *
+ * Same storage contract as {@link useColumnPrefs} next door, and for the same reason: a filter
+ * set is a working habit, not shared configuration. Two operators on one install want different
+ * shortlists, and neither wants the other's — so this stays in `localStorage` rather than
+ * becoming a settings table. If presets ever need to be shared between people, that is a
+ * different feature with a different home.
+ *
+ * The preset value is whatever the screen's filter state is, serialised by the caller. This hook
+ * takes no position on its shape beyond "JSON-serialisable", so a screen can change its filters
+ * without changing this. A stored preset whose shape the screen no longer understands is the
+ * caller's problem to tolerate — apply it defensively.
+ */
+export interface FilterPreset<T> {
+  readonly name: string;
+  readonly value: T;
+}
+
+export interface FilterPresets<T> {
+  readonly presets: readonly FilterPreset<T>[];
+  /** Saves under `name`, replacing a preset of the same name rather than duplicating it. */
+  save: (name: string, value: T) => void;
+  remove: (name: string) => void;
+}
+
+export function useFilterPresets<T>(storageKey: string): FilterPresets<T> {
+  const [presets, setPresets] = useState<readonly FilterPreset<T>[]>([]);
+
+  // Read after mount, never during render: the server has no `localStorage`, and reading it in
+  // the initialiser would make the first client render disagree with the server's.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      setPresets(
+        parsed.filter(
+          (p): p is FilterPreset<T> =>
+            typeof p === 'object' && p !== null && typeof (p as FilterPreset<T>).name === 'string',
+        ),
+      );
+    } catch {
+      // Storage unavailable or corrupt JSON — start with no presets rather than crashing.
+    }
+  }, [storageKey]);
+
+  function persist(next: readonly FilterPreset<T>[]) {
+    setPresets(next);
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(next));
+    } catch {
+      // Storage unavailable: the in-memory list above still applies for this page load.
+    }
+  }
+
+  return {
+    presets,
+    save: (name, value) => {
+      const trimmed = name.trim();
+      if (trimmed === '') return;
+      persist([...presets.filter((p) => p.name !== trimmed), { name: trimmed, value }]);
+    },
+    remove: (name) => persist(presets.filter((p) => p.name !== name)),
+  };
+}

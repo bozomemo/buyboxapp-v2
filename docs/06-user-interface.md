@@ -469,13 +469,28 @@ catalogue and report how many listings would change price and by how much, befor
 Column customisation (R-UI-12) lives in `useColumnPrefs`/`ColumnMenu`/`ResizableTh`
 (`components/table.tsx`) and is wired up on `/listings` as the reference implementation
 (customer feedback 2026-08-25). CSV export (R-UI-13) is `lib/csv.ts`'s `downloadCsv`, wired up
-so far on `/listings` (server-side, capped at 5,000 rows — see the comment on
-`CSV_EXPORT_LIMIT` in `api/listings/route.ts` for why the per-row competitive enrichment is
-skipped in the export), `/stock`, `/alerts`, `/competitors`, `/competitors/sellers` and
-`/events` (client-side, from data already loaded in the browser). Column customisation and
-export are both wired up on `/listings`, `/competitors/sellers` and the seller-detail sub-page
+so far on `/stock`, `/alerts`, `/competitors`, `/competitors/sellers`, `/events` and
+`/watched-brands` (client-side, from data already loaded in the browser), and **server-side**
+on `/listings` and `/tracked-products` (capped at 5,000 rows — see the comment on
+`CSV_EXPORT_LIMIT` in either route for why the per-row enrichment is skipped in the export).
+
+The distinction matters: a client-side export can only offer what is on screen, so it is right
+only for a screen whose endpoint already returns the whole bounded result. `/listings` and
+`/tracked-products` are server-paged, so their exports run the **same filters** against the
+database and return the whole filtered set — the grid's 50 rows and the export's 5,000 come
+from one `filterParams()` in the client, precisely so the two cannot disagree.
+
+Column customisation and export are both wired up on `/listings`, `/tracked-products`,
+`/competitors/sellers` and the seller-detail sub-page
 `/competitors/sellers/[marketplace]/[ref]`. Not yet rolled out: `/jobs` (run history) — copy the
 pattern from one of the screens above rather than inventing a new column-prefs or export shape.
+
+**Saved filter presets** (§4.4) are `useFilterPresets` in the same module, added 2026-08-28 and
+first used on `/tracked-products`. Same storage contract as column preferences and for the same
+reason: a filter set is a working habit, not shared configuration — two operators on one install
+want different shortlists and neither wants the other's. Should presets ever need to be shared
+between people, that is a different feature with a different home (a settings table), not a
+widening of this one.
 
 Product naming (R-UI-14) is `lib/product-name.ts`'s `withBrand`, applied **server-side in the API
 routes**, not per screen: the brand lives on `listings.brand_id` (§12.1) while the title lives on
