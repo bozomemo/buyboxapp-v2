@@ -373,6 +373,20 @@ export const competitorSellers = mysqlTable(
       onDelete: 'set null',
     }),
     operatorNote: text('operator_note'),
+    /**
+     * The firm behind the storefront, when someone has established it (Faz 5, 2026-08-28).
+     *
+     * **Operator-owned**, like `group_id` and `operator_note` beside it: a scrape never writes
+     * it, so recording it by hand cannot be undone by the next run. Faz 7 will fill it
+     * automatically from the marketplace's own seller page, and will write only where this is
+     * null — a resolved value must never overwrite a person's correction.
+     *
+     * It exists because policy is asked of a **firm**, not a storefront: one company can hold
+     * several seller accounts, and a rule written against a tax number should follow the company
+     * across them. Until a seller has one, a tax-number rule simply does not match it, which is
+     * the honest reading rather than a guess.
+     */
+    taxNumber: code('tax_number', 32),
     firstSeenAt: timestampMs('first_seen_at').notNull(),
     lastSeenAt: timestampMs('last_seen_at').notNull(),
   },
@@ -383,6 +397,139 @@ export const competitorSellers = mysqlTable(
 );
 
 /** See the doc comment on `trackedProducts` in `schema/sqlite.ts` — identical shape and reasoning. */
+/** See the doc comment on `watchedBrandGroups` in `schema/sqlite.ts`. */
+export const watchedBrandGroups = mysqlTable('watched_brand_groups', {
+  id: code('id', 36).primaryKey(),
+  name: text('name').notNull(),
+  note: text('note'),
+  createdAt: timestampMs('created_at').notNull(),
+  updatedAt: timestampMs('updated_at').notNull(),
+});
+
+/** See the doc comment on `watchedBrands` in `schema/sqlite.ts`. */
+export const watchedBrands = mysqlTable(
+  'watched_brands',
+  {
+    id: code('id', 36).primaryKey(),
+    groupId: code('group_id', 36)
+      .notNull()
+      .references(() => watchedBrandGroups.id, { onDelete: 'cascade' }),
+    marketplaceCode: code('marketplace_code', 20)
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    // Indexed as part of the uniqueness key below, so it must be bounded (see the file header).
+    label: code('label', 190).notNull(),
+    brandRef: code('brand_ref', 128),
+    searchTerm: text('search_term'),
+    isActive: bool('is_active').notNull(),
+    lastSweptAt: timestampMs('last_swept_at'),
+    lastSweepProductCount: int('last_sweep_product_count'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [
+    index('watched_brands_group').on(t.groupId),
+    uniqueIndex('watched_brands_group_marketplace_label').on(t.groupId, t.marketplaceCode, t.label),
+  ],
+);
+
+/**
+ * The firm behind a storefront, as the marketplace states it (doc 06 §12.4 Faz 7, guide §29).
+ *
+ * A **separate table from `competitor_sellers`, not extra columns on it**, for two reasons that
+ * both come down to who owns the data. `competitor_sellers` mixes observed facts with
+ * operator-owned ones (`group_id`, `operator_note`, `tax_number`), and every write there is
+ * carefully guarded so a scrape cannot undo a person's entry. These fields are neither: they are
+ * a dated copy of what one merchant-scoped page said on one day, and they should be replaceable
+ * — and deletable — as a unit. Guide §29 asks that business/contact metadata be retained only
+ * where the application needs it; keeping it in one table makes "stop retaining it" a `DELETE`
+ * rather than an audit of six nullable columns.
+ *
+ * One row per seller: a resolution replaces the previous answer rather than appending. This is
+ * not history — a firm's registered title is not a time series, and an operator reading an
+ * address wants the current one, with the date it was read next to it.
+ *
+ * `tax_number` is duplicated onto `competitor_sellers.tax_number` when that column is null, and
+ * only then (`setSellerTaxNumberIfAbsent`): there it is the operator-owned matching key that
+ * Faz 5's authorised-seller list is written against, and a resolution must never overwrite what
+ * a person entered by hand.
+ */
+export const competitorSellerIdentities = mysqlTable(
+  'competitor_seller_identities',
+  {
+    id: code('id', 36).primaryKey(),
+    competitorSellerId: code('competitor_seller_id', 36).notNull(),
+    /** Registered commercial title (`unvan`) — the name that goes on a notice. */
+    officialName: text('official_name'),
+    /** VKN, or a TCKN for a sole trader. Copied to `competitor_sellers.tax_number` when absent there. */
+    taxNumber: code('tax_number', 32),
+    taxOffice: code('tax_office', 128),
+    /** KEP — the address a formal notice is legally served to. */
+    registeredEmailAddress: code('registered_email_address', 255),
+    address: text('address'),
+    cityName: code('city_name', 128),
+    countryName: code('country_name', 128),
+    /** See the SQLite schema for why this is JSON and why it carries no price or rank. */
+    listingsJson: text('listings_json').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    parserVersion: code('parser_version', 32).notNull(),
+    resolvedAt: timestampMs('resolved_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('competitor_seller_identities_seller').on(t.competitorSellerId),
+    // Named by hand: the generated name runs well past MySQL's 64-char identifier limit and
+    // MySQL rejects the migration rather than truncating (as `seller_policies` found).
+    foreignKey({
+      name: 'fk_competitor_seller_identities_seller',
+      columns: [t.competitorSellerId],
+      foreignColumns: [competitorSellers.id],
+    }).onDelete('cascade'),
+  ],
+);
+
+/** See the doc comment on `sellerPolicies` in `schema/sqlite.ts`. */
+export const sellerPolicies = mysqlTable(
+  'seller_policies',
+  {
+    id: code('id', 36).primaryKey(),
+    watchedBrandGroupId: code('watched_brand_group_id', 36).notNull(),
+    /** Null = the group default. */
+    watchedBrandId: code('watched_brand_id', 36),
+    /** Set with `seller_ref`, null with `tax_number` — a firm is not marketplace-specific. */
+    marketplaceCode: code('marketplace_code', 20).references(() => marketplaces.code, { onDelete: 'cascade' }),
+    sellerRef: code('seller_ref', 128),
+    taxNumber: code('tax_number', 32),
+    /** `authorised` | `blocked`. The third state is the absence of a row. */
+    status: code('status', 16).notNull(),
+    /**
+     * The operator's own words about why. Free text and nothing else — the product owner's
+     * decision, 2026-08-27 (*"sadece not olsun yeterli"*): a date field and a document field
+     * would look like a compliance record while being filled in inconsistently.
+     */
+    note: text('note'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [
+    index('seller_policies_scope').on(t.watchedBrandGroupId, t.watchedBrandId),
+    index('seller_policies_seller').on(t.marketplaceCode, t.sellerRef),
+    index('seller_policies_tax').on(t.taxNumber),
+    // Both named explicitly: the auto-generated names run past MySQL's 64-char identifier
+    // limit (`seller_policies_watched_brand_group_id_watched_brand_groups_id_fk` is 65), and
+    // MySQL rejects the migration outright rather than truncating.
+    foreignKey({
+      name: 'fk_seller_policies_watched_brand_group_id',
+      columns: [t.watchedBrandGroupId],
+      foreignColumns: [watchedBrandGroups.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'fk_seller_policies_watched_brand_id',
+      columns: [t.watchedBrandId],
+      foreignColumns: [watchedBrands.id],
+    }).onDelete('cascade'),
+  ],
+);
+
 export const trackedProducts = mysqlTable(
   'tracked_products',
   {
@@ -395,8 +542,89 @@ export const trackedProducts = mysqlTable(
     label: text('label').notNull(),
     isActive: bool('is_active').notNull(),
     addedAt: timestampMs('added_at').notNull(),
+    watchedBrandId: code('watched_brand_id', 36),
+    viaBrandRef: bool('via_brand_ref').notNull().default(false),
+    viaSearchTerm: bool('via_search_term').notNull().default(false),
+    brandName: text('brand_name'),
+    brandRef: code('brand_ref', 128),
+    categoryRef: code('category_ref', 64),
+    categoryName: text('category_name'),
+    ratingCount: int('rating_count'),
+    ratingAverage: real('rating_average'),
+    lastSweptAt: timestampMs('last_swept_at'),
+    /**
+     * Change detection for the per-product deep scrape (`ScrapeTrackedProducts`), added with
+     * Faz 4 (2026-08-28).
+     *
+     * `tracked_product_observations` was written unconditionally while the tracked set was
+     * operator-curated and small — a few dozen products. A brand sweep makes it a catalogue
+     * (887 products for Whiskas, 4,863 for Royal Canin), and at one look a day with ~20 offers
+     * each that is millions of rows a year, most of them recording that nothing moved.
+     *
+     * So the offer rows are written **only when the hash of the offer set differs from the
+     * previous look's** — the same trade `scrape_runs.payload_hash` makes for
+     * `competitor_observations`, computed by the same `hashOffers`. The series still
+     * reconstructs exactly: each stored look holds until the next one.
+     *
+     * `lastScrapedAt` is what makes that safe to read. Without it the newest observation is the
+     * only evidence of a look, and a product whose offers have not moved in a week would read
+     * as one nobody has checked in a week. They are separate facts and are stored separately:
+     * `lastScrapedAt` is when we last looked, the observation is what we last saw.
+     */
+    lastOffersHash: text('last_offers_hash'),
+    lastScrapedAt: timestampMs('last_scraped_at'),
+    /**
+     * The manufacturer's barcode, and when the product page that stated it was read (Faz 8,
+     * 2026-08-28).
+     *
+     * This is the **cross-marketplace matching key**. A brand owner's report has to say "these
+     * two rows are the same product on two marketplaces", and nothing softer than a barcode can
+     * say it: names differ by punctuation and pack size, brands are spelled differently, and
+     * each marketplace's product id is private to it. A match built on a name is a report whose
+     * rows are confidently wrong, which is worse than one with gaps.
+     *
+     * The two columns are separate because "we have never asked" and "we asked and the page
+     * stated none" are different facts, exactly as `last_scraped_at` is separate from the
+     * newest observation. `barcode_resolved_at` set with a null `barcode` is the second, and it
+     * is what stops a backfill from asking the same hopeless product every night.
+     *
+     * Only the catalogue side fills these: Trendyol's card payload carries no barcode, so a
+     * Trendyol row's barcode stays null until a source that states one exists.
+     */
+    // `varchar`, not `text`: it is indexed, and InnoDB cannot index an unbounded TEXT without a
+    // prefix length (see this file's header note). 32 is generous for a GTIN, which is at most
+    // 14 digits.
+    barcode: code('barcode', 32),
+    barcodeResolvedAt: timestampMs('barcode_resolved_at'),
+    /**
+     * How many times the backfill has asked about this product's barcode and failed (Faz 8).
+     *
+     * Failure does not set `barcode_resolved_at` — a failed read is not an answer, and recording
+     * one would store "the page stated no barcode" for a page that was never successfully read.
+     * But without this counter the work list, ordered by the freshest sweep, hands back the same
+     * permanently-failing rows at the head of every run: a product whose page describes a
+     * different article, or whose url now 404s, fails identically for ever. Five of those and a
+     * run aborts on consecutive failures having made no progress at all, once an hour, until
+     * somebody notices.
+     *
+     * So a failure costs the product its place in the queue rather than the queue its progress.
+     * Ordering is by attempts first, and rows past `BARCODE_MAX_ATTEMPTS` drop off the list
+     * entirely — visible as "asked and failed" in the coverage figures rather than hiding among
+     * the products nobody has asked about yet.
+     */
+    barcodeAttempts: int('barcode_attempts').notNull().default(0),
   },
-  (t) => [uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef)],
+  (t) => [
+    uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
+    index('tracked_products_watched_brand').on(t.watchedBrandId),
+    index('tracked_products_barcode').on(t.barcode),
+    // Named explicitly: the auto-generated name exceeds MySQL's 64-char identifier limit.
+    foreignKey({
+      name: 'fk_tracked_products_watched_brand_id',
+      columns: [t.watchedBrandId],
+      foreignColumns: [watchedBrands.id],
+    }).onDelete('set null'),
+  ],
 );
 
 /** See the doc comment on `trackedProductObservations` in `schema/sqlite.ts`. */
@@ -419,6 +647,27 @@ export const trackedProductObservations = mysqlTable(
     // Named explicitly: the auto-generated name exceeds MySQL's 64-char identifier limit.
     foreignKey({
       name: 'fk_tpo_tracked_product_id',
+      columns: [t.trackedProductId],
+      foreignColumns: [trackedProducts.id],
+    }).onDelete('cascade'),
+  ],
+);
+
+/** See the doc comment on `trackedProductMetrics` in `schema/sqlite.ts`. */
+export const trackedProductMetrics = mysqlTable(
+  'tracked_product_metrics',
+  {
+    id: code('id', 36).primaryKey(),
+    trackedProductId: code('tracked_product_id', 36).notNull(),
+    observedAt: timestampMs('observed_at').notNull(),
+    ratingCount: int('rating_count'),
+    ratingAverage: real('rating_average'),
+  },
+  (t) => [
+    index('tracked_product_metrics_product_observed').on(t.trackedProductId, t.observedAt),
+    // Named explicitly: the auto-generated name exceeds MySQL's 64-char identifier limit.
+    foreignKey({
+      name: 'fk_tpm_tracked_product_id',
       columns: [t.trackedProductId],
       foreignColumns: [trackedProducts.id],
     }).onDelete('cascade'),

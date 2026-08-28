@@ -1,0 +1,1 @@
+ALTER TABLE "tracked_products" ADD COLUMN "barcode_attempts" integer DEFAULT 0 NOT NULL;

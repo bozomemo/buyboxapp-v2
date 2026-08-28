@@ -1,0 +1,1 @@
+ALTER TABLE `tracked_products` ADD `barcode_attempts` int DEFAULT 0 NOT NULL;

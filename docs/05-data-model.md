@@ -337,13 +337,63 @@ Only sellers the payload identified get a row. `competitor_observations.seller_r
 nullable, and a seller with no id has no identity to be durable about; matching it by display
 name is exactly the mistake `competitor_seller_groups` refuses to make.
 
+### `watched_brand_groups` / `watched_brands` (api-references §1.7, product owner 2026-08-28)
+
+The brand-owner audit module's registry. A **group** is the organisation (Mars); a **brand** is
+one brand on one marketplace (Whiskas on Trendyol). Two levels because one owner routinely holds
+several, and because reports are asked at both: "how does this seller behave on Whiskas?" and
+"…across everything we own?" are different questions.
+
+Not the same thing as `brands` above, which is *our own* catalogue's taxonomy derived from
+listings we sell. A watched brand is mostly products we do **not** sell, on a marketplace where
+we may have no presence at all. Sharing one table would make a row's meaning depend on which
+column happened to be null.
+
+`watched_brand_groups`: `id` PK, `name`, `note` nullable, `created_at`, `updated_at`.
+
+`watched_brands`:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `group_id` | text FK, cascade | |
+| `marketplace_code` | text FK, cascade | |
+| `label` | text | operator-facing name; display only |
+| `brand_ref` | text nullable | the marketplace's own brand id (Trendyol `webBrands[].id`) |
+| `search_term` | text nullable | free-text query |
+| `is_active` | int | swept while true |
+| `last_swept_at`, `last_sweep_product_count` | nullable | written only on a **completed** sweep |
+
+Index on `group_id`; `UNIQUE(group_id, marketplace_code, label)` — two groups may legitimately
+watch the same brand.
+
+**At least one of `brand_ref` / `search_term` must be set**, and both are swept when both are.
+The constraint lives in the repository, not the schema: no dialect here expresses "at least one
+of two nullable columns" portably, and one guarded write path is easier to reason about than
+three constraints that might drift.
+
+`last_sweep_*` are written only after the products are, and only by a sweep that finished. A
+partial failure leaves the previous values standing — "swept 3 hours ago, 1,847 products" stays
+true until a newer sweep replaces it, rather than reporting a catalogue that shrank to nothing.
+
+---
+
 ### `tracked_products` / `tracked_product_observations` (doc 06 §12.2, customer feedback 2026-08-25)
 
-A marketplace product we do **not** sell, watched for price/rank only, added by pasting its
-link. Deliberately its own pair of tables rather than a `listings` row with the sale-facing
-fields left null: `Reprice` and `ObserveBuybox` (doc 07 §2.1/§2.2) only ever query `listings`,
-so a tracked product living here is structurally unreachable from a pricing decision — there is
-no flag to check because there is nothing here for that code to see.
+A marketplace product we do **not** sell, watched for price/rank only. Deliberately its own set
+of tables rather than a `listings` row with the sale-facing fields left null: `Reprice` and
+`ObserveBuybox` (doc 07 §2.1/§2.2) only ever query `listings`, so a tracked product living here
+is structurally unreachable from a pricing decision — there is no flag to check because there is
+nothing here for that code to see.
+
+Two things put rows here, and the table serves both:
+
+1. the operator pasting a product link, one at a time (the original v1 scope);
+2. `SweepBrandCatalogue` enumerating a watched brand's whole catalogue (`watched_brands` below,
+   api-references §1.7) — hundreds to thousands of rows at a time.
+
+The second is what made the columns after `added_at` necessary, and what made the grid's query
+server-paged (`queryTrackedProducts`). A brand is 887 products (Whiskas) to 4,863 (Royal Canin).
 
 `tracked_products`:
 
@@ -356,8 +406,35 @@ no flag to check because there is nothing here for that code to see.
 | `label` | text | operator-entered (or the link, if none given); display only |
 | `is_active` | int | scraped while true; `ScrapeCompetitors` skips an inactive one |
 | `added_at` | bigint | |
+| `watched_brand_id` | text FK, **set null** | which brand's sweep found it; null for a hand-added row |
+| `via_brand_ref`, `via_search_term` | int | which of the brand's two selectors found it — see below |
+| `brand_name`, `brand_ref` | text nullable | the brand the *marketplace* attributes it to |
+| `category_ref`, `category_name` | text nullable | as of the last sweep |
+| `rating_count`, `rating_average` | int / real nullable | `0` = genuinely unrated, `null` = unreadable |
+| `last_swept_at` | bigint nullable | when a sweep last saw it in its brand's catalogue |
 
-`UNIQUE(marketplace_code, product_ref)`.
+`UNIQUE(marketplace_code, product_ref)`, index on `watched_brand_id`.
+
+**Why the two selector flags are separate columns, not one `discovered_via` enum.** A brand is
+swept by its marketplace brand id *and* by its search term, and the difference is the point: a
+product the search term finds but the brand id does not is carrying the brand's name without the
+marketplace attributing it to the brand. Eight of Whiskas' 887 products were exactly that, in
+categories like *Halı* and *Ahşap Boya & Vernik*. One enum could not express "found by both",
+which is the normal case, and so could not express its absence either.
+
+**Why `set null` and not `cascade` on `watched_brand_id`.** Removing a brand from the watch list
+is a decision about what to keep sweeping. It is not a reason to destroy observation history the
+operator may still be reading, so the products survive and simply lose their attribution.
+
+⚠️ `ON DELETE SET NULL` was silently dropped from the SQLite migration by Drizzle Kit's
+`ALTER TABLE ADD COLUMN` (it survived on Postgres and MySQL), which made deleting a brand fail
+outright on SQLite. Fixed by hand in `0009`; caught by the cross-dialect repository test,
+2026-08-28. Re-check the emitted SQL whenever a nullable FK is added to an existing table.
+
+**Sweep-owned vs operator-owned columns.** `upsertSweptProducts` refreshes the marketplace's own
+data on every sweep and never touches `label`, `is_active` or `added_at` — a rename or a
+deactivation must survive the nightly run, the same rule `competitor_sellers` follows for
+`group_id` and `operator_note`.
 
 `tracked_product_observations` — the tracked-product analogue of `competitor_observations`, one
 row per offer per look:
@@ -370,11 +447,183 @@ row per offer per look:
 | `status` | text | `ok` \| `parseFailed` \| `fetchFailed` |
 | `rank`, `seller_name`, `seller_ref`, `price`, `final_price`, `offered_stock` | nullable | null on a failed look |
 
-Index `(tracked_product_id, observed_at)`. Deliberately simpler than the two-tier
-`scrape_runs`/`competitor_observations` design: **every** successful look is written, with no
-change-detection hash and no separate proof-of-look row — acceptable because the tracked-product
-set is expected to be small and operator-curated, unlike the full catalogue. Revisit if that
-stops being true.
+Index `(tracked_product_id, observed_at)`.
+
+**Change-detected since Faz 4 (2026-08-28).** This table was written unconditionally while the
+tracked set was operator-curated and a few dozen products; a brand sweep makes it a catalogue of
+thousands (887 Whiskas, 4,863 Royal Canin), and at one look a day with ~20 offers each that is
+millions of rows a year, most of them recording that nothing moved. A look's offer rows are now
+written **only when the offer set differs from the previous look's**, by the same `hashOffers`
+`ScrapeCompetitors` uses for `competitor_observations`. The series reconstructs exactly: each
+stored look holds until the next one.
+
+Still no `scrape_runs` row — the proof of the look is two columns on `tracked_products`:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `last_offers_hash` | text nullable | Hash of the last **stored** offer set |
+| `last_scraped_at` | bigint nullable | When the scrape last **looked** |
+
+#### Barcodes — the cross-marketplace key (Faz 8, 2026-08-28)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `barcode` | text nullable (`varchar(32)` on MySQL, because it is indexed) | The manufacturer's barcode as the marketplace's product page states it |
+| `barcode_resolved_at` | bigint nullable | When that page was read |
+| `barcode_attempts` | int not null, default 0 | Failed reads since the last answer |
+
+This is what makes "the same product on two marketplaces" a fact rather than a guess. Nothing
+softer will do: names differ by punctuation and pack size, brands are spelled differently, and
+each marketplace's product id is private to it. The match report (doc 06 §12.5) is an equality
+join on this column and on nothing else — a brand owner acts on those rows, and a confidently
+wrong one is worse than an absent one.
+
+Two columns rather than one for the same reason `last_scraped_at` is separate from the newest
+observation: **"we have never asked" and "we asked and the page stated none" are different
+facts.** `barcode_resolved_at` set beside a null `barcode` is the second, and it is what stops
+the backfill asking the same hopeless product every night at four requests a minute.
+
+`barcode_attempts` is the third fact, and it exists because the first two are not enough. A failed
+read is **not** an answer and so does not set `barcode_resolved_at` — but the work list is ordered
+by the freshest sweep, which means a permanently broken row (a page that describes a different
+article, a url that now 404s) returns to the head of every run for ever. Five of those and a job
+that stops on consecutive failures makes no progress at all, once an hour, until somebody notices.
+So a failure costs the product its place in the queue rather than costing the queue its progress:
+ordering is by attempts first, and a row past `BARCODE_MAX_ATTEMPTS` leaves the list and is
+reported as **failed** rather than counted among the products nobody has got to yet. A successful
+read resets it to zero — the counter measures *unanswered* attempts.
+
+Only the Hepsiburada side fills these today: Trendyol's card payload carries no barcode, and none
+is invented for it. The report shows the resulting coverage as a number instead of hiding it.
+
+`last_scraped_at` is what makes change detection safe to read. Without it the newest observation
+is the only evidence of a look, and a product whose offers have not moved in a week reads as one
+nobody has checked in a week — two separate facts, so two separate columns. It is guarded on
+write (`max(existing, new)`) like `competitor_sellers.last_seen_at`, so an out-of-order retry
+cannot move it backwards.
+
+A **failed** look always stores its status row and never touches `last_offers_hash`. If a fetch
+failure cleared the hash, the next successful look would read as a change and store a duplicate
+offer set — turning every transient network error into a fake price event in the archive.
+
+`seller_policies` (Faz 5, 2026-08-28) — who may sell which brand.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `watched_brand_group_id` | text FK, cascade | |
+| `watched_brand_id` | text FK, cascade, **nullable** | null = the group default |
+| `marketplace_code` | text FK, nullable | set with `seller_ref` |
+| `seller_ref` | text nullable | |
+| `tax_number` | text nullable | |
+| `status` | text | `authorised` \| `blocked` |
+| `note` | text nullable | free text, nothing else |
+| `created_at`, `updated_at` | bigint | |
+
+Indexes on `(group, brand)`, `(marketplace_code, seller_ref)` and `(tax_number)`.
+
+**Three states, and the third is the absence of a row.** `authorised`, `blocked` and
+**`undefined`** — "nobody has looked at this seller yet" is not "this seller is unauthorised",
+and a two-state design would have to invent one of them for every seller that appears. Deleting
+a rule is the only way back to the third state, which is why deletion is a first-class operation
+rather than a tidy-up.
+
+**Identity is account-level, policy is brand-level.** A rule names its seller by
+`(marketplace_code, seller_ref)` or by `tax_number`, **never by display name** (§5: names
+collide, change, and are chosen by the seller). It is about that seller *and one brand*: the
+same firm is routinely one brand's authorised distributor with no arrangement at all for
+another — 21% of Royal Canin's sellers were measured also selling Whiskas.
+
+Precedence lives with the resolver (`packages/core`, `resolveSellerPolicy`), which is pure and
+table-tested without a database. Two axes, both "the more specific statement wins": a brand rule
+beats the group default, and within one scope a seller-ref rule beats a tax-number rule.
+
+⚠️ **No unique index on the identity, deliberately.** Every engine here treats `NULL` as distinct
+in a unique index, so `unique(group, brand, marketplace, seller_ref)` would silently accept two
+group defaults (`watched_brand_id IS NULL`) for the same seller — the exact duplicate it appears
+to forbid. A constraint that reads as protection while providing none is worse than no
+constraint, so "one rule per identity per scope" is enforced in `seller-policies.ts` by matching
+before writing, and said out loud there. The same file enforces "exactly one identity", which no
+engine can express either.
+
+**Faz 6 stores no findings, deliberately.** An audit finding is derived from the archive every
+time it is asked for, out of `tracked_product_observations`, `seller_policies` and the thresholds
+in `app_settings` (`brandAudit.thresholds`, doc 08 §12). Nothing is written. Two reasons, and the
+second is the load-bearing one:
+
+- A stored finding would be an answer computed under a threshold nobody can see any more.
+  Changing `belowMarketPct` has to re-answer the **whole** history, not only what has been
+  observed since — that is what an operator expects from a number they were invited to tune, and
+  a findings table would instead accumulate rows from every threshold the install has ever had.
+- A finding is not a fact about the world; it is a reading of facts already stored. The facts —
+  the observation rows — are the record, and they are already retained under doc 05 §10. Writing
+  the reading beside them would create a second thing to keep consistent, and the two would
+  diverge the first time a policy rule changed.
+
+The cost is that the derivation is re-run per request, which is why every query behind it is
+bounded by a threshold rather than by the catalogue (`worstSellerProductDeviations` pushes
+`deepDiscountPct` into a `HAVING`; the category candidates are only products in categories small
+enough to qualify). Raising a threshold on screen fetches *less*, not more.
+
+`competitor_sellers.tax_number` (Faz 5) is the link that makes tax-number rules bite: the firm
+behind a storefront. **Operator-owned** like `group_id` and `operator_note` — a scrape never
+writes it. Faz 7 resolves it from a merchant-scoped product page and writes it **only where it is
+null** (`setSellerTaxNumberIfAbsent`); a resolved value never overwrites a person's entry, and the
+`is null` guard is in the `WHERE` rather than only in the read above it. Until a seller has one, a
+tax-number rule simply does not match it, and the policy screen reports such rules as
+*etkisiz* rather than implying they are in force.
+
+### `competitor_seller_identities` — the firm behind the storefront (Faz 7)
+
+The firm behind a storefront as the marketplace states it: registered title, tax number, tax
+office, KEP address, address, and the barcodes and stock of the listing the resolution was read
+through. Written only by `ResolveSellerIdentity`, on demand, one seller at a time
+(api-references §1.6a).
+
+**Its own table rather than six more nullable columns on `competitor_sellers`,** and the reason
+is ownership. That table mixes observed facts with operator-owned ones, and every write to it is
+guarded so a scrape cannot undo a person's entry. These fields are neither: they are a dated copy
+of what one page said on one day. Keeping them apart makes "stop retaining this" a `DELETE`
+rather than an audit of six columns — which matters, because guide §29 asks that business and
+contact metadata be retained only while the application needs it.
+
+**One row per seller; a resolution replaces the previous answer.** This is not history. A firm's
+registered title is not a time series, and an operator reading an address wants the current one
+with the date it was read beside it. Every column is overwritten, including the ones the new
+payload left null: merging a fresh answer over a stale one would produce a record that existed on
+no page — a tax office from March next to an address from August, under a single date.
+
+The listings are stored as JSON, not a child table: nothing queries across them, they are
+evidence attached to one resolution, and they are replaced wholesale by the next. A malformed
+JSON yields an empty list rather than losing the row — the registered title and tax number must
+survive their least important field.
+
+⚠️ Nothing here carries a rank, a price or a winner flag, because the port it comes from has
+none. The page it was read from was requested as one merchant, and such a page reports that
+merchant as the winner on every row regardless of the real buybox order (api-references §1.6a).
+
+`tracked_product_metrics` — rating count and average over time, the sales-velocity proxy the
+brand audit reads. A brand owner cannot see anyone's unit sales; the rate at which a product
+accumulates ratings is the closest public signal.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `tracked_product_id` | text FK, cascade | |
+| `observed_at` | bigint | |
+| `rating_count` | int nullable | |
+| `rating_average` | real nullable | |
+
+Index `(tracked_product_id, observed_at)`. Change-detected, for the reason
+`tracked_product_observations` is: a row per product per daily sweep over two brands would add
+over two million rows a year to say "nothing changed". A rating count moves slowly, so a row is
+written only when the value differs from the previous one and the series reconstructs exactly —
+each row's value holds until the next. (This table was change-detected from the start, in Faz 2;
+`tracked_product_observations` caught up in Faz 4.)
+
+A `null` count is **never** written: that is our failure to read the page, not an event in the
+product's life, and recording it would put a fake dip in every series. A product's first
+readable count is always written, so a series starts at a known point.
 
 Scraped as the last step of each per-marketplace `ScrapeCompetitors` run
 (`pipeline/scrape-tracked-products.ts`), under its own `try`/`catch` so a failure here can never
@@ -555,16 +804,17 @@ re-probe the entire catalogue).
 | `job_runs` | 90 days |
 | `job_queue` done/failed | 7 days |
 | `tracked_product_observations` | 90 days (added 2026-08-26) |
+| `tracked_product_metrics` | 365 days (added 2026-08-28) — longer because it is change-detected and therefore a fraction of the rows, and because "is this product moving?" needs more than a quarter to answer |
 
 A `PruneHistory` job enforces these nightly. Every retention window is configurable.
 
 > **`tracked_product_observations` had no retention window until 2026-08-26** and grew without
 > bound; `PruneHistory` now applies 90 days to it, matching `competitor_observations` because it
-> is the same kind of data read by the same kind of report. Note it is written *more* densely
-> than that table, not less: there is no change-detection hash here, so every offer of every
-> successful look is stored (§5 explains why that trade is right for a small, operator-curated
-> set). The detail screen also reads a whole 30-day window per view, so the window bounds a read
-> cost as well as a write one.
+> is the same kind of data read by the same kind of report. It was also written *more* densely
+> than that table until Faz 4 (2026-08-28) added the change-detection hash §5 describes; the
+> retention window was sized for the denser regime and has not been widened, because the detail
+> screen reads a whole 30-day window per view and the window bounds a read cost as well as a
+> write one.
 
 > **`competitor_observations` was indefinite until 2026-08-18.** That policy was written for a
 > 64-listing catalogue. Measured against the live archive, the 2,000-listing target produces

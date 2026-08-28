@@ -8,6 +8,7 @@ interface Windows {
   buyboxObservationsDays: number;
   competitorObservationsDays: number;
   trackedProductObservationsDays: number;
+  trackedProductMetricsDays: number;
   appEventsInfoDebugDays: number;
   appEventsWarnErrorDays: number;
   jobRunsDays: number;
@@ -19,6 +20,7 @@ const LABELS: { key: keyof Windows; label: string }[] = [
   { key: 'buyboxObservationsDays', label: 'Buybox gözlemleri (gün)' },
   { key: 'competitorObservationsDays', label: 'Rakip teklif kayıtları (gün)' },
   { key: 'trackedProductObservationsDays', label: 'Takip edilen ürün kayıtları (gün)' },
+  { key: 'trackedProductMetricsDays', label: 'Değerlendirme geçmişi (gün)' },
   { key: 'appEventsInfoDebugDays', label: 'Bilgi/debug olayları (gün)' },
   { key: 'appEventsWarnErrorDays', label: 'Uyarı/hata olayları (gün)' },
   { key: 'jobRunsDays', label: 'İş çalıştırma geçmişi (gün)' },

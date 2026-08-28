@@ -406,12 +406,214 @@ export const competitorSellers = sqliteTable(
     sellerName: text('seller_name').notNull(),
     groupId: text('group_id').references(() => competitorSellerGroups.id, { onDelete: 'set null' }),
     operatorNote: text('operator_note'),
+    /**
+     * The firm behind the storefront, when someone has established it (Faz 5, 2026-08-28).
+     *
+     * **Operator-owned**, like `group_id` and `operator_note` beside it: a scrape never writes
+     * it, so recording it by hand cannot be undone by the next run. Faz 7 will fill it
+     * automatically from the marketplace's own seller page, and will write only where this is
+     * null — a resolved value must never overwrite a person's correction.
+     *
+     * It exists because policy is asked of a **firm**, not a storefront: one company can hold
+     * several seller accounts, and a rule written against a tax number should follow the company
+     * across them. Until a seller has one, a tax-number rule simply does not match it, which is
+     * the honest reading rather than a guess.
+     */
+    taxNumber: text('tax_number'),
     firstSeenAt: timestampMs('first_seen_at').notNull(),
     lastSeenAt: timestampMs('last_seen_at').notNull(),
   },
   (t) => [
     uniqueIndex('competitor_sellers_marketplace_ref').on(t.marketplaceCode, t.sellerRef),
     index('competitor_sellers_group').on(t.groupId),
+  ],
+);
+
+/**
+ * A brand owner's organisation — the level above a brand, because one owner routinely holds
+ * several (Mars holds both Whiskas and Royal Canin; product owner's decision, 2026-08-28).
+ *
+ * Its own table rather than a nullable `group` string on `watched_brands`, because reports are
+ * asked at *both* levels and they are different questions: "how does this seller behave on
+ * Whiskas?" and "how does this seller behave across everything we own?" A denormalised label
+ * could answer neither reliably once a group is renamed.
+ */
+export const watchedBrandGroups = sqliteTable('watched_brand_groups', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  note: text('note'),
+  createdAt: timestampMs('created_at').notNull(),
+  updatedAt: timestampMs('updated_at').notNull(),
+});
+
+/**
+ * One brand watched on one marketplace — the unit a catalogue sweep runs over
+ * (api-references §1.7).
+ *
+ * **Not** the existing `brands` table, which is our own catalogue's taxonomy derived from
+ * listings we sell. A watched brand is the opposite: mostly products we do not sell, on a
+ * marketplace where we may have no presence at all. Sharing one table would mean a row's
+ * meaning depended on which column happened to be null.
+ *
+ * Carries **both** selectors, and both are swept. `brandRef` is the marketplace's own brand id
+ * and returns what the marketplace attributes to the brand; `searchTerm` also catches listings
+ * that merely carry the name. Whiskas returned 887 products either way, but the search side
+ * included 8 rows in categories like *Halı* and *Ahşap Boya & Vernik* — the difference is the
+ * finding, which is why neither selector is allowed to be "the" one. At least one must be set;
+ * the repository enforces that, since no dialect can express "at least one of two columns".
+ */
+export const watchedBrands = sqliteTable(
+  'watched_brands',
+  {
+    id: text('id').primaryKey(),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => watchedBrandGroups.id, { onDelete: 'cascade' }),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    /** Operator-facing name, e.g. `Whiskas`. Display only — never an identity. */
+    label: text('label').notNull(),
+    /** Trendyol `webBrands[].id`, e.g. `104703`. Null when only a search term is watched. */
+    brandRef: text('brand_ref'),
+    /** Free-text query, e.g. `whiskas`. Null when only the brand id is watched. */
+    searchTerm: text('search_term'),
+    isActive: bool('is_active').notNull(),
+    /**
+     * Last completed sweep, and what it found. Kept here rather than derived from
+     * `tracked_products` so the list screen can show "1.847 ürün, 3 saat önce" without counting
+     * rows, and so a sweep that found nothing is distinguishable from one that never ran.
+     */
+    lastSweptAt: timestampMs('last_swept_at'),
+    lastSweepProductCount: integer('last_sweep_product_count'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [
+    index('watched_brands_group').on(t.groupId),
+    // One brand per marketplace per group. Two groups may legitimately watch the same brand.
+    uniqueIndex('watched_brands_group_marketplace_label').on(t.groupId, t.marketplaceCode, t.label),
+  ],
+);
+
+/**
+ * The firm behind a storefront, as the marketplace states it (doc 06 §12.4 Faz 7, guide §29).
+ *
+ * A **separate table from `competitor_sellers`, not extra columns on it**, for two reasons that
+ * both come down to who owns the data. `competitor_sellers` mixes observed facts with
+ * operator-owned ones (`group_id`, `operator_note`, `tax_number`), and every write there is
+ * carefully guarded so a scrape cannot undo a person's entry. These fields are neither: they are
+ * a dated copy of what one merchant-scoped page said on one day, and they should be replaceable
+ * — and deletable — as a unit. Guide §29 asks that business/contact metadata be retained only
+ * where the application needs it; keeping it in one table makes "stop retaining it" a `DELETE`
+ * rather than an audit of six nullable columns.
+ *
+ * One row per seller: a resolution replaces the previous answer rather than appending. This is
+ * not history — a firm's registered title is not a time series, and an operator reading an
+ * address wants the current one, with the date it was read next to it.
+ *
+ * `tax_number` is duplicated onto `competitor_sellers.tax_number` when that column is null, and
+ * only then (`setSellerTaxNumberIfAbsent`): there it is the operator-owned matching key that
+ * Faz 5's authorised-seller list is written against, and a resolution must never overwrite what
+ * a person entered by hand.
+ */
+export const competitorSellerIdentities = sqliteTable(
+  'competitor_seller_identities',
+  {
+    id: text('id').primaryKey(),
+    competitorSellerId: text('competitor_seller_id')
+      .notNull()
+      .references(() => competitorSellers.id, { onDelete: 'cascade' }),
+    /** Registered commercial title (`unvan`) — the name that goes on a notice. */
+    officialName: text('official_name'),
+    /** VKN, or a TCKN for a sole trader. Copied to `competitor_sellers.tax_number` when absent there. */
+    taxNumber: text('tax_number'),
+    taxOffice: text('tax_office'),
+    /** KEP — the address a formal notice is legally served to. */
+    registeredEmailAddress: text('registered_email_address'),
+    address: text('address'),
+    cityName: text('city_name'),
+    countryName: text('country_name'),
+    /**
+     * The seller's listings on the product this was resolved through, as JSON: listing ref, item
+     * ref, barcode, offered stock. JSON rather than a child table because nothing queries across
+     * it — it is evidence attached to one resolution, read only when that resolution is displayed,
+     * and it is replaced wholesale by the next one. A child table would invite a join that no
+     * report wants and would make deleting an identity a two-step.
+     *
+     * ⚠️ Contains no price, no rank and no winner flag, because the port it comes from has none:
+     * a merchant-scoped page's ordering is a preview, not the buybox (Faz 7 definition of done).
+     */
+    listingsJson: text('listings_json').notNull(),
+    /** The URL actually fetched, carrying the `merchantId` that made the identity visible. */
+    sourceUrl: text('source_url').notNull(),
+    parserVersion: text('parser_version').notNull(),
+    resolvedAt: timestampMs('resolved_at').notNull(),
+  },
+  (t) => [uniqueIndex('competitor_seller_identities_seller').on(t.competitorSellerId)],
+);
+
+/**
+ * One operator statement about whether a seller may sell a brand we own (doc 06 §12.4, Faz 5).
+ *
+ * The verdict a row carries is `authorised` or `blocked`. The **third** state — `undefined` —
+ * is the absence of a row, and it is a real state rather than a missing answer: "nobody has
+ * looked at this seller yet" is not "this seller is unauthorised", and a design that stored
+ * only two states would have to invent one of them for every seller that appears. The resolver
+ * (`packages/core`, `resolveSellerPolicy`) returns all three.
+ *
+ * **Identity is account-level, policy is brand-level.** A seller is one marketplace account (or
+ * one firm, by tax number); a rule is about that seller *and one brand*. The same firm is
+ * routinely Whiskas' authorised distributor with no arrangement at all for Royal Canin — 21% of
+ * Royal Canin's sellers were measured also selling Whiskas — so the overlap is the normal case.
+ *
+ * `watched_brand_id` null means the rule is the **group default**, applying to every brand in
+ * the group that does not override it. Precedence, and why it runs the way it does, lives with
+ * the resolver rather than here; this table only stores the statements.
+ *
+ * ## Two nullable identity columns and no unique index over them
+ *
+ * A rule names its seller by `(marketplace_code, seller_ref)` **or** by `tax_number`, never by
+ * display name (doc 05 §5: names collide, change, and are chosen by the seller). Exactly one of
+ * the two is set, which the repository enforces — the same shape and the same reason as
+ * `watched_brands`' "at least one selector".
+ *
+ * There is deliberately **no unique index** on the identity. Every engine here treats `NULL` as
+ * distinct in a unique index, so `unique(group, brand, marketplace, seller_ref)` would silently
+ * permit two group defaults for the same seller — precisely the duplicate it appears to forbid,
+ * and worse than no constraint because it reads as one. Uniqueness is enforced in
+ * `seller-policies.ts` by matching the identity before writing.
+ */
+export const sellerPolicies = sqliteTable(
+  'seller_policies',
+  {
+    id: text('id').primaryKey(),
+    watchedBrandGroupId: text('watched_brand_group_id')
+      .notNull()
+      .references(() => watchedBrandGroups.id, { onDelete: 'cascade' }),
+    /** Null = the group default. See the doc comment above. */
+    watchedBrandId: text('watched_brand_id').references(() => watchedBrands.id, {
+      onDelete: 'cascade',
+    }),
+    /** Set with `seller_ref`, null with `tax_number` — a firm is not marketplace-specific. */
+    marketplaceCode: text('marketplace_code').references(() => marketplaces.code, { onDelete: 'cascade' }),
+    sellerRef: text('seller_ref'),
+    taxNumber: text('tax_number'),
+    /** `authorised` | `blocked`. The third state is the absence of a row. */
+    status: text('status').notNull(),
+    /**
+     * The operator's own words about why. Free text and nothing else — the product owner's
+     * decision, 2026-08-27 (*"sadece not olsun yeterli"*): a date field and a document field
+     * would look like a compliance record while being filled in inconsistently.
+     */
+    note: text('note'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [
+    index('seller_policies_scope').on(t.watchedBrandGroupId, t.watchedBrandId),
+    index('seller_policies_seller').on(t.marketplaceCode, t.sellerRef),
+    index('seller_policies_tax').on(t.taxNumber),
   ],
 );
 
@@ -437,8 +639,122 @@ export const trackedProducts = sqliteTable(
     label: text('label').notNull(),
     isActive: bool('is_active').notNull(),
     addedAt: timestampMs('added_at').notNull(),
+
+    /**
+     * Which watched brand's sweep discovered this row, or `null` for one the operator added by
+     * pasting a link. `set null` rather than `cascade`: removing a brand from the watch list is
+     * a decision about *watching*, not a reason to destroy observation history the operator may
+     * still be reading. The rows are simply no longer attributed to a brand.
+     */
+    watchedBrandId: text('watched_brand_id').references(() => watchedBrands.id, { onDelete: 'set null' }),
+    /**
+     * Which of the brand's two selectors found this product. Both, deliberately, rather than one
+     * `discovered_via` enum: a product found by **both** and a product found by only one are
+     * different facts, and "carries the brand's name but the marketplace does not attribute it
+     * to the brand" — search-term only — is precisely the brand-abuse signal the audit exists to
+     * surface (product owner's decision, 2026-08-28). Collapsing them into one column would
+     * make that query impossible to write.
+     *
+     * Both false with a null `watched_brand_id` is a manually added product.
+     */
+    viaBrandRef: bool('via_brand_ref').notNull().default(false),
+    viaSearchTerm: bool('via_search_term').notNull().default(false),
+
+    /**
+     * Catalogue metadata as the last sweep saw it. Denormalised onto the row on purpose: these
+     * come free with the page that discovers the product, and a sweep that discarded them would
+     * force a second full pass over the catalogue to recover them later.
+     *
+     * `brands`/`categories` (doc 05) hold *our own* catalogue's taxonomy, keyed to listings we
+     * sell. A watched brand's products are not ours and mostly have no listing, so they are not
+     * joined to those tables — the marketplace's own ref and name are carried verbatim instead.
+     */
+    brandName: text('brand_name'),
+    /**
+     * The marketplace's own brand id for this product, which is **not** necessarily the watched
+     * brand's. A product found only by search term and attributed by the marketplace to some
+     * other brand is the clearest form of the brand-name-misuse signal, and that comparison is
+     * impossible without storing what the marketplace actually said.
+     */
+    brandRef: text('brand_ref'),
+    categoryRef: text('category_ref'),
+    categoryName: text('category_name'),
+    /**
+     * Rating count as of `last_swept_at`. `null` means unknown; `0` means genuinely unrated —
+     * a distinction the dead-product suggestion depends on, since it acts on the second only.
+     */
+    ratingCount: integer('rating_count'),
+    ratingAverage: real('rating_average'),
+    /**
+     * When a sweep last saw this product in its brand's catalogue. A row whose timestamp stops
+     * advancing while its brand keeps sweeping has left the catalogue — delisted, renamed, or
+     * re-attributed — which is a finding rather than a reason to delete the row.
+     */
+    lastSweptAt: timestampMs('last_swept_at'),
+    /**
+     * Change detection for the per-product deep scrape (`ScrapeTrackedProducts`), added with
+     * Faz 4 (2026-08-28).
+     *
+     * `tracked_product_observations` was written unconditionally while the tracked set was
+     * operator-curated and small — a few dozen products. A brand sweep makes it a catalogue
+     * (887 products for Whiskas, 4,863 for Royal Canin), and at one look a day with ~20 offers
+     * each that is millions of rows a year, most of them recording that nothing moved.
+     *
+     * So the offer rows are written **only when the hash of the offer set differs from the
+     * previous look's** — the same trade `scrape_runs.payload_hash` makes for
+     * `competitor_observations`, computed by the same `hashOffers`. The series still
+     * reconstructs exactly: each stored look holds until the next one.
+     *
+     * `lastScrapedAt` is what makes that safe to read. Without it the newest observation is the
+     * only evidence of a look, and a product whose offers have not moved in a week would read
+     * as one nobody has checked in a week. They are separate facts and are stored separately:
+     * `lastScrapedAt` is when we last looked, the observation is what we last saw.
+     */
+    lastOffersHash: text('last_offers_hash'),
+    lastScrapedAt: timestampMs('last_scraped_at'),
+    /**
+     * The manufacturer's barcode, and when the product page that stated it was read (Faz 8,
+     * 2026-08-28).
+     *
+     * This is the **cross-marketplace matching key**. A brand owner's report has to say "these
+     * two rows are the same product on two marketplaces", and nothing softer than a barcode can
+     * say it: names differ by punctuation and pack size, brands are spelled differently, and
+     * each marketplace's product id is private to it. A match built on a name is a report whose
+     * rows are confidently wrong, which is worse than one with gaps.
+     *
+     * The two columns are separate because "we have never asked" and "we asked and the page
+     * stated none" are different facts, exactly as `last_scraped_at` is separate from the
+     * newest observation. `barcode_resolved_at` set with a null `barcode` is the second, and it
+     * is what stops a backfill from asking the same hopeless product every night.
+     *
+     * Only the catalogue side fills these: Trendyol's card payload carries no barcode, so a
+     * Trendyol row's barcode stays null until a source that states one exists.
+     */
+    barcode: text('barcode'),
+    barcodeResolvedAt: timestampMs('barcode_resolved_at'),
+    /**
+     * How many times the backfill has asked about this product's barcode and failed (Faz 8).
+     *
+     * Failure does not set `barcode_resolved_at` — a failed read is not an answer, and recording
+     * one would store "the page stated no barcode" for a page that was never successfully read.
+     * But without this counter the work list, ordered by the freshest sweep, hands back the same
+     * permanently-failing rows at the head of every run: a product whose page describes a
+     * different article, or whose url now 404s, fails identically for ever. Five of those and a
+     * run aborts on consecutive failures having made no progress at all, once an hour, until
+     * somebody notices.
+     *
+     * So a failure costs the product its place in the queue rather than the queue its progress.
+     * Ordering is by attempts first, and rows past `BARCODE_MAX_ATTEMPTS` drop off the list
+     * entirely — visible as "asked and failed" in the coverage figures rather than hiding among
+     * the products nobody has asked about yet.
+     */
+    barcodeAttempts: integer('barcode_attempts').notNull().default(0),
   },
-  (t) => [uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef)],
+  (t) => [
+    uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
+    index('tracked_products_watched_brand').on(t.watchedBrandId),
+    index('tracked_products_barcode').on(t.barcode),
+  ],
 );
 
 /**
@@ -464,6 +780,40 @@ export const trackedProductObservations = sqliteTable(
     offeredStock: integer('offered_stock'),
   },
   (t) => [index('tracked_product_observations_product_observed').on(t.trackedProductId, t.observedAt)],
+);
+
+/**
+ * Rating count and average for a tracked product, over time — the sales-velocity proxy the
+ * brand audit reads (doc 06). A brand owner cannot see anyone's unit sales; the rate at which a
+ * product accumulates ratings is the closest public signal, and it is only a signal if the
+ * series is kept.
+ *
+ * **Change-detected, unlike `tracked_product_observations`.** That table stores every offer of
+ * every look because the tracked set was operator-curated and small. A brand sweep makes it
+ * large — 887 products for Whiskas, 4,863 for Royal Canin, daily — so writing a row per product
+ * per sweep would add millions of rows a year to say "nothing changed". A rating count moves
+ * slowly and monotonically, so a row is written **only when the value differs from the previous
+ * one**, and the series reconstructs exactly: the value held from each row's `observed_at`
+ * until the next row.
+ *
+ * The price/seller side of a swept product is deliberately **not** here. A catalogue card names
+ * only the buybox holder, and recording that as if it were the competition would understate
+ * every product to one seller. Seller-level history stays with the per-product scrape
+ * (`competitor_observations` / `tracked_product_observations`).
+ */
+export const trackedProductMetrics = sqliteTable(
+  'tracked_product_metrics',
+  {
+    id: text('id').primaryKey(),
+    trackedProductId: text('tracked_product_id')
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    observedAt: timestampMs('observed_at').notNull(),
+    /** `null` means the sweep could not read a rating; `0` means genuinely unrated. */
+    ratingCount: integer('rating_count'),
+    ratingAverage: real('rating_average'),
+  },
+  (t) => [index('tracked_product_metrics_product_observed').on(t.trackedProductId, t.observedAt)],
 );
 
 export const priceSubmissions = sqliteTable(

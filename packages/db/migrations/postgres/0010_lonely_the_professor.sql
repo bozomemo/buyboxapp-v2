@@ -1,0 +1,1 @@
+ALTER TABLE "tracked_products" ADD COLUMN "brand_ref" text;

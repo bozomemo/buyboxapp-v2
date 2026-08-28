@@ -17,13 +17,17 @@ import { prunePriceSubmissions } from './repositories/repricing.js';
 import { pruneBuyboxObservations, pruneCompetitorObservations } from './repositories/competition.js';
 import { pruneFinishedJobs, pruneJobRuns } from './repositories/jobs.js';
 import { pruneEvents } from './repositories/events.js';
-import { pruneTrackedProductObservations } from './repositories/tracked-products.js';
+import {
+  pruneTrackedProductMetrics,
+  pruneTrackedProductObservations,
+} from './repositories/tracked-products.js';
 
 export interface RetentionWindows {
   readonly priceSubmissionsDays: number;
   readonly buyboxObservationsDays: number;
   readonly competitorObservationsDays: number;
   readonly trackedProductObservationsDays: number;
+  readonly trackedProductMetricsDays: number;
   readonly appEventsInfoDebugDays: number;
   readonly appEventsWarnErrorDays: number;
   readonly jobRunsDays: number;
@@ -39,6 +43,10 @@ export const DEFAULT_RETENTION_WINDOWS: RetentionWindows = {
   // and read by the same kind of report. Added 2026-08-26 — this table previously had no
   // window at all and grew without bound (doc 05 §10's note).
   trackedProductObservationsDays: 90,
+  // Longer than the observations above, deliberately: this series is change-detected, so it is
+  // a fraction of their row count, and the question it answers — "is this product accumulating
+  // ratings, and how fast?" — needs more than a quarter to be worth asking.
+  trackedProductMetricsDays: 365,
   appEventsInfoDebugDays: 90,
   appEventsWarnErrorDays: 365,
   jobRunsDays: 90,
@@ -61,6 +69,7 @@ export async function pruneHistory(
     appDb,
     daysAgo(nowMs, windows.trackedProductObservationsDays),
   );
+  await pruneTrackedProductMetrics(appDb, daysAgo(nowMs, windows.trackedProductMetricsDays));
   await pruneEvents(
     appDb,
     daysAgo(nowMs, windows.appEventsInfoDebugDays),

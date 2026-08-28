@@ -29,6 +29,11 @@ export interface CompetitorSellerRow {
   readonly sellerName: string;
   readonly groupId: string | null;
   readonly operatorNote: string | null;
+  /**
+   * The firm behind the storefront (Faz 5). Operator-owned like `groupId` and `operatorNote`:
+   * `recordSeenSellers` never writes it, so a scrape cannot undo a person's entry.
+   */
+  readonly taxNumber: string | null;
   readonly firstSeenAt: number;
   readonly lastSeenAt: number;
 }
