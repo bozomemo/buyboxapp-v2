@@ -6,7 +6,7 @@
  * a wrong merge makes an alert fire on the wrong company while still looking like it works.
  */
 import { NextResponse } from 'next/server';
-import { competitorSellersRepo, configRepo, newId } from '@buybox/db';
+import { competitorSellersRepo, configRepo, newId, sellerPoliciesRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 
 interface CreateGroupBody {
@@ -35,19 +35,38 @@ interface DeleteGroupBody {
   readonly groupId: string;
 }
 
-type Body = CreateGroupBody | AssignBody | NoteBody | DeleteGroupBody;
+/**
+ * The firm behind a marketplace storefront (Faz 5), recorded here because it is the same kind
+ * of thing as the group and the note beside it: an operator assertion no scrape can reproduce,
+ * about a seller's identity rather than its behaviour.
+ *
+ * It matters because seller **policy** is asked of a firm, not a storefront — one company can
+ * hold several seller accounts, and a rule written against a tax number follows it across them.
+ */
+interface TaxNumberBody {
+  readonly action: 'taxNumber';
+  readonly marketplaceCode: string;
+  readonly sellerRef: string;
+  readonly taxNumber: string | null;
+}
+
+type Body = CreateGroupBody | AssignBody | NoteBody | DeleteGroupBody | TaxNumberBody;
 
 async function audit(
   appDb: ReturnType<typeof getAppDb>,
   entityId: string,
   oldValue: string | null,
   newValue: string | null,
+  // Named rather than assumed: this helper used to hardcode `group`, which was right while that
+  // was the only thing it audited and would have filed every tax-number change under the wrong
+  // field the moment a second one arrived.
+  field: 'group' | 'taxNumber' = 'group',
 ): Promise<void> {
   await configRepo.recordSettingsAudit(appDb, {
     id: newId(),
     entity: 'competitor_sellers',
     entityId,
-    field: 'group',
+    field,
     oldValue,
     newValue,
     changedBy: 'operator',
@@ -111,6 +130,27 @@ export async function POST(request: Request) {
     }
     await competitorSellersRepo.setSellerNote(appDb, seller.id, body.operatorNote);
     await audit(appDb, seller.id, seller.operatorNote, body.operatorNote);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === 'taxNumber') {
+    const seller = await competitorSellersRepo.getCompetitorSeller(
+      appDb,
+      body.marketplaceCode,
+      body.sellerRef,
+    );
+    if (!seller) {
+      return NextResponse.json(
+        { error: 'Bu satıcı henüz kaydedilmemiş. Bir tarama çalıştıktan sonra tekrar deneyin.' },
+        { status: 404 },
+      );
+    }
+    await sellerPoliciesRepo.setSellerTaxNumber(
+      appDb,
+      { marketplaceCode: body.marketplaceCode, sellerRef: body.sellerRef },
+      body.taxNumber,
+    );
+    await audit(appDb, seller.id, seller.taxNumber, body.taxNumber, 'taxNumber');
     return NextResponse.json({ ok: true });
   }
 

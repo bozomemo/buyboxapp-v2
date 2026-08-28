@@ -684,10 +684,270 @@ Fed by `trackedProductsRepo.trackedProductObservationsSince`, which reads the wh
 in one query: a seller that vanishes has no row in the newer looks, so there is no way to notice
 its absence except to hold the older ones.
 
-**Known gap:** `tracked_product_observations` has no retention window yet (doc 05 §10) and
-grows without bound. Low risk while the tracked-product set stays small and operator-curated,
-but should get a window before this sees sustained use — and the detail screen above now reads
-that whole history per view, so the window matters a little more than it did.
+*(Closed:* `tracked_product_observations` had no retention window and no change detection when
+this screen was built. It got a 90-day window on 2026-08-26 and the change-detection hash in
+Faz 4 on 2026-08-28 — see doc 05 §5. One consequence reaches this screen: the newest observation
+is now the last look that *changed*, not the last look, so anything reporting freshness reads
+`tracked_products.last_scraped_at` instead.)
+
+### 12.4 Brand-owner audit — built (Faz 1–8, 2026-08-28)
+
+The product is also used by **brand owners**, not only by sellers: the person responsible for
+Whiskas in Turkey wants every Whiskas listing on the marketplace, whoever sells it. That is a
+different question from "what do my competitors charge for the things I sell", and it drives
+three screens.
+
+**`/watched-brands`** — the registry. A *group* is the organisation (Mars); a *brand* is one
+brand on one marketplace (Whiskas on Trendyol, Royal Canin on Trendyol). Adding a brand needs
+only a search term; the marketplace's brand id is optional, and after the first sweep the screen
+*offers* the id most of that brand's products carry (≥60% share) rather than making the operator
+look it up. "Şimdi tara" enqueues `SweepBrandCatalogue`; progress shows on `/jobs`, because a
+full sweep is a minute for a small brand and five for a large one.
+
+**`/tracked-products`** — now serves both hand-added products and swept ones, server-paged,
+filtered and sorted. Filters: text, brand, category, status, minimum rating count, and two
+switches that exist for the audit specifically — *sadece aramada çıkanlar* and *değerlendirmesi
+olmayanlar*.
+
+The first is the brand-misuse shortlist. A brand is swept by its marketplace brand id *and* by
+its search term; a product the search finds while the marketplace attributes it elsewhere is
+carrying the brand's name without the brand behind it. Eight of Whiskas' 887 products were
+exactly that, in categories including *Halı* and *Ahşap Boya & Vernik*. Such rows also carry a
+badge in the Ürün column, so the signal is visible without applying the filter.
+
+**Dead-product suggestion** — on `/watched-brands`, per brand, with the scan time it would
+actually save: *"887 üründen 574'ünün (%65) hiç değerlendirmesi yok · derin tarama 30 dk → 11
+dk"*. The saving is computed, never assumed, because it is wildly brand-specific — 65% for
+Whiskas against 5% for Royal Canin. Applying it **deactivates**, never deletes: "the marketplace
+has never recorded a rating" is a proxy for "nobody buys this", not proof of it, so the decision
+has to be reversible, and the grid's *Sürdür* button reverses it.
+
+Throughout, `rating_count = 0` (genuinely unrated) and `rating_count = null` (we could not read
+it) are kept apart. Only the first is ever offered for removal; offering the second would ask
+the operator to act on our own parse failure.
+
+#### Seller analysis and price ranges (Faz 4)
+
+A sweep answers *which products exist*. It cannot answer *who sells them at what price* — a
+catalogue card names only the buybox holder, and treating that as the competition would
+understate every product to one seller. That comes from the per-product deep scrape
+(`ScrapeTrackedProducts`), and Faz 4 is what reads it.
+
+**On `/tracked-products`, two families of price column**, which answer different questions and
+are labelled so:
+
+| Family | Columns | Source |
+|---|---|---|
+| The market right now | Satıcı, Medyan, **Makas**, Buybox Fiyat, Buybox Satıcı | the latest look, reduced in `lib/market-stats.ts` |
+| The market over the window | Dönem En Düşük, Dönem En Yüksek, Dönem Satıcı | one `GROUP BY` in `brandReportsRepo.trackedProductPeriodStats` |
+
+Makas (max ÷ min − 1 on the latest look) is the visible one of the current family: it is the
+figure worth scanning a page for, and ≥30% is highlighted. It is `—`, never `0`, for a
+single-seller product — a market of one has no spread, and a zero would file it beside genuinely
+tight markets when someone sorts by the column.
+
+The **median** is computed in JS rather than SQL. It has no exact form portable across SQLite,
+PostgreSQL and MySQL, and three dialect-specific window-function queries for one number is a
+worse risk than computing it where the data already is — which is safe here because one look is
+a few dozen offers and the grid asks for one page at a time. The period band genuinely cannot be
+computed that way and is aggregated in the database.
+
+Only the **period** family survives an Excel export. The line is cost, not importance: a column
+is exportable when it comes from the row itself or from one aggregate query over the whole set,
+and not exportable when it needs the latest look *per row* — that is one query per row, fine for
+a 50-row page and unbounded across a 5,000-row export.
+
+**`/watched-brands/sellers` — markalarımı kimler satıyor.** The brand-side counterpart of
+`/competitors/sellers`, scoped by group (Mars — tümü) or by one brand, over 7/30/90 days. Per
+seller: kaç üründe, kaç teklif, kaç buybox, kaç kez en ucuz, piyasa sapması, fiyat aralığı, ilk
+ve son görülme.
+
+Three decisions in it:
+
+- **Buybox and cheapest are separate counters.** Rank 1 is who wins the buybox, which is not who
+  is cheapest — the marketplace weighs delivery and seller score too. A seller cheapest far more
+  often than they hold the buybox is being beaten on something other than price; one holding it
+  without being cheapest is winning on something other than price. Collapsing the two into one
+  "performance" figure would hide both findings. Ties count for everyone who matched the
+  minimum.
+- **Piyasa sapması is measured against the seller's own look, including sellers the report
+  excludes.** The question is how a seller sits against the market, not against the report's
+  subset; a market average computed without the biggest seller in it would rate everyone against
+  a market that does not exist. It is a **mean**, not a median, and that is a deliberate
+  narrowing of what Faz 4 promised — the reasoning is recorded on `BrandSellerAggregateRow` in
+  `brand-reports.ts`. Below −15% on average is highlighted, with the screen saying in as many
+  words that this is not a violation, only somewhere to look. Whether a seller is *entitled* to
+  be there is Faz 5.
+- **Seller identity is shared with the competitor screens.** `ScrapeTrackedProducts` registers
+  every identified seller in `competitor_sellers`, so one company is one record whether we met
+  them competing on a listing we sell or selling a brand we own — and the seller name links to
+  the same `/competitors/sellers/[marketplace]/[ref]` page. That is what will let one seller
+  policy apply to both in Faz 5. An offer the marketplace did not identify is counted and
+  reported beside the list, never matched by display name.
+
+#### Seller policy: authorised, blocked, undefined (Faz 5)
+
+**`/watched-brands/policy`.** Faz 4 says who sells the brand; this says who is *supposed* to.
+
+**Three states, and the third is real.** `Yetkili`, `Yasaklı` and **`Tanımsız`** — the last is
+the state almost every seller is in, and it means "nobody has looked at this seller yet", not
+"unauthorised". It is styled neutral rather than as a warning for exactly that reason: colouring
+the common state as a problem trains the operator to ignore the colour that matters. Clearing a
+verdict back to *Tanımsız* deletes the rule, because the third state is the absence of a rule.
+
+**Identity is account-level, policy is brand-level.** A rule is about one seller *and one brand*.
+The same firm is routinely Whiskas' authorised distributor and unknown for Royal Canin — 21% of
+Royal Canin's sellers also sell Whiskas — so a group-wide report cannot show a single verdict
+chip, and the column on `/watched-brands/sellers` reads *marka seçin* until the scope narrows to
+one brand rather than averaging two different answers into one.
+
+A rule written against the whole **group** is the default for every brand that does not override
+it: *"Mars authorises this distributor for everything, except Royal Canin"* is two rows, not one
+per brand. When a verdict comes from the group default the row says so, and a brand rule that
+overrode one says that too — "why did this come out this way" is the first question an operator
+asks when a verdict surprises them.
+
+**Matching is by marketplace seller code or tax number. Never by name.** This is the rule the
+whole feature rests on (doc 05 §5). A spreadsheet with only a company-name column is rejected
+outright, by name, with the reason; a row missing both identities is rejected with its line
+number and the company's name so the operator can find it. The name column *is* read, but only
+as a label to show back.
+
+**Excel import**, because that is how a distributor list exists in the world; the alternative is
+retyping forty rows into a form, which is how the feature goes unused. Turkish Excel's
+semicolon-separated CSV is read as well as comma-separated, and the status words are the ones an
+operator types (`yetkili`, `yasaklı`) rather than the enum they map to. A file with no status
+column at all is the common case — an export of "our distributors" is a list of sellers — so the
+operator picks what the whole file means before importing.
+
+⚠️ **All or nothing.** A parse error writes no rows at all, and every bad line is reported at
+once. A half-applied policy list is worse than none: the operator believes the list is in force,
+and the rows that failed are exactly the ones nobody looks at again.
+
+A rule can be stored and be affecting nobody — a tax number not yet linked to any storefront, or
+a seller who has not appeared in the window. Those are counted as *etkisiz* beside the totals
+rather than left to look like they are in force.
+
+Faz 5 also puts the firm behind a storefront on the seller record (`competitor_sellers.tax_number`,
+operator-owned, edited from the same endpoint as the group and the note), and pairs the two
+findings on `/watched-brands/sellers`: **blocked *and* below the market** gets its own line,
+because both halves were already on the row and asking an auditor to cross-reference two columns
+by eye across eighty rows is how the pairing gets missed.
+
+#### Audit findings (Faz 6)
+
+**`/watched-brands/findings`.** Faz 4 says who sells the brand, Faz 5 says who is supposed to;
+this says **what is worth a person's attention**. Eight signals, ranked.
+
+**A finding is not a violation.** Every row says "here is a thing, here are the numbers behind
+it, go look" — never that anyone has done anything wrong. The auditor sends the notice; the
+software does not, and the wording never implies otherwise.
+
+**Two bases, and the ranking follows from the difference rather than from a table of importance:**
+
+- **Kesin bilgi (`stated`)** — derived from an operator's own recorded statement. "This seller is
+  blocked for this brand and is selling it" is certain: someone wrote the rule, and the seller is
+  on the page.
+- **Yorum (`measured`)** — derived from observed prices. "22% below the market" is an
+  interpretation of a sample: it moves with the window, with who happened to be on the page, and
+  with a threshold someone chose.
+
+A stated finding therefore outranks every measured one, however dramatic the measured one's
+number — the plan's *"kara liste eşleşmesi fiyat sapmasından önce gelir, çünkü kesin bilgidir,
+istatistik değil"*. That ordering is a property of the two bases, not a weight anyone tunes.
+Within the measured tier the order is by how much a person can conclude from the finding alone,
+which is why *yeni görülen satıcı* sits last: a new seller is usually just a new seller.
+
+**Every finding opens to its raw observation** — and to the whole **look**, not the subject's own
+row. "Below the market" is a statement about the other rows; a lone price with nothing beside it
+neither confirms the finding nor refutes it. What the panel shows is the observation rows
+themselves, in the marketplace's own rank order, with the marketplace's own product link beside
+them. Unidentified offers stay in that view even though they are in nobody's aggregate: they were
+on the page, and evidence that quietly dropped a competitor would misstate the market the finding
+was measured against.
+
+**No threshold is buried.** All nine live in `app_settings` under `brandAudit.thresholds` (doc 08
+§12), are edited from a panel on this screen rather than a settings page three clicks away, and
+are written through `setAppSetting` so the audit row naming who changed them is part of the same
+call. Changing one re-answers the whole archive, not only what has been observed since.
+
+⚠️ **The "not on the list" signal is not produced until a whitelist exists** for that brand — the
+case Faz 6's definition of done names. An install that has entered no list has not said everyone
+else is unauthorised; it has said nothing, and a screen opening with hundreds of "unauthorised"
+sellers on day one would be wrong about every one of them and would teach the operator to ignore
+the list. The screen says so in place of the absent signal, so "everyone is authorised" and "no
+list has been entered" cannot be confused.
+
+**One brand at a time.** Two of the eight signals are policy signals and a verdict is only
+meaningful per brand (§12.4 above), so this screen asks for a brand rather than averaging two
+different answers — except where there is nothing to ask, an install watching exactly one brand.
+
+`Tanımsız` is styled neutral here as on the policy screen, and the measured findings all share
+one quiet chip: colouring one estimate more alarming than another of the same kind would imply a
+certainty neither has.
+
+#### Pazaryeri Eşleşmesi — the same product on two marketplaces (Faz 8)
+
+`/watched-brands/cross-marketplace`. Each row is one product carried on both marketplaces, joined
+on its **barcode** — and on nothing else. No fuzzy title comparison, no brand-plus-size
+heuristic. The screen says so in its own header, because a reader who assumes otherwise would
+read a gap as an absence.
+
+Half the screen is coverage, deliberately. 40 matches over a 564-product brand is a different
+fact from 40 matches over 40 products, and a screen that could show the first without the second
+would mislead by omission. Each marketplace gets a card: how many of its tracked products have a
+known barcode, how many were asked and the page stated none, how many were asked repeatedly and
+never answered, and how many have not been asked yet — with a line pointing at the **Barkod
+Tamamlama** job for the last group. The "asked and never answered" figure is its own row rather
+than part of "not asked yet": a product nobody will ask about again is not one whose turn has not
+come.
+
+⚠️ **Hepsiburada's catalogue side has a narrower reach than Trendyol's, and the screen does not
+pretend otherwise.** A Hepsiburada search auto-applies a category facet, so the "brand name used
+in an unrelated category" signal (§12.4's `unrelatedCategory`) has no equivalent there, and part
+of a large brand's catalogue sits past a page ceiling that returns 403 (api-references §2.13).
+
+#### Seller identity (Faz 7)
+
+**A `Kimlik` button on each row of `/watched-brands/sellers`**, opening a panel with the firm
+behind that storefront: registered title (`unvan`), tax number, tax office, KEP address, address,
+and the barcodes and stock of the listing it was read through. These are the fields a compliance
+officer needs to write a notice, and the reason the module has them at all.
+
+**One seller at a time, by a button — never in bulk.** Each resolution is a real page request to
+the marketplace, made as that merchant, at six per minute with concurrency of one. The number of
+sellers worth identifying is the number a person intends to write to; a "resolve all" would turn
+a compliance action into a crawl and is deliberately not offered.
+
+**The request is the opposite of the scraper's, and that is the point.** `ScrapeCompetitors`
+strips `merchantId` from every URL because a merchant-scoped page reports that merchant as the
+winner on every row regardless of the real order. This adds it, because that is what makes the
+page carry the merchant's registration (api-references §1.6a). The same finding, used twice: such
+a response is authoritative about *who* and worthless about *where they rank*. Nothing on this
+path can leak an ordering — the port has no rank, price or winner field, so the phase's
+definition of done is a property of the types rather than a rule to remember.
+
+**A page about a different firm is discarded, never stored.** A seller can leave a product
+between the last look and the resolution; the page then comes back describing whoever holds the
+buybox instead, parsing perfectly and being about the wrong company. The resolver compares the
+merchant id it got against the one it asked for, and the job walks up to four of the seller's
+most recent products until one answers about the right firm — storing nothing if none does. A tax
+number on the wrong storefront is a record an operator may act on legally.
+
+**A resolved tax number fills an empty field and never corrects a person.** That column is what
+Faz 5's authorised-seller list matches on, and an operator may have typed it from a contract. If
+the resolution disagrees with what is stored, the panel shows both and says so; nothing
+reconciles them automatically, because the software is not in a position to know which is right.
+
+**`Kimliği unut`** deletes the identity row and nothing else — the seller, its group, its note
+and its observation history all survive. Guide §29 asks that business and contact metadata be
+kept only while it is needed; this is the operator saying it no longer is.
+
+⚠️ Everything here is **reporting**. `Reprice` and `ObserveBuybox` read `listings`; none of these
+screens writes there, and turning the sweep off changes nothing about repricing. A blocked seller
+is a place for a person to look, never an input to a price.
+
+---
 
 ### 12.3 Brand first in every product name — built (R-UI-14)
 
