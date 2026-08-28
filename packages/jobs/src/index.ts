@@ -83,6 +83,33 @@ export {
   scrapeCompetitors,
   type ScrapeCompetitorsPayload,
 } from './pipeline/scrape-competitors.js';
+export {
+  SWEEP_BRAND_CATALOGUE_JOB,
+  SWEEP_MAX_PAGES_PER_SELECTOR,
+  SweepBrandCataloguePayloadSchema,
+  mergeSelectorResults,
+  sweepBrandCatalogue,
+  sweepSelector,
+  type SweepBrandCataloguePayload,
+} from './pipeline/sweep-brand-catalogue.js';
+export {
+  IDENTITY_LOOKBACK_DAYS,
+  IDENTITY_MAX_CANDIDATES,
+  RESOLVE_SELLER_IDENTITY_JOB,
+  ResolveSellerIdentityPayloadSchema,
+  resolveSellerIdentity,
+  resolveThroughCandidates,
+  type ResolveSellerIdentityPayload,
+} from './pipeline/resolve-seller-identity.js';
+export {
+  BARCODE_BATCH_SIZE,
+  BARCODE_MAX_CONSECUTIVE_FAILURES,
+  RESOLVE_PRODUCT_BARCODES_JOB,
+  ResolveProductBarcodesPayloadSchema,
+  resolveOneBarcode,
+  resolveProductBarcodes,
+  type ResolveProductBarcodesPayload,
+} from './pipeline/resolve-product-barcodes.js';
 export { decodeProductPageRef, encodeListingExtra } from './pipeline/listing-extra.js';
 export { syncMerchantRef, type MerchantRefSyncResult } from './merchant-ref.js';
 export {
@@ -131,6 +158,21 @@ export {
   getCompetitorSource,
   type CompetitorSourceRegistry,
 } from './competitor-source-registry.js';
+export {
+  buildBrandCatalogueSourceRegistry,
+  getBrandCatalogueSource,
+  type BrandCatalogueSourceRegistry,
+} from './brand-catalogue-source-registry.js';
+export {
+  buildSellerIdentitySourceRegistry,
+  getSellerIdentitySource,
+  type SellerIdentitySourceRegistry,
+} from './seller-identity-source-registry.js';
+export {
+  buildProductDetailSourceRegistry,
+  getProductDetailSource,
+  type ProductDetailSourceRegistry,
+} from './product-detail-source-registry.js';
 
 // DB row ↔ core type mappings — shared with apps/web so the settings UI's "preview impact"
 // (doc 06 §9) builds the exact same `FeeSettings`/`RepricingPolicy` the engine actually uses.

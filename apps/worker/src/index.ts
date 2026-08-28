@@ -52,16 +52,26 @@ import {
 import {
   HepsiburadaAdapter,
   HepsiburadaCredentialsSchema,
+  HepsiburadaBrandCatalogueSource,
+  HepsiburadaProductDetailSource,
   HepsiburadaPublicListingsSource,
   TrendyolAdapter,
   TRENDYOL_STAGE_BASE_URL,
+  TrendyolBrandCatalogueSource,
+  TrendyolSellerIdentitySource,
   TrendyolPublicPageSource,
+  type IBrandCatalogueSource,
+  type IProductDetailSource,
+  type ISellerIdentitySource,
   type ICompetitorSource,
   type IMarketplaceAdapter,
 } from '@buybox/adapters';
 import {
   buildAdapterRegistry,
   syncMerchantRef,
+  buildBrandCatalogueSourceRegistry,
+  buildProductDetailSourceRegistry,
+  buildSellerIdentitySourceRegistry,
   buildCompetitorSourceRegistry,
   CONFIRM_SUBMISSIONS_JOB,
   confirmSubmissions,
@@ -83,11 +93,20 @@ import {
   SCRAPE_COMPETITORS_JOB,
   scrapeCompetitors,
   Scheduler,
+  RESOLVE_PRODUCT_BARCODES_JOB,
+  RESOLVE_SELLER_IDENTITY_JOB,
+  resolveProductBarcodes,
+  resolveSellerIdentity,
+  SWEEP_BRAND_CATALOGUE_JOB,
+  sweepBrandCatalogue,
   submitPriceChanges,
   SUBMIT_PRICE_CHANGES_JOB,
   systemClock,
+  type BrandCatalogueSourceRegistry,
   type CompetitorSourceRegistry,
   type MarketplaceAdapterRegistry,
+  type ProductDetailSourceRegistry,
+  type SellerIdentitySourceRegistry,
 } from '@buybox/jobs';
 import {
   createLogger,
@@ -105,6 +124,9 @@ export interface WorkerHandle {
   readonly appDb: AppDatabase;
   readonly adapters: MarketplaceAdapterRegistry;
   readonly competitorSources: CompetitorSourceRegistry;
+  readonly brandCatalogueSources: BrandCatalogueSourceRegistry;
+  readonly sellerIdentitySources: SellerIdentitySourceRegistry;
+  readonly productDetailSources: ProductDetailSourceRegistry;
   /**
    * The database this worker actually opened, resolved to an absolute SQLite path where that
    * applies. Reported so `/api/health` can compare it against the configured `DATABASE_URL`:
@@ -234,6 +256,8 @@ async function buildCompetitorSources(
   appDb: AppDatabase,
   adapters: MarketplaceAdapterRegistry,
   browserUserAgent: string,
+  honestUserAgent: string,
+  hepsiburadaImpersonates: boolean,
 ): Promise<CompetitorSourceRegistry> {
   const entries: [MarketplaceCode, ICompetitorSource][] = [];
   if (adapters.has('trendyol')) {
@@ -251,14 +275,112 @@ async function buildCompetitorSources(
     const rateLimit = await getScrapeRateLimit(appDb, 'hepsiburada');
     entries.push([
       'hepsiburada',
+      // Honest since 2026-08-28 — the one source whose impersonation exception measurement
+      // withdrew. `HEPSIBURADA_IMPERSONATE_BROWSER` puts it back without a release.
       new HepsiburadaPublicListingsSource({
-        userAgent: browserUserAgent,
+        userAgent: hepsiburadaImpersonates ? browserUserAgent : honestUserAgent,
+        impersonateBrowser: hepsiburadaImpersonates,
         requestsPerMinute: rateLimit?.requestsPerMinute,
         burst: rateLimit?.burst,
       }),
     ]);
   }
   return buildCompetitorSourceRegistry(entries);
+}
+
+/**
+ * The brand-catalogue sweep's sources (api-references §1.7) — built alongside the competitor
+ * sources above and on exactly the same terms: reporting only, off until an operator enables
+ * `SweepBrandCatalogue`, and given `SCRAPER_BROWSER_USER_AGENT` under the same recorded
+ * exception.
+ *
+ * Trendyol only for now. Hepsiburada's catalogue side is the plan's last phase and is
+ * deliberately absent rather than stubbed: an absent registry entry is a supported
+ * configuration that simply sweeps no Hepsiburada brand, whereas a stub that returned empty
+ * pages would look like a brand with no products.
+ *
+ * It shares `getScrapeRateLimit`'s operator-set rate with the product-page scraper but gets its
+ * **own limiter instance** — a sweep is bursty (203 pages back to back for Royal Canin) and the
+ * product-page scrape is a steady drip, so one shared bucket would let either starve the other.
+ */
+async function buildBrandCatalogueSources(
+  appDb: AppDatabase,
+  adapters: MarketplaceAdapterRegistry,
+  browserUserAgent: string,
+  honestUserAgent: string,
+): Promise<BrandCatalogueSourceRegistry> {
+  const entries: [MarketplaceCode, IBrandCatalogueSource][] = [];
+  if (adapters.has('trendyol')) {
+    const rateLimit = await getScrapeRateLimit(appDb, 'trendyol');
+    entries.push([
+      'trendyol',
+      new TrendyolBrandCatalogueSource({
+        userAgent: browserUserAgent,
+        requestsPerMinute: rateLimit?.requestsPerMinute,
+        burst: rateLimit?.burst,
+      }),
+    ]);
+  }
+  if (adapters.has('hepsiburada')) {
+    // The **honest** agent, and no browser: `/ara?q=…` answered 200 to a request carrying
+    // nothing but our own user agent (measured 2026-08-28). Trendyol above needs the browser
+    // one because its bot detection fingerprints the TLS handshake; this page does not care,
+    // so no exception is claimed here.
+    const rateLimit = await getScrapeRateLimit(appDb, 'hepsiburada');
+    entries.push([
+      'hepsiburada',
+      new HepsiburadaBrandCatalogueSource({
+        userAgent: honestUserAgent,
+        requestsPerMinute: rateLimit?.requestsPerMinute,
+        burst: rateLimit?.burst,
+      }),
+    ]);
+  }
+  return buildBrandCatalogueSourceRegistry(entries);
+}
+
+/**
+ * The on-demand seller-identity source (doc 06 §12.4 Faz 7).
+ *
+ * Its own registry and its own `TrendyolSellerIdentitySource` instance, because it is the one
+ * source allowed to request a product page **as** a merchant — a request whose ordering is a
+ * preview rather than the buybox. Keeping it out of the competitor registry means no scraping
+ * job can reach it by accident.
+ *
+ * Its rate limit is the class's own conservative default rather than the operator's scrape rate:
+ * the scrape rate is set for a throughput job, and this one runs when a person presses a button.
+ */
+async function buildSellerIdentitySources(
+  adapters: MarketplaceAdapterRegistry,
+  browserUserAgent: string,
+): Promise<SellerIdentitySourceRegistry> {
+  const entries: [MarketplaceCode, ISellerIdentitySource][] = [];
+  if (adapters.has('trendyol')) {
+    entries.push(['trendyol', new TrendyolSellerIdentitySource({ userAgent: browserUserAgent })]);
+  }
+  return buildSellerIdentitySourceRegistry(entries);
+}
+
+/**
+ * The barcode backfill's sources (api-references §2.14, Faz 8).
+ *
+ * Its own registry, because the product page carries a **truncated** seller list that looks
+ * complete — 2 of 6 sellers beside `hasMoreListings: true`. A job holding only this registry
+ * has no type such a list could arrive in.
+ *
+ * Its rate limit is the class's own conservative default rather than the operator's scrape rate:
+ * this is the slow tier, one request per product against 36 products per catalogue page, and it
+ * is meant to be a drip that runs for days without ever competing with the sweep.
+ */
+async function buildProductDetailSources(
+  adapters: MarketplaceAdapterRegistry,
+  honestUserAgent: string,
+): Promise<ProductDetailSourceRegistry> {
+  const entries: [MarketplaceCode, IProductDetailSource][] = [];
+  if (adapters.has('hepsiburada')) {
+    entries.push(['hepsiburada', new HepsiburadaProductDetailSource({ userAgent: honestUserAgent })]);
+  }
+  return buildProductDetailSourceRegistry(entries);
 }
 
 export interface StartWorkerOptions {
@@ -349,7 +471,21 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   let adapters = await buildAdapters(appDb, secretStore);
   // `SCRAPER_BROWSER_USER_AGENT` is the recorded exception for both reporting-only scrapers
   // (api-references §1.6, §2.11) — deployment configuration, not a constant.
-  let competitorSources = await buildCompetitorSources(appDb, adapters, env.SCRAPER_BROWSER_USER_AGENT);
+  let competitorSources = await buildCompetitorSources(
+    appDb,
+    adapters,
+    env.SCRAPER_BROWSER_USER_AGENT,
+    env.SCRAPER_USER_AGENT,
+    env.HEPSIBURADA_IMPERSONATE_BROWSER === '1',
+  );
+  let brandCatalogueSources = await buildBrandCatalogueSources(
+    appDb,
+    adapters,
+    env.SCRAPER_BROWSER_USER_AGENT,
+    env.SCRAPER_USER_AGENT,
+  );
+  let sellerIdentitySources = await buildSellerIdentitySources(adapters, env.SCRAPER_BROWSER_USER_AGENT);
+  let productDetailSources = await buildProductDetailSources(adapters, env.SCRAPER_USER_AGENT);
   let marketplaceConfig = await marketplaceConfigRevision(appDb);
 
   // Resolved once, at boot (doc 07 §8): a stored operator override if present, else
@@ -363,6 +499,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     confirmSubmissionsCadence,
     resetBudgetCadence,
     scrapeCompetitorsCadence,
+    sweepBrandCatalogueCadence,
+    resolveProductBarcodesCadence,
     importStockItemsCadence,
   ] = await Promise.all([
     getJobCadenceMs(appDb, PRUNE_HISTORY_JOB),
@@ -373,6 +511,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     getJobCadenceMs(appDb, CONFIRM_SUBMISSIONS_JOB),
     getJobCadenceMs(appDb, RESET_BUDGET_JOB),
     getJobCadenceMs(appDb, SCRAPE_COMPETITORS_JOB),
+    getJobCadenceMs(appDb, SWEEP_BRAND_CATALOGUE_JOB),
+    getJobCadenceMs(appDb, RESOLVE_PRODUCT_BARCODES_JOB),
     getJobCadenceMs(appDb, IMPORT_STOCK_ITEMS_JOB),
   ]);
   // None of these jobs has a null default cadence, so the `??` fallback only ever guards a
@@ -385,6 +525,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   const confirmSubmissionsCadenceMs = confirmSubmissionsCadence ?? 60_000;
   const resetBudgetCadenceMs = resetBudgetCadence ?? 60_000;
   const scrapeCompetitorsCadenceMs = scrapeCompetitorsCadence ?? 60_000;
+  const sweepBrandCatalogueCadenceMs = sweepBrandCatalogueCadence ?? 24 * 60 * 60_000;
+  const resolveProductBarcodesCadenceMs = resolveProductBarcodesCadence ?? 60 * 60_000;
   const importStockItemsCadenceMs = importStockItemsCadence ?? 60_000;
 
   // Exactly the values the tickers below are built from — assembled here, next to them, so the
@@ -398,6 +540,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     [CONFIRM_SUBMISSIONS_JOB, confirmSubmissionsCadenceMs],
     [RESET_BUDGET_JOB, resetBudgetCadenceMs],
     [SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs],
+    [SWEEP_BRAND_CATALOGUE_JOB, sweepBrandCatalogueCadenceMs],
+    [RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs],
     [IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs],
   ]);
 
@@ -406,6 +550,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     clock: systemClock,
     adapters,
     competitorSources,
+    brandCatalogueSources,
+    sellerIdentitySources,
+    productDetailSources,
     instanceId: `worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
     // A rejected tick must not become an unhandled rejection: in single-process mode that
     // terminates the web server too. Log it and let the next tick try again.
@@ -425,6 +572,11 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   scheduler.register({ jobName: RESET_BUDGET_JOB, handler: resetBudget });
   scheduler.register({ jobName: IMPORT_STOCK_ITEMS_JOB, handler: importStockItems });
   scheduler.register({ jobName: SCRAPE_COMPETITORS_JOB, handler: scrapeCompetitors });
+  scheduler.register({ jobName: SWEEP_BRAND_CATALOGUE_JOB, handler: sweepBrandCatalogue });
+  // On demand only — no cadence, and deliberately not in `JOB_CATALOG`: a resolution names
+  // one firm, so it is enqueued from that seller's own row and nowhere else.
+  scheduler.register({ jobName: RESOLVE_SELLER_IDENTITY_JOB, handler: resolveSellerIdentity });
+  scheduler.register({ jobName: RESOLVE_PRODUCT_BARCODES_JOB, handler: resolveProductBarcodes });
 
   scheduler.startLoop();
 
@@ -504,6 +656,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   everyMarketplace(RESET_BUDGET_JOB, resetBudgetCadenceMs);
   // Off unless the operator enabled it — `isJobEnabled` inside `everyMarketplace` gates this.
   everyMarketplace(SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs);
+  // Likewise off unless enabled, and on the same authority (api-references §1.6/§1.7).
+  everyMarketplace(SWEEP_BRAND_CATALOGUE_JOB, sweepBrandCatalogueCadenceMs);
+  everyMarketplace(RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs);
 
   const fireImportStockItems = async (): Promise<void> => {
     if (!(await isJobEnabled(appDb, IMPORT_STOCK_ITEMS_JOB))) return;
@@ -565,16 +720,46 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       appDb,
       nextAdapters,
       env.SCRAPER_BROWSER_USER_AGENT,
+      env.SCRAPER_USER_AGENT,
+      env.HEPSIBURADA_IMPERSONATE_BROWSER === '1',
     );
+    const nextCatalogueSources = await buildBrandCatalogueSources(
+      appDb,
+      nextAdapters,
+      env.SCRAPER_BROWSER_USER_AGENT,
+      env.SCRAPER_USER_AGENT,
+    );
+    const nextIdentitySources = await buildSellerIdentitySources(
+      nextAdapters,
+      env.SCRAPER_BROWSER_USER_AGENT,
+    );
+    const nextDetailSources = await buildProductDetailSources(nextAdapters, env.SCRAPER_USER_AGENT);
     const outgoingSources = competitorSources;
+    const outgoingCatalogueSources = brandCatalogueSources;
+    const outgoingIdentitySources = sellerIdentitySources;
+    const outgoingDetailSources = productDetailSources;
 
     adapters = nextAdapters;
     competitorSources = nextSources;
+    brandCatalogueSources = nextCatalogueSources;
+    sellerIdentitySources = nextIdentitySources;
+    productDetailSources = nextDetailSources;
     marketplaceCodes = [...nextAdapters.keys()];
-    scheduler.setRegistries(nextAdapters, nextSources);
+    scheduler.setRegistries(
+      nextAdapters,
+      nextSources,
+      nextCatalogueSources,
+      nextIdentitySources,
+      nextDetailSources,
+    );
     marketplaceConfig = revision;
 
-    await Promise.all([...outgoingSources.values()].map((source) => source.close?.()));
+    await Promise.all([
+      ...[...outgoingSources.values()].map((source) => source.close?.()),
+      ...[...outgoingCatalogueSources.values()].map((source) => source.close?.()),
+      ...[...outgoingIdentitySources.values()].map((source) => source.close?.()),
+      ...[...outgoingDetailSources.values()].map((source) => source.close?.()),
+    ]);
     logger.info('worker.marketplacesReloaded', { marketplaces: marketplaceCodes });
   };
   tickers.push(
@@ -598,6 +783,15 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     get competitorSources() {
       return competitorSources;
     },
+    get brandCatalogueSources() {
+      return brandCatalogueSources;
+    },
+    get productDetailSources() {
+      return productDetailSources;
+    },
+    get sellerIdentitySources() {
+      return sellerIdentitySources;
+    },
     databaseTarget: describeDatabaseTarget(env.DATABASE_URL),
     startedAtMs: Date.now(),
     cadenceMsByJobName,
@@ -606,7 +800,14 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       await scheduler.shutdown();
       // Releases TrendyolPublicPageSource's Playwright browser (2026-08-17) and any other
       // source-owned resource; a no-op for sources that hold nothing (competitor-source.ts).
-      await Promise.all([...competitorSources.values()].map((source) => source.close?.()));
+      await Promise.all([
+        ...[...competitorSources.values()].map((source) => source.close?.()),
+        // The sweep source owns its own Playwright browser, separate from the scraper's.
+        ...[...brandCatalogueSources.values()].map((source) => source.close?.()),
+        // And the identity source owns a third, for the same reason: a merchant-scoped page
+        // needs a real browser exactly as the neutral one does.
+        ...[...sellerIdentitySources.values()].map((source) => source.close?.()),
+      ]);
     },
   };
 }

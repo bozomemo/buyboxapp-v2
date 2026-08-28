@@ -5,7 +5,10 @@
 import type { AppDatabase } from '@buybox/db';
 import type { Clock } from './clock.js';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
+import type { BrandCatalogueSourceRegistry } from './brand-catalogue-source-registry.js';
 import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
+import type { ProductDetailSourceRegistry } from './product-detail-source-registry.js';
+import type { SellerIdentitySourceRegistry } from './seller-identity-source-registry.js';
 
 export interface JobContext {
   readonly appDb: AppDatabase;
@@ -16,6 +19,22 @@ export interface JobContext {
    * enabled scraping simply has none, and every other job is unaffected.
    */
   readonly competitorSources?: CompetitorSourceRegistry;
+  /**
+   * Reporting-only brand catalogue sources (api-references §1.7). Optional on the same terms as
+   * `competitorSources`: a deployment watching no brands simply has none.
+   */
+  readonly brandCatalogueSources?: BrandCatalogueSourceRegistry;
+  /**
+   * Reporting-only seller-identity sources (doc 06 §12.4 Faz 7). Optional on the same terms as
+   * the two above. Kept as its own registry so that only the job that means to make a
+   * merchant-scoped request can reach one — see the registry's doc comment.
+   */
+  readonly sellerIdentitySources?: SellerIdentitySourceRegistry;
+  /**
+   * Product-detail sources (Faz 8). Absent is normal: a marketplace with none simply never
+   * learns its products' barcodes, and every report that needs one says so rather than guessing.
+   */
+  readonly productDetailSources?: ProductDetailSourceRegistry;
   /** Threaded through every log line for this run (doc 07 §1: "carries a correlation id"). */
   readonly correlationId: string;
   /** Raw JSON payload from the `job_queue` row, parsed by the handler itself. */

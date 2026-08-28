@@ -15,6 +15,8 @@ import { PRUNE_HISTORY_JOB } from './pipeline/prune-history-job.js';
 import { REPRICE_JOB } from './pipeline/reprice.js';
 import { RESET_BUDGET_JOB } from './pipeline/reset-budget.js';
 import { SCRAPE_COMPETITORS_JOB } from './pipeline/scrape-competitors.js';
+import { SWEEP_BRAND_CATALOGUE_JOB } from './pipeline/sweep-brand-catalogue.js';
+import { RESOLVE_PRODUCT_BARCODES_JOB } from './pipeline/resolve-product-barcodes.js';
 import { SUBMIT_PRICE_CHANGES_JOB } from './pipeline/submit-price-changes.js';
 import { SCRAPE_CYCLE_MS } from './scrape-config.js';
 
@@ -121,6 +123,33 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     defaultPayload: {},
     // Off until an operator turns it on: scraping needs an explicit business decision
     // (api-references §1.6, doc 04 §1.5), and nothing depends on it (doc 12 Phase 7 DoD).
+    defaultEnabled: false,
+  },
+  {
+    jobName: SWEEP_BRAND_CATALOGUE_JOB,
+    label: 'Marka Kataloğu Taraması (raporlama)',
+    // Daily. The sweep is the cheap tier — 37 pages for Whiskas, 203 for Royal Canin, about a
+    // minute and five and a half respectively — so a full pass per day costs little; it is the
+    // per-product seller scrape that is expensive and paced separately (api-references §1.7).
+    cadenceMs: 24 * 60 * 60_000,
+    perMarketplace: true,
+    defaultPayload: {},
+    // Off by default for exactly the same reason as `ScrapeCompetitors` above, and on the same
+    // authority: this reads the same public pages under the same business decision.
+    defaultEnabled: false,
+  },
+  {
+    jobName: RESOLVE_PRODUCT_BARCODES_JOB,
+    label: 'Barkod Tamamlama (raporlama)',
+    // Hourly, and a batch at a time. This is the slow tier: one request per product against 36
+    // products per catalogue page, so a brand's barcodes fill in over days rather than in a
+    // pass. A short cadence with a small batch keeps it a steady drip instead of a nightly
+    // burst — and every run resumes exactly where the last stopped (api-references §2.14).
+    cadenceMs: 60 * 60_000,
+    perMarketplace: true,
+    defaultPayload: {},
+    // Off by default on the same authority as the two above: it reads the same public pages
+    // under the same business decision, and no report breaks while it is off.
     defaultEnabled: false,
   },
 ];

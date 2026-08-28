@@ -7,7 +7,10 @@ import { eventsRepo, jobsRepo, newId } from '@buybox/db';
 import type { AppDatabase } from '@buybox/db';
 import { computeBackoffMs } from '@buybox/adapters';
 import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
+import type { BrandCatalogueSourceRegistry } from './brand-catalogue-source-registry.js';
 import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
+import type { ProductDetailSourceRegistry } from './product-detail-source-registry.js';
+import type { SellerIdentitySourceRegistry } from './seller-identity-source-registry.js';
 import type { Clock } from './clock.js';
 import { isJobEnabled } from './job-catalog.js';
 import {
@@ -39,6 +42,9 @@ export class JobRunner {
     private readonly definitions: ReadonlyMap<string, JobDefinition>,
     /** Reporting-only (doc 07 §7); absent when scraping is not configured. */
     private competitorSources?: CompetitorSourceRegistry,
+    private brandCatalogueSources?: BrandCatalogueSourceRegistry,
+    private sellerIdentitySources?: SellerIdentitySourceRegistry,
+    private productDetailSources?: ProductDetailSourceRegistry,
   ) {}
 
   /**
@@ -55,9 +61,18 @@ export class JobRunner {
    * `Scheduler.isIdle`): a handler holds whatever registry it was given for the duration of its
    * run, and the outgoing competitor sources own a Playwright browser that is closed on replace.
    */
-  setRegistries(adapters: MarketplaceAdapterRegistry, competitorSources?: CompetitorSourceRegistry): void {
+  setRegistries(
+    adapters: MarketplaceAdapterRegistry,
+    competitorSources?: CompetitorSourceRegistry,
+    brandCatalogueSources?: BrandCatalogueSourceRegistry,
+    sellerIdentitySources?: SellerIdentitySourceRegistry,
+    productDetailSources?: ProductDetailSourceRegistry,
+  ): void {
     this.adapters = adapters;
     this.competitorSources = competitorSources;
+    this.brandCatalogueSources = brandCatalogueSources;
+    this.sellerIdentitySources = sellerIdentitySources;
+    this.productDetailSources = productDetailSources;
   }
 
   /** Runs the handler for an already-claimed row and settles its terminal `job_queue` state. */
@@ -123,6 +138,9 @@ export class JobRunner {
         clock: this.clock,
         adapters: this.adapters,
         competitorSources: this.competitorSources,
+        brandCatalogueSources: this.brandCatalogueSources,
+        sellerIdentitySources: this.sellerIdentitySources,
+        productDetailSources: this.productDetailSources,
         correlationId,
         payload: claimed.payload,
         reportProgress: progress.report,

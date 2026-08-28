@@ -16,7 +16,10 @@ import { isJobEnabled } from './job-catalog.js';
 import { isLicensed } from './license-gate.js';
 import { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, type JobDefinition } from './job.js';
 import { JobRunner } from './runner.js';
+import type { BrandCatalogueSourceRegistry } from './brand-catalogue-source-registry.js';
 import type { CompetitorSourceRegistry } from './competitor-source-registry.js';
+import type { ProductDetailSourceRegistry } from './product-detail-source-registry.js';
+import type { SellerIdentitySourceRegistry } from './seller-identity-source-registry.js';
 
 export interface SchedulerOptions {
   readonly appDb: AppDatabase;
@@ -24,6 +27,12 @@ export interface SchedulerOptions {
   readonly adapters: MarketplaceAdapterRegistry;
   /** Reporting-only competitor sources (doc 07 §7). Omit to run with scraping unconfigured. */
   readonly competitorSources?: CompetitorSourceRegistry;
+  /** Reporting-only brand catalogue sources (api-references §1.7). Omit to run with no brand sweep configured. */
+  readonly brandCatalogueSources?: BrandCatalogueSourceRegistry;
+  /** Reporting-only seller-identity sources (doc 06 §12.4 Faz 7). Omit to run with none configured. */
+  readonly sellerIdentitySources?: SellerIdentitySourceRegistry;
+  /** Product-detail sources for the barcode backfill (Faz 8). */
+  readonly productDetailSources?: ProductDetailSourceRegistry;
   readonly instanceId: string;
   readonly lockTtlMs?: number;
   /** How many ready jobs this instance claims and runs per `tick()`. */
@@ -104,6 +113,9 @@ export class Scheduler {
       options.adapters,
       this.definitions,
       options.competitorSources,
+      options.brandCatalogueSources,
+      options.sellerIdentitySources,
+      options.productDetailSources,
     );
   }
 
@@ -131,8 +143,17 @@ export class Scheduler {
   setRegistries(
     adapters: MarketplaceAdapterRegistry,
     competitorSources?: CompetitorSourceRegistry,
+    brandCatalogueSources?: BrandCatalogueSourceRegistry,
+    sellerIdentitySources?: SellerIdentitySourceRegistry,
+    productDetailSources?: ProductDetailSourceRegistry,
   ): void {
-    this.runner.setRegistries(adapters, competitorSources);
+    this.runner.setRegistries(
+      adapters,
+      competitorSources,
+      brandCatalogueSources,
+      sellerIdentitySources,
+      productDetailSources,
+    );
   }
 
   /** For an on-demand run (e.g. a UI "run now" button) — enqueues regardless of cadence. */
