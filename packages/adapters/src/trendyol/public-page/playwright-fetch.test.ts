@@ -7,7 +7,11 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createPlaywrightFetcher, type PlaywrightFetcher } from './playwright-fetch.js';
+import {
+  createPlaywrightFetcher,
+  type PlaywrightFetcher,
+  type PlaywrightSession,
+} from './playwright-fetch.js';
 
 describe('createPlaywrightFetcher', () => {
   let server: http.Server;
@@ -107,4 +111,107 @@ describe('createPlaywrightFetcher', () => {
       await new Promise<void>((resolve) => hung.close(() => resolve()));
     }
   }, 8000);
+  /**
+   * The 2026-08-28 production failure: Chromium disappeared mid-run after ~1,400 navigations and
+   * the cached session kept every later fetch failing with `Target page, context or browser has
+   * been closed` until the worker was restarted — 2,700 tracked products in a row.
+   *
+   * Driven through an injected launcher rather than by killing a real browser: the point under
+   * test is the session bookkeeping, and a test that has to make Chromium crash on cue would be
+   * slow and flaky for no extra coverage.
+   */
+  describe('a browser that dies after a successful launch', () => {
+    function stubSession(
+      state: { connected: boolean; closed: boolean },
+      goto: () => unknown,
+    ): PlaywrightSession {
+      return {
+        browser: {
+          isConnected: () => state.connected,
+          close: async () => {
+            state.connected = false;
+          },
+        },
+        page: {
+          isClosed: () => state.closed,
+          goto: async () => goto(),
+          content: async () => '<html><body>relaunched</body></html>',
+        },
+      } as unknown as PlaywrightSession;
+    }
+
+    it('is replaced on the next fetch instead of poisoning the rest of the run', async () => {
+      const states: { connected: boolean; closed: boolean }[] = [];
+      let launches = 0;
+      const solo = createPlaywrightFetcher(async () => {
+        launches += 1;
+        const state = { connected: true, closed: false };
+        states.push(state);
+        return stubSession(state, () => ({ status: () => 200, url: () => 'http://x/' }));
+      });
+
+      await solo.fetch('http://x/', { headers: {} });
+      expect(launches).toBe(1);
+
+      // Chromium goes away underneath us.
+      states[0]!.connected = false;
+
+      const res = await solo.fetch('http://x/', { headers: {} });
+      expect(launches).toBe(2);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain('relaunched');
+
+      await solo.close();
+    });
+
+    it('replaces a session whose page was closed even while the browser is still connected', async () => {
+      let launches = 0;
+      const states: { connected: boolean; closed: boolean }[] = [];
+      const solo = createPlaywrightFetcher(async () => {
+        launches += 1;
+        const state = { connected: true, closed: false };
+        states.push(state);
+        return stubSession(state, () => ({ status: () => 200, url: () => 'http://x/' }));
+      });
+
+      await solo.fetch('http://x/', { headers: {} });
+      states[0]!.closed = true;
+      await solo.fetch('http://x/', { headers: {} });
+
+      expect(launches).toBe(2);
+      await solo.close();
+    });
+
+    it('still caches a launch *failure* — a browser that never worked is not retried per call', async () => {
+      let launches = 0;
+      const solo = createPlaywrightFetcher(async () => {
+        launches += 1;
+        throw new Error('missing shared libraries');
+      });
+
+      await expect(solo.fetch('http://x/', { headers: {} })).rejects.toThrow('missing shared libraries');
+      await expect(solo.fetch('http://x/', { headers: {} })).rejects.toThrow('missing shared libraries');
+      expect(launches).toBe(1);
+
+      // And shutdown does not rethrow it.
+      await expect(solo.close()).resolves.toBeUndefined();
+    });
+
+    it('does not relaunch after close() — a straggler fetch fails rather than leaking a browser', async () => {
+      let launches = 0;
+      const solo = createPlaywrightFetcher(async () => {
+        launches += 1;
+        return stubSession({ connected: true, closed: false }, () => ({
+          status: () => 200,
+          url: () => 'http://x/',
+        }));
+      });
+
+      await solo.fetch('http://x/', { headers: {} });
+      await solo.close();
+
+      await expect(solo.fetch('http://x/', { headers: {} })).rejects.toThrow('has been closed');
+      expect(launches).toBe(1);
+    });
+  });
 });
