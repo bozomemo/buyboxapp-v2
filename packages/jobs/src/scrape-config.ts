@@ -69,3 +69,37 @@ export const ALERT_STALE_AFTER_MS = 24 * 60 * 60_000;
  * the day after the first would go unrecorded.
  */
 export const ALERT_DEFAULT_QUIET_PERIOD_MS = 6 * 60 * 60_000;
+
+/**
+ * Ceiling on **tracked products** read per `ScrapeCompetitors` run, and the reason the tracked
+ * half rotates the same way the listings half does.
+ *
+ * The tracked set was operator-curated and a few dozen rows when this job was written, so it
+ * simply read all of them every cycle. `SweepBrandCatalogue` turned it into a catalogue — 4,679
+ * active Trendyol rows on the live install, 2026-08-28 — and at the configured 30 requests per
+ * minute that is over two hours of fetching inside an hourly job. Measured that day: the run
+ * never reached its own end, the next cycle was suppressed by `countActiveJobs`, and an earlier
+ * one had already died at `worker stopped responding (visibility timeout expired)` after 19
+ * hours. Competitor collection had stopped while every screen reported a job in progress.
+ *
+ * 300 per run against a 4,679-row catalogue is a full pass a little under every sixteen hours,
+ * which is well inside the freshness the tracked-product reports are read at. As with
+ * `SCRAPE_MAX_LISTINGS_PER_RUN`, the ceiling is only a rotation because the candidates are
+ * ordered by last look — never-looked first, then oldest first. Unordered it would read the
+ * same 300 rows forever and never touch the rest.
+ */
+export const SCRAPE_MAX_TRACKED_PER_RUN = 300;
+
+/**
+ * How many tracked products may fail **in a row** before the tracked half gives up on the run.
+ *
+ * Individual failures are ordinary and silent (doc 07 §7), but a long unbroken run of them is a
+ * different fact: the source is gone, not the page. The case this was written for is a headless
+ * browser that died mid-run — every later fetch failed instantly with `Target page, context or
+ * browser has been closed` while still spending a rate-limit token and writing a failure row,
+ * for the whole remainder of the catalogue (2,700 products on 2026-08-28).
+ *
+ * Stopping costs nothing: the products not reached keep their old `last_scraped_at` and are
+ * therefore first in the next run's ordering, which is exactly where they belong.
+ */
+export const SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT = 25;

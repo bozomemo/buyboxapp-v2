@@ -28,6 +28,7 @@ import { buildCompetitorSourceRegistry } from '../competitor-source-registry.js'
 import { FakeClock } from '../clock.js';
 import type { JobProgress, JobResult } from '../job.js';
 import { Scheduler } from '../scheduler.js';
+import { SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT } from '../scrape-config.js';
 import {
   createFakeAdapter,
   createSqliteTestDb,
@@ -500,10 +501,14 @@ describe('tracked products (doc 06 §12.2) — customer feedback 2026-08-25', ()
 
   afterEach(() => db.cleanup());
 
-  async function run(source: ICompetitorSource): Promise<JobResult> {
+  async function run(
+    source: ICompetitorSource,
+    nowMs: number = NOW,
+    payload: Record<string, unknown> = {},
+  ): Promise<JobResult> {
     const scheduler = new Scheduler({
       appDb: db.appDb,
-      clock: new FakeClock(NOW),
+      clock: new FakeClock(nowMs),
       adapters: buildAdapterRegistry([['trendyol', createFakeAdapter()]]),
       competitorSources: buildCompetitorSourceRegistry([['trendyol', source]]),
       instanceId: `tracked-${runCounter++}`,
@@ -518,12 +523,88 @@ describe('tracked products (doc 06 §12.2) — customer feedback 2026-08-25', ()
     });
     await scheduler.enqueueNow(
       SCRAPE_COMPETITORS_JOB,
-      JSON.stringify({ marketplaceCode: 'trendyol' }),
+      JSON.stringify({ marketplaceCode: 'trendyol', ...payload }),
     );
     await scheduler.tick();
     await scheduler.shutdown();
     return result;
   }
+
+  /**
+   * The 2026-08-28 production failure. The tracked half read *every* active row every cycle,
+   * which was fine at a few dozen and is not at the 4,679 a brand sweep produced: at 30 requests
+   * per minute one run needed over two hours inside an hourly job, so it never finished, the
+   * next cycle was suppressed by `countActiveJobs`, and competitor collection stopped while the
+   * Jobs screen showed a run in progress.
+   */
+  describe('rotation and the per-run ceiling', () => {
+    async function seedMany(ids: readonly string[]): Promise<void> {
+      for (const id of ids) {
+        await trackedProductsRepo.addTrackedProduct(db.appDb, {
+          id,
+          marketplaceCode: 'trendyol',
+          productRef: id,
+          productUrl: `https://www.trendyol.com/x-p-${id}`,
+          label: id,
+          isActive: true,
+          addedAt: NOW,
+        });
+      }
+    }
+
+    it('reads at most `maxTracked` products per run and reports that as the total', async () => {
+      await seedMany(['t-a', 't-b', 't-c']);
+      const { source, calls } = fakeSource(() => [offer()]);
+
+      const result = await run(source, NOW, { maxTracked: 2 });
+
+      expect(calls).toHaveLength(2);
+      // Not 3: a run that read 2 of 4,679 rows must not report the catalogue as 2 rows long,
+      // and must not report it as 3 either.
+      expect(result.itemsTotal).toBe(2);
+    });
+
+    it("rotates — the products the ceiling cut off are the next run's first", async () => {
+      await seedMany(['t-a', 't-b', 't-c']);
+      const { source, calls } = fakeSource(() => [offer()]);
+
+      await run(source, NOW, { maxTracked: 2 });
+      calls.length = 0;
+      await run(source, NOW + 60 * 60_000, { maxTracked: 2 });
+
+      // Never-looked first: without the ordering the ceiling is a permanent cut-off and `t-c`
+      // is never scraped at all, while the run still reports `completed`.
+      expect(calls[0]?.contentId).toBe('t-c');
+    });
+
+    it('stops after a run of consecutive failures rather than spending the rest of the catalogue on a dead source', async () => {
+      const ids = Array.from({ length: 40 }, (_, i) => `t-f-${String(i).padStart(2, '0')}`);
+      await seedMany(ids);
+      // What a died-mid-run headless browser does to every later fetch.
+      const { source, calls } = fakeSource(
+        () => new CompetitorSourceError('Target page, context or browser has been closed', 'fetchFailed'),
+      );
+
+      const result = await run(source, NOW, { maxTracked: 40 });
+
+      expect(calls).toHaveLength(SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT);
+      expect(result.itemsFailed).toBe(SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT);
+      const events = await eventsRepo.listRecentEvents(db.appDb, 50);
+      expect(events.some((e) => e.code === 'TrackedProductsScrapeHalted')).toBe(true);
+    });
+
+    it('does not stop on failures that are broken up by successes', async () => {
+      const ids = Array.from({ length: 40 }, (_, i) => `t-m-${String(i).padStart(2, '0')}`);
+      await seedMany(ids);
+      const { source, calls } = fakeSource((_ref, index) =>
+        index % 2 === 0 ? new CompetitorSourceError('boom', 'fetchFailed') : [offer()],
+      );
+
+      await run(source, NOW, { maxTracked: 40 });
+
+      expect(calls).toHaveLength(40);
+    });
+  });
 
   it('scrapes an active tracked product even with zero listing candidates, and never touches listings/repricing_state', async () => {
     await trackedProductsRepo.addTrackedProduct(db.appDb, {
@@ -588,6 +669,120 @@ describe('tracked products (doc 06 §12.2) — customer feedback 2026-08-25', ()
 
     expect(calls).toHaveLength(0);
     expect(await trackedProductsRepo.latestTrackedProductObservations(db.appDb, 'tracked-3')).toHaveLength(0);
+  });
+
+  /**
+   * Change detection (Faz 4). The tracked-product half used to store every look, which was fine
+   * for a few dozen operator-added products and is not for a brand catalogue of thousands.
+   */
+  describe('change detection', () => {
+    async function seedTracked(id: string): Promise<void> {
+      await trackedProductsRepo.addTrackedProduct(db.appDb, {
+        id,
+        marketplaceCode: 'trendyol',
+        productRef: '757251065',
+        productUrl: 'https://www.trendyol.com/x-p-757251065',
+        label: 'Rakip Ürün X',
+        isActive: true,
+        addedAt: NOW,
+      });
+    }
+
+    const HOUR = 60 * 60 * 1000;
+
+    it('stores nothing on a second look with an unchanged offer set, but records the look', async () => {
+      await seedTracked('tracked-cd-1');
+      const { source } = fakeSource(() => [offer({ rank: 1, price: Money.fromKurus(99_00n) })]);
+
+      await run(source);
+      await run(source, NOW + HOUR);
+
+      const all = await trackedProductsRepo.trackedProductObservationsSince(db.appDb, 'tracked-cd-1', 0);
+      expect(all).toHaveLength(1);
+      expect(all[0]?.observedAt).toBe(NOW);
+      // The look itself is still recorded. Without this the screen would read a product whose
+      // price has not moved in a week as one nobody has checked in a week.
+      expect((await trackedProductsRepo.getTrackedProduct(db.appDb, 'tracked-cd-1'))?.lastScrapedAt).toBe(
+        NOW + HOUR,
+      );
+    });
+
+    it('stores the look when a price moves', async () => {
+      await seedTracked('tracked-cd-2');
+      const { source } = fakeSource((_ref, index) => [
+        offer({ rank: 1, price: Money.fromKurus(index === 0 ? 99_00n : 89_00n) }),
+      ]);
+
+      await run(source);
+      await run(source, NOW + HOUR);
+
+      const all = await trackedProductsRepo.trackedProductObservationsSince(db.appDb, 'tracked-cd-2', 0);
+      expect(all.map((o) => o.price)).toEqual([99_00n, 89_00n]);
+    });
+
+    it('a failed look never clears the hash, so the recovery look is not stored as a change', async () => {
+      // The bug this guards: if a fetch failure reset the stored hash, every transient network
+      // error would make the next successful look look like a price event and write a duplicate
+      // offer set — a fake movement in the archive an audit would then report as real.
+      await seedTracked('tracked-cd-3');
+      const { source } = fakeSource((_ref, index) =>
+        index === 1
+          ? new CompetitorSourceError('boom', 'fetchFailed')
+          : [offer({ rank: 1, price: Money.fromKurus(99_00n) })],
+      );
+
+      await run(source);
+      await run(source, NOW + HOUR);
+      await run(source, NOW + 2 * HOUR);
+
+      const all = await trackedProductsRepo.trackedProductObservationsSince(db.appDb, 'tracked-cd-3', 0);
+      expect(all.map((o) => o.status)).toEqual(['ok', 'fetchFailed']);
+      expect(all.map((o) => o.observedAt)).toEqual([NOW, NOW + HOUR]);
+    });
+
+    it('never moves the recorded look backwards when a scrape lands out of order', async () => {
+      await seedTracked('tracked-cd-4');
+      const { source } = fakeSource(() => [offer({ rank: 1, price: Money.fromKurus(99_00n) })]);
+
+      await run(source, NOW + HOUR);
+      await run(source, NOW);
+
+      expect((await trackedProductsRepo.getTrackedProduct(db.appDb, 'tracked-cd-4'))?.lastScrapedAt).toBe(
+        NOW + HOUR,
+      );
+    });
+
+    it('registers identified sellers, and skips the ones the page did not identify', async () => {
+      // One seller record per company, whether we met them competing on a listing we sell or
+      // selling a brand we own — what lets an operator's group and note (doc 05 §5) mean the
+      // same thing on the brand screens as on the competitor ones.
+      await seedTracked('tracked-cd-5');
+      const { source } = fakeSource(() => [
+        offer({ rank: 1, sellerRef: 'm-1', sellerName: 'Yetkili Bayi' }),
+        offer({ rank: 2, sellerRef: null, sellerName: 'İsimsiz' }),
+      ]);
+
+      await run(source);
+
+      const sellers = await competitorSellersRepo.listCompetitorSellers(db.appDb, {});
+      expect(sellers.map((sel) => sel.sellerRef)).toEqual(['m-1']);
+      expect(sellers[0]?.sellerName).toBe('Yetkili Bayi');
+      expect(sellers[0]?.lastSeenAt).toBe(NOW);
+    });
+
+    it('keeps a seller current on an unchanged look', async () => {
+      // A seller holding the same price all month is still there, and `last_seen_at` is the
+      // field that says so — so registration follows the look, not the storing of it.
+      await seedTracked('tracked-cd-6');
+      const { source } = fakeSource(() => [offer({ rank: 1, sellerRef: 'm-1', sellerName: 'Bayi' })]);
+
+      await run(source);
+      await run(source, NOW + HOUR);
+
+      const sellers = await competitorSellersRepo.listCompetitorSellers(db.appDb, {});
+      expect(sellers[0]?.firstSeenAt).toBe(NOW);
+      expect(sellers[0]?.lastSeenAt).toBe(NOW + HOUR);
+    });
   });
 });
 

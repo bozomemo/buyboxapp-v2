@@ -25,7 +25,9 @@
  *
  * Also runs the tracked-products half (doc 06 §12.2) at the end of each per-marketplace call —
  * see `scrape-tracked-products.ts` for why that is a separate function over a separate table
- * rather than folded into the loop above.
+ * rather than folded into the loop above. That half is bounded and rotated by its own ceiling
+ * (`SCRAPE_MAX_TRACKED_PER_RUN`) for the same reason this one is, and shares this run's progress
+ * counter so the Jobs screen keeps moving while it works.
  */
 import { createHash } from 'node:crypto';
 import { CompetitorSourceError, type CompetitorOffer, type CompetitorPageSnapshot } from '@buybox/adapters';
@@ -49,6 +51,7 @@ import {
   SCRAPE_FAILURE_RATE_ALERT_THRESHOLD,
   SCRAPE_FAILURE_RATE_MIN_SAMPLE,
   SCRAPE_MAX_LISTINGS_PER_RUN,
+  SCRAPE_MAX_TRACKED_PER_RUN,
   SCRAPE_WARM_EVERY_N_CYCLES,
 } from '../scrape-config.js';
 import { evaluateAlertsForListing, toListingContext } from './evaluate-alerts.js';
@@ -65,6 +68,8 @@ export const ScrapeCompetitorsPayloadSchema = z.object({
   warmEveryNCycles: z.number().int().min(1).default(SCRAPE_WARM_EVERY_N_CYCLES),
   coldEveryNCycles: z.number().int().min(1).default(SCRAPE_COLD_EVERY_N_CYCLES),
   maxListings: z.number().int().min(1).default(SCRAPE_MAX_LISTINGS_PER_RUN),
+  /** The tracked-products half's own ceiling — a separate table with its own size. */
+  maxTracked: z.number().int().min(1).default(SCRAPE_MAX_TRACKED_PER_RUN),
 });
 
 export type ScrapeCompetitorsPayload = z.infer<typeof ScrapeCompetitorsPayloadSchema>;
@@ -489,10 +494,23 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
   // posture (see the module header) applied one level up.
   let trackedOk = 0;
   let trackedFailed = 0;
+  let trackedChanged = 0;
+  let trackedTotal = 0;
   try {
-    const trackedResult = await scrapeTrackedProducts(ctx, marketplaceCode, source);
+    // `processed` — not `due.length` — is the offset: it is what was actually reported, so the
+    // shared counter continues from the last listing rather than jumping over the ones the
+    // rotation skipped.
+    const trackedResult = await scrapeTrackedProducts(
+      ctx,
+      marketplaceCode,
+      source,
+      processed,
+      payload.maxTracked,
+    );
     trackedOk = trackedResult.itemsOk;
     trackedFailed = trackedResult.itemsFailed;
+    trackedChanged = trackedResult.itemsChanged;
+    trackedTotal = trackedResult.itemsTotal;
   } catch (error) {
     await eventsRepo.logEvent(ctx.appDb, {
       id: newId(),
@@ -507,9 +525,29 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
     });
   }
 
+  // Outside the `try`, on purpose: this is a summary of work that is already durable, and a
+  // logging failure must not be caught by the handler above and reported as an aborted scrape.
+  //
+  // Debug level, and only the ratio — it is how an operator sees whether change detection is
+  // earning its keep. A run that stores every look it takes means the hash is matching nothing,
+  // which is a bug in the offer set we hash rather than a very busy market.
+  if (trackedOk > 0) {
+    await eventsRepo.logEvent(ctx.appDb, {
+      id: newId(),
+      at: nowMs,
+      level: 'debug',
+      marketplaceCode,
+      listingId: null,
+      jobRunId: ctx.correlationId,
+      code: 'TrackedProductsScrapeSummary',
+      message: `${trackedOk} tracked product(s) read, ${trackedChanged} with a changed offer set`,
+      context: JSON.stringify({ itemsOk: trackedOk, itemsChanged: trackedChanged }),
+    });
+  }
+
   // Deliberately no `error`: individual page failures never fail the run (see the header).
   return {
-    itemsTotal: due.length + trackedOk + trackedFailed,
+    itemsTotal: due.length + trackedTotal,
     itemsOk: itemsOk + trackedOk,
     itemsFailed: itemsFailed + trackedFailed,
   };

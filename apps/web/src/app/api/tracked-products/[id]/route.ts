@@ -43,6 +43,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       label: product.label,
       isActive: product.isActive,
       addedAt: product.addedAt,
+      /**
+       * When the scrape last looked. Since Faz 4 a look is only stored when the offer set moved,
+       * so `latestLook` below is the last look that *changed* — on a product whose price has
+       * held for a week the two are a week apart, and reading the observation as the look would
+       * report a perfectly healthy product as unchecked.
+       */
+      lastScrapedAt: product.lastScrapedAt ?? null,
     },
     window: { sinceMs, untilMs: nowMs },
     latestLook: latestLook

@@ -331,6 +331,34 @@ Measured from the last **successful** scrape for the same reason change detectio
 failed run tells us nothing about the listing, and counting it as a look would let a listing
 that fails every time drift out of the rotation permanently.
 
+**G-3 — the tracked-product half had neither ceiling nor rotation, so a run could not finish
+inside its own cycle.** ✅ Fixed 2026-08-28. G-2 above bounded the *listings* half; the
+tracked-product half (§7, doc 06 §12.2) read every active row every cycle. That was written when
+the tracked set was operator-curated and a few dozen products. `SweepBrandCatalogue` turned it
+into a catalogue — **4,679 active Trendyol rows on the live install** — and at the configured 30
+requests per minute one run needs over two hours inside an **hourly** job. Observed that day: the
+run never reached its own end, the next cycle was suppressed by `countActiveJobs` (§8: one run at
+a time), and an earlier run had already died at `worker stopped responding (visibility timeout
+expired)` after 19 hours. Competitor collection had stopped while every screen reported a run in
+progress — the failure mode this specification cares most about, a silent one.
+
+It was invisible for a second reason: the tracked half reported no progress at all, so
+`job_runs.items_done` stayed frozen on the last *listing* for the hours it ran.
+
+*Fixed* by giving the tracked half the same three properties the listings half already had —
+`SCRAPE_MAX_TRACKED_PER_RUN` (300) as a ceiling, ordering on `tracked_products.last_scraped_at`
+(never-looked first, then oldest first) so the ceiling rotates, and `ctx.reportProgress` sharing
+one counter across both halves of the run. A fourth was added that the listings half does not
+need: after `SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT` (25) failures **in a row** the tracked half
+stops and logs `TrackedProductsScrapeHalted` at `warn`. The case is a headless browser that dies
+mid-run — every later fetch then fails instantly while still spending a rate-limit token and
+writing a failure row, which on 2026-08-28 was 2,700 products in a row. Stopping costs nothing:
+the products not reached keep their old `last_scraped_at` and are first in the next run.
+
+The browser side of that same failure was fixed with it: the Playwright fetcher now replaces a
+session whose browser has died rather than caching it for the process's lifetime. A launch that
+*never* worked is still cached and not retried per call — the two are different facts.
+
 ---
 
 ## 5. Budget management
