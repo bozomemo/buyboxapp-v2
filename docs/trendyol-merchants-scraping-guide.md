@@ -1509,6 +1509,17 @@ Operating constraints (rate limit, cache, tiering, user agent, off-by-default) a
   removes `merchantId` before requesting; `filterOverPriceListings` and any other query param
   are left as-is. Covered by a test in `public-page.test.ts`.
 
+- **§29's merchant metadata is read by a second, separate path — never by the scraper**
+  (added 2026-08-28). `public-page/normalize.ts` still asserts, by test, that `taxNumber`,
+  `registeredEmailAddress` and `officialName` never reach the offer schema: collecting a firm's
+  registration as a side effect of every price scrape is exactly what §29 warns against.
+  `seller-identity/normalize.ts` reads them deliberately, one seller at a time, from a page
+  requested as that merchant (`?merchantId=X`, api-references §1.6a). That module reads
+  `winnerVariant` for a barcode and a stock count and never for winner-ness, does not look at
+  `otherMerchants` at all, and refuses outright when `merchant.id` is not the id that was asked
+  for — a page about a different firm parses perfectly and is the one result that must never be
+  stored.
+
 ## 37.4 What would tell us the payload changed
 
 Every run records the §33 diagnostics. The signals worth alerting on are a fall in

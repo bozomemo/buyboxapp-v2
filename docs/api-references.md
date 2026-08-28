@@ -399,6 +399,150 @@ without notice. `packages/adapters` records `parserVersion` and per-field diagno
 scrape so a change surfaces as a metric, not as quietly empty reports. Re-verify this section
 whenever the parser's diagnostics show a drop in `winnerVariantFound` or `merchantCount`.
 
+## 1.6a Merchant-scoped product page — seller identity (reporting only, on demand) ⚠️ *(added 2026-08-28)*
+
+The **same page as §1.6, requested the opposite way**, and the only place in this system allowed
+to do so.
+
+### Request
+
+```
+GET https://www.trendyol.com/marka/urun-p-{contentId}?merchantId={sellerRef}
+Accept: text/html
+User-Agent: <browser-identifying; the §1.6 exception applies unchanged>
+```
+
+§1.6 **strips** `merchantId` because a merchant-scoped page reports that merchant as the winner
+on every row regardless of the real buybox order (measured 2026-08-17 against the official
+buybox endpoint, §1.4, which reported rank 8 for a product the scoped page reported us 1st on).
+This section **adds** it, because that is what makes the page carry the merchant's own business
+registration in `merchantListing.merchant` — `officialName`, `taxNumber`, `taxOffice`,
+`registeredEmailAddress`, `address`, `cityName`, `countryName` (guide §29).
+
+Those are the same finding used twice, not a contradiction: **a merchant-scoped response is
+authoritative about who that merchant is and worthless about where they rank.** Both halves are
+enforced structurally rather than by convention — `ISellerIdentitySource` has no rank, price or
+winner field to put an ordering into, and nothing on this path writes an observation row.
+
+### Operating constraints
+
+| Constraint | Where it lives |
+|---|---|
+| Its own rate limit, far below the scrape's | `TrendyolSellerIdentitySource` (6 req/min, burst 2) — this runs when a person presses a button, not as throughput |
+| One resolution at a time | same — an internal promise chain, *not* the token bucket: a burst of two would allow two simultaneous browser page loads |
+| No response cache | same — the stored `competitor_seller_identities` row is the cache, and it carries a visible date; a person pressing "resolve" again wants a fresh answer |
+| At most four candidate products per resolution | `ResolveSellerIdentity` (`IDENTITY_MAX_CANDIDATES`) — walking the catalogue would turn one button press into a crawl |
+| Identity mismatch is a hard failure | `SellerIdentityError` kind `identityMismatch`; nothing is stored |
+| Same browser transport and 403 retry as §1.6 | shares `playwright-fetch.ts` |
+
+⚠️ **`identityMismatch` is the failure that matters.** If Trendyol ignores the `merchantId` — the
+seller has left that product, or the parameter stops working — the page still returns, still
+parses, and still carries *somebody's* tax number. Storing it would attribute one company's
+registration to another company's storefront, in a record an operator may act on legally. The
+resolver compares `merchant.id` against the ref it asked for and refuses on any difference.
+
+⚠️ **Retention.** Guide §29 asks that business/contact metadata be collected only where the
+application needs it. It does — a compliance officer writing a notice needs the registered title
+and KEP address, and the tax number is the key Faz 5's authorised-seller list matches on. What is
+not needed is collecting it for every seller as a side effect of every scrape, which is why this
+is an on-demand port and not a field on `CompetitorOffer`. The stored row is deletable on its own
+(doc 06 §12.4, "Kimliği unut").
+
+## 1.7 Public search / brand-listing page (reporting only) ⚠️ *(measured live 2026-08-27, re-measured 2026-08-28)*
+
+Enumerates every product Trendyol lists under a brand — the brand-owner audit module's cheap
+tier. Consumed by `packages/adapters/src/trendyol/brand-catalogue/` and the
+`SweepBrandCatalogue` job.
+
+⚠️ **Reporting only, under the same authority as §1.6.** This is the same public site, read the
+same way, under the same product-owner decision of 2026-08-17. Nothing it returns may gate a
+pricing decision, and the job ships disabled.
+
+Distinct from §1.6 in cost, which is why it is a separate port (`IBrandCatalogueSource`) and a
+separate rate limiter: **one request per 24 products here, against one request per product
+there.** Measured end to end: Whiskas 887 products over 37 pages in 62 s; Royal Canin 4,863
+products over 203 pages in ~5.5 min. Zero failures, no CAPTCHA, at ~30 requests/minute.
+
+### Request
+
+```
+GET https://www.trendyol.com/sr?wb={webBrandId}&pi={pageIndex}
+GET https://www.trendyol.com/sr?q={searchTerm}&pi={pageIndex}
+Accept: text/html
+User-Agent: <browser-identifying; the §1.6 exception applies unchanged>
+```
+
+`pi` is 1-based. **Never send `wb` and `q` together** — that intersects the two selectors, and
+the point of holding both is to compare their results, not to narrow them.
+
+**The end of a brand is a 404, not an empty page.** Whiskas' page 38 of 37 and Royal Canin's
+page 210 of 203 both answer 404. The adapter normalises that to an empty page so a paging loop
+terminates on data; every other non-2xx still raises `fetchFailed`. There is **no pagination
+ceiling** — page 203 of 203 served a full payload.
+
+### Two selectors, and why both are swept
+
+| Selector | Returns | Verified |
+|---|---|---|
+| `wb=104703` | What Trendyol attributes to the brand | 887 Whiskas products |
+| `q=whiskas` | The above, **plus** listings that merely carry the name | 887, including 8 in unrelated categories |
+
+The 8 extra rows sat in *Halı*, *Ahşap Boya & Vernik*, *Akvaryum Balık Yemi* and
+*Bebek & Aktivite Oyuncakları*. For a brand owner that difference is the finding, so
+`tracked_products` records **which selector found each product** (`via_brand_ref`,
+`via_search_term`) rather than merging them into one flag. Royal Canin's sample showed none,
+which is what makes it a signal rather than noise.
+
+### Response
+
+The data is the JSON assigned to `window["__single-search-result__PROPS"]` inside a `<script>`
+in the initial HTML. Located by marker and read as a **balanced** object, exactly as §1.6 —
+`shared-props.ts`'s `extractEmbeddedState` is shared between the two. Note the hyphens: the
+marker is not a valid JS identifier, so the assignment is always `window["…"]=`.
+
+| Path | Meaning |
+|------|---------|
+| `$.data.total` | Products the marketplace claims for the query |
+| `$.data.products[]` | The page's product cards, 24 per page |
+| `…[].contentId` | Product identity — the same value `ProductPageRef.contentId` carries |
+| `…[].webBrands[0].id` | **Storefront** brand id — the one `wb=` addresses |
+| `…[].brandId` | Trendyol's *internal* brand id — a different number for the same brand |
+| `…[].category.{id,name}` | Category the product is listed under |
+| `…[].ratingScore.{totalCount,averageRating}` | Rating count and average |
+| `…[].price.{discountedPrice,current,originalPrice}` | Plain numbers in lira |
+| `…[].merchantId` | The **buybox holder only** — a card carries no seller list |
+
+Five things this shape gets wrong if assumed rather than read:
+
+1. **A card is not an offer.** It names one seller — whoever held the buybox when the page
+   rendered — and carries no seller list at all. The full seller set costs one §1.6 fetch per
+   product. The normalised field is called `buyboxSellerRef` so this cannot be mistaken.
+2. **`brandId` and `webBrands[].id` are different numbers for the same brand.** Whiskas is
+   14722 and 104703 respectively; only the second is what `wb=` addresses.
+3. **Every numeric field has a locale-formatted `*Text` twin** (`current` 908 /
+   `currentText` "908"). Only the number is data, exactly as §1.6's `price.text` rule.
+4. **`total` disagrees slightly with the cards actually served.** Progress display only; never
+   a loop bound.
+5. **`ratingScore` absent is unknown, not zero.** The "these have never been rated, drop them?"
+   suggestion acts on a genuine `0`, and the split is per-brand: 65% of Whiskas' catalogue was
+   unrated against 5% of Royal Canin's.
+
+### Also measured, not implemented
+
+- `apigw.trendyol.com/discovery-web-searchgw-service/...` — the site's own JSON search API.
+  **Cloudflare-blocked (403) from every client tried**, browser included. The embedded page
+  state is the only viable source.
+- `sr?wb={brand}&mid={merchantId}` narrows a brand to one seller (252 of Whiskas' 887 for
+  merchant 107493). Not used yet; it is the cheap way to answer "what does this seller list of
+  ours?" for the seller reports.
+- `sst=PRICE_BY_ASC` sorts the result set. Not used yet; it is the cheap way to find price
+  outliers without a deep sweep.
+
+⚠️ **This is an undocumented internal frontend payload, not a supported API**, on the same terms
+as §1.6. `parserVersion` and per-page diagnostics (`stateFound`, `dataFound`, `rawCardCount`,
+`droppedCount`) are recorded on every sweep. Re-verify this section whenever `rawCardCount`
+drops or `droppedCount` rises.
+
 ---
 
 # 2. Hepsiburada
@@ -1133,6 +1277,123 @@ rank (§2.5), exactly as designed.
 
 ---
 
+## 2.13 Brand catalogue — search page (reporting only) 🟡 — **verified 2026-08-28, undocumented**
+
+Hepsiburada's answer to Trendyol §1.7. Server-rendered HTML with the card payload embedded;
+**no browser needed and no impersonation exception claimed** — see the header table below.
+
+### Request
+
+```
+GET https://www.hepsiburada.com/ara?q={searchTerm}[&sayfa={n}]
+```
+
+36 products per page. Measured 2026-08-28: Whiskas 564 products over 16 pages, Royal Canin 2,360
+claimed over a claimed 50.
+
+| Header set | Result |
+|---|---|
+| Our honest `SCRAPER_USER_AGENT`, `Accept: */*` and nothing else | **200**, complete payload |
+
+No cookie, no credential, no `Referer`. Unlike Trendyol (§1.6) this page does not fingerprint the
+TLS handshake, so a plain `fetch` is enough.
+
+### Where the data is
+
+`window.MORIA.PRODUCTLIST`'s `'STATE'` value — JSON **inside a JavaScript string literal**, so
+every `"` arrives as `\"`. The page also has a `<script id="reduxStore">`, but on the search page
+its `searchState.searchProductArray` is empty and `totalSearchProductCount` is `0`: the cards live
+only in the MORIA blob. Reading the obvious container reports every brand as having no products.
+
+| Field | Meaning | Mapped to |
+|---|---|---|
+| `data.products[].variantList[].sku` | `HBCV…` / `HBV…`, the sellable identity | `productRef` — **and what §2.11 is keyed by** |
+| `data.products[].productId` | `HBC…`, the parent product | (carried only in the url) |
+| `variantList[].url` | `/{slug}-pm-{productId}` | `url` — **required by §2.14, which cannot derive it** |
+| `variantList[].listing.priceInfo.price` | buybox price in **lira** | `price` (→ kuruş) |
+| `variantList[].listing.merchantId` | buybox holder's GUID | `buyboxSellerRef` |
+| `products[].customerReviewCount` / `customerReviewRating` | belongs to the **parent**, repeated across its variants | `ratingCount` / `ratingAverage` |
+| `products[].mainCategory.{id,name}` | the marketplace's own category | `categoryRef` / `categoryName` |
+| `data.totalProductCount`, `currentPage`, `lastPage` | the marketplace's paging claims | see the two traps below |
+
+⚠️ **Past the last page it does not 404 — it serves page 1 again.** Page 17 of Whiskas' 16
+returned 200 with `currentPage: 1` and the same 36 SKUs as page 1. Trendyol 404s there, and the
+sweep job stops on an empty page; under that rule this page re-ingests page 1 for ever. The source
+compares `currentPage` against the page requested and ends the catalogue on a mismatch.
+
+⚠️ **Not all of a catalogue is reachable.** Page 50 of Royal Canin returned **403** while pages 1
+and 20 returned 200 — before and again after a four-minute pause, so it is a ceiling and not a
+temporary block. `lastPage: 50` is itself below the 66 pages `totalProductCount: 2360` implies. A
+403 past page 1 is treated as the end of the reachable catalogue; on page 1 it still throws. The
+exact boundary is **unmeasured** (20 ✓, 50 ✗).
+
+⚠️ **There is no brand-id addressing.** Hepsiburada's brand is a slug (`brandId: "whiskas"` on the
+product page). `?markalar=whiskas` alone redirects to the home page, and `?q=whiskas&markalar=whiskas`
+returns a byte-identical result to `?q=whiskas`. So `BrandCatalogueQuery.brandRef` cannot be
+honoured here and a brand-ref-only query is refused. Trendyol's brand-id-vs-search-term difference
+— the signal that found 8 Whiskas rows under *Halı* — has **no equivalent on this marketplace**.
+
+### Still unconfirmed — do not build on these without checking
+
+- **The category is auto-applied.** A search applies `Marka` *and* `Kategori` facets by itself
+  (Whiskas → Pet Shop > Kedi). Products carrying a brand's name in an unrelated category are
+  therefore out of reach through this path. No way to suppress it was found.
+- **`facets[].values[].itemCount` is `-1`** on every value observed. A sentinel; not read.
+- **The exact page ceiling**, as above.
+
+---
+
+## 2.14 Product page — barcode and product meta (reporting only) 🟡 — **verified 2026-08-28, undocumented**
+
+The one page that states a product's **barcode**, which is the only honest key for matching a
+product across two marketplaces. One request per product — the slow tier, thirty-six times the
+cost of a catalogue page.
+
+### Request
+
+```
+GET https://www.hepsiburada.com/{slug}-pm-{productId}
+```
+
+Honest user agent, 200, no cookie or credential.
+
+⚠️ **The URL cannot be derived from the SKU.** It is built from a display slug and the *parent*
+product id. The short form `/p-HBCV00006POXK3` was measured and returns **404**. So this path
+requires the URL §2.13's sweep captured, and refuses when it has none rather than assembling one
+out of a name. *(This also settles §2.11's open question about `/p-{sku}` as a `Referer`: that URL
+does not exist.)*
+
+### Where the data is
+
+`<script type="mime/invalid" id="reduxStore">` — plain JSON, no string-literal layer.
+`productState.product`:
+
+| Field | Mapped to |
+|---|---|
+| `barcode` (e.g. `8681002995109`) | `barcode` — **the reason this path exists** |
+| `sku` / `productId` | `productRef` / `parentProductRef`; a mismatch against the requested SKU is `identityMismatch` and is never stored |
+| `brand` / `brandId` | `brandName` / `brandRef` (the slug) |
+| `categories[]` | deepest crumb → `categoryRef` / `categoryName` |
+| `reviews.{customerReviewCount,customerReviewScore}` | `ratingCount` / `ratingAverage` |
+| `isProductLive` | `isLive` |
+
+The page also carries a JSON-LD block with the same barcode under `gtin`. **Not read**: two
+sources for one field is one more than can be kept honest, and a silent fallback to a possibly
+stale copy is worse than a named failure.
+
+⚠️ **`product.listings` is truncated and looks complete.** The verified product returned 2 entries
+beside `hasMoreListings: true` while §2.11 returned 6 sellers for the same SKU. Nothing in the
+array's shape says so. No type in `IProductDetailSource` has a seller, price, rank or stock field,
+so there is nowhere for it to land; the truncation is recorded as a diagnostic counter only. The
+full seller set is §2.11's job.
+
+⚠️ **`isClosedProduct` is not read.** The verified payload sets `isProductLive: true` **and**
+`isClosedProduct: true` at the same time, on a product plainly on sale with six sellers and a
+buybox price. Two booleans that contradict each other are not a fact; mapping the more decisive-
+sounding one would have reported a live product as gone. Unconfirmed, unmapped.
+
+---
+
 # 3. Verification log
 
 | Date | Marketplace | What was verified | By |
@@ -1145,3 +1406,6 @@ rank (§2.5), exactly as designed.
 | 2026-08-18 | Trendyol | §1.6 — **open question raised, not closed.** `couponApplicablePrice` never observed across 1,799 archived observations (`final_price` never once differs from `price`), yet the site shows a real shelf→basket delta (product `844564577`: 3.000,00 ₺ shelf → 2.990,00 ₺ basket). Separately **confirmed correct**: quantity-tiered promotions move no price field (product `1145880513`, 2.790,00 ₺ for a single unit) | operator checked both products live in a browser; archive figures measured by the assistant against `apps/web/data/app.db`. **Needs a fresh payload comparison to settle** |
 | 2026-08-18 | Hepsiburada | §2.11 — recorded that `finalPrice` is hard-coded `null` for every offer, so it is null by design rather than by absence, and consumers must read `finalPrice ?? price`. Re-check deferred: the connected store is a test environment whose prices the product owner does not trust | product owner decision; code inspection of `public-listings/normalize.ts` |
 | 2026-08-26 | Trendyol | §1.6 — **2026-08-18's open question closed.** Two live product pages (`1149754452`, `859939211`) fetched through the production Playwright transport with every price-node key dumped. `couponApplicablePrice` is present and correctly read; it equals `discountedPrice` because `discountedPrice` already has the promotion applied, proved by `discountedPriceAfterNoLimitPromotions` (450) sitting beside `discountedPrice` (420) under a `300 TL'ye 30 TL İndirim` promotion on our own offer. Also found: `tyPlusCouponApplicablePrice`, a membership-gated price that genuinely differs (720 → 684 on merchant `1267732`) and is deliberately not mapped | assistant, read-only live fetch; no credential sent, nothing written |
+| 2026-08-28 | Hepsiburada | **§2.11 re-measured — the impersonation exception withdrawn.** All four header combinations recorded as 403 on 2026-08-13 returned 200, as did a bare honest request carrying only a `User-Agent`; payloads byte-identical. Source returned to the honest agent, browser set kept behind `HEPSIBURADA_IMPERSONATE_BROWSER`. Also settled: `/p-{sku}` is a 404, closing the `Referer` fallback question | assistant, read-only live requests; product owner's decision to withdraw the exception |
+| 2026-08-28 | Hepsiburada | **§2.13 brand catalogue.** `/ara?q=…` 200 to the honest agent; `window.MORIA.PRODUCTLIST` card payload; Whiskas 564 products / 16 pages / 36 per page, Royal Canin 2,360 claimed / 50 claimed. Two traps measured: past-the-last-page serves page 1 again (`currentPage: 1`, identical 36 SKUs), and page 50 of Royal Canin 403s reproducibly after a cooldown while pages 1 and 20 do not. No brand-id addressing: `?markalar=` alone redirects home and adds nothing beside `q=` | assistant, read-only live requests; three cards recorded as a fixture |
+| 2026-08-28 | Hepsiburada | **§2.14 product page.** `productState.product.barcode` = `8681002995109` for `HBCV00006POXK3`; url cannot be derived from the SKU (`/p-{sku}` 404s). `product.listings` truncated to 2 of 6 beside `hasMoreListings: true`. `isProductLive` and `isClosedProduct` both `true` on a product on sale — the latter left unmapped | assistant, read-only live request; redux store recorded as a fixture |

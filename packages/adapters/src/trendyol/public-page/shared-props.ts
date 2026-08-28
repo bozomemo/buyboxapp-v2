@@ -108,23 +108,35 @@ export function extractScriptBodies(html: string): string[] {
 }
 
 /**
- * Locates the `__envoy__SHARED_PROPS` assignment in a product page's HTML and returns the
- * deserialised state object.
+ * Trendyol's *search / listing* pages carry their own serialised state under a different name
+ * — `window["__single-search-result__PROPS"]` — with the same assignment grammar as the
+ * product page's (verified live 2026-08-27, api-references §1.7). It is a distinct payload
+ * with a distinct shape, normalised by `brand-catalogue/normalize.ts`, but it is found the
+ * same way, so the locating logic below is shared rather than copied.
+ *
+ * Note the hyphens: this marker is **not** a valid JS identifier, so the assignment can only
+ * ever appear in `window["…"]` bracket form. `extractEmbeddedState` searches for the `=` after
+ * the marker, which sits past the closing `"]`, so both forms work without special-casing.
+ */
+export const SEARCH_RESULT_PROPS_MARKER = '__single-search-result__PROPS';
+
+/**
+ * Locates `marker`'s assignment in a page's HTML and returns the deserialised state object.
  *
  * @throws {SharedPropsNotFoundError} when the marker, the assignment or valid JSON is absent —
  * the caller turns this into `scrape_runs.status = 'parseFailed'` (doc 05 §5), never a retry
  * storm and never a pricing-path failure.
  */
-export function extractSharedProps(html: string): unknown {
-  const script = extractScriptBodies(html).find((body) => body.includes(SHARED_PROPS_MARKER));
+export function extractEmbeddedState(html: string, marker: string): unknown {
+  const script = extractScriptBodies(html).find((body) => body.includes(marker));
   if (script === undefined) {
-    throw new SharedPropsNotFoundError(`No <script> containing ${SHARED_PROPS_MARKER}`);
+    throw new SharedPropsNotFoundError(`No <script> containing ${marker}`);
   }
 
-  const markerIndex = script.indexOf(SHARED_PROPS_MARKER);
+  const markerIndex = script.indexOf(marker);
   const equalsIndex = script.indexOf('=', markerIndex);
   if (equalsIndex === -1) {
-    throw new SharedPropsNotFoundError(`${SHARED_PROPS_MARKER} found but never assigned`);
+    throw new SharedPropsNotFoundError(`${marker} found but never assigned`);
   }
 
   // Skip whitespace and any `JSON.parse(` wrapper to reach the value itself.
@@ -141,14 +153,24 @@ export function extractSharedProps(html: string): unknown {
   const literal = readQuotedLiteral(script, cursor);
   const objectSource = literal ?? readBalancedObject(script, cursor);
   if (objectSource === null) {
-    throw new SharedPropsNotFoundError(`${SHARED_PROPS_MARKER} assignment is not a balanced object`);
+    throw new SharedPropsNotFoundError(`${marker} assignment is not a balanced object`);
   }
 
   try {
     return JSON.parse(objectSource);
   } catch (error) {
     throw new SharedPropsNotFoundError(
-      `${SHARED_PROPS_MARKER} payload is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `${marker} payload is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+/** The product page's state (guide §1). See `extractEmbeddedState` for the mechanics. */
+export function extractSharedProps(html: string): unknown {
+  return extractEmbeddedState(html, SHARED_PROPS_MARKER);
+}
+
+/** The search / brand-listing page's state (api-references §1.7). */
+export function extractSearchResultProps(html: string): unknown {
+  return extractEmbeddedState(html, SEARCH_RESULT_PROPS_MARKER);
 }

@@ -77,12 +77,23 @@ Two sources exist, and they are **not** the same kind of thing:
 
 | Marketplace | What it reads | Read before changing it |
 |---|---|---|
-| Trendyol | HTML page with embedded `__envoy__SHARED_PROPS` state | `docs/trendyol-merchants-scraping-guide.md` + api-references §1.6 |
-| Hepsiburada | public JSON endpoint `/api/v1/product/listings/{sku}` | api-references §2.11 |
+| Trendyol product page | HTML page with embedded `__envoy__SHARED_PROPS` state | `docs/trendyol-merchants-scraping-guide.md` + api-references §1.6 |
+| Trendyol brand catalogue | HTML page with embedded `__single-search-result__PROPS` state | api-references §1.7 |
+| Hepsiburada listings | public JSON endpoint `/api/v1/product/listings/{sku}` | api-references §2.11 |
+| Hepsiburada brand catalogue | HTML page with `window.MORIA.PRODUCTLIST` state | api-references §2.13 |
+| Hepsiburada product page | HTML page with `id="reduxStore"` state — **barcode only** | api-references §2.14 |
+
+The two Trendyol sources are **different payloads with different costs** and are deliberately
+behind different ports. The product page (§1.6, `ICompetitorSource`) answers "who sells this
+product?" at one request per product. The brand catalogue (§1.7, `IBrandCatalogueSource`)
+answers "what products exist under this brand?" at one request per 24 products. Do not merge
+them: folding a thirty-fold cost difference behind one method name is how a reporting job
+becomes an unintended crawl.
 
 **Before writing or changing any code under `packages/adapters/src/*/public-page/`,
-`packages/adapters/src/*/public-listings/` or `ScrapeCompetitors`, read the row above that
-applies.** Trendyol's payload in particular has traps that look like ordinary field access and
+`packages/adapters/src/*/brand-catalogue/`, `packages/adapters/src/*/public-listings/`,
+`packages/adapters/src/*/product-detail/`, `ScrapeCompetitors`, `SweepBrandCatalogue` or
+`ResolveProductBarcodes`, read the row above that applies.** Trendyol's payload in particular has traps that look like ordinary field access and
 silently produce wrong data — `merchantListing` is an object rather than an array, the buybox
 seller is stored apart from the other sellers and is lost if not joined, and price nodes carry
 both a numeric `value` and a locale-formatted `text` of which only the first is data.
@@ -90,8 +101,13 @@ both a numeric `value` and a locale-formatted `text` of which only the first is 
 - Never derive a price, a rank or a seller identity from display text, a CSS class or a
   Turkish label. Ids, enums, booleans and numeric fields only.
 - Never let a failure reach a pricing decision. It is recorded and the run continues.
-- Never map a value whose **unit** the payload does not state. Both normalisers leave
-  competitor dispatch time unknown rather than risk hours-for-days.
+- Never map a value whose **unit or meaning** the payload does not state. Both Trendyol
+  normalisers leave competitor dispatch time unknown rather than risk hours-for-days, and the
+  Hepsiburada product page's `isClosedProduct` is left unmapped because the live payload sets it
+  `true` on a product that is plainly on sale (api-references §2.14).
+- Never read a collection the payload says is incomplete. Hepsiburada's product page carries
+  2 of a product's 6 sellers beside `hasMoreListings: true` and looks complete; the port it is
+  read through has no seller, price or rank field at all, so there is nowhere for it to land.
 - `docs/04-marketplace-integrations.md` §1.5 describes the **retired** scraper's page
   structure. It is obsolete. Read the guide instead.
 - **Browser impersonation is an explicit, per-source, product-owner-authorised exception — not
