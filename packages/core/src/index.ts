@@ -65,3 +65,30 @@ export type {
   PriceSource,
 } from './alerts/rules.js';
 export { alertKey, evaluateAlertRules } from './alerts/rules.js';
+
+export type {
+  SellerIdentityFacts,
+  SellerPolicyIdentity,
+  SellerPolicyResolution,
+  SellerPolicyRule,
+  SellerPolicyStatus,
+  SellerPolicyVerdict,
+} from './brand/seller-policy.js';
+export { resolveSellerPolicy } from './brand/seller-policy.js';
+
+export type {
+  AuditFinding,
+  AuditFindingBasis,
+  AuditFindingKind,
+  AuditInput,
+  AuditProductFacts,
+  AuditSellerFacts,
+  AuditSubject,
+  AuditThresholds,
+  AuditWorstProduct,
+} from './brand/audit-findings.js';
+export {
+  auditFindingOrder,
+  deriveAuditFindings,
+  DEFAULT_AUDIT_THRESHOLDS,
+} from './brand/audit-findings.js';
