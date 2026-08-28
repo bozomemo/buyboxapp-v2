@@ -196,7 +196,9 @@ describe('HepsiburadaPublicListingsSource', () => {
     );
   });
 
-  it('sends the exact header set the endpoint was verified to require', async () => {
+  it('identifies itself honestly by default, and pretends to be nothing else', async () => {
+    // The 2026-08-28 re-measurement: every combination recorded as 403 on 2026-08-13 now
+    // answers 200, including this one. Nothing browser-shaped is sent unless asked for.
     let seen: Headers | undefined;
     const instance = source(async (_url, init) => {
       seen = new Headers(init?.headers);
@@ -204,17 +206,39 @@ describe('HepsiburadaPublicListingsSource', () => {
     });
     await instance.fetchProductOffers(REF);
     expect(seen?.get('user-agent')).toBe(userAgent);
-    expect(seen?.get('accept-language')).toBe('tr-TR,tr;q=0.9');
-    expect(seen?.get('sec-fetch-site')).toBe('same-origin');
-    expect(seen?.get('referer')).toBe(REF.url);
+    expect(seen?.get('accept-language')).toBeNull();
+    expect(seen?.get('sec-fetch-site')).toBeNull();
+    expect(seen?.get('referer')).toBeNull();
     // No credential is needed and none is ever sent (CLAUDE.md: no credential anywhere it does
     // not belong; api-references §2.11 records that cookies are not required).
     expect(seen?.get('cookie')).toBeNull();
   });
 
-  it('exposes the header set as one function so it cannot drift by copy-paste', () => {
-    const headers = buildHepsiburadaPublicHeaders('UA', 'https://www.hepsiburada.com/x');
-    expect(Object.keys(headers).sort()).toEqual([
+  it('sends the 2026-08-13 browser set only when impersonation is switched back on', async () => {
+    let seen: Headers | undefined;
+    const instance = new HepsiburadaPublicListingsSource({
+      fetchFn: async (_url, init) => {
+        seen = new Headers(init?.headers);
+        return jsonResponse(fixtureJson);
+      },
+      userAgent,
+      impersonateBrowser: true,
+      burst: 50,
+    });
+    await instance.fetchProductOffers(REF);
+    expect(seen?.get('accept-language')).toBe('tr-TR,tr;q=0.9');
+    expect(seen?.get('sec-fetch-site')).toBe('same-origin');
+    expect(seen?.get('referer')).toBe(REF.url);
+  });
+
+  it('exposes both header sets as one function so neither drifts by copy-paste', () => {
+    expect(Object.keys(buildHepsiburadaPublicHeaders('UA', 'https://www.hepsiburada.com/x')).sort()).toEqual([
+      'Accept',
+      'User-Agent',
+    ]);
+    expect(
+      Object.keys(buildHepsiburadaPublicHeaders('UA', 'https://www.hepsiburada.com/x', true)).sort(),
+    ).toEqual([
       'Accept',
       'Accept-Language',
       'Referer',

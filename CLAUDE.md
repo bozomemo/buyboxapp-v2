@@ -103,7 +103,11 @@ both a numeric `value` and a locale-formatted `text` of which only the first is 
   owner authorised the identical exception for Trendyol on 2026-08-17 (api-references §1.6). Any
   new source still starts honest until measurement proves otherwise, and the exception is
   recorded here and in `docs/08-configuration-and-constants.md`/`docs/api-references.md` when
-  granted — never assumed. For Trendyol specifically the exception is implemented as a real
+  granted — never assumed. **An exception also ends when measurement stops justifying it:**
+  Hepsiburada's endpoint answered a bare honest request on 2026-08-28, so the product owner
+  withdrew its exception the same day and the source went back to `SCRAPER_USER_AGENT`, the
+  browser header set kept behind `HEPSIBURADA_IMPERSONATE_BROWSER` in case the 403s return. Both
+  Hepsiburada sources added that day (§2.13, §2.14) are honest and claim no exception at all. For Trendyol specifically the exception is implemented as a real
   headless browser (Playwright), not a header spoofed on a plain HTTP client — a header alone
   was measured 2026-08-17 to not be enough, because Trendyol's bot detection fingerprints the
   TLS handshake, which only a real browser reproduces credibly. See `playwright-fetch.ts`'s doc

@@ -20,11 +20,13 @@ export const BootstrapEnvSchema = z.object({
    */
   SCRAPER_USER_AGENT: z.string().min(1).optional().default('BuyBoxApp/1.0 (repricing; reporting-only)'),
   /**
-   * `User-Agent` for the one reporting source that will not answer an honest one: Hepsiburada's
-   * public listings endpoint returns 403 to anything not shaped like a browser (verified
-   * header-by-header 2026-08-13, api-references §2.11). Impersonation there is an exception the
-   * product owner granted explicitly, not the policy — `SCRAPER_USER_AGENT` above stays the
-   * default everywhere it works, and the job that uses this still ships disabled.
+   * `User-Agent` for the reporting sources that will not answer an honest one. Today that is
+   * Trendyol's public pages (403 to an honest agent even at a conservative rate, confirmed
+   * 2026-08-17). Hepsiburada's listings endpoint was the original reason for this variable
+   * (403 header-by-header on 2026-08-13) but answered an honest bare request on 2026-08-28, so
+   * it went back to `SCRAPER_USER_AGENT` and its impersonation now lives behind
+   * `HEPSIBURADA_IMPERSONATE_BROWSER` below. Impersonation is an exception the product owner
+   * grants per source against a measurement, not the policy.
    *
    * Deployment configuration because it goes stale: a user agent naming a browser version that
    * no longer exists is itself a bot signal, so it is expected to be refreshed periodically
@@ -37,6 +39,19 @@ export const BootstrapEnvSchema = z.object({
     .default(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36',
     ),
+  /**
+   * '1' puts Hepsiburada's public listings source back on the 2026-08-13 browser header set
+   * (api-references §2.11).
+   *
+   * Defaults to '0'. The endpoint refused honest requests when it was first measured and
+   * accepted them when re-measured on 2026-08-28, so the exception was withdrawn to a switch
+   * rather than deleted: if the 403s come back, an operator flips this instead of waiting for a
+   * release. A 403 from that source names this variable in its message for the same reason.
+   */
+  HEPSIBURADA_IMPERSONATE_BROWSER: z
+    .union([z.literal('0'), z.literal('1')])
+    .optional()
+    .default('0'),
   /** '1' boots the worker's scheduler inside the Next.js process (single-host install). */
   SINGLE_PROCESS: z
     .union([z.literal('0'), z.literal('1')])

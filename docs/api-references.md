@@ -985,7 +985,7 @@ previously-accepted request returns 403 — measured, same behaviour as §2.11. 
 Static assets (`/assets/*.js`) need `Sec-Fetch-Dest: script`; the API paths were found in the
 SPA bundle rather than being guessed.
 
-## 2.11 Public product listings (reporting only) 🟡 — **verified 2026-08-13, undocumented endpoint**
+## 2.11 Public product listings (reporting only) 🟡 — **verified 2026-08-13, re-measured 2026-08-28, undocumented endpoint**
 
 Unlike Trendyol (§1.6), this is **not a page scrape**: Hepsiburada's product page calls a public
 JSON endpoint, and that endpoint is what we read. It is nonetheless undocumented and
@@ -1032,11 +1032,25 @@ Sec-Fetch-Site:  same-origin
 Referer:         <the product page on www.hepsiburada.com>
 ```
 
-⚠️ **This is browser impersonation**, which doc 04 §1.5's user-agent policy otherwise forbids
-and which the Trendyol source does not do. It is an exception granted explicitly by the product
-owner on 2026-08-13 because the endpoint admits no honest alternative. It lives in
-`SCRAPER_BROWSER_USER_AGENT` (doc 08 §12) so it is visible in deployment configuration rather
-than buried in code, and `ScrapeCompetitors` still ships disabled.
+⚠️ **The impersonation exception was withdrawn on 2026-08-28.** The ablation above was repeated
+against the same endpoint and **every combination recorded as 403 returned 200** — including a
+bare request carrying nothing but our honest `SCRAPER_USER_AGENT` and no other header at all —
+with a payload byte-identical to the browser-shaped one:
+
+| Request | 2026-08-13 | 2026-08-28 |
+|---|---|---|
+| Honest UA + the full header set | 403 | **200** |
+| Honest UA + `Accept` only | 403 | **200** |
+| …minus `Referer` | 403 | **200** |
+| …minus `Accept-Language` | 403 | **200** |
+| Honest UA, no other header at all | not measured | **200** |
+
+Impersonation is an exception a measurement has to justify, and measurement no longer justifies
+it, so the source went back to the honest agent (product owner, 2026-08-28). The withdrawal is
+the policy working rather than a relaxation of it. The browser header set is **kept, not
+deleted**, behind `HEPSIBURADA_IMPERSONATE_BROWSER=1` (doc 08 §12): the 2026-08-13 behaviour
+could return, and if it does an operator flips a setting instead of waiting for a release. A 403
+from this source names that variable in its message. `ScrapeCompetitors` still ships disabled.
 
 ⚠️ **Rate.** Roughly eight requests in quick succession tripped a temporary block, after which
 even a previously-accepted request returned 403. The configured sustained rate is therefore
@@ -1093,13 +1107,21 @@ cost model (doc 02) — it is not read.
 - **Unknown or delisted SKU.** Not established: the attempt to test one coincided with the rate
   block above, so the 403 received cannot be attributed. The parser treats a missing `listings`
   as an honest zero rather than an error, which is safe either way.
-- **The `Referer` fallback.** When a listing carries no captured product URL the source uses
-  `https://www.hepsiburada.com/p-{sku}`. That form was **not** verified as an accepted referer
-  and is the first thing to check if 403s appear.
+- ~~**The `Referer` fallback.**~~ **Settled 2026-08-28:** `https://www.hepsiburada.com/p-{sku}`
+  returns **404** — it is not a page at all, so it was never a credible referer. It matters less
+  than it did, since the honest request sends no `Referer`; it still applies when
+  `HEPSIBURADA_IMPERSONATE_BROWSER=1`, where the captured product URL (§2.13) should be used.
 - **Terms of service.** As with §1.6, this may conflict with them. `ScrapeCompetitors` defaults
   to off for exactly that reason.
 
-### Blocked on §2.9, not on this
+### Unblocked by §2.13 (2026-08-28)
+
+**A SKU supply now exists.** The brand catalogue's cards carry `variantList[].sku`, and that SKU
+was verified against this endpoint on 2026-08-28: `HBCV00006POXK3` returned 200 with 6 sellers.
+So competitor history on Hepsiburada is collected for **swept brand products**, through
+`tracked_products`, without the adapter below being unblocked.
+
+The paragraph below still stands for the *seller's own listings*, which are a different set:
 
 The endpoint is keyed by SKU, and today nothing supplies one: `HepsiburadaAdapter.fetchListings`
 is still blocked (doc 12 Phase 4.4). When it is implemented it must record the product SKU as

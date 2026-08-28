@@ -11,19 +11,21 @@
  * page itself calls. Compared with Trendyol's embedded page state this is a far easier payload
  * — a real array with the buybox holder inside it — but a far more hostile transport:
  *
- * | Verified 2026-08-13 | Consequence here |
+ * | Measurement | Consequence here |
  * |---|---|
- * | An honest `User-Agent` is refused with 403 by Akamai | browser headers, see below |
- * | Dropping `Referer`, `accept-language` or `sec-fetch-*` is refused with 403 | all sent as one verified set |
- * | No cookie or credential is needed | none is sent, and none is ever stored |
+ * | 2026-08-13: an honest `User-Agent` was refused with 403 | the impersonation exception, granted then |
+ * | 2026-08-28: the same honest request returned 200, payload byte-identical | honest by default; impersonation kept as a configurable fallback |
+ * | No cookie or credential is needed (both dates) | none is sent, and none is ever stored |
  * | ~8 rapid requests trip a temporary block | rate limit far below Trendyol's |
  *
  * **On impersonating a browser.** Doc 04 §1.5's user-agent policy is that the client identifies
- * itself honestly, and the Trendyol source does exactly that. Hepsiburada does not permit it:
- * measured header-by-header, the endpoint answers only a browser-shaped request. That makes
- * this an explicit, recorded exception granted by the product owner on 2026-08-13, not a
- * default — which is why the user agent is injected rather than defaulted, and why this job
- * still ships disabled (doc 12 Phase 7).
+ * itself honestly. On 2026-08-13 this endpoint would not permit that and the product owner
+ * granted an explicit exception. On 2026-08-28 the ablation was repeated and every refused
+ * combination now answers 200, so the exception was withdrawn to a fallback and this source
+ * went back to the honest agent. The withdrawal is the policy working, not a relaxation of it:
+ * an exception measurement no longer justifies is an exception that ends. The code path
+ * survives behind `impersonateBrowser` because the 2026-08-13 behaviour could return, and the
+ * job still ships disabled (doc 12 Phase 7).
  */
 import type { MarketplaceCode } from '@buybox/core';
 import {
@@ -56,12 +58,33 @@ export const HEPSIBURADA_SCRAPE_DEFAULTS = {
 } as const;
 
 /**
- * The exact header set measured to be accepted, and the minimum: removing `Referer` or
- * `accept-language` was verified to return 403 (api-references §2.11). Kept in one exported
- * function so the set is testable and so nothing else in the codebase grows browser headers
- * by copy-paste.
+ * The request headers, in one exported function so the set is testable and so nothing else in
+ * the codebase grows browser headers by copy-paste.
+ *
+ * **Honest by default, since 2026-08-28.** On 2026-08-13 this endpoint answered 403 to every
+ * request that was not shaped like a browser, and the product owner granted an explicit
+ * impersonation exception for it. Re-measured on 2026-08-28 against the same endpoint, all four
+ * combinations recorded as 403 returned 200 — including a bare request carrying nothing but an
+ * honest `User-Agent` — and the payload was byte-identical to the browser-shaped one. Since the
+ * standing rule is that impersonation is an exception measurement has to justify, and
+ * measurement no longer justifies it, the exception was withdrawn to a fallback (product owner,
+ * 2026-08-28).
+ *
+ * `impersonateBrowser` restores the 2026-08-13 set exactly. It is reachable from deployment
+ * configuration (`HEPSIBURADA_IMPERSONATE_BROWSER`, doc 08 §12) so that a return of the 403s
+ * costs a setting rather than a release — the whole reason the exception was kept rather than
+ * deleted.
  */
-export function buildHepsiburadaPublicHeaders(userAgent: string, referer: string): Record<string, string> {
+export function buildHepsiburadaPublicHeaders(
+  userAgent: string,
+  referer: string,
+  impersonateBrowser = false,
+): Record<string, string> {
+  if (!impersonateBrowser) {
+    // Measured 2026-08-28: `User-Agent` alone is accepted. `Accept` is sent because it states
+    // what we can actually parse, not to get past anything.
+    return { 'User-Agent': userAgent, Accept: 'application/json, text/plain, */*' };
+  }
   return {
     'User-Agent': userAgent,
     Accept: 'application/json, text/plain, */*',
@@ -78,11 +101,17 @@ export interface HepsiburadaPublicListingsSourceConfig {
   readonly fetchFn?: typeof fetch;
   readonly baseUrl?: string;
   /**
-   * Sent verbatim. Must be a current browser user agent: the endpoint refuses anything else
-   * (see the class doc). There is deliberately no default — the impersonation is a decision
-   * that belongs in deployment configuration, where it is visible.
+   * Sent verbatim. The honest `SCRAPER_USER_AGENT` since 2026-08-28; there is deliberately no
+   * default, because which agent this source claims to be is a decision that belongs in
+   * deployment configuration where it is visible.
    */
   readonly userAgent: string;
+  /**
+   * Sends the full 2026-08-13 browser header set instead of the honest pair. Defaults to
+   * `false`: the impersonation is a withdrawn exception kept as a fallback, not the policy.
+   * See `buildHepsiburadaPublicHeaders`.
+   */
+  readonly impersonateBrowser?: boolean;
   readonly requestsPerMinute?: number;
   readonly burst?: number;
   readonly cacheTtlMs?: number;
@@ -104,6 +133,7 @@ export class HepsiburadaPublicListingsSource implements ICompetitorSource {
   private readonly fetchFn: typeof fetch;
   private readonly baseUrl: string;
   private readonly userAgent: string;
+  private readonly impersonateBrowser: boolean;
   private readonly cacheTtlMs: number;
   private readonly requestTimeoutMs: number;
   private readonly nowMs: () => number;
@@ -114,6 +144,7 @@ export class HepsiburadaPublicListingsSource implements ICompetitorSource {
     this.fetchFn = config.fetchFn ?? globalThis.fetch;
     this.baseUrl = config.baseUrl ?? HEPSIBURADA_PUBLIC_BASE_URL;
     this.userAgent = config.userAgent;
+    this.impersonateBrowser = config.impersonateBrowser ?? false;
     this.cacheTtlMs = config.cacheTtlMs ?? HEPSIBURADA_SCRAPE_DEFAULTS.cacheTtlMs;
     this.requestTimeoutMs = config.requestTimeoutMs ?? HEPSIBURADA_SCRAPE_DEFAULTS.requestTimeoutMs;
     this.nowMs = config.nowMs ?? (() => Date.now());
@@ -188,7 +219,11 @@ export class HepsiburadaPublicListingsSource implements ICompetitorSource {
     let fetchedUrl = url;
     try {
       const response = await this.fetchFn(url, {
-        headers: buildHepsiburadaPublicHeaders(this.userAgent, this.buildReferer(ref, ref.contentId ?? '')),
+        headers: buildHepsiburadaPublicHeaders(
+          this.userAgent,
+          this.buildReferer(ref, ref.contentId ?? ''),
+          this.impersonateBrowser,
+        ),
         redirect: 'follow',
         signal: AbortSignal.timeout(this.requestTimeoutMs),
       });
@@ -198,7 +233,7 @@ export class HepsiburadaPublicListingsSource implements ICompetitorSource {
         // neither is allowed to reach a pricing decision.
         const hint =
           response.status === 403
-            ? ' — bot protection (Akamai); check the header set and the request rate (api-references §2.11)'
+            ? ' — bot protection (Akamai); this endpoint was honest-agent-accepted on 2026-08-28, so a 403 means either the rate ceiling or that the 2026-08-13 behaviour is back: try HEPSIBURADA_IMPERSONATE_BROWSER=1 (api-references §2.11)'
             : '';
         throw new CompetitorSourceError(
           `Hepsiburada public listings ${response.status} for ${url}${hint}`,
