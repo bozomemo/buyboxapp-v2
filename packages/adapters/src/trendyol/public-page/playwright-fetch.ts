@@ -16,9 +16,11 @@
  * lifetime — but a browser that dies under a long run is replaced rather than poisoning every
  * later fetch; see `getSession`.
  *
- * `TrendyolPublicPageSource`'s own rate limiter already serialises calls to a handful
- * per minute (doc 08 §12), so a page pool would add resource cost and complexity for no
- * throughput benefit — every call awaits the previous one's navigation to finish regardless.
+ * A page pool would add resource cost and complexity for no throughput benefit: the source's own
+ * rate limiter holds the whole thing to a handful of requests a minute (doc 08 §12), so one page
+ * is ample. What one page is *not*, by itself, is safe under concurrent callers — hence the
+ * fetch queue below.
+ *
  * Callers must call `close()` when done (worker shutdown) or the browser process leaks.
  */
 import { chromium, type Browser, type Page } from 'playwright';
@@ -44,6 +46,24 @@ export type PlaywrightLauncher = (userAgent: string | undefined) => Promise<Play
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/**
+ * Chromium aborts a navigation — `net::ERR_ABORTED`, thrown by `page.goto` — when the page it is
+ * leaving starts a navigation of its own first. Trendyol's product pages do that on their own
+ * schedule, so it lands on whichever request happens to be in flight: measured 2026-08-29, ~1 in
+ * 6 consecutive fetches through one reused page, failing in ~70 ms while the request either side
+ * of it returned 200. It is a race against the previous page's script, not a refusal, not a rate
+ * limit and not a block — nothing about the URL is wrong, and the immediate retry succeeds.
+ *
+ * Without this a scrape drops that product for the whole cycle and files a `fetchFailed` that
+ * reads like a block. One retry, because a second consecutive abort is no longer the race this
+ * describes and the run should record it honestly.
+ */
+const ABORTED_NAVIGATION_RETRIES = 1;
+
+function isAbortedNavigation(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('net::ERR_ABORTED');
+}
+
 async function launchChromium(userAgent: string | undefined): Promise<PlaywrightSession> {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage(userAgent ? { userAgent } : {});
@@ -51,11 +71,40 @@ async function launchChromium(userAgent: string | undefined): Promise<Playwright
 }
 
 /** Launches nothing until the first `fetch()` call — a source that's never invoked never pays for a browser. */
-export function createPlaywrightFetcher(
-  launch: PlaywrightLauncher = launchChromium,
-): PlaywrightFetcher {
+export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChromium): PlaywrightFetcher {
   let session: Promise<PlaywrightSession> | undefined;
   let disposed = false;
+  /** Tail of the fetch queue — see `serialised`. */
+  let queue: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Runs `work` only once every earlier call has finished, because **one page cannot serve two
+   * fetches at once** and this fetcher is shared by everything holding its source.
+   *
+   * This was previously left to the rate limiter, which serialises calls only while there is a
+   * single caller. Two concurrent runs of the same job share one source instance — two presses
+   * of "Şimdi tara" put two `SweepBrandCatalogue` runs on the same page within seconds — and the
+   * shared page then fails in two ways:
+   *
+   * - the second `goto` cancels the first, which surfaces as `net::ERR_ABORTED` and reads like
+   *   a block rather than the self-inflicted race it is;
+   * - worse, a `goto` that *did* complete is followed by the other caller's navigation before
+   *   `page.content()` runs, so the first caller returns the second caller's HTML under its own
+   *   status and URL. That is a page of one brand's catalogue written as another's — wrong data,
+   *   silently, which is the failure this codebase spends most of its comments avoiding.
+   *
+   * A queue rather than a page pool: the rate limiter is the real throughput bound, so waiting
+   * costs nothing that was ever going to be spent. Failures do not poison the queue — the tail
+   * is settled either way, so one caller's error never strands the next.
+   */
+  function serialised<T>(work: () => Promise<T>): Promise<T> {
+    const run = queue.then(work, work);
+    queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
   function getSession(userAgent: string | undefined): Promise<PlaywrightSession> {
     // `close()` is the caller saying it is finished (worker shutdown). A straggler fetch after
@@ -96,32 +145,48 @@ export function createPlaywrightFetcher(
   }
 
   return {
-    async fetch(url, init) {
-      const userAgent = init.headers['User-Agent'] ?? init.headers['user-agent'];
-      const { page } = await getSession(userAgent);
-      const response = await page.goto(url, {
-        waitUntil: 'domcontentloaded',
-        timeout: init.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    fetch(url, init) {
+      // The whole navigate-then-read sequence is one critical section, not just the `goto`:
+      // the body is read off the shared page after the fact (see `page.content()` below).
+      return serialised(async () => {
+        const userAgent = init.headers['User-Agent'] ?? init.headers['user-agent'];
+        const { page } = await getSession(userAgent);
+        const goto = async () =>
+          page.goto(url, {
+            waitUntil: 'domcontentloaded',
+            timeout: init.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          });
+        let response;
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            response = await goto();
+            break;
+          } catch (error) {
+            // Only the abort race above is retried here. A timeout, a closed browser or any other
+            // navigation failure propagates on the first attempt, exactly as before.
+            if (attempt >= ABORTED_NAVIGATION_RETRIES || !isAbortedNavigation(error)) throw error;
+          }
+        }
+        if (response === null) {
+          throw new Error(`Trendyol public page navigation to ${url} produced no response`);
+        }
+        const status = response.status();
+        // `page.content()` (DOM-serialised), not `response.text()` (raw network body via CDP).
+        // Measured 2026-08-17: awaiting `response.text()` on a page reused for a later navigation
+        // makes that *later* navigation's own `timeout` stop being enforced — it hangs indefinitely
+        // instead of throwing, reproduced deterministically with a local test server. `page.content()`
+        // carries no such issue and the shared page is reused for the fetcher's whole lifetime, so
+        // this was a real production hazard on the very first hung/slow request after any success.
+        // Doc 07 §7's inline `__envoy__SHARED_PROPS` script is a DOM text node either way, so the
+        // parser sees the same content it would have from the raw response.
+        const body = await page.content();
+        return {
+          ok: status >= 200 && status < 300,
+          status,
+          url: response.url(),
+          text: async () => body,
+        };
       });
-      if (response === null) {
-        throw new Error(`Trendyol public page navigation to ${url} produced no response`);
-      }
-      const status = response.status();
-      // `page.content()` (DOM-serialised), not `response.text()` (raw network body via CDP).
-      // Measured 2026-08-17: awaiting `response.text()` on a page reused for a later navigation
-      // makes that *later* navigation's own `timeout` stop being enforced — it hangs indefinitely
-      // instead of throwing, reproduced deterministically with a local test server. `page.content()`
-      // carries no such issue and the shared page is reused for the fetcher's whole lifetime, so
-      // this was a real production hazard on the very first hung/slow request after any success.
-      // Doc 07 §7's inline `__envoy__SHARED_PROPS` script is a DOM text node either way, so the
-      // parser sees the same content it would have from the raw response.
-      const body = await page.content();
-      return {
-        ok: status >= 200 && status < 300,
-        status,
-        url: response.url(),
-        text: async () => body,
-      };
     },
     async close() {
       disposed = true;

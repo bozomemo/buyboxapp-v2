@@ -387,6 +387,7 @@ more reason a competitor price is never derived from it.
 | Browser-identifying `User-Agent` | `SCRAPER_BROWSER_USER_AGENT` (doc 08) — an honest agent got a 403 from Trendyol's bot detection even at a conservative request rate; confirmed 2026-08-17 when the operator's own browser reached the same product page without incident from the same network. The product owner authorised the same reporting-only exception already recorded for Hepsiburada (§2.11, 2026-08-13). |
 | Bounded retry on 403 specifically | `TrendyolPublicPageSource.retryOn403MaxAttempts` (doc 08) — kept as a cheap second line of defence even after the transport fix below; never applied to any other status. |
 | **No Node-native HTTP client is used for this scraper — a real headless browser is** | `playwright-fetch.ts` (`packages/adapters/src/trendyol/public-page/`), Playwright + headless Chromium. First tried Node's core `https` in place of `fetch` (`node-https-fetch.ts`, kept as an injectable alternative, no longer the default) on the theory that undici's connection handling was the problem; re-measured live and that did **not** hold — Node's core `https` also returned 403 consistently, even with a full realistic browser header set. The actual mechanism: Cloudflare fingerprints the **TLS ClientHello**, and `fetch` and Node's core `https` share the same OpenSSL TLS stack, so neither was ever going to pass reliably — `curl` had only succeeded because it happened to run through Windows' Schannel TLS on the diagnostic machine. A real browser's TLS/JS fingerprint is what actually clears the check: confirmed 2026-08-17, 10/10 consecutive previously-failing product pages returned 200 through a headless Chromium instance. This is the "browser impersonation" exception above (the `SCRAPER_BROWSER_USER_AGENT` row) taken literally rather than approximated via headers on a non-browser client. |
+| One retry on an aborted navigation | `playwright-fetch.ts`'s `ABORTED_NAVIGATION_RETRIES`. Measured 2026-08-29: ~1 navigation in 6 through one reused page fails in ~70 ms with `net::ERR_ABORTED` because the page being left starts a navigation of its own, while the requests either side return 200. It is a race with the previous page's script — not a refusal, not a rate limit, not a block — and the immediate retry succeeds. Applies to that error alone; a timeout or a closed browser still fails on the first attempt. |
 | Graceful degradation | typed `fetchFailed`/`parseFailed`; repricing unaffected (doc 12 Phase 7 DoD) |
 | **An explicit business decision to permit it** | `ScrapeCompetitors` is **off by default** and must be switched on by an operator |
 
@@ -448,7 +449,7 @@ not needed is collecting it for every seller as a side effect of every scrape, w
 is an on-demand port and not a field on `CompetitorOffer`. The stored row is deletable on its own
 (doc 06 §12.4, "Kimliği unut").
 
-## 1.7 Public search / brand-listing page (reporting only) ⚠️ *(measured live 2026-08-27, re-measured 2026-08-28)*
+## 1.7 Public search / brand-listing page (reporting only) ⚠️ *(measured live 2026-08-27, re-measured 2026-08-28 and 2026-08-29)*
 
 Enumerates every product Trendyol lists under a brand — the brand-owner audit module's cheap
 tier. Consumed by `packages/adapters/src/trendyol/brand-catalogue/` and the
@@ -466,14 +467,29 @@ products over 203 pages in ~5.5 min. Zero failures, no CAPTCHA, at ~30 requests/
 ### Request
 
 ```
-GET https://www.trendyol.com/sr?wb={webBrandId}&pi={pageIndex}
-GET https://www.trendyol.com/sr?q={searchTerm}&pi={pageIndex}
+GET https://www.trendyol.com/sr?wb={webBrandId}&pi={pageIndex}&sst=MOST_RECENT
+GET https://www.trendyol.com/sr?q={searchTerm}&pi={pageIndex}&sst=MOST_RECENT
 Accept: text/html
 User-Agent: <browser-identifying; the §1.6 exception applies unchanged>
 ```
 
 `pi` is 1-based. **Never send `wb` and `q` together** — that intersects the two selectors, and
 the point of holding both is to compare their results, not to narrow them.
+
+**`sst` is mandatory for anything that pages.** Trendyol's default ordering is relevance and is
+recomputed per request, so consecutive pages overlap and the gaps are never served. Measured
+2026-08-29 on `wb=103046` (Royal Canin), pages 1–60:
+
+| Ordering | Cards fetched | Distinct products |
+|---|---|---|
+| default (relevance) | 1,440 | **1,184** — 18% lost |
+| `sst=MOST_RECENT` | 1,440 | 1,439 |
+| `sst=PRICE_BY_ASC` | 1,440 | 1,439 |
+
+With `sst=MOST_RECENT` a full brand sweep ends exactly on the marketplace's own count: page 201
+served a short page of 17, and 200 × 24 + 17 = 4,817 = `data.total`. `MOST_RECENT` is preferred
+over a price sort because listing date does not change while a sweep runs, whereas a
+competitor repricing mid-sweep would move a product between pages of a price-sorted catalogue.
 
 **The end of a brand is a 404, not an empty page.** Whiskas' page 38 of 37 and Royal Canin's
 page 210 of 203 both answer 404. The adapter normalises that to an empty page so a paging loop
@@ -492,6 +508,13 @@ The 8 extra rows sat in *Halı*, *Ahşap Boya & Vernik*, *Akvaryum Balık Yemi* 
 `tracked_products` records **which selector found each product** (`via_brand_ref`,
 `via_search_term`) rather than merging them into one flag. Royal Canin's sample showed none,
 which is what makes it a signal rather than noise.
+
+⚠️ **The comparison is only valid over complete passes.** Before `sst` was pinned, each pass
+sampled a different ~75% of a large brand, and a product the `wb=` pass happened to miss was
+stored as search-only — the misuse flag — on paging noise alone. Royal Canin's stored sweep of
+2026-08-29 held 3,793 of its 4,817 products, 208 of them flagged search-only, and **every one
+of the 208 carried the brand's own `webBrands[0].id`**: false positives to the last row. A
+brand whose sweep is short of `data.total` must not have its selector flags read as findings.
 
 ### Response
 
@@ -1409,3 +1432,4 @@ sounding one would have reported a live product as gone. Unconfirmed, unmapped.
 | 2026-08-28 | Hepsiburada | **§2.11 re-measured — the impersonation exception withdrawn.** All four header combinations recorded as 403 on 2026-08-13 returned 200, as did a bare honest request carrying only a `User-Agent`; payloads byte-identical. Source returned to the honest agent, browser set kept behind `HEPSIBURADA_IMPERSONATE_BROWSER`. Also settled: `/p-{sku}` is a 404, closing the `Referer` fallback question | assistant, read-only live requests; product owner's decision to withdraw the exception |
 | 2026-08-28 | Hepsiburada | **§2.13 brand catalogue.** `/ara?q=…` 200 to the honest agent; `window.MORIA.PRODUCTLIST` card payload; Whiskas 564 products / 16 pages / 36 per page, Royal Canin 2,360 claimed / 50 claimed. Two traps measured: past-the-last-page serves page 1 again (`currentPage: 1`, identical 36 SKUs), and page 50 of Royal Canin 403s reproducibly after a cooldown while pages 1 and 20 do not. No brand-id addressing: `?markalar=` alone redirects home and adds nothing beside `q=` | assistant, read-only live requests; three cards recorded as a fixture |
 | 2026-08-28 | Hepsiburada | **§2.14 product page.** `productState.product.barcode` = `8681002995109` for `HBCV00006POXK3`; url cannot be derived from the SKU (`/p-{sku}` 404s). `product.listings` truncated to 2 of 6 beside `hasMoreListings: true`. `isProductLive` and `isClosedProduct` both `true` on a product on sale — the latter left unmapped | assistant, read-only live request; redux store recorded as a fixture |
+| 2026-08-29 | Trendyol | §1.6 — **`net::ERR_ABORTED` characterised and retried.** Reproduced live through the production Playwright transport: ~1 navigation in 6 across one reused page aborts in ~70 ms, non-deterministically (three consecutive fetches of one URL fine; a repeat of another aborted), with the fetches either side returning 200 and full `__envoy__SHARED_PROPS`. Not URL-specific and not a block. One retry added; a second consecutive abort still fails the item | assistant, read-only live fetches; measured while trialling every job on the operator's install |

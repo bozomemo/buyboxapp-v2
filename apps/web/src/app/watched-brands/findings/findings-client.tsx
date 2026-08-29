@@ -604,7 +604,11 @@ export function FindingsClient() {
                       {f.subject.kind === 'seller' ? (
                         <Link
                           className="text-(--color-accent) hover:underline"
-                          href={`/competitors/sellers/${f.subject.marketplaceCode}/${encodeURIComponent(f.subject.sellerRef)}`}
+                          /* Carries the finding's own scope — the window and the brand it was
+                             raised under. The seller page shows both archives; without the scope
+                             the operator arrived at that firm's whole footprint and had to
+                             rebuild the filter that produced the alert they had just clicked. */
+                          href={`/competitors/sellers/${f.subject.marketplaceCode}/${encodeURIComponent(f.subject.sellerRef)}?sinceMs=${sinceMs}${brandId ? `&watchedBrandId=${encodeURIComponent(brandId)}` : ''}`}
                         >
                           {f.subject.name || f.subject.sellerRef}
                         </Link>

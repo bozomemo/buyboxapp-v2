@@ -21,6 +21,7 @@ import { buildAdapterRegistry } from '../adapter-registry.js';
 import type { JobContext, JobProgress } from '../job.js';
 import { createSqliteTestDb, NOW, seedMarketplace, type TestDb } from '../test-helpers.js';
 import {
+  completenessShortfall,
   mergeSelectorResults,
   sweepBrandCatalogue,
   sweepSelector,
@@ -109,6 +110,39 @@ describe('sweepSelector', () => {
     const source = fakeSource({ byBrandRef: [[product('1'), product('2')]], total: 100 });
     const result = await sweepSelector(source, { brandRef: '104703', searchTerm: null }, 400);
     expect(result.products).toHaveLength(2);
+  });
+});
+
+describe('completenessShortfall', () => {
+  const sweep = (refs: string[], totalProducts: number | null) => ({
+    products: refs.map((ref) => product(ref)),
+    totalProducts,
+    pagesFetched: refs.length,
+    truncated: false,
+  });
+
+  it('says nothing when the pass reached the count the marketplace claims', () => {
+    expect(completenessShortfall('marka id', sweep(['1', '2', '3', '4'], 4))).toBeNull();
+  });
+
+  it('tolerates a small drift, because `total` is a claim and brands change mid-sweep', () => {
+    const near = sweep(Array.from({ length: 99 }, (_, i) => String(i)), 100);
+    expect(completenessShortfall('arama', near)).toBeNull();
+  });
+
+  it('reports a pass that ended well short — the case that wrote false misuse flags', () => {
+    const short = sweep(Array.from({ length: 90 }, (_, i) => String(i)), 100);
+    expect(completenessShortfall('marka id', short)).toEqual({ selector: 'marka id', seen: 90, claimed: 100 });
+  });
+
+  it('counts distinct products, not cards — a lossy pass repeats what it already served', () => {
+    // 100 cards, 60 products: exactly what unpinned relevance ordering produced before `sst`.
+    const repeated = sweep(Array.from({ length: 100 }, (_, i) => String(i % 60)), 100);
+    expect(completenessShortfall('marka id', repeated)).toEqual({ selector: 'marka id', seen: 60, claimed: 100 });
+  });
+
+  it('makes no claim when the marketplace made none', () => {
+    expect(completenessShortfall('arama', sweep([], null))).toBeNull();
   });
 });
 

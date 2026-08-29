@@ -46,27 +46,19 @@ export interface ScrapeTrackedProductsResult {
   readonly itemsTotal: number;
 }
 
-export async function scrapeTrackedProducts(
+/**
+ * The cadence path's candidates: never-looked first, then oldest look first — the same
+ * ordering, for the same reason, as `scrapeCompetitors`' candidate sort. It is what turns the
+ * ceiling into a rotation through the catalogue rather than a permanent cut-off after the
+ * first N rows.
+ */
+async function rotatedProducts(
   ctx: JobContext,
   marketplaceCode: MarketplaceCode,
-  source: ICompetitorSource,
-  /**
-   * How many items the caller has already reported progress for, so the two halves of one
-   * `ScrapeCompetitors` run share a single counter instead of the tracked half silently
-   * restarting it at zero — which, before this existed, left the Jobs screen frozen on the last
-   * listing for the hours the tracked half was running.
-   */
-  progressOffset = 0,
-  /** Per-run ceiling; see `SCRAPE_MAX_TRACKED_PER_RUN`. Overridable from the job payload. */
-  maxProducts = SCRAPE_MAX_TRACKED_PER_RUN,
-): Promise<ScrapeTrackedProductsResult> {
-  const nowMs = ctx.clock.nowMs();
+  maxProducts: number,
+): Promise<trackedProductsRepo.TrackedProductRow[]> {
   const products = await trackedProductsRepo.listTrackedProducts(ctx.appDb, { activeOnly: true });
-
-  // Never-looked first, then oldest look first — the same ordering, for the same reason, as
-  // `scrapeCompetitors`' candidate sort: it is what turns the ceiling below into a rotation
-  // through the catalogue rather than a permanent cut-off after the first N rows.
-  const due = products
+  return products
     .filter((p) => p.marketplaceCode === marketplaceCode)
     .sort((a, b) => {
       const aAt = a.lastScrapedAt ?? -1;
@@ -77,6 +69,72 @@ export async function scrapeTrackedProducts(
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     })
     .slice(0, maxProducts);
+}
+
+/**
+ * The rescan path's candidates: the ids the operator ticked, in the order they were sent.
+ *
+ * Fetched one at a time rather than by filtering `listTrackedProducts`, because the selection is
+ * a handful of rows and that call reads the whole table — 4,679 rows on the live install. Ids
+ * that no longer exist, or that belong to another marketplace, are dropped silently: the row may
+ * have been removed between the click and the run, and there is nothing to look at.
+ */
+async function selectedProducts(
+  ctx: JobContext,
+  marketplaceCode: MarketplaceCode,
+  ids: readonly string[],
+  maxProducts: number,
+): Promise<trackedProductsRepo.TrackedProductRow[]> {
+  const rows: trackedProductsRepo.TrackedProductRow[] = [];
+  for (const id of ids.slice(0, maxProducts)) {
+    const row = await trackedProductsRepo.getTrackedProduct(ctx.appDb, id);
+    if (row && row.marketplaceCode === marketplaceCode) rows.push(row);
+  }
+  return rows;
+}
+
+export interface ScrapeTrackedProductsOptions {
+  /**
+   * How many items the caller has already reported progress for, so the two halves of one
+   * `ScrapeCompetitors` run share a single counter instead of the tracked half silently
+   * restarting it at zero — which, before this existed, left the Jobs screen frozen on the last
+   * listing for the hours the tracked half was running.
+   */
+  readonly progressOffset?: number;
+  /** Per-run ceiling; see `SCRAPE_MAX_TRACKED_PER_RUN`. Overridable from the job payload. */
+  readonly maxProducts?: number;
+  /**
+   * Read **exactly these products**, in place of the due-rotation below.
+   *
+   * This is the operator asking for one row, or a handful of them, to be looked at now
+   * (`RescanTrackedProducts`, doc 06 §12.2) — not the cadence working through a catalogue. Two
+   * things follow from that, and both are deliberate:
+   *
+   * - the rotation ordering is dropped, because there is nothing to rotate: the whole selection
+   *   is read, and it is small by construction (`RESCAN_MAX_PRODUCTS`);
+   * - `is_active` is **not** consulted. Pausing a product means "the cadence should skip it",
+   *   and an operator who has just ticked that row and pressed the button has said something
+   *   more specific than the flag does.
+   *
+   * Everything else — change detection, seller registration, the failure rows, the consecutive
+   * failure limit — is identical, so a rescan writes exactly what a cadence look writes.
+   */
+  readonly onlyIds?: readonly string[];
+}
+
+export async function scrapeTrackedProducts(
+  ctx: JobContext,
+  marketplaceCode: MarketplaceCode,
+  source: ICompetitorSource,
+  options: ScrapeTrackedProductsOptions = {},
+): Promise<ScrapeTrackedProductsResult> {
+  const progressOffset = options.progressOffset ?? 0;
+  const maxProducts = options.maxProducts ?? SCRAPE_MAX_TRACKED_PER_RUN;
+  const nowMs = ctx.clock.nowMs();
+
+  const due = options.onlyIds
+    ? await selectedProducts(ctx, marketplaceCode, options.onlyIds, maxProducts)
+    : await rotatedProducts(ctx, marketplaceCode, maxProducts);
 
   let itemsOk = 0;
   let itemsFailed = 0;

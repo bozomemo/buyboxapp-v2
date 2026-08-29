@@ -690,6 +690,40 @@ Faz 4 on 2026-08-28 — see doc 05 §5. One consequence reaches this screen: the
 is now the last look that *changed*, not the last look, so anything reporting freshness reads
 `tracked_products.last_scraped_at` instead.)
 
+**Manual re-scan (2026-08-29)** — *"seçilen ürünleri tekli/çoklu tekrar tarama ekleyelim.
+ürünlerden gözüne takılanları tekrar güncel veri gelmesini isteyebilir."*
+
+The grid has a leading tick column, a per-row **Tara** and a **Seçilenleri Tekrar Tara** button.
+Both post to `/api/tracked-products/rescan`, which enqueues `RescanTrackedProducts` (doc 07 §7.1)
+— one job per marketplace in the selection, because a competitor source is registered per
+marketplace and a run has exactly one.
+
+Four decisions worth keeping:
+
+- **It is the same read, not a second one.** The job calls `scrapeTrackedProducts` with an
+  explicit id list, so change detection, seller registration, the failure rows and
+  `last_scraped_at` behave identically. A rescan must be indistinguishable from a cadence look in
+  the archive; an operator's curiosity must not put a differently-shaped row in the history.
+- **Capped at 50 products per press**, and a larger selection is **refused rather than
+  truncated** — silently reading part of a selection and reporting success is how an operator
+  comes to believe a figure was refreshed when it was not. A whole brand is the sweep's job, not
+  this button's.
+- **A paused product is read when it was explicitly ticked.** `is_active` means "the cadence
+  should skip this"; someone who selected that exact row has said something more specific.
+- **The grid is not reloaded on success.** The job has been queued, not run — redrawing the same
+  figures would read as "nothing happened". The operator is told where the progress is instead.
+
+Why it exists at all: the cadence rotates 300 products an hour (`SCRAPE_MAX_TRACKED_PER_RUN`),
+which on the live install is a full pass a little under every sixteen hours. That is the right
+cost for a report nobody is watching, and the wrong answer to someone who has just noticed one
+row and wants to know whether the number in front of them is still true.
+
+**Arriving pre-filtered.** `/tracked-products` seeds its filter bar from `?watchedBrandId=`,
+`?categoryRef=`, `?text=`, `?unratedOnly=` and `?searchTermOnly=`, which is what the brand links
+on `/watched-brands` navigate to (§12.4). Seeded **once, as the initial value** — the filter bar
+owns the state from then on. Syncing both directions would fight the operator every time they
+cleared a filter, and is the same call §12.1's `/listings?brandId=` link made.
+
 ### 12.4 Brand-owner audit — built (Faz 1–8, 2026-08-28)
 
 The product is also used by **brand owners**, not only by sellers: the person responsible for
@@ -704,6 +738,12 @@ only a search term; the marketplace's brand id is optional, and after the first 
 look it up. "Şimdi tara" enqueues `SweepBrandCatalogue`; progress shows on `/jobs`, because a
 full sweep is a minute for a small brand and five for a large one.
 
+The brand name, its product count and its unrated count are **links** into
+`/tracked-products?watchedBrandId=…` (the last adding `&unratedOnly=true`), so the counts this
+screen reports can be clicked through to the rows behind them. This screen counts a brand's
+products but cannot show them, and the count is exactly the number an operator wants to open —
+before this they had to leave for `/tracked-products` and re-pick the brand from a dropdown.
+
 **`/tracked-products`** — now serves both hand-added products and swept ones, server-paged,
 filtered and sorted. Filters: text, brand, category, status, minimum rating count, and two
 switches that exist for the audit specifically — *sadece aramada çıkanlar* and *değerlendirmesi
@@ -714,6 +754,15 @@ its search term; a product the search finds while the marketplace attributes it 
 carrying the brand's name without the brand behind it. Eight of Whiskas' 887 products were
 exactly that, in categories including *Halı* and *Ahşap Boya & Vernik*. Such rows also carry a
 badge in the Ürün column, so the signal is visible without applying the filter.
+
+The shortlist is only meaningful when both passes are **complete**, and until 2026-08-29 they
+were not: Trendyol re-ranked its result pages per request, so a deep sweep lost 18% of a large
+brand and a product the brand-id pass happened to miss was written as search-only. Every one of
+the 208 rows Royal Canin flagged that way was a paging artefact — the products carried the
+brand's own storefront brand id (api-references §1.7). The sweep now pins the ordering, and a
+pass ending short of the marketplace's own count records a `BrandSweepIncomplete` event on
+`/events` instead of leaving the flags to be read as findings. **A brand swept before that fix
+must be re-swept before its shortlist is trusted.**
 
 **Dead-product suggestion** — on `/watched-brands`, per brand, with the scan time it would
 actually save: *"887 üründen 574'ünün (%65) hiç değerlendirmesi yok · derin tarama 30 dk → 11
@@ -784,6 +833,46 @@ Three decisions in it:
   the same `/competitors/sellers/[marketplace]/[ref]` page. That is what will let one seller
   policy apply to both in Faz 5. An offer the marketplace did not identify is counted and
   reported beside the list, never matched by display name.
+
+##### The seller page carries both reports (2026-08-29)
+
+Sharing the identity was right; sharing only *half* the report was not. Until this date
+`/competitors/sellers/[marketplace]/[ref]` read one archive — `competitor_observations` ⋈
+`listings`, "what does this seller do on the products **we sell**". A brand-audit finding
+("Periko Petshop 5 üründe hep buybox") linked a seller there, and on a brand-owner install that
+seller very often sells none of our items, so the page came up empty and read as lost data.
+
+It was not lost. The five products were in the other archive the whole time —
+`tracked_product_observations` ⋈ `tracked_products`. The page now shows **both halves, each
+labelled with what it covers**:
+
+| Half | Reads | Answers |
+|---|---|---|
+| Sattığımız ürünlerde | `competitor_observations` ⋈ `listings` | ürün, bizim fiyatımız, onun aralığı, teklif, buybox, ort. sıra |
+| İzlenen marka ürünlerinde | `tracked_product_observations` ⋈ `tracked_products` (`brandReportsRepo.sellerTrackedProductBreakdown`) | ürün, onun aralığı, **piyasa sapması**, teklif, buybox, en ucuz |
+
+Decisions:
+
+- **No "bizim fiyatımız" column on the brand half, and there never will be.** We may not sell
+  the product at all. What takes its place is *piyasa sapması* — measured exactly as
+  `/watched-brands/sellers` measures it, against the mean of the seller's own look including
+  sellers a report excludes, and highlighted below −15% on the same threshold. One figure, one
+  meaning, on every screen that shows it.
+- **Both halves expand the seller group**, across marketplaces. Applying the operator's grouping
+  to one table and not the other would show the same company as whole in one and split in the
+  other.
+- **Each empty state says what its own emptiness means**, rather than leaving a bare table. "Bu
+  dönemde bu satıcıyla çakıştığımız bir ürün yok" plus, when the other half has rows, the
+  sentence that turns a suspected bug into an answer: this firm was seen on watched-brand
+  products, just not on ours.
+- **The brand half defaults to every watched brand**, with a dropdown to narrow. "What is this
+  firm doing across everything we watch" is the question the audit is for; narrowing is the
+  operator's to ask for. A **finding link narrows it on arrival** — it carries `?sinceMs=` and
+  `?watchedBrandId=`, so the operator lands on the rows the alert named instead of rebuilding
+  the filter that produced it. `/watched-brands/sellers` passes its own scope the same way.
+- **Capped at 500 rows**, newest-seen first, and the response says when the cut fell so the
+  screen can admit it. A seller on the brand side can appear on a whole swept catalogue (4,863
+  products for Royal Canin) and this table renders in one go.
 
 #### Seller policy: authorised, blocked, undefined (Faz 5)
 

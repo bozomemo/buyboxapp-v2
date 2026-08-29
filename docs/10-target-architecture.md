@@ -203,9 +203,9 @@ Five implementations:
 
 | Source | Status | Behaviour |
 |--------|--------|-----------|
-| `Manual` | available | Operator adds or edits a stock item in the UI, one at a time |
+| `Manual` | available | Operator adds or edits a stock item in the UI, one at a time. **Not a scheduled import**: entries go straight to `stock_items` via `/api/stock`, and `ImportStockItems` treats it as nothing to run (doc 07 §6) |
 | `Excel` | available | Upload a spreadsheet; **column mapping is configured in the UI**, not hardcoded |
-| `MarketplaceListing` | available | Derive stock items from imported marketplace listings (base stock codes discovered from seller SKUs). Cost must then be supplied manually or by another source |
+| `MarketplaceListing` | available | Derive stock items from imported marketplace listings (base stock codes discovered from seller SKUs). Cost must then be supplied manually or by another source — so its runs write through `ensureStockItem` and can never reset an established `unit_cost` to zero (doc 07 §6) |
 | `ErpDatabase` | comingSoon | Direct SQL against the ERP. Registered, config schema defined, `fetch()` throws `NotImplemented`. UI shows it disabled with "coming soon" |
 | `ErpApi` | comingSoon | Same, over HTTP |
 

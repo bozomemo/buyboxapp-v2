@@ -20,6 +20,7 @@ per job from the Jobs screen (§8 "Operator-configurable cadence").
 | `ImportListings` | per marketplace, 30 min | Full listing sync: price, stock, commission, VAT, status |
 | `ObserveBuybox` | per marketplace, tiered (§4) | Official buybox API → `buybox_observations` |
 | `ScrapeCompetitors` | per marketplace, hourly, tiered (§4) — **disabled by default** | Full seller detail → `scrape_runs` + `competitor_observations` (reporting only, §7) |
+| `RescanTrackedProducts` | on demand only, never scheduled | Re-read the tracked products an operator selected (reporting only, §7.1) |
 | `Reprice` | per marketplace, policy interval | Decide; enqueue `price_submissions` |
 | `SubmitPriceChanges` | continuous | Drain the outbox in marketplace-sized batches |
 | `ConfirmSubmissions` | continuous | Poll batch status to a terminal state |
@@ -55,6 +56,13 @@ resolved bundle list (`{bundleStockCode, name, members[]}`) given directly in th
 §6). Has **no cadence** (`cadenceMs: null` in the catalog): no bundle-source port exists yet
 (doc 10 §4), so today this only ever runs from an explicit "run now" with a payload someone
 supplies by hand, never on a ticker.
+
+No cadence still means **registered**: `claimNextJob` only claims jobs a worker has registered,
+so an unregistered catalogue entry is not a job that fails — it is a queue row that is never
+claimed, with no `job_runs` row and nothing at all on the Jobs screen. `ImportBundles` was in
+this table and registered nowhere until 2026-08-29; `apps/worker`'s test now asserts every
+`JOB_CATALOG` entry has a handler, and every entry's `defaultPayload` is asserted to satisfy its
+own handler's schema.
 
 **`ImportListings`** (`pipeline/import-listings.ts`) — full per-marketplace listing sync: price,
 stock, commission, VAT rate, campaigns, sale/lock/archive status. Idempotent upsert plus a stale
@@ -359,6 +367,17 @@ The browser side of that same failure was fixed with it: the Playwright fetcher 
 session whose browser has died rather than caching it for the process's lifetime. A launch that
 *never* worked is still cached and not retried per call — the two are different facts.
 
+**One page, one fetch at a time** (2026-08-29). That fetcher runs a single browser page and used
+to rely on the source's rate limiter to serialise calls, which it does only while there is a
+single caller. Two concurrent runs of one job share one source instance, and two navigations on
+one page either cancel each other (`net::ERR_ABORTED`, which reads like a block) or — the
+dangerous one — let a completed navigation be replaced before its HTML is read, handing one
+caller the *other* caller's page under its own status and URL: one brand's catalogue page written
+as another brand's. Fetches are now queued inside the fetcher, so the page serves one at a time
+no matter how many callers it has. The rate limiter, not the queue, remains the throughput
+bound. §8's single-flight guard reduces how often this arises; it does not replace it, because
+different brands and different jobs still share the page legitimately.
+
 ---
 
 ## 5. Budget management
@@ -402,6 +421,21 @@ live listings inactive. This is the failure the legacy delete-first pattern guar
 
 `ImportStockItems` upserts by `base_stock_code` and **never touches operator-owned fields**
 (`price_multiplier`, `auto_reprice_enabled`, `min_price`, `max_price`, `allow_*`).
+
+Two further rules, both added 2026-08-29 after each was measured failing on a live install:
+
+- **It runs only for a source with a batch behind it.** `Manual` (doc 10 §4) is an operator
+  adding one item at a time in the UI, which goes straight to `stock_items` through
+  `/api/stock`. Ticking the job for it hands `ManualProductSource` the stored `sourceConfig`
+  — `{}` — and fails its single-entry schema; the daily cadence had been doing exactly that
+  once a day since setup. The ticker and "run now" both resolve the payload through
+  `resolveImportStockItemsPayload`, which returns nothing to run for such a source, and the
+  handler records `StockImportNotApplicable` and completes rather than failing.
+- **A source with no cost may not overwrite one.** `MarketplaceListing` emits `Money.zero`
+  (doc 10 §4: "cost must then be supplied manually or by another source"). Written through the
+  plain upsert, that zero lands on top of an operator-entered unit cost — the value doc 02's
+  floor price is computed from. Those sources write through `ensureStockItem`, which refreshes
+  name, stock and source ref and leaves `unit_cost`/`cost_updated_at` alone.
 
 ---
 
@@ -452,6 +486,39 @@ Nothing in this job differs between them: tiering, change detection, failure-rat
 the per-run ceiling are all marketplace-agnostic, and a source that collects nothing is a
 supported state, not a failure.
 
+### 7.1 `RescanTrackedProducts` — the operator-triggered look
+
+`ScrapeCompetitors`' tracked half rotates through the catalogue at `SCRAPE_MAX_TRACKED_PER_RUN`
+(300) products an hour, which on the live install is a full pass a little under every sixteen
+hours. That is the right cost for a report nobody is watching. It is the wrong answer to an
+operator who has just noticed one row on `/tracked-products` (doc 06 §12.2) and wants to know
+whether the figure in front of them is still true.
+
+`RescanTrackedProducts` (`pipeline/rescan-tracked-products.ts`) reads **exactly the products
+named in its payload** and nothing else. It is enqueued only from
+`/api/tracked-products/rescan`, one job per marketplace in the selection.
+
+- **It calls `scrapeTrackedProducts` with an explicit id list** rather than re-implementing the
+  read, so change detection, seller registration, the failure rows and `last_scraped_at` behave
+  exactly as they do on the cadence path. A rescan must be indistinguishable from a cadence look
+  in the archive.
+- **Still reporting only**, on the same terms as the rest of §7: it reads `tracked_products`,
+  never `listings`, so there is no path from it to a pricing decision, and per-product failures
+  are counted rather than failing the run.
+- **`RESCAN_MAX_PRODUCTS` = 50 per run**, and the route refuses a larger selection rather than
+  truncating it. This is a *selection* cap, not a rotation cap like `SCRAPE_MAX_TRACKED_PER_RUN`
+  — nothing comes back for the remainder later, so reading part of a selection and reporting
+  success would leave the operator believing a figure was refreshed when it was not.
+- **`is_active` is not consulted** for a named id. Pausing a product means "the cadence should
+  skip it"; an operator who ticked that row has said something more specific.
+- **One rescan per marketplace at a time** (`countActiveJobsForTarget`), and `maxAttempts: 1` —
+  a retry minutes later answers a question nobody is still asking. Queued at a lower `priority`
+  number than the cadence work, so the one scrape a human is waiting on is claimed first; it is
+  bounded at fifty pages, so it cannot starve what is behind it.
+- **Not in `JOB_CATALOG`**, on the same grounds as `ResolveSellerIdentity`: no cadence, and no
+  runnable default payload — a rescan of nothing is not a run. It is still *registered* with the
+  scheduler, or `claimNextJob` would leave its rows `ready` for ever.
+
 ---
 
 ## 8. Scheduling and concurrency
@@ -495,6 +562,18 @@ The scheduler is DB-backed (doc 10 §1.2). Guarantees:
   operator-editable (§8.1), whose 10 s floor is well under a real catalogue import. A skipped
   tick is logged (`ticker.skippedStillActive`), because silently dropping every tick is
   indistinguishable from the job never running.
+- **A manual trigger is single-flight too** (2026-08-29). The guard above covers only what the
+  cadence path enqueues, and the UI buttons — `POST /api/jobs/run-now`, and *Şimdi tara* on
+  `/watched-brands` — inserted a queue row unconditionally. Nothing then kept the two apart:
+  `Scheduler.startLoop` does not wait for a tick to finish before starting the next, so the
+  second row was claimed about **two seconds** after the first and both ran at once. Two presses
+  of *Şimdi tara* on one brand meant two sweeps rewriting the same rows, halving each other's
+  share of the source's rate limit and duplicating the rating-history samples both detected as
+  changed. Both endpoints now answer **409** when a run of that job is already `ready` or
+  `locked` — scoped to the marketplace for a `perMarketplace` job, and to the brand for a sweep
+  (`countActiveJobsForPayloadField`). A whole-marketplace sweep in flight also answers 409 for
+  any brand inside it, because it already covers that brand; two *different* brands may still
+  run concurrently, which is safe now the shared browser page serialises its fetches (§7).
 - **Graceful shutdown**: stop claiming, finish in-flight work, flush pending batches, release
   locks. Never drop a queued submission on shutdown (doc 09 §6).
 

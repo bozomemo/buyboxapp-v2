@@ -100,4 +100,31 @@ describe.each(ALL_DIALECTS)('countActiveJobsForTarget (%s)', (dialect) => {
     await enqueue(db.appDb, job, 'not json at all', 'locked');
     expect(await jobsRepo.countActiveJobsForTarget(db.appDb, job, 'trendyol')).toBe(1);
   });
+
+  // The general form, used as the single-flight guard behind "Şimdi tara" — one sweep per brand,
+  // while leaving other brands free to run alongside it.
+  describe('countActiveJobsForPayloadField', () => {
+    const forBrand = (brandId: string) => JSON.stringify({ marketplaceCode: 'trendyol', watchedBrandId: brandId });
+
+    it('separates one brand from another', async () => {
+      const job = 'SeparatesBrands';
+      await enqueue(db.appDb, job, forBrand('brand-a'), 'locked');
+
+      expect(await jobsRepo.countActiveJobsForPayloadField(db.appDb, job, 'watchedBrandId', 'brand-a')).toBe(1);
+      expect(await jobsRepo.countActiveJobsForPayloadField(db.appDb, job, 'watchedBrandId', 'brand-b')).toBe(0);
+    });
+
+    it('lets an unscoped run suppress a scoped request, because it already covers it', async () => {
+      // A sweep queued with no `watchedBrandId` sweeps every brand on the marketplace.
+      const job = 'UnscopedCoversScoped';
+      await enqueue(db.appDb, job, JSON.stringify({ marketplaceCode: 'trendyol' }), 'ready');
+      expect(await jobsRepo.countActiveJobsForPayloadField(db.appDb, job, 'watchedBrandId', 'brand-a')).toBe(1);
+    });
+
+    it('ignores rows that have finished', async () => {
+      const job = 'FinishedBrandSweep';
+      await enqueue(db.appDb, job, forBrand('brand-a'), 'done');
+      expect(await jobsRepo.countActiveJobsForPayloadField(db.appDb, job, 'watchedBrandId', 'brand-a')).toBe(0);
+    });
+  });
 });

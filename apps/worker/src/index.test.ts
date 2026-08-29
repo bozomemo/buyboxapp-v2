@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configRepo, createDb, jobsRepo, runMigrations } from '@buybox/db';
-import { IMPORT_LISTINGS_JOB, jobCadenceSettingKey, REPRICE_JOB } from '@buybox/jobs';
+import { IMPORT_LISTINGS_JOB, JOB_CATALOG, jobCadenceSettingKey, REPRICE_JOB } from '@buybox/jobs';
 import { FileSecretStore, marketplaceCredentialsKey } from '@buybox/shared';
 import { startWorker } from './index.js';
 
@@ -42,6 +42,35 @@ describe('startWorker', () => {
    * and every `ScrapeCompetitors` with `no competitor source registered`, until somebody
    * restarted the service, with nothing on any screen saying so.
    */
+  /**
+   * Every catalogue entry is offered a "run now" button by the Jobs screen, and a job whose name
+   * no worker registered is never claimed at all: the row sits in `job_queue` as `ready` with no
+   * `job_runs` row, so the button looks like it did nothing. That is exactly what `ImportBundles`
+   * did until 2026-08-29 — it was in `JOB_CATALOG` and registered nowhere.
+   */
+  it('registers a handler for every job in the catalogue', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'buybox-worker-test-'));
+    const dbFile = path.join(dir, 'test.db');
+    const appDb = createDb(`file:${dbFile}`, 'sqlite');
+    await runMigrations(appDb);
+
+    const handle = await startWorker({
+      appDb,
+      env: {
+        DATABASE_URL: `file:${dbFile}`,
+        SECRET_STORE_KEY: 'test-key',
+        SECRET_STORE_PATH: path.join(dir, 'secrets.enc.json'),
+      },
+    });
+
+    const registered = new Set(handle.scheduler.registeredJobNames());
+    const missing = JOB_CATALOG.map((entry) => entry.jobName).filter((name) => !registered.has(name));
+    expect(missing).toEqual([]);
+
+    await handle.shutdown();
+    appDb.close();
+  });
+
   it('picks up a marketplace configured after boot, without a restart', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'buybox-worker-test-'));
     const dbFile = path.join(dir, 'test.db');

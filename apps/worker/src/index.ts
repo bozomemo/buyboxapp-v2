@@ -79,8 +79,11 @@ import {
   getScrapeRateLimit,
   IMPORT_LISTINGS_JOB,
   IMPORT_STOCK_ITEMS_JOB,
+  IMPORT_BUNDLES_JOB,
+  importBundles,
   importListings,
   importStockItems,
+  resolveImportStockItemsPayload,
   isJobEnabled,
   OBSERVE_BUYBOX_JOB,
   observeBuybox,
@@ -88,6 +91,8 @@ import {
   pruneHistoryJob,
   REPRICE_JOB,
   reprice,
+  RESCAN_TRACKED_PRODUCTS_JOB,
+  rescanTrackedProducts,
   RESET_BUDGET_JOB,
   resetBudget,
   SCRAPE_COMPETITORS_JOB,
@@ -571,11 +576,20 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   scheduler.register({ jobName: CONFIRM_SUBMISSIONS_JOB, handler: confirmSubmissions });
   scheduler.register({ jobName: RESET_BUDGET_JOB, handler: resetBudget });
   scheduler.register({ jobName: IMPORT_STOCK_ITEMS_JOB, handler: importStockItems });
+  // No cadence (see this file's doc comment), but it must still be *registered*: `claimNextJob`
+  // only ever claims a job whose name a worker has registered, so an unregistered catalogue entry
+  // does not fail — it sits in `job_queue` as `ready` for ever, with no `job_runs` row and
+  // therefore nothing at all on the Jobs screen. Measured 2026-08-29: "Şimdi çalıştır" on
+  // Paket İçe Aktarma looked like it did nothing whatsoever.
+  scheduler.register({ jobName: IMPORT_BUNDLES_JOB, handler: importBundles });
   scheduler.register({ jobName: SCRAPE_COMPETITORS_JOB, handler: scrapeCompetitors });
   scheduler.register({ jobName: SWEEP_BRAND_CATALOGUE_JOB, handler: sweepBrandCatalogue });
   // On demand only — no cadence, and deliberately not in `JOB_CATALOG`: a resolution names
   // one firm, so it is enqueued from that seller's own row and nowhere else.
   scheduler.register({ jobName: RESOLVE_SELLER_IDENTITY_JOB, handler: resolveSellerIdentity });
+  // Likewise on demand only: a rescan names the rows an operator ticked, so it is enqueued from
+  // `/api/tracked-products/rescan` and has no runnable empty payload to put in the catalogue.
+  scheduler.register({ jobName: RESCAN_TRACKED_PRODUCTS_JOB, handler: rescanTrackedProducts });
   scheduler.register({ jobName: RESOLVE_PRODUCT_BARCODES_JOB, handler: resolveProductBarcodes });
 
   scheduler.startLoop();
@@ -605,11 +619,21 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     jobName: string,
     intervalMs: number,
     extraPayload: Record<string, unknown> = {},
+    /**
+     * Optional narrowing of *which* marketplaces this job is ticked for. A job with no source
+     * for a marketplace can only ever record an empty run there, and a cadence that files one of
+     * those every hour buries the runs that mean something (measured 2026-08-29: hourly
+     * `ResolveProductBarcodes` runs of 0 items on a Trendyol-only install, which has no product
+     * detail source at all). The handler still treats an absent source as a supported no-op —
+     * this only stops the *ticker* from asking.
+     */
+    appliesTo: (marketplaceCode: MarketplaceCode) => boolean = () => true,
   ) => {
     const fire = async (): Promise<void> => {
       // doc 12 6.9 "enable/disable" — an operator-disabled job simply doesn't fire.
       if (!(await isJobEnabled(appDb, jobName))) return;
       for (const marketplaceCode of marketplaceCodes) {
+        if (!appliesTo(marketplaceCode)) continue;
         const payload = JSON.stringify({ marketplaceCode, ...extraPayload });
         // doc 07 §8 "one run at a time", per target. `Scheduler.tick` applies this to the jobs
         // it cadences itself; these tickers bypass that path entirely by calling `enqueueNow`,
@@ -658,17 +682,20 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   everyMarketplace(SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs);
   // Likewise off unless enabled, and on the same authority (api-references §1.6/§1.7).
   everyMarketplace(SWEEP_BRAND_CATALOGUE_JOB, sweepBrandCatalogueCadenceMs);
-  everyMarketplace(RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs);
+  // Only where a product-detail source exists — `productDetailSources` is rebuilt by
+  // `reloadIfConfigChanged`, so this reads the live registry rather than a boot-time snapshot.
+  everyMarketplace(RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs, {}, (code) =>
+    productDetailSources.has(code),
+  );
 
   const fireImportStockItems = async (): Promise<void> => {
     if (!(await isJobEnabled(appDb, IMPORT_STOCK_ITEMS_JOB))) return;
-    const configured = await configRepo.getAppSetting(appDb, 'productSource.config');
-    if (!configured) return; // wizard step 6 not completed yet
-    const { sourceCode, sourceConfig } = JSON.parse(configured.value) as {
-      sourceCode: string;
-      sourceConfig: unknown;
-    };
-    const payload = JSON.stringify({ sourceCode, sourceConfig });
+    // `null` = nothing to run: wizard step 6 not completed, or a source with no batch behind it
+    // (`manual`, doc 10 §4). Firing anyway is how this cadence spent every day since setup
+    // failing `ManualProductSource`'s single-entry schema (measured 2026-08-29).
+    const resolved = await resolveImportStockItemsPayload(appDb);
+    if (!resolved) return;
+    const payload = JSON.stringify(resolved);
     // Same "one run at a time" guard as `everyMarketplace` above — this job reads a whole
     // product catalogue and is the likeliest of all of them to outlast its own cadence. Keyed on
     // the job name alone, not a target: this one is global rather than per marketplace, so two

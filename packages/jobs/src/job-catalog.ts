@@ -94,6 +94,9 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     label: 'Stok İçe Aktarma',
     cadenceMs: 24 * 60 * 60_000,
     perMarketplace: false,
+    // Empty on purpose, and the one entry a caller must not send verbatim: this job's payload is
+    // the *configured* product source, which lives in `app_settings` and cannot be a compiled-in
+    // constant. `/api/jobs/run-now` fills it from `resolveImportStockItemsPayload`.
     defaultPayload: {},
     defaultEnabled: true,
   },
@@ -112,7 +115,10 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     label: 'Paket İçe Aktarma',
     cadenceMs: null,
     perMarketplace: false,
-    defaultPayload: { sourceCode: 'excel', sourceConfig: {} },
+    // The payload this job actually takes (doc 07 §1.1): a resolved bundle list, supplied by
+    // hand. It used to read `{ sourceCode: 'excel', sourceConfig: {} }` — a product-source
+    // payload copied from the job above, which this handler's schema rejects outright.
+    defaultPayload: { bundles: [] },
     defaultEnabled: true,
   },
   {

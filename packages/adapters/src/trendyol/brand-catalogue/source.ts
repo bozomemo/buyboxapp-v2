@@ -44,6 +44,28 @@ export const TRENDYOL_PUBLIC_BASE_URL = 'https://www.trendyol.com';
 export const TRENDYOL_BRAND_CATALOGUE_PAGE_SIZE = 24;
 
 /**
+ * The sort `/sr` is asked for on every page, and the reason a sweep is complete.
+ *
+ * Trendyol's default ordering is relevance, which is **recomputed per request**: paging a large
+ * brand without pinning a sort re-serves products already seen and skips others entirely.
+ * Measured 2026-08-29 against `wb=103046` (Royal Canin), pages 1–60 — 1,440 cards carrying only
+ * **1,184 distinct products**, an 18% loss. The same 60 pages with this parameter set returned
+ * 1,439 distinct of 1,440, and a full sweep ended on page 201 with a short page of 17 —
+ * 200 × 24 + 17 = 4,817, exactly `data.total`.
+ *
+ * That is not a cosmetic difference. The sweep's two passes each sampled a *different* ~75% of
+ * the catalogue, and a product the brand-id pass happened to miss was written as
+ * `via_brand_ref = 0, via_search_term = 1` — the audit's brand-misuse flag — on evidence that
+ * was pure paging noise. All 208 rows flagged that way for Royal Canin carried the brand's own
+ * `webBrands[0].id` (2026-08-29).
+ *
+ * `MOST_RECENT` rather than a price sort deliberately: listing date does not move while a sweep
+ * runs, whereas a competitor's repricing mid-sweep would shuffle a price-sorted catalogue and
+ * reintroduce the drift this exists to remove.
+ */
+export const TRENDYOL_BRAND_CATALOGUE_SORT = 'MOST_RECENT';
+
+/**
  * Defaults, **not** derived from any published Trendyol figure — the public site has no
  * documented quota. Recorded in doc 08 alongside the product-page scraper's.
  */
@@ -131,6 +153,9 @@ export class TrendyolBrandCatalogueSource implements IBrandCatalogueSource {
    * `pi=<n>` pages. Passing both narrows to the intersection, which is *not* what either
    * caller wants — the point of carrying two selectors is to compare their results — so the
    * brand id wins when both are set and the caller sweeps the search term as its own query.
+   *
+   * `sst=` pins the ordering on every request; without it deep paging silently loses products
+   * (measured 2026-08-29, see `TRENDYOL_BRAND_CATALOGUE_SORT`).
    */
   buildUrl(query: BrandCatalogueQuery, pageIndex: number): string {
     if (!hasBrandCatalogueQuery(query)) {
@@ -147,6 +172,9 @@ export class TrendyolBrandCatalogueSource implements IBrandCatalogueSource {
       url.searchParams.set('q', query.searchTerm!.trim());
     }
     url.searchParams.set('pi', String(pageIndex));
+    // Always, for both selectors: an unpinned sort makes deep paging lossy — see
+    // `TRENDYOL_BRAND_CATALOGUE_SORT`.
+    url.searchParams.set('sst', TRENDYOL_BRAND_CATALOGUE_SORT);
     return url.toString();
   }
 

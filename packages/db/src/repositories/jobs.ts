@@ -107,6 +107,28 @@ export async function countActiveJobsForTarget(
   jobName: string,
   marketplaceCode: string,
 ): Promise<number> {
+  return countActiveJobsForPayloadField(appDb, jobName, 'marketplaceCode', marketplaceCode);
+}
+
+/**
+ * The general form of `countActiveJobsForTarget`: active rows for one job name whose payload
+ * names `field` as `value`, or does not name it at all.
+ *
+ * The second half of that rule is what makes it usable as a single-flight guard for a *scoped*
+ * request against an *unscoped* run. A `SweepBrandCatalogue` queued with no `watchedBrandId`
+ * sweeps every brand on its marketplace, so it already covers the one brand an operator is
+ * asking for, and admitting a second run for that brand would only put two sweeps on the same
+ * pages. The narrower direction stays independent: brand A running does not suppress brand B.
+ *
+ * Rows whose payload is absent or unparseable count as matching — see the doc comment above for
+ * why suppressing is the safe direction.
+ */
+export async function countActiveJobsForPayloadField(
+  appDb: AppDatabase,
+  jobName: string,
+  field: string,
+  value: string,
+): Promise<number> {
   const rows = await withDialect(appDb, {
     sqlite: (db) =>
       db
@@ -150,8 +172,8 @@ export async function countActiveJobsForTarget(
       continue;
     }
     try {
-      const parsed = JSON.parse(row.payload) as { marketplaceCode?: unknown };
-      if (parsed.marketplaceCode === undefined || parsed.marketplaceCode === marketplaceCode) {
+      const parsed = JSON.parse(row.payload) as Record<string, unknown>;
+      if (parsed[field] === undefined || parsed[field] === value) {
         count += 1;
       }
     } catch {

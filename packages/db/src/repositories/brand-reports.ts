@@ -561,6 +561,283 @@ export async function brandSellerAggregatesInRange(
 }
 
 /**
+ * One seller's activity across the **tracked products** they were seen on, one row per product.
+ *
+ * The brand-side answer to `competitorReportsRepo.sellerListingBreakdown`, and it exists because
+ * that function cannot answer for this seller at all: it joins `competitor_observations` to
+ * `listings`, so a seller who competes only on products we do not sell comes back as an empty
+ * result. On a brand-owner install that is the *normal* case — the audit is about the whole
+ * marketplace, not about our own shelf — and a finding saying "this seller held the buybox on 5
+ * products" led to a screen showing none of them (doc 06 §12.4).
+ *
+ * Same aggregation as `brandSellerAggregatesInRange`, transposed: that one groups by seller to
+ * rank sellers within a brand, this one fixes the seller and groups by product to say *which*
+ * products. The market baseline is identical — the mean price of the product's own look,
+ * including sellers a report excludes — so a figure here and a figure there describe the same
+ * behaviour and can be read against each other.
+ *
+ * `sellers` is a **list** so a caller can pass an expanded `competitor_seller_groups` membership
+ * (doc 05 §5) and get the whole company across marketplaces in one table. Rows stay keyed per
+ * marketplace, because the same digits are different firms on different marketplaces.
+ */
+export interface SellerTrackedProductRow {
+  readonly trackedProductId: string;
+  readonly marketplaceCode: string;
+  readonly productLabel: string;
+  /** The brand as the marketplace attributes it — `null` when the sweep recorded none. */
+  readonly brandName: string | null;
+  /** Which watched brand's sweep put this product in the archive; `null` for a hand-added one. */
+  readonly watchedBrandId: string | null;
+  /** The name on the observations *in this window*, not the seller's name today. */
+  readonly observedName: string;
+  readonly observationCount: number;
+  readonly buyboxCount: number;
+  readonly cheapestCount: number;
+  /** See `BrandSellerAggregateRow.avgDeviationPct` — mean, negative meaning below the market. */
+  readonly avgDeviationPct: number | null;
+  readonly comparedCount: number;
+  readonly minPrice: bigint | null;
+  readonly maxPrice: bigint | null;
+  readonly firstSeenAt: number;
+  readonly lastSeenAt: number;
+}
+
+interface RawSellerProductRow {
+  trackedProductId: string;
+  marketplaceCode: string;
+  productLabel: string | null;
+  brandName: string | null;
+  watchedBrandId: string | null;
+  observedName: string | null;
+  observationCount: unknown;
+  buyboxCount: unknown;
+  cheapestCount: unknown;
+  avgDeviationPct: unknown;
+  comparedCount: unknown;
+  minPrice: unknown;
+  maxPrice: unknown;
+  firstSeenAt: unknown;
+  lastSeenAt: unknown;
+}
+
+function toSellerProductRow(
+  r: RawSellerProductRow,
+  decodeMoney: (v: unknown) => bigint | null,
+): SellerTrackedProductRow {
+  return {
+    trackedProductId: r.trackedProductId,
+    marketplaceCode: r.marketplaceCode,
+    productLabel: r.productLabel ?? '',
+    brandName: r.brandName ?? null,
+    watchedBrandId: r.watchedBrandId ?? null,
+    observedName: r.observedName ?? '',
+    observationCount: Number(r.observationCount),
+    buyboxCount: Number(r.buyboxCount),
+    cheapestCount: Number(r.cheapestCount),
+    avgDeviationPct:
+      r.avgDeviationPct === null || r.avgDeviationPct === undefined ? null : Number(r.avgDeviationPct),
+    comparedCount: Number(r.comparedCount),
+    minPrice: decodeMoney(r.minPrice),
+    maxPrice: decodeMoney(r.maxPrice),
+    firstSeenAt: Number(r.firstSeenAt),
+    lastSeenAt: Number(r.lastSeenAt),
+  };
+}
+
+/** `(marketplace = ? and seller = ?) or (…)` over a whole group; `1 = 0` for an empty list. */
+function anySellerMatches(
+  marketplaceColumn: Column,
+  sellerColumn: Column,
+  sellers: readonly SellerKey[],
+): SQL {
+  if (sellers.length === 0) return sql`1 = 0`;
+  return or(...sellers.map((seller) => sellerMatches(marketplaceColumn, sellerColumn, seller)))!;
+}
+
+export async function sellerTrackedProductBreakdown(
+  appDb: AppDatabase,
+  window: BrandReportWindow,
+  sellers: readonly SellerKey[],
+  limit: number,
+): Promise<SellerTrackedProductRow[]> {
+  if (sellers.length === 0) return [];
+  return withDialect(appDb, {
+    sqlite: async (db) => {
+      const o = sqliteSchema.trackedProductObservations;
+      const p = sqliteSchema.trackedProducts;
+      // Scoped only by the window — never by the seller filter — because the baseline is what
+      // the whole page showed at that moment, not what this one seller was doing on it.
+      const look = db
+        .select({
+          trackedProductId: o.trackedProductId,
+          observedAt: o.observedAt,
+          minPrice: sql<string>`min(${o.price})`.as('look_min_price'),
+          avgPrice: sql<number>`avg(${sqliteNumericPrice(o.price)})`.as('look_avg_price'),
+        })
+        .from(o)
+        .where(priceRowsClause(o, window))
+        .groupBy(o.trackedProductId, o.observedAt)
+        .as('look');
+
+      const rows = await db
+        .select({
+          trackedProductId: o.trackedProductId,
+          marketplaceCode: p.marketplaceCode,
+          productLabel: sql<string>`max(${p.label})`,
+          brandName: sql<string | null>`max(${p.brandName})`,
+          watchedBrandId: sql<string | null>`max(${p.watchedBrandId})`,
+          observedName: sql<string>`max(${o.sellerName})`,
+          observationCount: sql<number>`count(*)`,
+          buyboxCount: sql<number>`sum(case when ${o.rank} = 1 then 1 else 0 end)`,
+          cheapestCount: sql<number>`sum(case when ${o.price} = ${look.minPrice} then 1 else 0 end)`,
+          avgDeviationPct: sql<number | null>`avg(
+            case when ${look.avgPrice} > 0
+              then (${sqliteNumericPrice(o.price)} - ${look.avgPrice}) * 100.0 / ${look.avgPrice}
+            end
+          )`,
+          comparedCount: sql<number>`sum(case when ${look.avgPrice} > 0 then 1 else 0 end)`,
+          minPrice: sql<string | null>`min(${o.price})`,
+          maxPrice: sql<string | null>`max(${o.price})`,
+          firstSeenAt: sql<number>`min(${o.observedAt})`,
+          lastSeenAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .innerJoin(
+          look,
+          and(eq(look.trackedProductId, o.trackedProductId), eq(look.observedAt, o.observedAt)),
+        )
+        .where(
+          and(
+            priceRowsClause(o, window),
+            isNotNull(o.sellerRef),
+            brandScopeClause(p, window),
+            anySellerMatches(p.marketplaceCode, o.sellerRef, sellers),
+          ),
+        )
+        .groupBy(o.trackedProductId, p.marketplaceCode)
+        // Most recently seen first: the freshest row is the one an operator acting on a finding
+        // wants at the top, and it is a stable order for the ceiling below to cut at.
+        .orderBy(sql`max(${o.observedAt}) desc`)
+        .limit(limit);
+      return rows.map((r) => toSellerProductRow(r, decodeSqliteMoney));
+    },
+    postgres: async (db) => {
+      const o = postgresSchema.trackedProductObservations;
+      const p = postgresSchema.trackedProducts;
+      const look = db
+        .select({
+          trackedProductId: o.trackedProductId,
+          observedAt: o.observedAt,
+          minPrice: sql<string>`min(${o.price})`.as('look_min_price'),
+          avgPrice: sql<number>`avg(${o.price})`.as('look_avg_price'),
+        })
+        .from(o)
+        .where(priceRowsClause(o, window))
+        .groupBy(o.trackedProductId, o.observedAt)
+        .as('look');
+
+      const rows = await db
+        .select({
+          trackedProductId: o.trackedProductId,
+          marketplaceCode: p.marketplaceCode,
+          productLabel: sql<string>`max(${p.label})`,
+          brandName: sql<string | null>`max(${p.brandName})`,
+          watchedBrandId: sql<string | null>`max(${p.watchedBrandId})`,
+          observedName: sql<string>`max(${o.sellerName})`,
+          observationCount: sql<number>`count(*)`,
+          buyboxCount: sql<number>`sum(case when ${o.rank} = 1 then 1 else 0 end)`,
+          cheapestCount: sql<number>`sum(case when ${o.price} = ${look.minPrice} then 1 else 0 end)`,
+          avgDeviationPct: sql<number | null>`avg(
+            case when ${look.avgPrice} > 0
+              then (${o.price} - ${look.avgPrice}) * 100.0 / ${look.avgPrice}
+            end
+          )`,
+          comparedCount: sql<number>`sum(case when ${look.avgPrice} > 0 then 1 else 0 end)`,
+          minPrice: sql<string | null>`min(${o.price})`,
+          maxPrice: sql<string | null>`max(${o.price})`,
+          firstSeenAt: sql<number>`min(${o.observedAt})`,
+          lastSeenAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .innerJoin(
+          look,
+          and(eq(look.trackedProductId, o.trackedProductId), eq(look.observedAt, o.observedAt)),
+        )
+        .where(
+          and(
+            priceRowsClause(o, window),
+            isNotNull(o.sellerRef),
+            brandScopeClause(p, window),
+            anySellerMatches(p.marketplaceCode, o.sellerRef, sellers),
+          ),
+        )
+        .groupBy(o.trackedProductId, p.marketplaceCode)
+        .orderBy(sql`max(${o.observedAt}) desc`)
+        .limit(limit);
+      return rows.map((r) => toSellerProductRow(r, decodeNativeMoney));
+    },
+    mysql: async (db) => {
+      const o = mysqlSchema.trackedProductObservations;
+      const p = mysqlSchema.trackedProducts;
+      const look = db
+        .select({
+          trackedProductId: o.trackedProductId,
+          observedAt: o.observedAt,
+          minPrice: sql<string>`min(${o.price})`.as('look_min_price'),
+          avgPrice: sql<number>`avg(${o.price})`.as('look_avg_price'),
+        })
+        .from(o)
+        .where(priceRowsClause(o, window))
+        .groupBy(o.trackedProductId, o.observedAt)
+        .as('look');
+
+      const rows = await db
+        .select({
+          trackedProductId: o.trackedProductId,
+          marketplaceCode: p.marketplaceCode,
+          productLabel: sql<string>`max(${p.label})`,
+          brandName: sql<string | null>`max(${p.brandName})`,
+          watchedBrandId: sql<string | null>`max(${p.watchedBrandId})`,
+          observedName: sql<string>`max(${o.sellerName})`,
+          observationCount: sql<number>`count(*)`,
+          buyboxCount: sql<number>`sum(case when ${o.rank} = 1 then 1 else 0 end)`,
+          cheapestCount: sql<number>`sum(case when ${o.price} = ${look.minPrice} then 1 else 0 end)`,
+          avgDeviationPct: sql<number | null>`avg(
+            case when ${look.avgPrice} > 0
+              then (${o.price} - ${look.avgPrice}) * 100.0 / ${look.avgPrice}
+            end
+          )`,
+          comparedCount: sql<number>`sum(case when ${look.avgPrice} > 0 then 1 else 0 end)`,
+          minPrice: sql<string | null>`min(${o.price})`,
+          maxPrice: sql<string | null>`max(${o.price})`,
+          firstSeenAt: sql<number>`min(${o.observedAt})`,
+          lastSeenAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .innerJoin(
+          look,
+          and(eq(look.trackedProductId, o.trackedProductId), eq(look.observedAt, o.observedAt)),
+        )
+        .where(
+          and(
+            priceRowsClause(o, window),
+            isNotNull(o.sellerRef),
+            brandScopeClause(p, window),
+            anySellerMatches(p.marketplaceCode, o.sellerRef, sellers),
+          ),
+        )
+        .groupBy(o.trackedProductId, p.marketplaceCode)
+        .orderBy(sql`max(${o.observedAt}) desc`)
+        .limit(limit);
+      return rows.map((r) => toSellerProductRow(r, decodeNativeMoney));
+    },
+  });
+}
+
+/**
  * Offer rows in the window that carry no merchant id, and so appear in no seller's figures.
  * Reported next to the seller list so the screen can state its own blind spot.
  */

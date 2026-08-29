@@ -28,9 +28,13 @@ export type { BudgetAdmission } from './budget.js';
 export { admitByPriority, remainingBudget, reserveAmount } from './budget.js';
 
 export {
+  BULK_IMPORT_SOURCE_CODES,
   IMPORT_STOCK_ITEMS_JOB,
   ImportStockItemsPayloadSchema,
   importStockItems,
+  isBulkImportSource,
+  PRODUCT_SOURCE_CONFIG_SETTING_KEY,
+  resolveImportStockItemsPayload,
   type ImportStockItemsPayload,
 } from './pipeline/import-stock-items.js';
 export {
@@ -84,6 +88,13 @@ export {
   type ScrapeCompetitorsPayload,
 } from './pipeline/scrape-competitors.js';
 export {
+  RESCAN_MAX_PRODUCTS,
+  RESCAN_TRACKED_PRODUCTS_JOB,
+  RescanTrackedProductsPayloadSchema,
+  rescanTrackedProducts,
+  type RescanTrackedProductsPayload,
+} from './pipeline/rescan-tracked-products.js';
+export {
   SWEEP_BRAND_CATALOGUE_JOB,
   SWEEP_MAX_PAGES_PER_SELECTOR,
   SweepBrandCataloguePayloadSchema,
@@ -120,6 +131,7 @@ export {
   SCRAPE_FAILURE_RATE_ALERT_THRESHOLD,
   SCRAPE_FAILURE_RATE_MIN_SAMPLE,
   SCRAPE_MAX_LISTINGS_PER_RUN,
+  SCRAPE_MAX_TRACKED_PER_RUN,
   SCRAPE_WARM_EVERY_N_CYCLES,
   SELLER_IDENTITY_MAX_AGE_MS,
 } from './scrape-config.js';

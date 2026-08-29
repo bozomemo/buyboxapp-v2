@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ColumnMenu,
@@ -96,6 +97,12 @@ const EMPTY_FILTERS: Filters = {
 /** Mirrors `CSV_EXPORT_LIMIT` in `api/tracked-products/route.ts` — shown in the button's title. */
 const CSV_EXPORT_ROW_CAP = 5000;
 
+/**
+ * Mirrors `RESCAN_MAX_PRODUCTS` in `packages/jobs` — the ceiling the rescan endpoint enforces.
+ * Held here too so the button can say why it is disabled instead of round-tripping to find out.
+ */
+const RESCAN_MAX_PRODUCTS = 50;
+
 type ColumnId =
   | 'label'
   | 'brand'
@@ -176,6 +183,7 @@ function moneyCell(value: string | null | undefined) {
  * listings değil.
  */
 export function TrackedProductsClient() {
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState<TrackedProduct[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -187,7 +195,23 @@ export function TrackedProductsClient() {
   const [brands, setBrands] = useState<WatchedBrandOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
 
-  const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
+  /**
+   * Seeded from the query string, so `/tracked-products?watchedBrandId=…` lands on that brand's
+   * products already filtered. That is what the brand links on İzlenen Markalar navigate to —
+   * "bu markanın ürünlerini göster" is a question this screen already answers, and the link
+   * spares the operator re-picking the brand from a dropdown after arriving.
+   *
+   * Read once, as the initial value: from here on the filter bar owns the state. Keeping the two
+   * in sync in both directions would fight the operator every time they cleared the filter.
+   */
+  const [filters, setFiltersState] = useState<Filters>(() => ({
+    ...EMPTY_FILTERS,
+    brandId: searchParams.get('watchedBrandId') ?? '',
+    categoryRef: searchParams.get('categoryRef') ?? '',
+    text: searchParams.get('text') ?? '',
+    unratedOnly: searchParams.get('unratedOnly') === 'true',
+    searchTermOnly: searchParams.get('searchTermOnly') === 'true',
+  }));
   const [sort, setSort] = useState<Sort>('label');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -195,13 +219,32 @@ export function TrackedProductsClient() {
   const [label, setLabel] = useState('');
   const [presetName, setPresetName] = useState('');
 
+  /**
+   * Ticked rows, by id, across pages — a `Set` rather than a per-row flag so a selection made on
+   * page 1 survives paging to page 2 and back. Cleared when the filters change: the selection
+   * would otherwise carry rows the operator can no longer see, and a rescan they cannot review
+   * before pressing is exactly the surprise this screen should not spring.
+   */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [notice, setNotice] = useState<string | null>(null);
+
   const columns = useColumnPrefs<ColumnId>('trackedProducts.columns', COLUMN_DEFS);
   const presets = useFilterPresets<Filters>('trackedProducts.filterPresets');
 
   /** Any filter change goes back to page 1 — page 7 of the previous result set means nothing. */
   function setFilters(next: Filters) {
     setPage(0);
+    setSelected(new Set());
     setFiltersState(next);
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   /** Shared by the fetch and the CSV link, so a filtered export matches the filtered grid. */
@@ -288,6 +331,38 @@ export function TrackedProductsClient() {
     load();
   }
 
+  /**
+   * Queues a `RescanTrackedProducts` run for the given rows and says so.
+   *
+   * Deliberately does **not** reload the grid on success: the job has been queued, not run, and
+   * refreshing here would redraw the same figures and read as "nothing happened". The operator is
+   * told where the progress is instead, and reloads when they want the new numbers.
+   */
+  async function rescan(ids: readonly string[]) {
+    if (ids.length === 0) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/tracked-products/rescan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const data = (await res.json()) as { error?: string; queued?: number };
+      if (!res.ok) {
+        setError(data.error ?? 'Tarama kuyruğa alınamadı.');
+        return;
+      }
+      setSelected(new Set());
+      setNotice(
+        `${data.queued ?? ids.length} ürün için tarama kuyruğa alındı. İlerlemesini İşler ekranından izleyebilir, bitince bu sayfayı yenileyebilirsiniz.`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function setActive(id: string, isActive: boolean) {
     await fetch('/api/tracked-products', {
       method: 'PATCH',
@@ -301,6 +376,11 @@ export function TrackedProductsClient() {
     () => columns.order.filter((id) => columns.isVisible(id)),
     [columns],
   );
+
+  // "Select all" is **this page**, never the whole filtered set. A brand holds thousands of rows
+  // and the rescan ceiling is fifty, so a header tick that meant "all 4,863" could only ever be
+  // refused — and the row it would have selected is one the operator never saw.
+  const pageAllSelected = products.length > 0 && products.every((p) => selected.has(p.id));
 
   function renderCell(id: ColumnId, p: TrackedProduct) {
     // One reduction of the latest look, shared by every current-market cell — so Satıcı, Medyan,
@@ -603,6 +683,49 @@ export function TrackedProductsClient() {
         </button>
       </div>
       {error && <p className="text-sm text-(--color-danger)">{error}</p>}
+      {notice && <p className="text-sm text-(--color-accent)">{notice}</p>}
+
+      {/* ---- seçim işlemleri ---- */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className={selected.size === 0 ? 'text-(--color-muted)' : undefined}>
+          {selected.size === 0 ? 'Satır seçilmedi' : `${formatNumber(selected.size)} ürün seçildi`}
+        </span>
+        <button
+          type="button"
+          disabled={busy || selected.size === 0 || selected.size > RESCAN_MAX_PRODUCTS}
+          onClick={() => void rescan([...selected])}
+          title={
+            selected.size > RESCAN_MAX_PRODUCTS
+              ? `Tek seferde en fazla ${RESCAN_MAX_PRODUCTS} ürün taranabilir`
+              : 'Seçilen ürünlerin satıcı ve fiyat verisini şimdi yeniden okur'
+          }
+          className="rounded bg-(--color-accent) px-3 py-1 text-xs text-(--color-accent-ink) disabled:opacity-40"
+        >
+          Seçilenleri Tekrar Tara
+        </button>
+        {selected.size > RESCAN_MAX_PRODUCTS && (
+          <span className="text-xs text-(--color-warning)">
+            Tek seferde en fazla {RESCAN_MAX_PRODUCTS} ürün — bir markanın tamamı için İzlenen
+            Markalar ekranındaki &quot;Şimdi tara&quot; kullanılır.
+          </span>
+        )}
+        {selected.size > 0 && (
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="text-xs text-(--color-muted) hover:text-(--color-accent)"
+          >
+            Seçimi temizle
+          </button>
+        )}
+        <span className="text-xs text-(--color-muted)">
+          Tarama arka planda çalışır; sırası ve ilerlemesi{' '}
+          <Link href="/jobs" className="text-(--color-accent) hover:underline">
+            İşler
+          </Link>{' '}
+          ekranında görünür.
+        </span>
+      </div>
 
       <Pagination
         state={{ page, pageSize, total, setPage, setPageSize }}
@@ -610,11 +733,29 @@ export function TrackedProductsClient() {
       />
 
       <TableFrame>
-        <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns, 90)}>
+        <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns, 32 + 140)}>
           <thead
             className={`${STICKY_HEAD} bg-(--color-hover) text-left text-xs uppercase text-(--color-muted)`}
           >
             <tr>
+              <th className="px-2 py-2" style={{ width: 32 }}>
+                <input
+                  type="checkbox"
+                  checked={pageAllSelected}
+                  aria-label="Bu sayfadaki ürünleri seç"
+                  title="Bu sayfadaki ürünleri seç"
+                  onChange={(e) =>
+                    setSelected((prev) => {
+                      const next = new Set(prev);
+                      for (const p of products) {
+                        if (e.target.checked) next.add(p.id);
+                        else next.delete(p.id);
+                      }
+                      return next;
+                    })
+                  }
+                />
+              </th>
               {visibleColumns.map((id) => {
                 const def = COLUMN_DEFS.find((d) => d.id === id)!;
                 const sortable = SORT_FOR_COLUMN[id];
@@ -636,18 +777,35 @@ export function TrackedProductsClient() {
                   </ResizableTh>
                 );
               })}
-              <th className="px-2 py-2" style={{ width: 90 }} />
+              <th className="px-2 py-2" style={{ width: 140 }} />
             </tr>
           </thead>
           <tbody className="divide-y divide-(--color-border)">
             {products.map((p) => (
               <tr key={p.id} className={p.isActive ? undefined : 'opacity-50'}>
+                <td className="px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(p.id)}
+                    aria-label={`${p.label} seç`}
+                    onChange={() => toggleSelected(p.id)}
+                  />
+                </td>
                 {visibleColumns.map((id) => (
                   <td key={id} className="truncate px-2 py-1">
                     {renderCell(id, p)}
                   </td>
                 ))}
                 <td className="px-2 py-1 text-right whitespace-nowrap">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void rescan([p.id])}
+                    title="Bu ürünün satıcı ve fiyat verisini şimdi yeniden oku"
+                    className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent) disabled:opacity-40"
+                  >
+                    Tara
+                  </button>
                   <button
                     type="button"
                     onClick={() => void setActive(p.id, !p.isActive)}
@@ -669,7 +827,7 @@ export function TrackedProductsClient() {
             {products.length === 0 && !loading && (
               <tr>
                 <td
-                  colSpan={visibleColumns.length + 1}
+                  colSpan={visibleColumns.length + 2}
                   className="px-2 py-6 text-center text-(--color-muted)"
                 >
                   Bu filtrelerle ürün bulunamadı.

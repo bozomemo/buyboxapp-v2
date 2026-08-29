@@ -12,6 +12,7 @@
  */
 import { NextResponse } from 'next/server';
 import { trackedProductsRepo } from '@buybox/db';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { seriesBySeller, summariseLooks } from '@/lib/tracked-product-sellers';
 
@@ -40,7 +41,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       marketplaceCode: product.marketplaceCode,
       productRef: product.productRef,
       productUrl: product.productUrl,
-      label: product.label,
+      // `Marka - Ürün Adı` (customer feedback 2026-08-25) — see `withBrand`; the same shape the
+      // grid this screen is reached from shows.
+      label: withBrand(product.label, product.brandName),
       isActive: product.isActive,
       addedAt: product.addedAt,
       /**

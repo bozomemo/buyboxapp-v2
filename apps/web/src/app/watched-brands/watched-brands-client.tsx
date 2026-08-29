@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
@@ -398,7 +399,19 @@ export function WatchedBrandsClient() {
               <tbody className="divide-y divide-(--color-border)">
                 {group.brands.map((brand) => (
                   <tr key={brand.id}>
-                    <td className="px-2 py-1 font-medium">{brand.label}</td>
+                    <td className="px-2 py-1 font-medium">
+                      {/* The brand's own products, already filtered — this screen counts them
+                          but cannot show them, and the count is exactly the number an operator
+                          wants to click through. `/tracked-products` seeds its brand filter from
+                          this query parameter. */}
+                      <Link
+                        href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}`}
+                        title={`${brand.label} markasının takip edilen ürünlerini aç`}
+                        className="text-(--color-accent) hover:underline"
+                      >
+                        {brand.label}
+                      </Link>
+                    </td>
                     <td className="px-2 py-1">{brand.marketplaceCode}</td>
                     <td className="px-2 py-1">
                       <div className="flex flex-col gap-0.5 text-xs">
@@ -417,14 +430,20 @@ export function WatchedBrandsClient() {
                       </div>
                     </td>
                     <td className="px-2 py-1">
-                      {formatNumber(brand.productCount)}
+                      <Link
+                        href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}`}
+                        className="text-(--color-accent) hover:underline"
+                      >
+                        {formatNumber(brand.productCount)}
+                      </Link>
                       {brand.unratedCount > 0 && (
-                        <span
-                          className="ml-1 text-xs text-(--color-muted)"
+                        <Link
+                          href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}&unratedOnly=true`}
+                          className="ml-1 text-xs text-(--color-muted) hover:text-(--color-accent) hover:underline"
                           title="Hiç değerlendirmesi olmayan ürünler. Bunları çıkarmak derin taramayı belirgin şekilde hızlandırır."
                         >
                           ({formatNumber(brand.unratedCount)} değerlendirmesiz)
-                        </span>
+                        </Link>
                       )}
                     </td>
                     <td className="px-2 py-1">

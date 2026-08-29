@@ -1,13 +1,25 @@
 import { newId } from '@buybox/db';
 import { describe, expect, it } from 'vitest';
+import type { z } from 'zod';
 import {
   getJobCadenceMs,
   jobCadenceSettingKey,
   jobDefaultCadenceMs,
+  JOB_CATALOG,
   MIN_JOB_CADENCE_MS,
 } from './job-catalog.js';
-import { IMPORT_BUNDLES_JOB } from './pipeline/import-bundles.js';
-import { IMPORT_LISTINGS_JOB } from './pipeline/import-listings.js';
+import { ConfirmSubmissionsPayloadSchema } from './pipeline/confirm-submissions.js';
+import { IMPORT_BUNDLES_JOB, ImportBundlesPayloadSchema } from './pipeline/import-bundles.js';
+import { IMPORT_LISTINGS_JOB, ImportListingsPayloadSchema } from './pipeline/import-listings.js';
+import { IMPORT_STOCK_ITEMS_JOB } from './pipeline/import-stock-items.js';
+import { ObserveBuyboxPayloadSchema } from './pipeline/observe-buybox.js';
+import { PruneHistoryPayloadSchema } from './pipeline/prune-history-job.js';
+import { RepricePayloadSchema } from './pipeline/reprice.js';
+import { ResetBudgetPayloadSchema } from './pipeline/reset-budget.js';
+import { ResolveProductBarcodesPayloadSchema } from './pipeline/resolve-product-barcodes.js';
+import { ScrapeCompetitorsPayloadSchema } from './pipeline/scrape-competitors.js';
+import { SubmitPriceChangesPayloadSchema } from './pipeline/submit-price-changes.js';
+import { SweepBrandCataloguePayloadSchema } from './pipeline/sweep-brand-catalogue.js';
 import { createSqliteTestDb } from './test-helpers.js';
 
 describe('job cadence (doc 07 §8, doc 08 §12, R-JOB-2)', () => {
@@ -87,4 +99,42 @@ describe('job cadence (doc 07 §8, doc 08 §12, R-JOB-2)', () => {
       cleanup();
     }
   });
+});
+
+/**
+ * The Jobs screen builds a "run now" payload out of `defaultPayload` plus a marketplace code
+ * (`/api/jobs/run-now`), so a catalogue default that its own handler rejects is a button that
+ * can only ever fail. `ImportBundles` carried a copy of the product-source payload — a schema it
+ * has nothing to do with — until 2026-08-29.
+ */
+describe('catalogue default payloads are runnable', () => {
+  const SCHEMAS: Record<string, z.ZodTypeAny> = {
+    ImportListings: ImportListingsPayloadSchema,
+    ObserveBuybox: ObserveBuyboxPayloadSchema,
+    Reprice: RepricePayloadSchema,
+    SubmitPriceChanges: SubmitPriceChangesPayloadSchema,
+    ConfirmSubmissions: ConfirmSubmissionsPayloadSchema,
+    ResetBudget: ResetBudgetPayloadSchema,
+    PruneHistory: PruneHistoryPayloadSchema,
+    ImportBundles: ImportBundlesPayloadSchema,
+    ScrapeCompetitors: ScrapeCompetitorsPayloadSchema,
+    SweepBrandCatalogue: SweepBrandCataloguePayloadSchema,
+    ResolveProductBarcodes: ResolveProductBarcodesPayloadSchema,
+  };
+
+  for (const entry of JOB_CATALOG) {
+    // The one exception, and it is documented on the entry itself: this job's payload is the
+    // configured product source, which `resolveImportStockItemsPayload` reads at trigger time.
+    if (entry.jobName === IMPORT_STOCK_ITEMS_JOB) continue;
+
+    it(`${entry.jobName}'s default payload satisfies its handler`, () => {
+      const schema = SCHEMAS[entry.jobName];
+      expect(schema, `no schema wired up for ${entry.jobName}`).toBeDefined();
+      const payload = {
+        ...entry.defaultPayload,
+        ...(entry.perMarketplace ? { marketplaceCode: 'trendyol' } : {}),
+      };
+      expect(schema!.safeParse(payload).success).toBe(true);
+    });
+  }
 });

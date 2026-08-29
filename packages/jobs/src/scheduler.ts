@@ -124,6 +124,17 @@ export class Scheduler {
   }
 
   /**
+   * The job names this scheduler can actually run. Worth reading from outside because
+   * registration is not optional in the way it looks: `claimNextJob` only ever claims a job
+   * whose name is in here, so an enqueued job nobody registered is never claimed, never fails
+   * and never produces a `job_runs` row — it simply stays `ready` for ever (measured 2026-08-29,
+   * `ImportBundles`). `apps/worker`'s own test asserts this covers `JOB_CATALOG`.
+   */
+  registeredJobNames(): readonly string[] {
+    return [...this.definitions.keys()];
+  }
+
+  /**
    * True when no job this scheduler started is still running.
    *
    * Exists so `apps/worker` can swap the adapter and competitor-source registries

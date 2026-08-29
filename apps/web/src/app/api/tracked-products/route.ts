@@ -20,6 +20,7 @@ import {
   exportRow,
   resolveExportColumns,
 } from '@/lib/tracked-product-columns';
+import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -140,7 +141,17 @@ export async function GET(request: Request) {
     const columns = resolveExportColumns(params.get('columns')?.split(',').filter(Boolean));
     const lines = [exportHeaders(columns).map(csvEscape).join(',')];
     for (const row of csvRows) {
-      lines.push(exportRow(columns, { ...row, period: csvPeriods.get(row.id) ?? null }).map(csvEscape).join(','));
+      // `Marka - Ürün Adı` in the file too, so the export and the grid cannot drift apart —
+      // see `withBrand`. The separate `Marka` column still carries the bare brand.
+      lines.push(
+        exportRow(columns, {
+          ...row,
+          label: withBrand(row.label, row.brandName),
+          period: csvPeriods.get(row.id) ?? null,
+        })
+          .map(csvEscape)
+          .join(','),
+      );
     }
     // BOM so Excel on Windows reads the Turkish characters as UTF-8 rather than guessing the
     // system codepage (mirrors `lib/csv.ts`'s client-side `downloadCsv`).
@@ -182,7 +193,9 @@ export async function GET(request: Request) {
       marketplaceCode: row.marketplaceCode,
       productRef: row.productRef,
       productUrl: row.productUrl,
-      label: row.label,
+      // `Marka - Ürün Adı` (customer feedback 2026-08-25) — see `withBrand`. The `brandName`
+      // below stays the bare brand: the grid's own Marka column and the brand filter read it.
+      label: withBrand(row.label, row.brandName),
       isActive: row.isActive,
       addedAt: row.addedAt,
       watchedBrandId: row.watchedBrandId ?? null,

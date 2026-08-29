@@ -209,6 +209,153 @@ for (const dialect of ALL_DIALECTS) {
       }, 30_000);
     });
 
+    /**
+     * The brand-side answer to `sellerListingBreakdown`, and the fix for the empty seller page
+     * a brand-audit finding used to lead to: that query joins through `listings`, so a seller we
+     * share no product with came back with nothing at all (doc 06 §12.4).
+     */
+    describe('sellerTrackedProductBreakdown', () => {
+      /** `a` cheapest twice but buybox once; `c` on a second product nobody else is on. */
+      async function seedMarket(appDb: AppDatabase, brandId: string): Promise<[string, string]> {
+        const p1 = await addProduct(appDb, brandId, '2250165');
+        const p2 = await addProduct(appDb, brandId, '2250166');
+        await look(appDb, p1, NOW - 2 * DAY, [
+          ['a', 90],
+          ['b', 120],
+          ['c', 150],
+        ]);
+        await look(appDb, p1, NOW - DAY, [
+          ['b', 120],
+          ['a', 90],
+          ['c', 150],
+        ]);
+        await look(appDb, p2, NOW - DAY, [['c', 200]]);
+        return [p1, p2];
+      }
+
+      const KEY = (ref: string) => ({ marketplaceCode: MARKETPLACE, sellerRef: ref });
+
+      it('returns one row per product with the seller counters split out', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const [p1] = await seedMarket(db.appDb, brandId);
+
+        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(
+          db.appDb,
+          WINDOW,
+          [KEY('a')],
+          100,
+        );
+
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.trackedProductId).toBe(p1);
+        expect(rows[0]!.observationCount).toBe(2);
+        // Cheapest on both looks, top-ranked on only one — the whole point of keeping the two
+        // counters apart (rank 1 is who *wins* the buybox, not who is cheapest).
+        expect(rows[0]!.cheapestCount).toBe(2);
+        expect(rows[0]!.buyboxCount).toBe(1);
+        expect(rows[0]!.minPrice).toBe(lira(90));
+        expect(rows[0]!.maxPrice).toBe(lira(90));
+        expect(rows[0]!.observedName).toBe('Satıcı a');
+        expect(rows[0]!.productLabel).toBe('Ürün 2250165');
+      }, 30_000);
+
+      it('measures deviation against the whole look, not against the seller subset', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        await seedMarket(db.appDb, brandId);
+
+        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(
+          db.appDb,
+          WINDOW,
+          [KEY('a')],
+          100,
+        );
+        // 90 against a look mean of 120 — 25% below the market, on both looks.
+        expect(rows[0]!.avgDeviationPct).toBeCloseTo(-25, 5);
+        expect(rows[0]!.comparedCount).toBe(2);
+      }, 30_000);
+
+      it('covers a whole seller group in one table, newest-seen first', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const [p1, p2] = await seedMarket(db.appDb, brandId);
+
+        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(
+          db.appDb,
+          WINDOW,
+          [KEY('a'), KEY('c')],
+          100,
+        );
+
+        // `a` on p1 and `c` on p1 and p2 — but p1 is one grouped row per product, not per seller.
+        expect(rows.map((r) => r.trackedProductId).sort()).toEqual([p1, p2].sort());
+        // p2's only look and p1's newest are the same instant, so assert the ordering key rather
+        // than a brittle position: both rows must carry the latest look they were seen in.
+        expect(rows.every((r) => r.lastSeenAt === NOW - DAY)).toBe(true);
+      }, 30_000);
+
+      it('honours the watched-brand scope', async () => {
+        db = await createTestDb(dialect);
+        const { brandId, otherBrandId } = await seed(db.appDb);
+        await seedMarket(db.appDb, brandId);
+        const other = await addProduct(db.appDb, otherBrandId, '9999999');
+        await look(db.appDb, other, NOW - DAY, [['a', 50]]);
+
+        const all = await brandReportsRepo.sellerTrackedProductBreakdown(
+          db.appDb,
+          WINDOW,
+          [KEY('a')],
+          100,
+        );
+        expect(all).toHaveLength(2);
+
+        const scoped = await brandReportsRepo.sellerTrackedProductBreakdown(
+          db.appDb,
+          { ...WINDOW, watchedBrandIds: [otherBrandId] },
+          [KEY('a')],
+          100,
+        );
+        expect(scoped.map((r) => r.trackedProductId)).toEqual([other]);
+        expect(scoped[0]!.watchedBrandId).toBe(otherBrandId);
+      }, 30_000);
+
+      it('returns nothing for a seller with no tracked activity, and for an empty seller list', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        await seedMarket(db.appDb, brandId);
+
+        // The Periko case: a real firm the audit knows about, with nothing in *this* archive.
+        expect(
+          await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [KEY('zzz')], 100),
+        ).toEqual([]);
+        // An empty group expansion must match nothing, never everything.
+        expect(await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [], 100)).toEqual(
+          [],
+        );
+      }, 30_000);
+
+      it('ignores looks outside the window and offers with no merchant id', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const p = await addProduct(db.appDb, brandId, '2250165');
+        await look(db.appDb, p, NOW - 90 * DAY, [['a', 10]]);
+        await look(db.appDb, p, NOW - DAY, [
+          ['a', 100],
+          [null, 80],
+        ]);
+
+        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(
+          db.appDb,
+          WINDOW,
+          [KEY('a')],
+          100,
+        );
+        expect(rows[0]!.observationCount).toBe(1);
+        expect(rows[0]!.minPrice).toBe(lira(100));
+      }, 30_000);
+    });
+
     describe('brandSellerAggregatesInRange', () => {
       /**
        * Two products, two looks, deliberately asymmetric so every counter can be told apart:

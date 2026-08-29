@@ -39,6 +39,41 @@ export async function upsertStockItem(appDb: AppDatabase, row: StockItemRow): Pr
   });
 }
 
+/**
+ * Upsert that never writes over a cost somebody else established: on conflict it refreshes only
+ * the descriptive fields (`name`, `unitStock`, `sourceRef`) and leaves `unitCost` /
+ * `costUpdatedAt` exactly as they are.
+ *
+ * For the sources that genuinely do not know a cost — `MarketplaceListing` derives stock items
+ * from listings and emits `Money.zero`, saying so in its own doc comment and in doc 10 §4
+ * ("cost must then be supplied manually or by another source"). Run through the plain
+ * `upsertStockItem`, such a run resets every operator-entered unit cost to zero, and unit cost is
+ * what the floor price is computed from (doc 02) — the one write in this file that could move a
+ * price. doc 10 §4's rule for ingestion is explicit: "never overwrite operator-owned fields".
+ */
+export async function ensureStockItem(appDb: AppDatabase, row: StockItemRow): Promise<void> {
+  const set = {
+    name: row.name,
+    unitStock: row.unitStock,
+    sourceCode: row.sourceCode,
+    sourceRef: row.sourceRef,
+    updatedAt: row.updatedAt,
+  };
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .insert(sqliteSchema.stockItems)
+        .values(row)
+        .onConflictDoUpdate({ target: sqliteSchema.stockItems.baseStockCode, set }),
+    postgres: (db) =>
+      db
+        .insert(postgresSchema.stockItems)
+        .values(row)
+        .onConflictDoUpdate({ target: postgresSchema.stockItems.baseStockCode, set }),
+    mysql: (db) => db.insert(mysqlSchema.stockItems).values(row).onDuplicateKeyUpdate({ set }),
+  });
+}
+
 export async function getStockItem(
   appDb: AppDatabase,
   baseStockCode: string,

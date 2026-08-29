@@ -26,6 +26,14 @@
  * allowed to be "the" one and the per-product `viaBrandRef` / `viaSearchTerm` flags record
  * which found what.
  *
+ * ⚠️ **The comparison is only as good as the passes are complete.** A pass that misses a
+ * product writes it as found by the *other* selector, which for `viaSearchTerm` alone is the
+ * misuse finding itself. Trendyol's relevance ordering is recomputed per request and made deep
+ * paging lose 18% of a large brand until `sst` was pinned (api-references §1.7, 2026-08-29);
+ * every one of the 208 rows that flagged for Royal Canin was a paging artefact. Hence
+ * `noteIncompleteSweep` below: a pass that ends short of the marketplace's own count is
+ * recorded, because its flags are not evidence.
+ *
  * ## Why paging stops on data, not on a count
  *
  * `totalProducts` is the marketplace's own claim and has been measured to disagree slightly
@@ -54,6 +62,17 @@ export const SWEEP_BRAND_CATALOGUE_JOB = 'SweepBrandCatalogue';
  * that shrank.
  */
 export const SWEEP_MAX_PAGES_PER_SELECTOR = 400;
+
+/**
+ * How far under the marketplace's own `total` a selector may land before the sweep is called
+ * incomplete.
+ *
+ * Not zero: `total` is Trendyol's claim and has been measured to drift by a handful of products
+ * against the cards actually served, and a brand really does gain and lose listings during the
+ * minutes a sweep takes. 2% is comfortably above that and far below the 18% a lossy pass
+ * produced (api-references §1.7).
+ */
+export const SWEEP_COMPLETENESS_TOLERANCE = 0.02;
 
 export const SweepBrandCataloguePayloadSchema = z.object({
   marketplaceCode: z.enum(['trendyol', 'hepsiburada']),
@@ -127,13 +146,36 @@ export function mergeSelectorResults(
   return [...merged.values()];
 }
 
+/**
+ * Describes a selector pass that ended short of the marketplace's own product count.
+ *
+ * Returns `null` when the marketplace made no claim (`totalProducts` is `null`, which is what a
+ * brand with no pages at all looks like) — an unmade claim cannot be missed.
+ */
+export function completenessShortfall(
+  selector: string,
+  sweep: SelectorSweep,
+): { readonly selector: string; readonly seen: number; readonly claimed: number } | null {
+  const claimed = sweep.totalProducts;
+  if (claimed === null || claimed <= 0) return null;
+  // Distinct, not `products.length`: a lossy pass serves the same product on several pages, so
+  // the raw card count can reach `total` while the catalogue behind it has holes.
+  const seen = new Set(sweep.products.map((product) => product.productRef)).size;
+  if (seen >= claimed * (1 - SWEEP_COMPLETENESS_TOLERANCE)) return null;
+  return { selector, seen, claimed };
+}
+
 async function sweepOneBrand(
   ctx: JobContext,
   source: IBrandCatalogueSource,
   brand: watchedBrandsRepo.WatchedBrandRow,
   maxPages: number,
   reportProgress: (currentItem: string) => void,
-): Promise<{ readonly productCount: number; readonly truncated: boolean }> {
+): Promise<{
+  readonly productCount: number;
+  readonly truncated: boolean;
+  readonly incomplete: readonly { readonly selector: string; readonly seen: number; readonly claimed: number }[];
+}> {
   const nowMs = ctx.clock.nowMs();
 
   const hasBrandRef = brand.brandRef !== null && brand.brandRef.trim() !== '';
@@ -229,7 +271,16 @@ async function sweepOneBrand(
   // actually in the table, or the list screen reports a catalogue that was never stored.
   await watchedBrandsRepo.recordSweepResult(ctx.appDb, brand.id, nowMs, merged.length);
 
-  return { productCount: merged.length, truncated: byBrandRef.truncated || bySearchTerm.truncated };
+  const incomplete = [
+    hasBrandRef ? completenessShortfall('marka id', byBrandRef) : null,
+    hasSearchTerm ? completenessShortfall('arama', bySearchTerm) : null,
+  ].filter((entry) => entry !== null);
+
+  return {
+    productCount: merged.length,
+    truncated: byBrandRef.truncated || bySearchTerm.truncated,
+    incomplete,
+  };
 }
 
 /**
@@ -288,7 +339,7 @@ export async function sweepBrandCatalogue(ctx: JobContext): Promise<JobResult> {
 
   for (const brand of due) {
     try {
-      const { productCount, truncated } = await sweepOneBrand(
+      const { productCount, truncated, incomplete } = await sweepOneBrand(
         ctx,
         source,
         brand,
@@ -304,6 +355,16 @@ export async function sweepBrandCatalogue(ctx: JobContext): Promise<JobResult> {
           marketplaceCode,
           'BrandSweepTruncated',
           `${brand.label} sweep hit the ${payload.maxPagesPerSelector}-page ceiling — the catalogue may be incomplete`,
+        );
+      }
+      for (const { selector, seen, claimed } of incomplete) {
+        // Recorded rather than failed: an incomplete catalogue is still worth having, but its
+        // `via_*` flags are not a brand-misuse finding and an operator has to be able to tell.
+        await noteSweepEvent(
+          ctx,
+          marketplaceCode,
+          'BrandSweepIncomplete',
+          `${brand.label} · ${selector} returned ${seen} of the ${claimed} products the marketplace claims — treat this sweep's selector flags as unreliable`,
         );
       }
       void productCount;

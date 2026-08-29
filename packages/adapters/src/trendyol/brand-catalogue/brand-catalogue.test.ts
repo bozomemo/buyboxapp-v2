@@ -17,7 +17,7 @@ import {
   normalizeTrendyolBrandCataloguePage,
   TrendyolBrandCatalogueSchemaError,
 } from './normalize.js';
-import { TrendyolBrandCatalogueSource } from './source.js';
+import { TRENDYOL_BRAND_CATALOGUE_SORT, TrendyolBrandCatalogueSource } from './source.js';
 
 const pageHtml = readFileSync(new URL('../fixtures/brand-catalogue-page.html', import.meta.url), 'utf8');
 
@@ -163,6 +163,17 @@ describe('url construction', () => {
     const url = source.buildUrl({ brandRef: '104703', searchTerm: 'whiskas' }, 1);
     expect(url).toContain('wb=104703');
     expect(url).not.toContain('q=whiskas');
+  });
+
+  it('pins the sort order on every page of both selectors', () => {
+    // Without it Trendyol re-ranks per request and deep paging loses ~18% of the catalogue,
+    // which is what wrote 208 false brand-misuse flags (measured 2026-08-29).
+    for (const query of [
+      { brandRef: '104703', searchTerm: null },
+      { brandRef: null, searchTerm: 'whiskas' },
+    ]) {
+      expect(source.buildUrl(query, 7)).toContain(`sst=${TRENDYOL_BRAND_CATALOGUE_SORT}`);
+    }
   });
 
   it('rejects a query with no selector at all', () => {

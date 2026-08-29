@@ -40,6 +40,16 @@ describe('createPlaywrightFetcher', () => {
         res.end('<html><body>ok</body></html>');
         return;
       }
+      // Answers slowly, and names itself in the body — a fetch that returns another fetch's
+      // page is then plainly visible rather than a coin flip.
+      if (req.url?.startsWith('/echo/')) {
+        const id = req.url.slice('/echo/'.length);
+        setTimeout(() => {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(`<html><body>echo-${id}</body></html>`);
+        }, 40);
+        return;
+      }
       if (req.url === '/forbidden') {
         res.writeHead(403, { 'Content-Type': 'text/html' });
         res.end('<html><body>blocked</body></html>');
@@ -111,6 +121,73 @@ describe('createPlaywrightFetcher', () => {
       await new Promise<void>((resolve) => hung.close(() => resolve()));
     }
   }, 8000);
+  /**
+   * Measured 2026-08-29 against the live site: ~1 navigation in 6 through one reused page fails
+   * in ~70 ms with `net::ERR_ABORTED` — the page being left starts a navigation of its own and
+   * Chromium abandons ours. The request either side of it returns 200, so a scrape was dropping
+   * a product per cycle and filing a `fetchFailed` that read like a block.
+   *
+   * Driven through an injected launcher for the same reason as the crash tests below: the
+   * bookkeeping is the point, and making a real site abort on cue is not reproducible.
+   */
+  describe('a navigation Chromium aborts', () => {
+    function abortingSession(goto: () => unknown): PlaywrightSession {
+      return {
+        browser: { isConnected: () => true, close: async () => undefined },
+        page: {
+          isClosed: () => false,
+          goto: async () => goto(),
+          content: async () => '<html><body>second try</body></html>',
+        },
+      } as unknown as PlaywrightSession;
+    }
+
+    it('is retried once, and the retry is what the caller sees', async () => {
+      let attempts = 0;
+      const solo = createPlaywrightFetcher(async () =>
+        abortingSession(() => {
+          attempts += 1;
+          if (attempts === 1) throw new Error('page.goto: net::ERR_ABORTED at http://x/');
+          return { status: () => 200, url: () => 'http://x/' };
+        }),
+      );
+
+      const res = await solo.fetch('http://x/', { headers: {} });
+      expect(attempts).toBe(2);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain('second try');
+      await solo.close();
+    });
+
+    it('gives up on a second consecutive abort rather than looping', async () => {
+      let attempts = 0;
+      const solo = createPlaywrightFetcher(async () =>
+        abortingSession(() => {
+          attempts += 1;
+          throw new Error('page.goto: net::ERR_ABORTED at http://x/');
+        }),
+      );
+
+      await expect(solo.fetch('http://x/', { headers: {} })).rejects.toThrow('ERR_ABORTED');
+      expect(attempts).toBe(2);
+      await solo.close();
+    });
+
+    it('does not retry a failure that is not an abort — a timeout still fails at once', async () => {
+      let attempts = 0;
+      const solo = createPlaywrightFetcher(async () =>
+        abortingSession(() => {
+          attempts += 1;
+          throw new Error('page.goto: Timeout 15000ms exceeded.');
+        }),
+      );
+
+      await expect(solo.fetch('http://x/', { headers: {} })).rejects.toThrow('Timeout');
+      expect(attempts).toBe(1);
+      await solo.close();
+    });
+  });
+
   /**
    * The 2026-08-28 production failure: Chromium disappeared mid-run after ~1,400 navigations and
    * the cached session kept every later fetch failing with `Target page, context or browser has
@@ -213,5 +290,23 @@ describe('createPlaywrightFetcher', () => {
       await expect(solo.fetch('http://x/', { headers: {} })).rejects.toThrow('has been closed');
       expect(launches).toBe(1);
     });
+  });
+
+  it('serialises concurrent fetches so the shared page never serves the wrong body', async () => {
+    // Two `SweepBrandCatalogue` runs share one source, and so one page. Before the fetch queue,
+    // the second navigation either aborted the first (`net::ERR_ABORTED`) or replaced the page
+    // it was about to read, handing one caller the other's HTML under its own URL — a page of
+    // one brand's catalogue written as another brand's.
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const bodies = await Promise.all(
+      ids.map(async (id) => {
+        const response = await fetcher.fetch(`${baseUrl}/echo/${id}`, { headers: {} });
+        return { id, status: response.status, body: await response.text() };
+      }),
+    );
+    for (const { id, status, body } of bodies) {
+      expect(status).toBe(200);
+      expect(body).toContain(`echo-${id}`);
+    }
   });
 });

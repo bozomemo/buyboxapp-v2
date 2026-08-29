@@ -111,20 +111,34 @@ const COLUMN_DEFS: ColumnDef<ColumnId>[] = [
   { id: 'identity', label: 'Kimlik', defaultWidth: 90 },
 ];
 
+/**
+ * The link into the seller page carries this screen's own scope — the window, and the brand when
+ * one is selected. Without it the operator arrived at the seller's whole footprint and had to
+ * rebuild the filter that produced the row they clicked.
+ */
+function sellerHref(s: Seller, sinceMs: number, watchedBrandId: string | null): string {
+  const params = new URLSearchParams({ sinceMs: String(sinceMs) });
+  if (watchedBrandId) params.set('watchedBrandId', watchedBrandId);
+  return `/competitors/sellers/${s.marketplaceCode}/${encodeURIComponent(s.sellerRef)}?${params}`;
+}
+
 function renderSellerCell(
   id: ColumnId,
   s: Seller,
   onResolveIdentity: (s: Seller) => void,
+  sinceMs: number,
+  watchedBrandId: string | null,
 ): React.ReactNode {
   switch (id) {
     case 'sellerName':
       return (
         <>
           {/* The same seller-detail page the competitor screens link to. One company, one page —
-              the identity is shared, only the report around it differs. */}
+              the identity is shared, and since 2026-08-29 that page carries *both* reports, so a
+              seller we share no product with no longer lands on an empty table. */}
           <Link
             className="font-medium text-(--color-accent) hover:underline"
-            href={`/competitors/sellers/${s.marketplaceCode}/${encodeURIComponent(s.sellerRef)}`}
+            href={sellerHref(s, sinceMs, watchedBrandId)}
           >
             {s.sellerName || s.sellerRef}
           </Link>
@@ -454,7 +468,13 @@ export function BrandSellersClient() {
                   <tr key={`${s.marketplaceCode}::${s.sellerRef}`} className="border-t border-(--color-border)">
                     {visibleColumns.map((id) => (
                       <td key={id} className="px-2 py-1">
-                        {renderSellerCell(id, s, setIdentitySeller)}
+                        {renderSellerCell(
+                          id,
+                          s,
+                          setIdentitySeller,
+                          sinceMs,
+                          scope.startsWith('brand:') ? scope.slice('brand:'.length) : null,
+                        )}
                       </td>
                     ))}
                   </tr>

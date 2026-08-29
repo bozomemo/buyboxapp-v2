@@ -500,13 +500,10 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
     // `processed` — not `due.length` — is the offset: it is what was actually reported, so the
     // shared counter continues from the last listing rather than jumping over the ones the
     // rotation skipped.
-    const trackedResult = await scrapeTrackedProducts(
-      ctx,
-      marketplaceCode,
-      source,
-      processed,
-      payload.maxTracked,
-    );
+    const trackedResult = await scrapeTrackedProducts(ctx, marketplaceCode, source, {
+      progressOffset: processed,
+      maxProducts: payload.maxTracked,
+    });
     trackedOk = trackedResult.itemsOk;
     trackedFailed = trackedResult.itemsFailed;
     trackedChanged = trackedResult.itemsChanged;
