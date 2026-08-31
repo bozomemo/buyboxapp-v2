@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
     "db:generate:sqlite": "drizzle-kit generate --config drizzle.config.sqlite.ts",
     "db:generate:postgres": "drizzle-kit generate --config drizzle.config.postgres.ts",
