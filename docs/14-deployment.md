@@ -253,6 +253,14 @@ elevation (it writes to `Program Files` and registers a service).
    with rotation. WinSW is chosen over `node-windows` (which needs Node on PATH and generates
    scripts at runtime) and over NSSM (unmaintained): WinSW is a single executable configured by
    one XML file we ship, so what runs on the customer's machine is what we tested.
+
+   On an **upgrade** the service already exists, so the step rewrites `BuyBoxApp.xml` and starts
+   it again — and that is all it does. Everything the service *runs* (executable, arguments,
+   working directory, every `<env>`, the log configuration, the stop timeout) is read out of that
+   file at each start. Only the registration-time properties — start mode, failure actions,
+   description — need a command, and the vendored WinSW **2.12.0 has none**: `refresh` is a 3.x
+   command and calling it on 2.x is a fatal `Unknown command: refresh`. See §5.6. Changing one of
+   those properties in the template therefore needs an uninstall/install, not this script.
 8. **Verify.** Start the service and poll `GET http://127.0.0.1:<port>/api/health` for up to
    90 s, requiring `status: ok`. **Anything less fails the install** — say so, report the last
    status seen, and name the log file. An installer that reports success over a broken service is
@@ -261,6 +269,13 @@ elevation (it writes to `Program Files` and registers a service).
    Requiring `ok` rather than merely a response is a correction, made 2026-08-24 after the first
    real install passed this step and then returned 500 on every page (§8.2). `/api/health` answers
    200 while degraded by design, so a 200 alone proves only that a process is listening.
+
+   **Where these steps run is part of the requirement**, not an implementation detail — see §5.6.
+   Steps 4, 6, 7 and 8 are driven from Inno's `CurStepChanged(ssPostInstall)`, which checks each
+   exit code, because an Inno `[Run]` entry's exit code is ignored and the check above then means
+   nothing. "Fails the install" is spelled out there too: the operator is shown the failing
+   script's own output and the finish page's launch button is withheld, but the installed files
+   are deliberately **not** rolled back.
 9. **Shortcuts and launch.** Desktop and Start Menu shortcuts to `http://127.0.0.1:<port>`. On
    finish, open the default browser there. The licence gate (`proxy.ts`) redirects to `/license`;
    after a valid key is pasted the operator lands in `/setup`. The installer explains neither —
@@ -417,6 +432,50 @@ Two constraints on the reload, both load-bearing:
 
 Covered by `apps/worker/src/index.test.ts` — "picks up a marketplace configured after boot,
 without a restart".
+
+### 5.6 An install step that cannot fail the install is not a check
+
+Added 2026-09-02, from a customer machine. The whole of an upgrade's evidence was four lines:
+
+```
+2026-09-01 13:51:38 DEBUG - Starting WinSW in console mode
+2026-09-01 13:51:38 FATAL - Unhandled exception
+System.Exception: Unknown command: refresh
+   at WinSW.Program.Run(String[] argsArray, IServiceConfig config)
+```
+
+Two separate faults, and the second is the one that matters.
+
+**The fault.** `install-service.ps1` called `& $winsw refresh` on the upgrade branch. `refresh`
+is a WinSW **3.x** command; the vendored binary is 2.12.0, whose command list does not contain
+it, so the call is a fatal error and a non-zero exit code. `$ErrorActionPreference = 'Stop'` and
+the exit-code check then threw the script — *before* `& $winsw start`. The service had already
+been stopped by step 3 so that its files could be replaced, and nothing started it again. The
+customer was left with an upgraded installation and no running service until the machine next
+rebooted into the delayed auto-start.
+
+Nothing about the upgrade needed the command. §5 step 7 records why: on 2.x an XML rewrite
+already covers everything the service reads at start.
+
+**The fault that hid it.** Steps 4, 6, 7 and 8 were Inno `[Run]` entries, under a comment
+asserting that "each step is checked: a failure here fails the installation". **Inno ignores a
+`[Run]` entry's exit code entirely.** So `install-service.ps1` threw, `verify-health.ps1` then
+polled a stopped service for 90 seconds and exited 1, and the wizard finished on
+"Kurulum tamamlandi". The check §5 step 8 requires had been written, shipped, and disconnected.
+
+**Rule: every installation step whose failure must stop the install runs from
+`CurStepChanged(ssPostInstall)`, where its exit code is read.** A failure there stops the
+remaining steps, is written to the setup log, is shown to the operator as the failing script's
+own Turkish output, and withholds the finish page's "BuyBox'i simdi ac" button — sending someone
+to a page that cannot load is not a finish. Only the browser launch is left in `[Run]`, guarded
+by a `Check` on that same flag.
+
+The installed files are **not** rolled back on failure. On an upgrade a rollback would take the
+working previous installation with it, and `ProgramData\BuyBox` is untouched either way, so
+re-running the installer is the recovery and the operator keeps a machine they can still use.
+
+The generalisation is §8.2's, one level up: it is not enough for a check to exist and pass in
+isolation — something has to be able to *act* on its answer.
 
 ## 6. Database
 
@@ -635,6 +694,7 @@ so it is a development workaround and never a release check. D-1 still requires 
 | D-3 | Rebooting the VM brings the service back without a login |
 | D-4 | Upgrading over an existing install preserves `SECRET_STORE_KEY`, `app.db`, `secrets.enc.json` and the licence, and applies pending migrations |
 | D-5 | A deliberately broken build (bad `DATABASE_URL`) makes the installer **fail** at step 8 and name the log file |
+| D-16 | A **step 7** failure — the service registration itself, not the health poll — stops the install with the script's own Turkish message, leaves no "BuyBox'i simdi ac" button, and is in the setup log. A wizard that finishes over a stopped service is the defect (§5.6) |
 | D-14 | Installing over a **running** install succeeds: no "file in use" prompt, no deferred-to-reboot copy, and the service is running the new build when the wizard finishes (§5 step 3) |
 | D-15 | Upgrading an install made on a non-default port offers that port, accepts it while the old service still holds it, and finishes with the service and both shortcuts still on it (§5 step 2) |
 | D-10 | A fresh install creates the schema on first boot with no migration step in the installer (§5.2) |

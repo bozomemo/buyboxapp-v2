@@ -38,11 +38,36 @@ if ($existing) {
     & $winsw stop
     $existing.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
   }
-  & $winsw refresh
+  # `refresh` is a WinSW 3.x command. The vendored binary is 2.12.0 (see the vendor README), where
+  # it does not exist, and calling it is a FATAL "Unknown command: refresh" -- which threw out of
+  # this script before the start below and left the upgraded service stopped. Measured on a
+  # customer machine 2026-09-01; the wizard reported success anyway, see buybox.iss.
+  #
+  # On 2.x there is nothing to do here. Everything the service *runs* -- executable, arguments,
+  # working directory, every env entry, the log configuration and the stop timeout -- is read out
+  # of BuyBoxApp.xml at each start, and that file has just been rewritten above. Only the
+  # registration-time properties (start mode, failure actions, description) need a command, and
+  # those are what a plain XML rewrite cannot reach; they have not changed since 0.1.0, and a
+  # template change to one of them would need an uninstall/install rather than this branch.
+  #
+  # Probed rather than pinned, so bumping the vendored binary to 3.x starts using `refresh` again
+  # without a second edit here.
+  $supportsRefresh = $false
+  try {
+    $supportsRefresh = ((& $winsw help | Out-String) -match '(?m)^\s+refresh\b')
+  } catch {
+    # A `help` that cannot run tells us nothing. Treat it as "no refresh" and carry on.
+  }
+  if ($supportsRefresh) {
+    & $winsw refresh
+    if ($LASTEXITCODE -ne 0) { throw "Servis tanimi guncellenemedi (WinSW cikis kodu $LASTEXITCODE)." }
+  } else {
+    Write-Output 'Bu WinSW surumunde refresh yok; servis tanimi yalnizca XML uzerinden guncellendi.'
+  }
 } else {
   & $winsw install
+  if ($LASTEXITCODE -ne 0) { throw "Servis kaydedilemedi (WinSW cikis kodu $LASTEXITCODE)." }
 }
-if ($LASTEXITCODE -ne 0) { throw "Servis kaydedilemedi (WinSW cikis kodu $LASTEXITCODE)." }
 
 & $winsw start
 if ($LASTEXITCODE -ne 0) { throw "Servis baslatilamadi (WinSW cikis kodu $LASTEXITCODE)." }

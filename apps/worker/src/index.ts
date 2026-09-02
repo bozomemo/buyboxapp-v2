@@ -834,6 +834,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         // And the identity source owns a third, for the same reason: a merchant-scoped page
         // needs a real browser exactly as the neutral one does.
         ...[...sellerIdentitySources.values()].map((source) => source.close?.()),
+        // `reloadIfConfigChanged` already closes the outgoing product-detail sources; this is
+        // the shutdown half of the same pair, missing since the registry was added.
+        ...[...productDetailSources.values()].map((source) => source.close?.()),
       ]);
     },
   };

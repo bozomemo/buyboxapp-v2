@@ -82,26 +82,13 @@ Name: "desktopicon"; Description: "Masaustunde kisayol olustur"; GroupDescriptio
 Name: "defenderexclusion"; Description: "Windows Defender'i veri klasorunu taramaktan muaf tut (onerilir)"; GroupDescription: "Basarim:"
 
 [Run]
-; Order matters and each step is checked: a failure here fails the installation (doc 14 §5).
-Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\configure-env.ps1"" -DataDir ""{#DataDir}"" -InstallDir ""{app}"""; \
-  StatusMsg: "Yapilandirma yaziliyor..."; Flags: runhidden waituntilterminated
-
-Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Add-MpPreference -ExclusionPath '{#DataDir}'"""; \
-  StatusMsg: "Defender istisnasi ekleniyor..."; Flags: runhidden waituntilterminated skipifsilent; \
-  Tasks: defenderexclusion
-
-Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install-service.ps1"" -InstallDir ""{app}"" -DataDir ""{#DataDir}"" -Port {code:GetPort} -Version ""{#AppVersion}"""; \
-  StatusMsg: "Servis kuruluyor..."; Flags: runhidden waituntilterminated
-
-Filename: "powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\verify-health.ps1"" -Port {code:GetPort} -DataDir ""{#DataDir}"""; \
-  StatusMsg: "Servis dogrulaniyor..."; Flags: runhidden waituntilterminated
-
+; The four installation steps that used to live here now run from CurStepChanged below, because
+; Inno ignores a [Run] entry's exit code -- see the comment there. All that is left is the
+; browser, and it is skipped when one of those steps failed: sending the operator to a page that
+; cannot load is not a finish.
 Filename: "http://127.0.0.1:{code:GetPort}"; \
-  Description: "BuyBox'i simdi ac"; Flags: postinstall shellexec nowait skipifsilent
+  Description: "BuyBox'i simdi ac"; Flags: postinstall shellexec nowait skipifsilent; \
+  Check: ShouldLaunchApp
 
 [UninstallRun]
 Filename: "powershell.exe"; \
@@ -111,6 +98,8 @@ Filename: "powershell.exe"; \
 [Code]
 var
   PortPage: TInputQueryWizardPage;
+  { Set by CurStepChanged when a step of doc 14 section 5 failed. Read by ShouldLaunchApp. }
+  InstallFailed: Boolean;
 
 function RunPowerShell(const ScriptPath, Args: string; var Output: string): Integer;
 var
@@ -302,6 +291,94 @@ begin
       Result := False;
     end;
   end;
+end;
+
+procedure Status(const Message: string);
+begin
+  Log(Message);
+  if Assigned(WizardForm) then
+    WizardForm.StatusLabel.Caption := Message;
+end;
+
+{ Runs one of the packaged scripts and reports whether it succeeded. On a failure the script's
+  own Turkish output is what the operator is shown -- every one of them is written to name what
+  went wrong and where to look next, so there is nothing to add to it here. }
+function RunStep(const ScriptName, Args, FailureMessage: string): Boolean;
+var
+  Output: string;
+begin
+  Result := RunPowerShell(ExpandConstant('{app}\scripts\') + ScriptName, Args, Output) = 0;
+  if Result then
+    exit;
+
+  InstallFailed := True;
+  Log('BuyBox kurulum adimi basarisiz: ' + ScriptName);
+  Log(Output);
+  if not WizardSilent then
+    MsgBox(FailureMessage + #13#10#13#10 + Output, mbCriticalError, MB_OK);
+end;
+
+{ Doc 14 section 5 steps 4, 6, 7 and 8.
+
+  These ran from the Run section until 2026-09-02, which was a mistake: Inno ignores a Run
+  entry's exit code entirely, so any of them could fail and the wizard would still finish with
+  "Kurulum tamamlandi". That is what happened on a customer machine on 2026-09-01 --
+  install-service.ps1 aborted on WinSW's "Unknown command: refresh" before it could start the
+  service, verify-health.ps1 then failed against the stopped service, and neither was reported to
+  anyone. Doc 14 section 5 step 8 requires the opposite: an installer that reports success over a
+  broken service is worse than one that fails.
+
+  Run from here each step's exit code is checked, a failure stops the remaining steps, is written
+  to the setup log, is shown to the operator, and suppresses the "open BuyBox" button. The files
+  are left in place rather than rolled back -- on an upgrade a rollback would take the working
+  previous installation with it, and the operator's data directory is untouched either way, so
+  re-running the installer is the recovery. }
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  AppDirArg, DataDirArg: string;
+  DefenderCode: Integer;
+begin
+  if CurStep <> ssPostInstall then
+    exit;
+
+  AppDirArg := '''' + ExpandConstant('{app}') + '''';
+  DataDirArg := '''' + ExpandConstant('{#DataDir}') + '''';
+
+  Status('Yapilandirma yaziliyor...');
+  if not RunStep('configure-env.ps1',
+                 '-DataDir ' + DataDirArg + ' -InstallDir ' + AppDirArg,
+                 'Yapilandirma yazilamadi; kurulum tamamlanamadi.') then
+    exit;
+
+  { Best effort, and deliberately not checked: doc 14 section 5 step 6 makes this a throughput
+    optimisation, and a machine whose Defender is disabled or managed by policy is not a broken
+    installation. }
+  if WizardIsTaskSelected('defenderexclusion') and not WizardSilent then
+  begin
+    Status('Defender istisnasi ekleniyor...');
+    Exec('powershell.exe',
+         '-NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath ' +
+           DataDirArg + '"',
+         '', SW_HIDE, ewWaitUntilTerminated, DefenderCode);
+  end;
+
+  Status('Servis kuruluyor...');
+  if not RunStep('install-service.ps1',
+                 '-InstallDir ' + AppDirArg + ' -DataDir ' + DataDirArg +
+                   ' -Port ' + GetPort('') + ' -Version ''{#AppVersion}''',
+                 'BuyBox servisi kurulamadi; kurulum tamamlanamadi.') then
+    exit;
+
+  Status('Servis dogrulaniyor...');
+  if not RunStep('verify-health.ps1',
+                 '-Port ' + GetPort('') + ' -DataDir ' + DataDirArg,
+                 'BuyBox servisi calisir duruma gelmedi; kurulum tamamlanamadi.') then
+    exit;
+end;
+
+function ShouldLaunchApp(): Boolean;
+begin
+  Result := not InstallFailed;
 end;
 
 { Doc 14 §10 D-6: data is kept unless the operator says otherwise, and the default answer is No. }
