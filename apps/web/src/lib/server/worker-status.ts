@@ -33,6 +33,18 @@ export interface WorkerStatus {
   readonly msSinceLastTick?: number;
   /** Why the last tick stopped where it did: `ran`, `no-lock`, `paused`, `unlicensed`. */
   readonly lastTickOutcome?: string;
+  /**
+   * The marketplace codes the running worker actually holds an adapter for.
+   *
+   * Reported for the same reason `databaseTarget` is. A marketplace is enabled in the database
+   * and its credentials live in the secret store, and the two can disagree: an enabled row whose
+   * credentials are absent or unreadable leaves `buildAdapters` with nothing to register, and
+   * every job for that marketplace then fails with `No marketplace adapter registered for
+   * "trendyol"` while Settings > Marketplaces still shows it ticked, with a merchant ref, next
+   * to a green "Sistem Çalışıyor". Nothing on any screen compared the two, so the contradiction
+   * could only be found in the job errors. Seen on a live install 2026-09-02.
+   */
+  readonly marketplaces?: string[];
 }
 
 /**
@@ -69,6 +81,9 @@ export function getWorkerStatus(): WorkerStatus {
     lastTickAt: report ? new Date(report.atMs).toISOString() : undefined,
     msSinceLastTick: report ? Date.now() - report.atMs : undefined,
     lastTickOutcome: report?.outcome,
+    // A getter on the handle, so this is the live registry `reloadIfConfigChanged` maintains
+    // rather than a boot-time snapshot.
+    marketplaces: [...handle.adapters.keys()],
   };
 }
 

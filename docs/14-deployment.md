@@ -289,6 +289,31 @@ in `apps/web/src/proxy.ts`), because step 8 runs before any licence exists and a
 make every first install look broken. It must not require a database connection to return 200 —
 it reports connectivity, it does not depend on it.
 
+Beyond connectivity it reports, and warns on, the **contradictions between two halves that are
+each individually healthy** — the class of failure that has cost the most diagnosis time on this
+product. Three so far:
+
+| Warning | The failure it names |
+|---|---|
+| Worker on a different database than the configuration | 2026-08-24: both halves fine, jobs queued forever (§8.3) |
+| Worker has not ticked in over a minute | The scheduler loop stopped, whatever the reason |
+| An **enabled marketplace the worker has no adapter for** | Added 2026-09-02, below |
+
+The third: a marketplace is switched on in the database while its credentials live in the secret
+store, and the two can disagree. An enabled row whose credentials are absent or unreadable leaves
+`buildAdapters` with nothing to register, and every job targeting it then fails with
+`No marketplace adapter registered for "trendyol"` — while Settings > Marketplaces still shows it
+ticked, carrying a merchant ref, beside a green "Sistem Çalışıyor". Nothing compared the two, so
+the only evidence was the job errors themselves. `worker.marketplaces` now reports the live
+registry, the mismatch is a warning, and the worker additionally logs
+`worker.marketplaceEnabledWithoutCredentials` at boot — on **stderr**, so it lands in
+`BuyBoxApp.err.log`, not the out log.
+
+It is raised only against a marketplace the operator actually enabled, which is what keeps it off
+a fresh install: nothing is enabled there, so step 8's `status: ok` is unaffected. A brief
+`degraded` right after enabling one is correct rather than noise — the worker rebuilds its
+registries within `MARKETPLACE_RELOAD_INTERVAL_MS` (§5.5), and jobs really do fail until it has.
+
 ### 5.2 Migrations run at boot, not at install
 
 Decided 2026-08-24, replacing the installer-run `scripts/migrate.mjs` step.

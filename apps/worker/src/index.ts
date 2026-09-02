@@ -217,7 +217,16 @@ async function buildAdapters(
     if (!marketplace.enabled) continue;
     const code = marketplace.code as MarketplaceCode;
     const adapter = await buildAdapter(code, secretStore);
-    if (!adapter) continue;
+    if (!adapter) {
+      // An enabled marketplace whose credentials are absent or malformed. `buildAdapter` returns
+      // `undefined` on purpose — an unregistered marketplace is visibly absent where a registered
+      // broken one looks like a transient outage — but skipping it in silence is how this ends up
+      // being diagnosed from `No marketplace adapter registered for "trendyol"` on every job
+      // instead. Say it once, here, where the reason is still known. `/api/health` reports the
+      // same contradiction for anyone not reading the log.
+      logger.warn('worker.marketplaceEnabledWithoutCredentials', { marketplaceCode: code });
+      continue;
+    }
     entries.push([code, adapter]);
     // Our own seller id, recorded from the credentials this adapter just authenticated with.
     // Done here rather than only in `ImportListings` because this runs on every boot whatever

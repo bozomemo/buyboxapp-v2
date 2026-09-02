@@ -15,7 +15,7 @@
  * this build, `degraded` while anything below that is still true.
  */
 import { NextResponse } from 'next/server';
-import { checkSchemaVersion, inferDialect, sqliteFilePath } from '@buybox/db';
+import { checkSchemaVersion, configRepo, inferDialect, sqliteFilePath } from '@buybox/db';
 import { getAppDb, isBootstrapped, tryGetBootstrapEnv } from '@/lib/server/db';
 import { getWorkerStatus } from '@/lib/server/worker-status';
 
@@ -68,6 +68,23 @@ function configuredDatabaseTarget(): string | undefined {
   }
 }
 
+/**
+ * Marketplaces the operator has switched on, or `undefined` when the database cannot be read.
+ *
+ * `undefined` and `[]` mean different things here and must not be collapsed: an unreachable
+ * database is already reported by `describeDatabase`, and inferring "no marketplace is enabled"
+ * from a failed read would raise a second, wrong warning on top of it.
+ */
+async function enabledMarketplaceCodes(): Promise<string[] | undefined> {
+  if (!isBootstrapped()) return undefined;
+  try {
+    const marketplaces = await configRepo.listMarketplaces(getAppDb());
+    return marketplaces.filter((m) => m.enabled).map((m) => m.code);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function GET() {
   const database = await describeDatabase();
   const worker = getWorkerStatus();
@@ -85,6 +102,27 @@ export async function GET() {
   // reason. Reported rather than diagnosed — the log is where the reason lives.
   if (worker.running && worker.msSinceLastTick !== undefined && worker.msSinceLastTick > 60_000) {
     warnings.push(`Worker ${Math.round(worker.msSinceLastTick / 1000)} saniyedir tick atmadı.`);
+  }
+  // An enabled marketplace the worker holds no adapter for. Every job targeting it fails with
+  // `No marketplace adapter registered for "<code>"` while the Marketplaces screen still shows
+  // it ticked — the contradiction was previously only visible in the job errors themselves.
+  //
+  // Only ever raised against a marketplace the operator actually switched on, which is what
+  // keeps it off a fresh install: nothing is enabled there, so this stays silent and the
+  // installer's `status: ok` check (§5 step 8) is unaffected. A brief window right after
+  // enabling one is expected and correct — the worker rebuilds its registries within
+  // `MARKETPLACE_RELOAD_INTERVAL_MS`, and jobs really do fail until it has.
+  const enabled = await enabledMarketplaceCodes();
+  if (worker.running && enabled && worker.marketplaces) {
+    const registered = new Set(worker.marketplaces);
+    const missing = enabled.filter((code) => !registered.has(code));
+    if (missing.length > 0) {
+      warnings.push(
+        `${missing.join(', ')} etkin görünüyor ama worker bu pazaryeri için adapter kuramadı — ` +
+          'kimlik bilgileri eksik veya okunamıyor. İşler "No marketplace adapter registered" ile ' +
+          'hata verir. Ayarlar > Pazaryerleri ekranından kimlik bilgilerini yeniden girip kaydedin.',
+      );
+    }
   }
 
   const healthy =
