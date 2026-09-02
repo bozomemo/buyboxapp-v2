@@ -799,14 +799,23 @@ re-probe the entire catalogue).
 | `competitor_observations` | 90 days |
 | `price_submissions` | 60 days |
 | `buybox_observations` | 90 days |
-| `app_events` info/debug | 90 days |
-| `app_events` warn/error | 1 year |
+| `app_events` info/debug | 3 days (was 90 until 2026-09-03) |
+| `app_events` warn/error | 30 days (was 1 year until 2026-09-03) |
 | `job_runs` | 90 days |
 | `job_queue` done/failed | 7 days |
 | `tracked_product_observations` | 90 days (added 2026-08-26) |
 | `tracked_product_metrics` | 365 days (added 2026-08-28) — longer because it is change-detected and therefore a fraction of the rows, and because "is this product moving?" needs more than a quarter to answer |
 
 A `PruneHistory` job enforces these nightly. Every retention window is configurable.
+
+> **`app_events` was cut to 3 / 30 days on 2026-09-03**, on the product owner's instruction.
+> `app_events` is a *diagnostic* log, not an audit trail: the audit trail is `price_submissions`
+> (60 days) and the observation tables. Info and debug rows answer "what did the last few runs
+> do", a question nobody asks of a three-month-old row, and they are the overwhelming bulk of the
+> table. Warn and error rows are kept ten times longer, because a fault that recurs monthly must
+> still have its first occurrence on record. The two windows are deliberately close to the file
+> logs' shape (doc 14 §5 step 7: WinSW keeps 30 rolled files), so "how far back can I look?" has
+> one answer for both halves of the record rather than two.
 
 > **`tracked_product_observations` had no retention window until 2026-08-26** and grew without
 > bound; `PruneHistory` now applies 90 days to it, matching `competitor_observations` because it

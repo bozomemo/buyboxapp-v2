@@ -25,13 +25,17 @@
  * tickers and database connection running past the signal, which is precisely the leak this
  * file was written to prevent.
  */
+import { createLogger } from '@buybox/shared';
+
+const logger = createLogger({ name: 'web.shutdown' });
+
 export function registerShutdown(getHandle: () => { shutdown: () => Promise<void> } | undefined): void {
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
     shuttingDown = true;
     const forceExit = setTimeout(() => {
-      console.warn(`[buybox] embedded worker shutdown timed out after ${signal}, exiting anyway`);
+      logger.warn('worker.shutdownTimedOut', { signal, action: 'exiting anyway' });
       process.exit(0);
     }, 5000);
     forceExit.unref();
@@ -45,7 +49,7 @@ export function registerShutdown(getHandle: () => { shutdown: () => Promise<void
     }
     void handle
       .shutdown()
-      .catch((error) => console.error('[buybox] embedded worker shutdown failed:', error))
+      .catch((error) => logger.error('worker.shutdownFailed', { error }))
       .finally(() => {
         clearTimeout(forceExit);
         process.exit(0);

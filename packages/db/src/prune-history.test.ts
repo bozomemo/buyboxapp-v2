@@ -34,7 +34,7 @@ describe.each(ALL_DIALECTS)('pruneHistory on %s', (dialect) => {
     const oldEventId = newId();
     await eventsRepo.logEvent(appDb, {
       id: oldEventId,
-      at: NOW - 200 * DAY_MS, // well past the 90-day info/debug window
+      at: NOW - 200 * DAY_MS, // well past the 3-day info/debug window
       level: 'info',
       marketplaceCode: null,
       listingId: null,
@@ -56,12 +56,42 @@ describe.each(ALL_DIALECTS)('pruneHistory on %s', (dialect) => {
       context: null,
     });
 
+    // Between the two windows: gone under the 3-day info/debug rule, kept under the 30-day
+    // warn/error one. This row is what makes the two windows separately observable — without it
+    // the test passes with a single window applied to every level.
+    const midErrorId = newId();
+    await eventsRepo.logEvent(appDb, {
+      id: midErrorId,
+      at: NOW - 10 * DAY_MS,
+      level: 'error',
+      marketplaceCode: null,
+      listingId: null,
+      jobRunId: null,
+      code: 'mid.error',
+      message: 'kept',
+      context: null,
+    });
+    const oldErrorId = newId();
+    await eventsRepo.logEvent(appDb, {
+      id: oldErrorId,
+      at: NOW - 200 * DAY_MS,
+      level: 'error',
+      marketplaceCode: null,
+      listingId: null,
+      jobRunId: null,
+      code: 'old.error',
+      message: 'stale',
+      context: null,
+    });
+
     await pruneHistory(appDb, DEFAULT_RETENTION_WINDOWS, NOW);
 
     const remaining = await eventsRepo.listRecentEvents(appDb, 10);
     const ids = remaining.map((e) => e.id);
     expect(ids).not.toContain(oldEventId);
     expect(ids).toContain(recentEventId);
+    expect(ids).toContain(midErrorId);
+    expect(ids).not.toContain(oldErrorId);
   }, 30_000);
 
   it('ages out raw competitor offers but keeps every proof-of-look row', async () => {

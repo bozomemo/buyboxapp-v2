@@ -16,7 +16,10 @@
  *
  * `globalThis` for the same reason `db.ts` uses it — Next dev-mode module reloads.
  */
+import { createLogger } from '@buybox/shared';
 import type { WorkerHandle } from '@buybox/worker';
+
+const logger = createLogger({ name: 'web.worker' });
 
 declare global {
   var __buyboxWorkerHandle: WorkerHandle | undefined;
@@ -133,7 +136,7 @@ export async function restartWorker(): Promise<RestartResult> {
       try {
         await previous.shutdown();
       } catch (error) {
-        console.error('[buybox] worker shutdown failed during restart:', error);
+        logger.error('worker.shutdownFailedDuringRestart', { error });
       }
       clearWorker();
     }
@@ -142,7 +145,7 @@ export async function restartWorker(): Promise<RestartResult> {
       const { startWorker } = await import('@buybox/worker');
       const handle = await startWorker();
       registerWorker(handle);
-      console.log(`[buybox] embedded worker restarted, database: ${handle.databaseTarget}`);
+      logger.info('worker.embeddedRestarted', { database: handle.databaseTarget });
       return {
         ok: true,
         message: 'Worker yeniden başlatıldı. Kaydedilen sıklıklar artık geçerli.',
@@ -153,7 +156,7 @@ export async function restartWorker(): Promise<RestartResult> {
       // report, and the Jobs screen's scheduler banner already renders that state prominently.
       // Failing loudly here beats pretending a restart succeeded over a dead scheduler.
       const detail = error instanceof Error ? error.message : String(error);
-      console.error('[buybox] embedded worker failed to restart:', error);
+      logger.error('worker.embeddedRestartFailed', { error });
       return { ok: false, message: `Worker yeniden başlatılamadı: ${detail}` };
     }
   })();

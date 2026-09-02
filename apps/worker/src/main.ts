@@ -3,13 +3,39 @@
  * container). Not used by `apps/web`'s single-process mode — that calls `startWorker()`
  * directly from `instrumentation.ts` in-process instead.
  */
+import { eventsRepo, newId } from '@buybox/db';
+import { createLogger, registerProcessErrorHandlers } from '@buybox/shared';
 import { startWorker } from './index.js';
+
+const logger = createLogger({ name: 'worker.main' });
 
 async function main(): Promise<void> {
   const handle = await startWorker();
-  console.log(
-    `buybox worker started (dialect=${handle.appDb.dialect}, marketplaces=${[...handle.adapters.keys()].join(',') || 'none'})`,
-  );
+
+  // Registered after the handle exists so a crash can be written to `app_events` as well as to
+  // the log file. Anything that fails *before* this line still reaches stderr through Node's own
+  // default handler, which the service captures.
+  registerProcessErrorHandlers({
+    logger,
+    onFatal: async ({ kind, message, detail }) => {
+      await eventsRepo.logEvent(handle.appDb, {
+        id: newId(),
+        at: Date.now(),
+        level: 'error',
+        marketplaceCode: null,
+        listingId: null,
+        jobRunId: null,
+        code: kind === 'uncaughtException' ? 'ProcessUncaughtException' : 'ProcessUnhandledRejection',
+        message,
+        context: JSON.stringify({ detail }),
+      });
+    },
+  });
+
+  logger.info('worker.started', {
+    dialect: handle.appDb.dialect,
+    marketplaces: [...handle.adapters.keys()],
+  });
 
   const shutdown = async (): Promise<void> => {
     await handle.shutdown();

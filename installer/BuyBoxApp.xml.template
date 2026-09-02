@@ -34,6 +34,11 @@
        its lock. Killing it mid-submission is what leaves a price change unconfirmed. -->
   <stoptimeout>45 sec</stoptimeout>
 
+  <!-- The file half of the log record (doc 14 section 5 step 7). Rolls at 10 MB *or* midnight and
+       keeps 30 files, which is deliberately the same reach back as `app_events`' warn/error
+       retention (doc 05 section 10, 30 days since 2026-09-03): "how far back can I look?" should
+       not have two different answers. stdout carries debug/info, stderr warn/error, one JSON
+       object per line. Do not shorten `keepFiles` without moving that retention window with it. -->
   <logpath>{{DATA_DIR}}\logs</logpath>
   <log mode="roll-by-size-time">
     <sizeThreshold>10240</sizeThreshold>

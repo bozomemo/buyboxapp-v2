@@ -254,6 +254,39 @@ elevation (it writes to `Program Files` and registers a service).
    scripts at runtime) and over NSSM (unmaintained): WinSW is a single executable configured by
    one XML file we ship, so what runs on the customer's machine is what we tested.
 
+   **The log structure the service produces** (`installer/BuyBoxApp.xml.template`, settled
+   2026-09-03). There are two records of what the install did, and an operator diagnosing a
+   production fault should know which one to open:
+
+   | | File log | `app_events` |
+   |---|---|---|
+   | Where | `ProgramData\BuyBox\logs\BuyBoxApp.out.log` / `.err.log` | the database, `/events` screen |
+   | What | every line the process wrote to stdout/stderr — one JSON object per line, plus anything a dependency prints | only what the app chose to record, with `code`, `marketplaceCode`, `listingId`, `jobRunId` |
+   | Rotation | WinSW `roll-by-size-time`: rolls at 10 MB **or** midnight, keeps 30 files | `PruneHistory` nightly: info/debug 3 days, warn/error 30 days (doc 05 §10) |
+   | Answers | "the process died / a dependency complained / nothing reached the database" | "which listing, which job, which marketplace" |
+
+   Stdout carries `debug`/`info`, stderr `warn`/`error` (`packages/shared/src/logger.ts`), so
+   `BuyBoxApp.err.log` alone is usually the whole investigation. Every line is a single JSON
+   object — `time`, `level`, `name`, `message`, then the call's own fields — which is what makes
+   the files greppable a month later.
+
+   Three properties of that writer are load-bearing and easy to lose in a refactor (all added
+   2026-09-03, see the module comment): `Error` values are expanded to `name`/`message`/`stack`
+   (`JSON.stringify(new Error())` is `{}`, so every logged failure used to be an empty object);
+   `bigint` is written as a string (money is `bigint` here, and `JSON.stringify` *throws* on
+   one — a log call that throws turns a logged failure into an unlogged crash); and fields whose
+   *name* says credential (`password`, `secret`, `token`, `apiKey`, `authorization`, …) are
+   replaced with `[redacted]`, because marketplace credentials travel inside the request objects
+   that get attached to errors.
+
+   A fault that escapes everything — `uncaughtException`, `unhandledRejection` — is caught by
+   `registerProcessErrorHandlers` (`packages/shared/src/process-errors.ts`) and written to both
+   records before the process exits, rather than arriving as a bare Node stack trace that never
+   reaches `app_events`. An uncaught exception then exits deliberately and WinSW's `onfailure`
+   restarts within ten seconds; an unhandled rejection is logged and the run continues, because
+   the scheduler already isolates per-job failure and killing the host would drop every in-flight
+   submission with it.
+
    On an **upgrade** the service already exists, so the step rewrites `BuyBoxApp.xml` and starts
    it again — and that is all it does. Everything the service *runs* (executable, arguments,
    working directory, every `<env>`, the log configuration, the stop timeout) is read out of that

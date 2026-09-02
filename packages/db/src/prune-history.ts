@@ -47,8 +47,14 @@ export const DEFAULT_RETENTION_WINDOWS: RetentionWindows = {
   // a fraction of their row count, and the question it answers — "is this product accumulating
   // ratings, and how fast?" — needs more than a quarter to be worth asking.
   trackedProductMetricsDays: 365,
-  appEventsInfoDebugDays: 90,
-  appEventsWarnErrorDays: 365,
+  // Operator's policy, set 2026-09-03 (was 90/365). `app_events` is a *diagnostic* log, not an
+  // audit trail — the audit trail is `price_submissions`, which keeps its own 60 days. Info and
+  // debug rows exist to answer "what happened in the last few runs", a question nobody asks of a
+  // three-month-old row, and they are the bulk of the table. Warn and error rows are kept ten
+  // times longer because a fault that recurs monthly must still have its first occurrence on
+  // record. These two windows are also the file logs' rough shape: WinSW keeps 30 rolled files.
+  appEventsInfoDebugDays: 3,
+  appEventsWarnErrorDays: 30,
   jobRunsDays: 90,
   jobQueueFinishedDays: 7,
 };
@@ -65,10 +71,7 @@ export async function pruneHistory(
   await prunePriceSubmissions(appDb, daysAgo(nowMs, windows.priceSubmissionsDays));
   await pruneBuyboxObservations(appDb, daysAgo(nowMs, windows.buyboxObservationsDays));
   await pruneCompetitorObservations(appDb, daysAgo(nowMs, windows.competitorObservationsDays));
-  await pruneTrackedProductObservations(
-    appDb,
-    daysAgo(nowMs, windows.trackedProductObservationsDays),
-  );
+  await pruneTrackedProductObservations(appDb, daysAgo(nowMs, windows.trackedProductObservationsDays));
   await pruneTrackedProductMetrics(appDb, daysAgo(nowMs, windows.trackedProductMetricsDays));
   await pruneEvents(
     appDb,
