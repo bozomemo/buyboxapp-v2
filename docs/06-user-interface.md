@@ -442,6 +442,23 @@ marketplace, listing, job run, date range, code. Each row links to its listing o
 
 Every change is audited and shows who changed it, when, and from what.
 
+**Write-only credential fields mean one thing everywhere on these pages: a blank field keeps its
+stored value.** Saving has always worked that way; so must the Test button. Added 2026-09-02,
+after a live install where it did not — the test route built its adapter from the posted form
+alone, so pressing "Bağlantıyı Test Et" without retyping anything tested empty strings and
+reported `Trendyol API 404 on /product/sellers//products/approved?page=0&size=1`. An empty
+`sellerId` collapsing into a double slash, shown to the operator as though Trendyol had rejected
+credentials that were in fact stored and working.
+
+Two rules follow, and `lib/credential-merge.ts` is where both live:
+
+- **A test with nothing typed tests what the jobs use.** That is the question the button is being
+  asked. Typed fields win over stored ones; blank fields are dropped rather than merged, so a
+  half-filled form can never blank a stored credential.
+- **A missing credential is named, not sent.** Hepsiburada got this free from its schema;
+  Trendyol had none, so an incomplete set reached the API and came back as a bare HTTP status
+  naming nothing anyone could act on.
+
 Fee and policy edits offer **"preview impact"**: run the engine in shadow over the current
 catalogue and report how many listings would change price and by how much, before saving.
 
