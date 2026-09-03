@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { lookAnnotations } from '@/lib/price-chart-series';
 import { marketplaceProductUrl } from '@/lib/product-url';
 
 interface SellerPoint {
@@ -51,34 +53,46 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 /**
- * Buybox price across the window — the same dependency-free inline sparkline the listing detail
- * draws, and deliberately the same shape so the two screens read alike. Failed looks contribute
- * no point rather than a zero.
+ * Buybox price across the window — the same chart component the listing detail draws, so the two
+ * screens read alike. Hovering a look names the seller who held the buybox then, which is the
+ * question this screen exists to answer and the one a bare line cannot.
+ *
+ * The seller comes from `sellers[].points`, joined on `observedAt`: both series are built from
+ * the same look rows (`summariseLooks` / `seriesBySeller`), so the timestamps are equal, not
+ * merely close. A failed look contributes no price — a gap, never a zero.
  */
-function BuyboxSparkline({ looks }: { looks: Detail['looks'] }) {
-  const points = looks
-    .map((l) => (l.buyboxPrice ? { observedAt: l.observedAt, value: Number(l.buyboxPrice) } : null))
-    .filter((p): p is { observedAt: number; value: number } => p !== null);
-  if (points.length < 2) return <p className="text-xs text-(--color-muted)">Grafik için yeterli veri yok.</p>;
-
-  const width = 600;
-  const height = 120;
-  const values = points.map((p) => p.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = Math.max(1, max - min);
-  const x = (i: number) => (i / (points.length - 1)) * width;
-  const y = (v: number) => height - ((v - min) / span) * height;
+function BuyboxChart({ looks, sellers }: { looks: Detail['looks']; sellers: Seller[] }) {
+  const { buyboxSeller, secondPrice } = lookAnnotations(sellers);
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full" preserveAspectRatio="none">
-      <polyline
-        points={points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ')}
-        fill="none"
-        stroke="var(--color-warning)"
-        strokeWidth="2"
-      />
-    </svg>
+    <PriceChart
+      timestamps={looks.map((l) => l.observedAt)}
+      series={[
+        {
+          key: 'buybox',
+          label: 'Buybox',
+          color: 'var(--color-warning)',
+          values: looks.map((l) => (l.buyboxPrice ? BigInt(l.buyboxPrice) : null)),
+        },
+        {
+          key: 'second',
+          label: '2. Fiyat',
+          color: 'var(--color-muted)',
+          values: looks.map((l) => secondPrice.get(l.observedAt) ?? null),
+        },
+      ]}
+      annotations={[
+        { label: 'Buybox satıcı', values: looks.map((l) => buyboxSeller.get(l.observedAt) ?? null) },
+        {
+          label: 'Satıcı sayısı',
+          values: looks.map((l) => (l.status === 'ok' ? formatNumber(l.offers) : null)),
+        },
+        {
+          label: 'Bakış',
+          values: looks.map((l) => STATUS_LABELS[l.status] ?? l.status),
+        },
+      ]}
+    />
   );
 }
 
@@ -336,7 +350,7 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
       {/* Bakış geçmişi */}
       <section className="rounded border border-(--color-border) p-4">
         <h2 className="mb-3 text-lg font-medium">Buybox Fiyat Geçmişi</h2>
-        <BuyboxSparkline looks={looks} />
+        <BuyboxChart looks={looks} sellers={sellers} />
         <TableFrame className="mt-3" maxHeight="40vh">
           <table className="w-full text-xs">
             <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>

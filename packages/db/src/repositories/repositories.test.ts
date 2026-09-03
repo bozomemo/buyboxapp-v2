@@ -805,6 +805,17 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     });
     expect(runs).toHaveLength(3); // run1, run2 (fetch-failed), run3
     expect(runs.find((r) => r.id === run2)?.status).toBe('fetchFailed'); // observation-coverage gap
+
+    // The price chart's hover readout (doc 06 §5): one row per look, rank-1 only, oldest first.
+    // Rank 2 must not appear — attributing the buybox to the runner-up would name the wrong
+    // company on a screen whose whole point is who is beating us.
+    const buyboxSellers = await competitionRepo.buyboxSellerHistory(appDb, listingId, NOW - 1000);
+    expect(buyboxSellers.map((b) => [b.observedAt, b.sellerRef, b.price])).toEqual([
+      [NOW, 'seller-1', 2000n],
+      [NOW + 7200_000, 'seller-1', 1990n],
+    ]);
+    // `sinceMs` bounds it — the window is the chart's window, never the whole archive.
+    expect(await competitionRepo.buyboxSellerHistory(appDb, listingId, NOW + 1)).toHaveLength(1);
   }, 30_000);
 
   it('competitor sellers: durable identity, operator-owned grouping, cross-marketplace expansion', async () => {

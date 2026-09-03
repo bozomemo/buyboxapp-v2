@@ -251,6 +251,88 @@ export async function buyboxObservationHistory(
   }) as Promise<BuyboxObservationRow[]>;
 }
 
+/** One look's rank-1 seller, for the price chart's hover readout. */
+export interface BuyboxSellerPointRow {
+  readonly observedAt: number;
+  readonly sellerName: string;
+  readonly sellerRef: string | null;
+  readonly price: bigint | null;
+}
+
+/**
+ * Who held the buybox at each look, oldest first — the seller half of the listing detail's
+ * price chart hover (doc 06 §5). `buybox_observations` carries the winning *price* but no
+ * seller identity, so this reads the rank-1 row of `competitor_observations` instead, one
+ * row per look rather than the whole seller set: a 30-day window on an hourly scrape is a few
+ * hundred rows here against several thousand if every rank were fetched and filtered in JS.
+ *
+ * Reporting only, like everything else built from scraped observations — nothing in the
+ * pricing path reads it.
+ */
+export async function buyboxSellerHistory(
+  appDb: AppDatabase,
+  listingId: string,
+  sinceMs: number,
+  limit = 500,
+): Promise<BuyboxSellerPointRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({
+          observedAt: sqliteSchema.competitorObservations.observedAt,
+          sellerName: sqliteSchema.competitorObservations.sellerName,
+          sellerRef: sqliteSchema.competitorObservations.sellerRef,
+          price: sqliteSchema.competitorObservations.price,
+        })
+        .from(sqliteSchema.competitorObservations)
+        .where(
+          and(
+            eq(sqliteSchema.competitorObservations.listingId, listingId),
+            eq(sqliteSchema.competitorObservations.rank, 1),
+            gte(sqliteSchema.competitorObservations.observedAt, sinceMs),
+          ),
+        )
+        .orderBy(asc(sqliteSchema.competitorObservations.observedAt))
+        .limit(limit),
+    postgres: (db) =>
+      db
+        .select({
+          observedAt: postgresSchema.competitorObservations.observedAt,
+          sellerName: postgresSchema.competitorObservations.sellerName,
+          sellerRef: postgresSchema.competitorObservations.sellerRef,
+          price: postgresSchema.competitorObservations.price,
+        })
+        .from(postgresSchema.competitorObservations)
+        .where(
+          and(
+            eq(postgresSchema.competitorObservations.listingId, listingId),
+            eq(postgresSchema.competitorObservations.rank, 1),
+            gte(postgresSchema.competitorObservations.observedAt, sinceMs),
+          ),
+        )
+        .orderBy(asc(postgresSchema.competitorObservations.observedAt))
+        .limit(limit),
+    mysql: (db) =>
+      db
+        .select({
+          observedAt: mysqlSchema.competitorObservations.observedAt,
+          sellerName: mysqlSchema.competitorObservations.sellerName,
+          sellerRef: mysqlSchema.competitorObservations.sellerRef,
+          price: mysqlSchema.competitorObservations.price,
+        })
+        .from(mysqlSchema.competitorObservations)
+        .where(
+          and(
+            eq(mysqlSchema.competitorObservations.listingId, listingId),
+            eq(mysqlSchema.competitorObservations.rank, 1),
+            gte(mysqlSchema.competitorObservations.observedAt, sinceMs),
+          ),
+        )
+        .orderBy(asc(mysqlSchema.competitorObservations.observedAt))
+        .limit(limit),
+  }) as Promise<BuyboxSellerPointRow[]>;
+}
+
 export interface ScrapeRunRow {
   readonly id: string;
   readonly listingId: string;

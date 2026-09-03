@@ -171,6 +171,16 @@ stock, status flags, campaign window, product image, link to the marketplace pag
 time, stock where available; plus a price chart over time drawn from
 `competitor_observations` (§6).
 
+The chart is **readable point by point**: hovering it (or arrowing along it from the keyboard)
+snaps to the nearest observation and shows, on that breakpoint, the buybox price, the runner-up
+price, our own price, our rank and **who held the buybox at that moment** (customer feedback
+2026-09-03). The seller comes from the rank-1 `competitor_observations` row at or before the
+point — `buybox_observations` carries the winning price but no seller identity, and the two
+tables are written by different jobs, so a point older than the first scrape is left
+unattributed rather than borrowing the nearest name. A look with no observation breaks the line
+instead of being bridged: a failed scrape must not read as a straight line through the missing
+hours.
+
 **Engine** — current phase, `lastGoodPrice`, `lastBadPrice`, `optimumPrice`, the invalidation
 context snapshot, and **why the last decision was what it was**, in words. Buttons: force
 re-optimisation, pause automation, set bounds.
@@ -564,8 +574,9 @@ card, not before.
 Every `.tsx` under `apps/web/src` was swept for colour that does not come from a token — Tailwind
 palette utilities (`bg-white`, `text-gray-500`, …), hex and `rgb()`/`hsl()` literals, and inline
 `style` colour props. **There are none**: the only colour any screen names is a
-`…-(--color-…)` token, and the two inline sparklines pass tokens through `stroke`. Nothing
-needed changing for the sweep itself.
+`…-(--color-…)` token, and the shared price chart passes tokens through `stroke` and through the
+inline `background` of its markers and legend swatches. Nothing needed changing for the sweep
+itself.
 
 The token pairs were then measured for WCAG AA contrast (4.5:1 for body text) in both themes —
 each status hue on `--color-bg`, on `--color-surface`, on its own `-bg` tint and on `--color-hover`,
@@ -683,9 +694,12 @@ reporting-only, in the same sense as §6.
 
 What it shows: a *Şu An* summary (buybox seller and price, cheapest offer, seller count, total
 visible stock, last look and its status), a **sellers table** — rank, seller, price, price move
-since the previous look, customer price, stock, last seen — and a buybox price history with the
-same dependency-free inline sparkline §5 uses. A seller row expands to that seller's own series
-across the window.
+since the previous look, customer price, stock, last seen — and a buybox price history drawn
+with the same dependency-free chart component §5 uses, hover readout included: buybox and
+runner-up price, buybox seller, seller count and the look's status. Here the seller is joined on
+`observedAt` exactly rather than approximately — both series are built from the same look rows —
+and a failed look shows as a gap carrying its status, never as a zero. A seller row expands to
+that seller's own series across the window.
 
 Two decisions inside it:
 

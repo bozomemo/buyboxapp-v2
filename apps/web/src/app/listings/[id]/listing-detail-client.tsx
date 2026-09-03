@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { PriceChart } from '@/components/price-chart';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 
@@ -81,6 +82,8 @@ interface Detail {
       buyboxPrice: string | null;
       secondPrice: string | null;
       rank: number | null;
+      buyboxSellerName: string | null;
+      buyboxSellerRef: string | null;
     }[];
   };
   engine: {
@@ -109,49 +112,49 @@ interface Detail {
   }[];
 }
 
-/** A lightweight inline sparkline — no charting dependency added for this checkpoint (same
- * disclosed simplification approach as the listings grid's server-paging-over-virtualization
- * tradeoff): plots our price and the buybox price over the retained observation window. */
-function PriceSparkline({
+/**
+ * Buybox, the runner-up and our own price over the retained observation window. Our price is a
+ * level rather than a series — `listings.price` keeps only the current value, so drawing it as a
+ * line over time would invent history it does not have; `Fiyat Geçmişi` below is where past
+ * submissions are stated as fact.
+ */
+function PriceHistoryChart({
   history,
   ourPrice,
 }: {
   history: Detail['competition']['priceHistory'];
   ourPrice: string;
 }) {
-  if (history.length < 2)
-    return <p className="text-xs text-(--color-muted)">Grafik için yeterli veri yok.</p>;
-
-  const width = 600;
-  const height = 120;
-  const prices = history
-    .map((h) => (h.buyboxPrice ? Number(h.buyboxPrice) : null))
-    .filter((v): v is number => v !== null)
-    .concat(Number(ourPrice));
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const span = Math.max(1, max - min);
-  const x = (i: number) => (i / (history.length - 1)) * width;
-  const y = (v: number) => height - ((v - min) / span) * height;
-
-  const buyboxPoints = history
-    .map((h, i) => (h.buyboxPrice ? `${x(i)},${y(Number(h.buyboxPrice))}` : null))
-    .filter((p): p is string => p !== null)
-    .join(' ');
-
+  const money = (v: string | null) => (v === null ? null : BigInt(v));
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full" preserveAspectRatio="none">
-      <polyline points={buyboxPoints} fill="none" stroke="var(--color-warning)" strokeWidth="2" />
-      <line
-        x1="0"
-        y1={y(Number(ourPrice))}
-        x2={width}
-        y2={y(Number(ourPrice))}
-        stroke="var(--color-accent)"
-        strokeWidth="1.5"
-        strokeDasharray="4 3"
-      />
-    </svg>
+    <PriceChart
+      timestamps={history.map((h) => h.observedAt)}
+      series={[
+        {
+          key: 'buybox',
+          label: 'Buybox',
+          color: 'var(--color-warning)',
+          values: history.map((h) => money(h.buyboxPrice)),
+        },
+        {
+          key: 'second',
+          label: '2. Fiyat',
+          color: 'var(--color-muted)',
+          values: history.map((h) => money(h.secondPrice)),
+        },
+        {
+          key: 'ours',
+          label: 'Bizim Fiyatımız',
+          color: 'var(--color-accent)',
+          dashed: true,
+          values: history.map(() => BigInt(ourPrice)),
+        },
+      ]}
+      annotations={[
+        { label: 'Buybox satıcı', values: history.map((h) => h.buyboxSellerName) },
+        { label: 'Sıramız', values: history.map((h) => (h.rank === null ? null : String(h.rank))) },
+      ]}
+    />
   );
 }
 
@@ -356,7 +359,7 @@ export function ListingDetailClient({ id }: { id: string }) {
             {formatDateTime(competition.buybox.observedAt)}
           </p>
         )}
-        <PriceSparkline history={competition.priceHistory} ourPrice={listing.price} />
+        <PriceHistoryChart history={competition.priceHistory} ourPrice={listing.price} />
         <TableFrame className="mt-3" maxHeight="50vh">
           <table className="w-full text-xs">
             <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>

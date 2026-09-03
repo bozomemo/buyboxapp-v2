@@ -22,6 +22,7 @@ import {
 } from '@buybox/db';
 import { mapFeeSettings } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
+import { sellerAsOf } from '@/lib/price-chart-series';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
@@ -35,13 +36,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const listing = await listingsRepo.getListing(appDb, id);
   if (!listing) return NextResponse.json({ error: 'İlan bulunamadı.' }, { status: 404 });
 
-  const [stockItem, feeRow, repricingState, buybox, buyboxHistory, competitors, submissions] =
+  const [stockItem, feeRow, repricingState, buybox, buyboxHistory, buyboxSellers, competitors, submissions] =
     await Promise.all([
       listing.baseStockCode ? stockRepo.getStockItem(appDb, listing.baseStockCode) : undefined,
       configRepo.getEffectiveFeeSettings(appDb, listing.marketplaceCode, nowMs),
       repricingRepo.getRepricingState(appDb, id),
       competitionRepo.latestBuyboxObservation(appDb, id),
       competitionRepo.buyboxObservationHistory(appDb, id, nowMs - HISTORY_WINDOW_MS),
+      competitionRepo.buyboxSellerHistory(appDb, id, nowMs - HISTORY_WINDOW_MS),
       competitionRepo.observationsAsOf(appDb, id, nowMs),
       repricingRepo.listPriceSubmissionsForListing(appDb, id),
     ]);
@@ -155,12 +157,20 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         offeredStock: c.offeredStock,
         hasPromotion: c.hasPromotion,
       })),
-      priceHistory: buyboxHistory.map((h) => ({
-        observedAt: h.observedAt,
-        buyboxPrice: h.buyboxPrice?.toString() ?? null,
-        secondPrice: h.secondPrice?.toString() ?? null,
-        rank: h.rank,
-      })),
+      // Who held the buybox at each charted point — the last rank-1 seller seen at or before it
+      // (`sellerAsOf`, under test): the two series come from different tables written by
+      // different jobs, so their timestamps do not coincide.
+      priceHistory: buyboxHistory.map((h) => {
+        const seller = sellerAsOf(buyboxSellers, h.observedAt);
+        return {
+          observedAt: h.observedAt,
+          buyboxPrice: h.buyboxPrice?.toString() ?? null,
+          secondPrice: h.secondPrice?.toString() ?? null,
+          rank: h.rank,
+          buyboxSellerName: seller?.sellerName ?? null,
+          buyboxSellerRef: seller?.sellerRef ?? null,
+        };
+      }),
     },
     engine: repricingState
       ? {
