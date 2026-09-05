@@ -99,6 +99,12 @@ export class Scheduler {
   private holdsLock = false;
   private lastTick: SchedulerTickReport | undefined;
   private readonly onTickError: ((error: unknown) => void) | undefined;
+  /**
+   * When each cadenced job may next be enqueued. Populated lazily from the job's last recorded
+   * run, so a restart does not reset a six-hourly job to "due now" every time the process comes
+   * up — and a job that has never run at all stays due immediately, as on a fresh install.
+   */
+  private readonly cadenceDueAtMs = new Map<string, number>();
 
   constructor(options: SchedulerOptions) {
     this.appDb = options.appDb;
@@ -191,6 +197,25 @@ export class Scheduler {
   }
 
   /**
+   * Whether a cadenced job is due, measured from its last run rather than from process start.
+   *
+   * The due time is read from the database once per job per process and then kept in memory:
+   * `tick()` runs every two seconds, and a query per cadenced job per tick would cost more than
+   * the scheduling it guards. Ownership is safe to assume because only the instance holding the
+   * scheduler lock reaches this code, and that instance is the only one enqueueing by cadence.
+   */
+  private async isCadenceDue(jobName: string, cadenceMs: number, nowMs: number): Promise<boolean> {
+    let dueAtMs = this.cadenceDueAtMs.get(jobName);
+    if (dueAtMs === undefined) {
+      const [lastRun] = await jobsRepo.listJobRuns(this.appDb, { jobName }, 1);
+      // Never run — due now, so a fresh install does not wait a full cadence for its first run.
+      dueAtMs = lastRun ? (lastRun.finishedAt ?? lastRun.startedAt) + cadenceMs : 0;
+      this.cadenceDueAtMs.set(jobName, dueAtMs);
+    }
+    return nowMs >= dueAtMs;
+  }
+
+  /**
    * One scheduling cycle: try to hold the lock; if held, enqueue any cadence-due jobs that
    * aren't already pending, requeue expired visibility-timeout locks, then claim and run up
    * to `maxClaimsPerTick` ready jobs of the registered names.
@@ -231,9 +256,16 @@ export class Scheduler {
     for (const def of this.definitions.values()) {
       if (def.cadenceMs === undefined) continue;
       if (!(await isJobEnabled(this.appDb, def.jobName))) continue; // doc 12 6.9: operator disabled it
+      // The cadence itself. Without this the only gate below is "nothing of this name is active",
+      // which a job satisfies the moment its previous run finishes — so a six-hourly job was
+      // re-enqueued on the next 2s tick instead (measured 2026-09-05: 272 `EvaluateBrandFindings`
+      // runs in 13 minutes, whose synchronous database work blocked the event loop badly enough
+      // that every web request in single-process mode waited ~20s behind it).
+      if (!(await this.isCadenceDue(def.jobName, def.cadenceMs, nowMs))) continue;
       const active = await jobsRepo.countActiveJobs(this.appDb, def.jobName);
       if (active > 0) continue; // still pending or running — doc 07 §8: one run at a time
       await this.enqueueNow(def.jobName, '{}');
+      this.cadenceDueAtMs.set(def.jobName, nowMs + def.cadenceMs);
       enqueued.push(def.jobName);
     }
 

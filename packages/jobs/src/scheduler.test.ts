@@ -188,11 +188,21 @@ describe('Scheduler', () => {
       expect(first.ran.map((r) => r.jobName)).toEqual(['Heartbeat']);
       expect(runs).toHaveLength(1);
 
-      // Immediately ticking again must not enqueue a second instance while the first is done
-      // (claimed and completed synchronously here, so it's already terminal — countActiveJobs
-      // only excludes ready/locked, not done, so a fresh enqueue is in fact expected here).
+      // Ticking again immediately must not enqueue a second instance. The first run is already
+      // terminal — `countActiveJobs` excludes only ready/locked, not done — so "nothing of this
+      // name is active" is true again straight away, and the cadence is the only thing standing
+      // between a six-hourly job and one run per two-second tick.
       const second = await scheduler.tick();
-      expect(second.enqueued).toEqual(['Heartbeat']);
+      expect(second.enqueued).toEqual([]);
+      expect(runs).toHaveLength(1);
+
+      // Still not due one millisecond short of the cadence, and due on it.
+      clock.advance(60_000 - 1);
+      expect((await scheduler.tick()).enqueued).toEqual([]);
+      expect(runs).toHaveLength(1);
+
+      clock.advance(1);
+      expect((await scheduler.tick()).enqueued).toEqual(['Heartbeat']);
       expect(runs).toHaveLength(2);
     } finally {
       cleanup();
