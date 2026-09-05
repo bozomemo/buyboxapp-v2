@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { PriceChart } from '@/components/price-chart';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 
@@ -43,7 +44,33 @@ interface Decision {
   decidedAt: number;
 }
 
+/** Marka sahibi tarafı. `null` — hiç izlenen marka yok — saf repricing kurulumunun normali. */
+interface BrandAudit {
+  windowMs: number;
+  openFindings: { stated: number; measured: number };
+  brands: {
+    id: string;
+    label: string;
+    marketplaceCode: string;
+    productCount: number;
+    noSellerCount: number;
+    neverLookedCount: number;
+    openFindings: number;
+    lastSweptAt: number | null;
+  }[];
+  referencePrice: { productsWithPrice: number; productsTotal: number };
+  /** Kuruş, dizge olarak. `null` bir gün: o gün okunabilir fiyat yoktu — sıfır değil. */
+  trend: {
+    dayMs: number;
+    avgPrice: string | null;
+    sellerCount: number;
+    productsWithOffers: number;
+    productsWithoutOffers: number;
+  }[];
+}
+
 interface DashboardData {
+  brandAudit: BrandAudit | null;
   /** The "stop everything" control — genuinely separate from `globalKillSwitchEngaged` below. */
   systemPaused: boolean;
   /** The narrower price-submission-only control. Neither state is derived from the other. */
@@ -300,10 +327,7 @@ export function DashboardClient() {
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {data.marketplaces.map((m) => (
-            <div
-              key={m.code}
-              className="rounded border border-(--color-border) bg-(--color-surface) p-4"
-            >
+            <div key={m.code} className="rounded border border-(--color-border) bg-(--color-surface) p-4">
               <div className="mb-2 flex items-center justify-between">
                 <span className="font-semibold">{m.displayName}</span>
                 <MarketplaceKillSwitch marketplace={m} onChanged={load} />
@@ -381,7 +405,10 @@ export function DashboardClient() {
           </div>
           <div className="mt-2 space-y-1 text-xs">
             {data.competitorAlerts.coverage.map((c) => (
-              <div key={c.marketplaceCode} className={c.stale ? 'font-medium text-(--color-danger)' : 'text-(--color-muted)'}>
+              <div
+                key={c.marketplaceCode}
+                className={c.stale ? 'font-medium text-(--color-danger)' : 'text-(--color-muted)'}
+              >
                 {c.displayName}:{' '}
                 {c.lastOkAt === null
                   ? 'son 7 günde başarılı tarama yok'
@@ -396,6 +423,149 @@ export function DashboardClient() {
           )}
         </div>
       </section>
+
+      {/*
+        Marka denetimi (2026-09-03). Panel bugüne kadar tamamen satıcı tarafıydı — kill switch,
+        bütçe, faz dağılımı — ve markaları için kullanan biri, markası hakkında hiçbir şey
+        söylemeyen bir ekranla karşılaşıyordu. İzlenen marka yoksa bölüm hiç çizilmez: saf
+        repricing kurulumunda panel eskisiyle birebir aynıdır.
+      */}
+      {data.brandAudit && (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
+            Marka Denetimi
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded border border-(--color-border) bg-(--color-surface) p-4">
+              <div className="text-xs text-(--color-muted)">Açık bulgu</div>
+              <div className="text-2xl font-bold">
+                {formatNumber(data.brandAudit.openFindings.stated + data.brandAudit.openFindings.measured)}
+              </div>
+              {/* İkisi ayrı, çünkü ayrı şeyler: biri birinin yazdığı bir kayda dayanır, diğeri
+                  bir örneklem yorumudur. Tek sayıya indirmek, kimsenin ayarlamadığı bir eşiği
+                  elle girilmiş bir kara liste eşleşmesinin yanına koyardı. */}
+              <div className="mt-1 text-xs text-(--color-muted)">
+                {formatNumber(data.brandAudit.openFindings.stated)} kesin bilgi ·{' '}
+                {formatNumber(data.brandAudit.openFindings.measured)} yorum
+              </div>
+              <Link
+                href="/watched-brands/findings"
+                className="mt-2 inline-block text-xs text-(--color-accent) hover:underline"
+              >
+                Denetim Bulguları →
+              </Link>
+            </div>
+
+            <div className="rounded border border-(--color-border) bg-(--color-surface) p-4">
+              <div className="text-xs text-(--color-muted)">Satıcısı olmayan ürün</div>
+              <div className="text-2xl font-bold">
+                {formatNumber(data.brandAudit.brands.reduce((n, b) => n + b.noSellerCount, 0))}
+              </div>
+              {/* "Henüz bakılmadı" ayrı yazılıyor: ilk turunu tamamlamamış bir kurulumda
+                  satıcısız sayısı tek başına yanıltıcıdır. */}
+              <div className="mt-1 text-xs text-(--color-muted)">
+                {formatNumber(data.brandAudit.brands.reduce((n, b) => n + b.neverLookedCount, 0))} ürüne henüz
+                bakılmadı
+              </div>
+            </div>
+
+            <div className="rounded border border-(--color-border) bg-(--color-surface) p-4">
+              <div className="text-xs text-(--color-muted)">Tavsiye fiyat kapsamı</div>
+              <div className="text-2xl font-bold">
+                {formatNumber(data.brandAudit.referencePrice.productsWithPrice)}
+                <span className="text-base font-normal text-(--color-muted)">
+                  {' / '}
+                  {formatNumber(data.brandAudit.referencePrice.productsTotal)}
+                </span>
+              </div>
+              {/* Kapsam, bulgunun kendisi kadar önemli: fiyat listesi olmayan ürün "altında
+                  değil" değil, "bilinmiyor"dur. */}
+              <div className="mt-1 text-xs text-(--color-muted)">
+                {data.brandAudit.referencePrice.productsWithPrice === 0
+                  ? 'Fiyat listesi yüklenmemiş — bu sinyal hiç üretilmiyor.'
+                  : 'Listesi olmayan ürünler bu sinyalin dışındadır.'}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase text-(--color-muted)">
+                <tr>
+                  <th className="px-2 py-1">Marka</th>
+                  <th className="px-2 py-1">Ürün</th>
+                  <th className="px-2 py-1">Satıcısız</th>
+                  <th className="px-2 py-1">Açık bulgu</th>
+                  <th className="px-2 py-1">Son tarama</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-(--color-border)">
+                {data.brandAudit.brands.map((brand) => (
+                  <tr key={brand.id}>
+                    <td className="px-2 py-1">
+                      <Link
+                        href={`/watched-brands/findings?watchedBrandId=${encodeURIComponent(brand.id)}`}
+                        className="text-(--color-accent) hover:underline"
+                      >
+                        {brand.label}
+                      </Link>
+                      <span className="ml-2 text-xs text-(--color-muted)">{brand.marketplaceCode}</span>
+                    </td>
+                    <td className="px-2 py-1 tabular-nums">{formatNumber(brand.productCount)}</td>
+                    <td className="px-2 py-1 tabular-nums">
+                      {brand.noSellerCount > 0 ? (
+                        <span className="text-(--color-warning)">{formatNumber(brand.noSellerCount)}</span>
+                      ) : (
+                        <span className="text-(--color-muted)">0</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1 tabular-nums">{formatNumber(brand.openFindings)}</td>
+                    <td className="px-2 py-1">
+                      {brand.lastSweptAt ? formatDateTime(brand.lastSweptAt) : 'henüz taranmadı'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Otuz günlük seyir. Boş gün, hiçbir şeyin *saklanmadığı* gündür (teklif seti
+              değişmediyse yeni bakış yazılmaz) — satıcı olmayan gün değil. Bu yüzden çizgi
+              boşluktan geçirilmiyor, nokta atlanıyor. */}
+          {data.brandAudit.trend.length > 1 && (
+            <div className="mt-4 rounded border border-(--color-border) p-4">
+              <div className="mb-2 text-xs text-(--color-muted)">
+                Son 30 gün — ortalama piyasa fiyatı ve satıcı sayısı
+              </div>
+              <PriceChart
+                timestamps={data.brandAudit.trend.map((t) => t.dayMs)}
+                series={[
+                  {
+                    key: 'avgPrice',
+                    label: 'Ort. fiyat',
+                    color: 'var(--color-accent)',
+                    values: data.brandAudit.trend.map((t) => (t.avgPrice ? BigInt(t.avgPrice) : null)),
+                  },
+                ]}
+                annotations={[
+                  {
+                    label: 'Satıcı sayısı',
+                    values: data.brandAudit.trend.map((t) => formatNumber(t.sellerCount)),
+                  },
+                  {
+                    label: 'Satıcısı olan ürün',
+                    values: data.brandAudit.trend.map((t) => formatNumber(t.productsWithOffers)),
+                  },
+                  {
+                    label: 'Satıcısı olmayan ürün',
+                    values: data.brandAudit.trend.map((t) => formatNumber(t.productsWithoutOffers)),
+                  },
+                ]}
+              />
+            </div>
+          )}
+        </section>
+      )}
 
       <section>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
@@ -424,36 +594,36 @@ export function DashboardClient() {
           <p className="text-sm text-(--color-muted)">Uyarı yok.</p>
         ) : (
           <div className="space-y-2">
-          <ul className="table-frame max-h-[50vh] divide-y divide-(--color-border) rounded border border-(--color-border)">
-            {pagedAlerts.rows.map((a) => (
-              <li key={a.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                <div>
-                  <span
-                    className={`mr-2 rounded px-1.5 py-0.5 text-xs font-semibold ${
-                      a.level === 'error'
-                        ? 'bg-(--color-danger-bg) text-(--color-danger)'
-                        : 'bg-(--color-warning-bg) text-(--color-warning)'
-                    }`}
-                  >
-                    {a.level === 'error' ? 'HATA' : 'UYARI'}
-                  </span>
-                  {a.message}
-                </div>
-                <div className="flex items-center gap-3 text-xs text-(--color-muted)">
-                  <span>{formatDateTime(a.at)}</span>
-                  {a.listingId && (
-                    <Link
-                      className="text-(--color-accent) hover:underline"
-                      href={`/listings/${a.listingId}`}
+            <ul className="table-frame max-h-[50vh] divide-y divide-(--color-border) rounded border border-(--color-border)">
+              {pagedAlerts.rows.map((a) => (
+                <li key={a.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <div>
+                    <span
+                      className={`mr-2 rounded px-1.5 py-0.5 text-xs font-semibold ${
+                        a.level === 'error'
+                          ? 'bg-(--color-danger-bg) text-(--color-danger)'
+                          : 'bg-(--color-warning-bg) text-(--color-warning)'
+                      }`}
                     >
-                      İlana git
-                    </Link>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <Pagination state={pagedAlerts} label="uyarı" />
+                      {a.level === 'error' ? 'HATA' : 'UYARI'}
+                    </span>
+                    {a.message}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-(--color-muted)">
+                    <span>{formatDateTime(a.at)}</span>
+                    {a.listingId && (
+                      <Link
+                        className="text-(--color-accent) hover:underline"
+                        href={`/listings/${a.listingId}`}
+                      >
+                        İlana git
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <Pagination state={pagedAlerts} label="uyarı" />
           </div>
         )}
       </section>
@@ -466,40 +636,40 @@ export function DashboardClient() {
           <p className="text-sm text-(--color-muted)">Henüz karar yok.</p>
         ) : (
           <div className="space-y-2">
-          <TableFrame maxHeight="60vh">
-            <table className="w-full text-sm">
-              <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
-                <tr>
-                  <th className="px-3 py-2">Ürün</th>
-                  <th className="px-3 py-2">Eski → Yeni</th>
-                  <th className="px-3 py-2">Neden</th>
-                  <th className="px-3 py-2">Durum</th>
-                  <th className="px-3 py-2">Zaman</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-(--color-border)">
-                {pagedDecisions.rows.map((d) => (
-                  <tr key={d.id}>
-                    <td className="px-3 py-2">
-                      <Link
-                        className="text-(--color-accent) hover:underline"
-                        href={`/listings/${d.listingId}`}
-                      >
-                        {d.productName}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatMoney(BigInt(d.oldPrice))} → {formatMoney(BigInt(d.newPrice))}
-                    </td>
-                    <td className="px-3 py-2">{d.explanation}</td>
-                    <td className="px-3 py-2">{d.state}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(d.decidedAt)}</td>
+            <TableFrame maxHeight="60vh">
+              <table className="w-full text-sm">
+                <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
+                  <tr>
+                    <th className="px-3 py-2">Ürün</th>
+                    <th className="px-3 py-2">Eski → Yeni</th>
+                    <th className="px-3 py-2">Neden</th>
+                    <th className="px-3 py-2">Durum</th>
+                    <th className="px-3 py-2">Zaman</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableFrame>
-          <Pagination state={pagedDecisions} label="karar" />
+                </thead>
+                <tbody className="divide-y divide-(--color-border)">
+                  {pagedDecisions.rows.map((d) => (
+                    <tr key={d.id}>
+                      <td className="px-3 py-2">
+                        <Link
+                          className="text-(--color-accent) hover:underline"
+                          href={`/listings/${d.listingId}`}
+                        >
+                          {d.productName}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {formatMoney(BigInt(d.oldPrice))} → {formatMoney(BigInt(d.newPrice))}
+                      </td>
+                      <td className="px-3 py-2">{d.explanation}</td>
+                      <td className="px-3 py-2">{d.state}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(d.decidedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableFrame>
+            <Pagination state={pagedDecisions} label="karar" />
           </div>
         )}
       </section>

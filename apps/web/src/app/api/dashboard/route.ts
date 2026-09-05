@@ -13,6 +13,8 @@
 import { NextResponse } from 'next/server';
 import {
   alertsRepo,
+  brandFindingsRepo,
+  brandReportsRepo,
   catalogRepo,
   competitionRepo,
   competitorReportsRepo,
@@ -20,6 +22,8 @@ import {
   eventsRepo,
   listingsRepo,
   repricingRepo,
+  trackedProductsRepo,
+  watchedBrandsRepo,
 } from '@buybox/db';
 import { ALERT_STALE_AFTER_MS, marketplaceKillSwitchSetting } from '@buybox/jobs';
 import {
@@ -31,6 +35,9 @@ import {
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
+/** The span the brand trend covers. Matches the findings window, so the two agree on "lately". */
+const BRAND_TREND_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
 function usageDateKey(nowMs: number): string {
   return new Date(nowMs).toISOString().slice(0, 10);
 }
@@ -39,17 +46,25 @@ export async function GET() {
   const appDb = getAppDb();
   const nowMs = Date.now();
 
-  const [marketplaces, globalKillSwitch, systemPause, phaseDistribution, alerts, decisions, lastImport, lastBuybox] =
-    await Promise.all([
-      configRepo.listMarketplaces(appDb),
-      configRepo.getAppSetting(appDb, GLOBAL_KILL_SWITCH_SETTING_KEY),
-      configRepo.getAppSetting(appDb, SYSTEM_PAUSE_SETTING_KEY),
-      repricingRepo.getPhaseDistribution(appDb),
-      eventsRepo.listRecentEvents(appDb, 20, 'warn'),
-      repricingRepo.listRecentDecisions(appDb, 15),
-      listingsRepo.lastImportByMarketplace(appDb),
-      competitionRepo.lastBuyboxObservationByMarketplace(appDb),
-    ]);
+  const [
+    marketplaces,
+    globalKillSwitch,
+    systemPause,
+    phaseDistribution,
+    alerts,
+    decisions,
+    lastImport,
+    lastBuybox,
+  ] = await Promise.all([
+    configRepo.listMarketplaces(appDb),
+    configRepo.getAppSetting(appDb, GLOBAL_KILL_SWITCH_SETTING_KEY),
+    configRepo.getAppSetting(appDb, SYSTEM_PAUSE_SETTING_KEY),
+    repricingRepo.getPhaseDistribution(appDb),
+    eventsRepo.listRecentEvents(appDb, 20, 'warn'),
+    repricingRepo.listRecentDecisions(appDb, 15),
+    listingsRepo.lastImportByMarketplace(appDb),
+    competitionRepo.lastBuyboxObservationByMarketplace(appDb),
+  ]);
 
   // The competitor-alert tile. The open count travels with the freshness of the scrape behind
   // it, and never alone: zero open alerts on a scraper that has not succeeded in a day is
@@ -106,7 +121,83 @@ export async function GET() {
     decisions.map((d) => d.listingId),
   );
 
+  /**
+   * The brand-owner half of the panel (2026-09-03).
+   *
+   * The dashboard was entirely seller-shaped — kill switches, budgets, repricing phases — and an
+   * install used by a brand owner opened on a screen that said nothing about their brands. This
+   * section is `null` when nothing is watched, so a pure repricing install is unchanged.
+   *
+   * Every figure is one aggregate query, and the section is skipped entirely when there are no
+   * watched brands, so the dashboard of an install that does not use the module costs exactly
+   * what it did before.
+   */
+  const watchedBrands = await watchedBrandsRepo.listWatchedBrands(appDb);
+  const brandAudit =
+    watchedBrands.length === 0
+      ? null
+      : await (async () => {
+          const window = { sinceMs: nowMs - BRAND_TREND_WINDOW_MS, untilMs: nowMs };
+          const [counts, coverage, trend, findingsPerBrand] = await Promise.all([
+            watchedBrandsRepo.watchedBrandCounts(appDb),
+            trackedProductsRepo.referencePriceCoverage(appDb),
+            brandReportsRepo.brandDailyTrend(appDb, window),
+            Promise.all(
+              watchedBrands.map(async (brand) => ({
+                brand,
+                open: await brandFindingsRepo.openFindings(appDb, brand.id),
+              })),
+            ),
+          ]);
+          const countsById = new Map(counts.map((c) => [c.watchedBrandId, c]));
+          return {
+            windowMs: BRAND_TREND_WINDOW_MS,
+            /**
+             * Open findings by basis. Split rather than totalled because the two mean different
+             * things: `stated` is derived from something an operator wrote down, `measured` from
+             * a sample, and one number covering both would rank a threshold nobody has tuned
+             * beside a blacklist match somebody entered by hand.
+             */
+            openFindings: {
+              stated: findingsPerBrand.reduce(
+                (n, b) => n + b.open.filter((f) => f.basis === 'stated').length,
+                0,
+              ),
+              measured: findingsPerBrand.reduce(
+                (n, b) => n + b.open.filter((f) => f.basis === 'measured').length,
+                0,
+              ),
+            },
+            brands: findingsPerBrand.map(({ brand, open }) => ({
+              id: brand.id,
+              label: brand.label,
+              marketplaceCode: brand.marketplaceCode,
+              productCount: countsById.get(brand.id)?.productCount ?? 0,
+              noSellerCount: countsById.get(brand.id)?.noSellerCount ?? 0,
+              neverLookedCount: countsById.get(brand.id)?.neverLookedCount ?? 0,
+              openFindings: open.length,
+              lastSweptAt: brand.lastSweptAt,
+            })),
+            referencePrice: {
+              productsWithPrice: coverage.withPrice,
+              productsTotal: coverage.total,
+            },
+            /**
+             * Money as a decimal string, as it crosses every wire in this system. A gap in the
+             * series is a day nothing was stored and is left as a gap — see `brandDailyTrend`.
+             */
+            trend: trend.map((point) => ({
+              dayMs: point.dayMs,
+              avgPrice: point.avgPrice?.toString() ?? null,
+              sellerCount: point.sellerCount,
+              productsWithOffers: point.productsWithOffers,
+              productsWithoutOffers: point.productsWithoutOffers,
+            })),
+          };
+        })();
+
   return NextResponse.json({
+    brandAudit,
     // Two genuinely separate states — see /api/system-pause's and /api/kill-switch's doc
     // comments. `systemPaused` stops everything; `globalKillSwitchEngaged` stops only
     // SubmitPriceChanges. Neither is derived from the other.

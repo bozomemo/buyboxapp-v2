@@ -5,24 +5,57 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ThemeToggle } from './theme-toggle';
 
-const NAV_ITEMS: { href: string; label: string }[] = [
-  { href: '/', label: 'Panel' },
-  { href: '/stock', label: 'Stok' },
-  { href: '/listings', label: 'İlanlar' },
-  { href: '/brands', label: 'Markalar' },
-  { href: '/competitors', label: 'Rakip Geçmişi' },
-  { href: '/competitors/sellers', label: 'Rakip Satıcılar' },
-  { href: '/watched-brands', label: 'İzlenen Markalar' },
-  { href: '/tracked-products', label: 'Takip Edilen Ürünler' },
-  { href: '/watched-brands/sellers', label: 'Marka Satıcıları' },
-  { href: '/watched-brands/policy', label: 'Satıcı Politikası' },
-  { href: '/watched-brands/findings', label: 'Denetim Bulguları' },
-  { href: '/watched-brands/cross-marketplace', label: 'Pazaryeri Eşleşmesi' },
-  { href: '/alerts', label: 'Alarmlar' },
-  { href: '/jobs', label: 'İşler' },
-  { href: '/events', label: 'Olaylar' },
-  { href: '/settings', label: 'Ayarlar' },
+/**
+ * The sidebar, in three groups (2026-09-03).
+ *
+ * It was one flat list of sixteen links, which was fine at eight and stopped being fine when the
+ * brand-owner module added six of its own: *Marka Satıcıları* sat between *Takip Edilen Ürünler*
+ * and *Satıcı Politikası*, two rows below *Rakip Satıcılar*, and the two answer different
+ * questions for different people. Grouping them is the cheapest thing that makes the shape of
+ * the product visible — **Satış** is what we sell, **Marka Denetimi** is what others sell of
+ * ours, **Sistem** is the machinery.
+ *
+ * Deliberately not hidden per install type: an install can be both, the groups are not
+ * mutually exclusive, and a nav item that appears only after some other screen has been used is
+ * a feature nobody finds.
+ */
+const NAV_GROUPS: { readonly title: string | null; readonly items: { href: string; label: string }[] }[] = [
+  { title: null, items: [{ href: '/', label: 'Panel' }] },
+  {
+    title: 'Satış',
+    items: [
+      { href: '/stock', label: 'Stok' },
+      { href: '/listings', label: 'İlanlar' },
+      { href: '/brands', label: 'Markalar' },
+      { href: '/competitors', label: 'Rakip Geçmişi' },
+      { href: '/competitors/sellers', label: 'Rakip Satıcılar' },
+      { href: '/alerts', label: 'Alarmlar' },
+    ],
+  },
+  {
+    title: 'Marka Denetimi',
+    items: [
+      { href: '/watched-brands', label: 'İzlenen Markalar' },
+      { href: '/tracked-products', label: 'Takip Edilen Ürünler' },
+      { href: '/watched-brands/sellers', label: 'Marka Satıcıları' },
+      { href: '/watched-brands/policy', label: 'Satıcı Politikası' },
+      { href: '/watched-brands/findings', label: 'Denetim Bulguları' },
+      { href: '/watched-brands/cross-marketplace', label: 'Pazaryeri Eşleşmesi' },
+      { href: '/watched-brands/comparison', label: 'Marka Karşılaştırması' },
+    ],
+  },
+  {
+    title: 'Sistem',
+    items: [
+      { href: '/jobs', label: 'İşler' },
+      { href: '/events', label: 'Olaylar' },
+      { href: '/settings', label: 'Ayarlar' },
+    ],
+  },
 ];
+
+/** Flattened, for the active-route match below — which is about paths, not about grouping. */
+const NAV_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
 
 /**
  * The header's one-click-from-anywhere control (doc 06 §2, R-UI-9: "Kill switches are reachable
@@ -61,11 +94,7 @@ function SystemPauseButton() {
     if (engaged) {
       // Resuming starts every job again — imports, buybox observation, decisions, and
       // (subject to its own separate switch) submissions.
-      if (
-        !window.confirm(
-          'Sistemi devam ettirmek üzeresiniz. Tüm işler yeniden başlayacak. Emin misiniz?',
-        )
-      ) {
+      if (!window.confirm('Sistemi devam ettirmek üzeresiniz. Tüm işler yeniden başlayacak. Emin misiniz?')) {
         return;
       }
     }
@@ -145,8 +174,9 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   const activeHref =
     pathname === '/'
       ? '/'
-      : NAV_ITEMS.filter((item) => item.href !== '/' && pathname?.startsWith(item.href))
-          .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+      : NAV_ITEMS.filter((item) => item.href !== '/' && pathname?.startsWith(item.href)).sort(
+          (a, b) => b.href.length - a.href.length,
+        )[0]?.href;
 
   if (isSetup) {
     // The wizard is a full-bleed flow, not embedded in the operator's working shell.
@@ -158,22 +188,31 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       <aside className="flex w-56 flex-none flex-col border-r border-(--color-border) bg-(--color-surface) p-4">
         <div className="mb-6 text-lg font-bold">BuyBoxApp</div>
         <nav className="flex flex-col gap-1">
-          {NAV_ITEMS.map((item) => {
-            const active = item.href === activeHref;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`rounded px-3 py-2 text-sm ${
-                  active
-                    ? 'bg-(--color-accent) text-(--color-accent-ink)'
-                    : 'text-(--color-text) hover:bg-(--color-hover)'
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+          {NAV_GROUPS.map((group, index) => (
+            <div key={group.title ?? 'root'} className={index === 0 ? '' : 'mt-4'}>
+              {group.title && (
+                <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-(--color-muted)">
+                  {group.title}
+                </div>
+              )}
+              {group.items.map((item) => {
+                const active = item.href === activeHref;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`block rounded px-3 py-2 text-sm ${
+                      active
+                        ? 'bg-(--color-accent) text-(--color-accent-ink)'
+                        : 'text-(--color-text) hover:bg-(--color-hover)'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
