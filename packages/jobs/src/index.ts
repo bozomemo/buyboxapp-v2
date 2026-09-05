@@ -190,3 +190,25 @@ export {
 // (doc 06 §9) builds the exact same `FeeSettings`/`RepricingPolicy` the engine actually uses.
 export { mapFeeSettings, mapPolicy } from './pipeline/mapping.js';
 export { preloadCostDeps } from './pipeline/cost-deps.js';
+
+export {
+  EVALUATE_BRAND_FINDINGS_JOB,
+  EvaluateBrandFindingsPayloadSchema,
+  evaluateBrandFindings,
+  FINDINGS_WINDOW_MS,
+  type EvaluateBrandFindingsOptions,
+  type EvaluateBrandFindingsPayload,
+} from './pipeline/evaluate-brand-findings.js';
+export {
+  formatFindingMessage,
+  MAX_FINDINGS_PER_MESSAGE,
+  WebhookFindingNotifier,
+  type FindingNotification,
+  type IFindingNotifier,
+} from './pipeline/findings-notifier.js';
+export {
+  collectBrandFindings,
+  type BrandFindingsContext,
+  type BrandFindingsRequest,
+  type BrandFindingsResult,
+} from './pipeline/brand-findings.js';

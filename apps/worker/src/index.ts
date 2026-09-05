@@ -104,6 +104,8 @@ import {
   resolveSellerIdentity,
   SWEEP_BRAND_CATALOGUE_JOB,
   sweepBrandCatalogue,
+  EVALUATE_BRAND_FINDINGS_JOB,
+  evaluateBrandFindings,
   submitPriceChanges,
   SUBMIT_PRICE_CHANGES_JOB,
   systemClock,
@@ -515,6 +517,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     scrapeCompetitorsCadence,
     sweepBrandCatalogueCadence,
     resolveProductBarcodesCadence,
+    evaluateBrandFindingsCadence,
     importStockItemsCadence,
   ] = await Promise.all([
     getJobCadenceMs(appDb, PRUNE_HISTORY_JOB),
@@ -527,6 +530,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     getJobCadenceMs(appDb, SCRAPE_COMPETITORS_JOB),
     getJobCadenceMs(appDb, SWEEP_BRAND_CATALOGUE_JOB),
     getJobCadenceMs(appDb, RESOLVE_PRODUCT_BARCODES_JOB),
+    getJobCadenceMs(appDb, EVALUATE_BRAND_FINDINGS_JOB),
     getJobCadenceMs(appDb, IMPORT_STOCK_ITEMS_JOB),
   ]);
   // None of these jobs has a null default cadence, so the `??` fallback only ever guards a
@@ -541,6 +545,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   const scrapeCompetitorsCadenceMs = scrapeCompetitorsCadence ?? 60_000;
   const sweepBrandCatalogueCadenceMs = sweepBrandCatalogueCadence ?? 24 * 60 * 60_000;
   const resolveProductBarcodesCadenceMs = resolveProductBarcodesCadence ?? 60 * 60_000;
+  const evaluateBrandFindingsCadenceMs = evaluateBrandFindingsCadence ?? 6 * 60 * 60_000;
   const importStockItemsCadenceMs = importStockItemsCadence ?? 60_000;
 
   // Exactly the values the tickers below are built from — assembled here, next to them, so the
@@ -556,6 +561,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     [SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs],
     [SWEEP_BRAND_CATALOGUE_JOB, sweepBrandCatalogueCadenceMs],
     [RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs],
+    [EVALUATE_BRAND_FINDINGS_JOB, evaluateBrandFindingsCadenceMs],
     [IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs],
   ]);
 
@@ -593,6 +599,15 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   scheduler.register({ jobName: IMPORT_BUNDLES_JOB, handler: importBundles });
   scheduler.register({ jobName: SCRAPE_COMPETITORS_JOB, handler: scrapeCompetitors });
   scheduler.register({ jobName: SWEEP_BRAND_CATALOGUE_JOB, handler: sweepBrandCatalogue });
+  // Cadenced by the scheduler itself rather than by a ticker, like `PruneHistory`: it is global
+  // rather than per marketplace — a finding belongs to a *brand*, and the job enumerates brands
+  // — so a per-marketplace tick would evaluate every brand once per marketplace and open each
+  // finding twice.
+  scheduler.register({
+    jobName: EVALUATE_BRAND_FINDINGS_JOB,
+    handler: (ctx) => evaluateBrandFindings(ctx),
+    cadenceMs: evaluateBrandFindingsCadenceMs,
+  });
   // On demand only — no cadence, and deliberately not in `JOB_CATALOG`: a resolution names
   // one firm, so it is enqueued from that seller's own row and nowhere else.
   scheduler.register({ jobName: RESOLVE_SELLER_IDENTITY_JOB, handler: resolveSellerIdentity });

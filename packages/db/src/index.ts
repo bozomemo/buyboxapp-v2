@@ -38,6 +38,7 @@ export * as competitionRepo from './repositories/competition.js';
 export * as competitorSellersRepo from './repositories/competitor-sellers.js';
 export * as competitorReportsRepo from './repositories/competitor-reports.js';
 export * as brandReportsRepo from './repositories/brand-reports.js';
+export * as brandFindingsRepo from './repositories/brand-findings.js';
 export * as sellerPoliciesRepo from './repositories/seller-policies.js';
 export * as sellerIdentitiesRepo from './repositories/seller-identities.js';
 export * as productBarcodesRepo from './repositories/product-barcodes.js';

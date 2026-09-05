@@ -17,6 +17,7 @@ import { RESET_BUDGET_JOB } from './pipeline/reset-budget.js';
 import { SCRAPE_COMPETITORS_JOB } from './pipeline/scrape-competitors.js';
 import { SWEEP_BRAND_CATALOGUE_JOB } from './pipeline/sweep-brand-catalogue.js';
 import { RESOLVE_PRODUCT_BARCODES_JOB } from './pipeline/resolve-product-barcodes.js';
+import { EVALUATE_BRAND_FINDINGS_JOB } from './pipeline/evaluate-brand-findings.js';
 import { SUBMIT_PRICE_CHANGES_JOB } from './pipeline/submit-price-changes.js';
 import { SCRAPE_CYCLE_MS } from './scrape-config.js';
 
@@ -158,6 +159,25 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     // under the same business decision, and no report breaks while it is off.
     defaultEnabled: false,
   },
+  {
+    jobName: EVALUATE_BRAND_FINDINGS_JOB,
+    label: 'Denetim Bulguları (raporlama)',
+    // Every six hours. The evaluation makes **no marketplace requests at all** — it reads the
+    // archive the scraping jobs already wrote — so its cost is a handful of aggregate queries
+    // per brand and the cadence is set by how fresh a notification should be rather than by
+    // politeness to anyone. Six hours is roughly a working half-day: fast enough that a blocked
+    // seller returning is noticed the same day, slow enough that nobody learns to ignore it.
+    cadenceMs: 6 * 60 * 60_000,
+    // Once globally: a finding is per *brand*, and brands are enumerated inside the job. Ticking
+    // per marketplace would evaluate every brand once per marketplace and open each finding twice.
+    perMarketplace: false,
+    defaultPayload: {},
+    // On by default, and it is the only reporting job that is. The three above make requests to
+    // a marketplace and therefore need an explicit business decision; this one only reads what
+    // they already stored, so an install that has enabled them has already made that decision
+    // and would gain nothing from a second switch.
+    defaultEnabled: true,
+  },
 ];
 
 /** `app_settings` key gating whether a cadence-driven job fires (doc 12 6.9 "enable/disable"). */
@@ -201,7 +221,9 @@ export async function getJobCadenceMs(appDb: AppDatabase, jobName: string): Prom
   // default rather than throwing or handing the worker a nonsensical interval.
   try {
     const parsed = JSON.parse(setting.value) as unknown;
-    return typeof parsed === 'number' && Number.isFinite(parsed) && parsed >= MIN_JOB_CADENCE_MS ? parsed : def;
+    return typeof parsed === 'number' && Number.isFinite(parsed) && parsed >= MIN_JOB_CADENCE_MS
+      ? parsed
+      : def;
   } catch {
     return def;
   }

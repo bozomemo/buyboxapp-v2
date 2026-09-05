@@ -17,6 +17,7 @@ import { PruneHistoryPayloadSchema } from './pipeline/prune-history-job.js';
 import { RepricePayloadSchema } from './pipeline/reprice.js';
 import { ResetBudgetPayloadSchema } from './pipeline/reset-budget.js';
 import { ResolveProductBarcodesPayloadSchema } from './pipeline/resolve-product-barcodes.js';
+import { EvaluateBrandFindingsPayloadSchema } from './pipeline/evaluate-brand-findings.js';
 import { ScrapeCompetitorsPayloadSchema } from './pipeline/scrape-competitors.js';
 import { SubmitPriceChangesPayloadSchema } from './pipeline/submit-price-changes.js';
 import { SweepBrandCataloguePayloadSchema } from './pipeline/sweep-brand-catalogue.js';
@@ -26,7 +27,9 @@ describe('job cadence (doc 07 §8, doc 08 §12, R-JOB-2)', () => {
   it('falls back to the catalogue default when nothing is stored', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {
-      expect(await getJobCadenceMs(appDb, IMPORT_LISTINGS_JOB)).toBe(jobDefaultCadenceMs(IMPORT_LISTINGS_JOB));
+      expect(await getJobCadenceMs(appDb, IMPORT_LISTINGS_JOB)).toBe(
+        jobDefaultCadenceMs(IMPORT_LISTINGS_JOB),
+      );
     } finally {
       cleanup();
     }
@@ -58,10 +61,17 @@ describe('job cadence (doc 07 §8, doc 08 §12, R-JOB-2)', () => {
       const { configRepo } = await import('@buybox/db');
       await configRepo.setAppSetting(
         appDb,
-        { key: jobCadenceSettingKey(IMPORT_LISTINGS_JOB), value: 'not json', updatedBy: 'operator', updatedAt: 1000 },
+        {
+          key: jobCadenceSettingKey(IMPORT_LISTINGS_JOB),
+          value: 'not json',
+          updatedBy: 'operator',
+          updatedAt: 1000,
+        },
         newId(),
       );
-      expect(await getJobCadenceMs(appDb, IMPORT_LISTINGS_JOB)).toBe(jobDefaultCadenceMs(IMPORT_LISTINGS_JOB));
+      expect(await getJobCadenceMs(appDb, IMPORT_LISTINGS_JOB)).toBe(
+        jobDefaultCadenceMs(IMPORT_LISTINGS_JOB),
+      );
 
       await configRepo.setAppSetting(
         appDb,
@@ -73,7 +83,9 @@ describe('job cadence (doc 07 §8, doc 08 §12, R-JOB-2)', () => {
         },
         newId(),
       );
-      expect(await getJobCadenceMs(appDb, IMPORT_LISTINGS_JOB)).toBe(jobDefaultCadenceMs(IMPORT_LISTINGS_JOB));
+      expect(await getJobCadenceMs(appDb, IMPORT_LISTINGS_JOB)).toBe(
+        jobDefaultCadenceMs(IMPORT_LISTINGS_JOB),
+      );
     } finally {
       cleanup();
     }
@@ -120,6 +132,7 @@ describe('catalogue default payloads are runnable', () => {
     ScrapeCompetitors: ScrapeCompetitorsPayloadSchema,
     SweepBrandCatalogue: SweepBrandCataloguePayloadSchema,
     ResolveProductBarcodes: ResolveProductBarcodesPayloadSchema,
+    EvaluateBrandFindings: EvaluateBrandFindingsPayloadSchema,
   };
 
   for (const entry of JOB_CATALOG) {

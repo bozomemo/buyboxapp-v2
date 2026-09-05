@@ -69,6 +69,16 @@ export const BootstrapEnvSchema = z.object({
     .union([z.literal('0'), z.literal('1')])
     .optional()
     .default('0'),
+  /**
+   * Where new audit findings are pushed, if anywhere (2026-09-03).
+   *
+   * Bootstrap configuration rather than a settings row because **the URL is a credential**: a
+   * Slack or Teams webhook address is a bearer token in URL form, and CLAUDE.md's hard rule
+   * forbids a credential in a database column. Absent is the normal state and disables pushing
+   * entirely; the findings are still derived, still stored and still on the screen — an install
+   * that has configured nothing loses a notification, never a finding.
+   */
+  FINDINGS_WEBHOOK_URL: z.string().url().optional(),
 });
 
 export type BootstrapEnv = z.infer<typeof BootstrapEnvSchema>;
