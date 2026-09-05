@@ -174,6 +174,43 @@ describe('offer normalisation (guide §5–§24)', () => {
   });
 });
 
+/**
+ * Product-level facts (2026-09-03) — the rating the page states about the *product* rather than
+ * about any one offer.
+ *
+ * It was being read off this same page and discarded, while `tracked_product_metrics` — the
+ * sales-velocity proxy the brand audit leans on — was fed only by the once-a-day catalogue
+ * sweep. The distinction under test is the one that decides whether a product is offered for
+ * deactivation: `0` is *genuinely unrated*, `null` is *we could not read it*.
+ */
+describe('product facts (guide §25, api-references §1.6)', () => {
+  it('reads the rating count and average off the product node', () => {
+    const { product } = normalizeTrendyolPage(extractSharedProps(pageHtml));
+    expect(product).toEqual({ ratingCount: 812, ratingAverage: 4.7 });
+  });
+
+  it('reports an absent rating as unknown, never as unrated', () => {
+    // `0` would put the product on the "nobody has ever rated these — drop them?" list on the
+    // strength of our own failure to read the node.
+    const result = normalizeTrendyolPage({ product: { id: 1 } });
+    expect(result.product).toEqual({ ratingCount: null, ratingAverage: null });
+  });
+
+  it('keeps a genuine zero as zero', () => {
+    const result = normalizeTrendyolPage({
+      product: { id: 1, ratingScore: { totalCount: 0, averageRating: 0 } },
+    });
+    expect(result.product.ratingCount).toBe(0);
+  });
+
+  it('refuses a non-numeric rating rather than coercing it', () => {
+    const result = normalizeTrendyolPage({
+      product: { id: 1, ratingScore: { totalCount: '812', averageRating: null } },
+    });
+    expect(result.product).toEqual({ ratingCount: null, ratingAverage: null });
+  });
+});
+
 describe('TrendyolPublicPageSource (doc 07 §7)', () => {
   function build(overrides: Partial<Parameters<typeof createSource>[0]> = {}) {
     return createSource(overrides);

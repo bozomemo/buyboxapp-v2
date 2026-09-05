@@ -30,6 +30,12 @@ export interface WatchedBrandRow {
   readonly brandRef: string | null;
   readonly searchTerm: string | null;
   readonly isActive: boolean;
+  /**
+   * `true` for a brand we own and audit, `false` for a competitor's brand watched only for
+   * comparison. Optional on the interface so rows written before the column existed still type-
+   * check; the repository treats an absent value as `true`, which is what every one of them was.
+   */
+  readonly isOwnBrand?: boolean;
   readonly lastSweptAt: number | null;
   readonly lastSweepProductCount: number | null;
   readonly createdAt: number;
@@ -77,7 +83,10 @@ export async function listWatchedBrandGroups(appDb: AppDatabase): Promise<Watche
     sqlite: (db) =>
       db.select().from(sqliteSchema.watchedBrandGroups).orderBy(asc(sqliteSchema.watchedBrandGroups.name)),
     postgres: (db) =>
-      db.select().from(postgresSchema.watchedBrandGroups).orderBy(asc(postgresSchema.watchedBrandGroups.name)),
+      db
+        .select()
+        .from(postgresSchema.watchedBrandGroups)
+        .orderBy(asc(postgresSchema.watchedBrandGroups.name)),
     mysql: (db) =>
       db.select().from(mysqlSchema.watchedBrandGroups).orderBy(asc(mysqlSchema.watchedBrandGroups.name)),
   }) as Promise<WatchedBrandGroupRow[]>;
@@ -123,8 +132,7 @@ export async function deleteWatchedBrandGroup(appDb: AppDatabase, id: string): P
       db.delete(sqliteSchema.watchedBrandGroups).where(eq(sqliteSchema.watchedBrandGroups.id, id)),
     postgres: (db) =>
       db.delete(postgresSchema.watchedBrandGroups).where(eq(postgresSchema.watchedBrandGroups.id, id)),
-    mysql: (db) =>
-      db.delete(mysqlSchema.watchedBrandGroups).where(eq(mysqlSchema.watchedBrandGroups.id, id)),
+    mysql: (db) => db.delete(mysqlSchema.watchedBrandGroups).where(eq(mysqlSchema.watchedBrandGroups.id, id)),
   });
 }
 
@@ -142,12 +150,21 @@ export async function createWatchedBrand(appDb: AppDatabase, row: WatchedBrandRo
 
 export async function listWatchedBrands(
   appDb: AppDatabase,
-  options: { readonly activeOnly?: boolean; readonly groupId?: string } = {},
+  options: {
+    readonly activeOnly?: boolean;
+    readonly groupId?: string;
+    /**
+     * `true` for the brands we own, `false` for competitors' — the audit asks for the first and
+     * the price comparison asks for both. Omitted means no restriction.
+     */
+    readonly ownOnly?: boolean;
+  } = {},
 ): Promise<WatchedBrandRow[]> {
-  const conditions = <T extends { isActive: unknown; groupId: unknown }>(t: T) => {
+  const conditions = <T extends { isActive: unknown; groupId: unknown; isOwnBrand: unknown }>(t: T) => {
     const parts = [];
     if (options.activeOnly) parts.push(eq(t.isActive as never, true));
     if (options.groupId !== undefined) parts.push(eq(t.groupId as never, options.groupId));
+    if (options.ownOnly) parts.push(eq(t.isOwnBrand as never, true));
     return parts.length === 0 ? undefined : and(...parts);
   };
   return withDialect(appDb, {
@@ -177,7 +194,9 @@ export async function getWatchedBrand(appDb: AppDatabase, id: string): Promise<W
     sqlite: async (db) =>
       (await db.select().from(sqliteSchema.watchedBrands).where(eq(sqliteSchema.watchedBrands.id, id)))[0],
     postgres: async (db) =>
-      (await db.select().from(postgresSchema.watchedBrands).where(eq(postgresSchema.watchedBrands.id, id)))[0],
+      (
+        await db.select().from(postgresSchema.watchedBrands).where(eq(postgresSchema.watchedBrands.id, id))
+      )[0],
     mysql: async (db) =>
       (await db.select().from(mysqlSchema.watchedBrands).where(eq(mysqlSchema.watchedBrands.id, id)))[0],
   }) as Promise<WatchedBrandRow | undefined>;
@@ -188,6 +207,7 @@ export interface WatchedBrandUpdate {
   readonly brandRef: string | null;
   readonly searchTerm: string | null;
   readonly isActive: boolean;
+  readonly isOwnBrand: boolean;
   readonly updatedAt: number;
 }
 
@@ -236,8 +256,7 @@ export async function recordSweepResult(
       db.update(sqliteSchema.watchedBrands).set(set).where(eq(sqliteSchema.watchedBrands.id, id)),
     postgres: (db) =>
       db.update(postgresSchema.watchedBrands).set(set).where(eq(postgresSchema.watchedBrands.id, id)),
-    mysql: (db) =>
-      db.update(mysqlSchema.watchedBrands).set(set).where(eq(mysqlSchema.watchedBrands.id, id)),
+    mysql: (db) => db.update(mysqlSchema.watchedBrands).set(set).where(eq(mysqlSchema.watchedBrands.id, id)),
   });
 }
 
@@ -255,6 +274,21 @@ export interface WatchedBrandCounts {
   readonly watchedBrandId: string;
   readonly productCount: number;
   readonly unratedCount: number;
+  /**
+   * Products whose last **successful** look found nobody selling — lost shelf (2026-09-03).
+   *
+   * A brand owner's second question after price: a product of theirs that no marketplace seller
+   * carries earns nothing, whether the reason is a delisting, a stock-out or a distributor
+   * walking away. Counted off `tracked_products.has_sellers` rather than from the observation
+   * archive, because at 4,863 products the archive answer is a "newest look per product"
+   * correlated subquery on every screen that asks, and this is one conditional sum.
+   *
+   * `= false` only. A product the rotation has not reached yet is `null` and is counted in
+   * `neverLookedCount` instead — "nobody is selling this" and "we have not looked" are opposite
+   * claims, and merging them would put products nobody has checked on a list an operator acts on.
+   */
+  readonly noSellerCount: number;
+  readonly neverLookedCount: number;
 }
 
 /**
@@ -343,6 +377,11 @@ export async function suggestedBrandRefs(appDb: AppDatabase): Promise<SuggestedB
 
 export async function watchedBrandCounts(appDb: AppDatabase): Promise<WatchedBrandCounts[]> {
   const unrated = (column: unknown) => sql<number>`sum(case when ${column} = 0 then 1 else 0 end)`;
+  // `is null` / `= false` on a nullable boolean rather than a truthiness test: SQLite stores
+  // 0/1 in an integer column, PostgreSQL has a real boolean and MySQL a tinyint, and the three
+  // states this feature rests on are exactly what a per-engine truthiness difference breaks.
+  const noSeller = (column: unknown) => sql<number>`sum(case when ${column} = false then 1 else 0 end)`;
+  const neverLooked = (column: unknown) => sql<number>`sum(case when ${column} is null then 1 else 0 end)`;
   const rows = await withDialect(appDb, {
     sqlite: (db) =>
       db
@@ -350,6 +389,8 @@ export async function watchedBrandCounts(appDb: AppDatabase): Promise<WatchedBra
           watchedBrandId: sqliteSchema.trackedProducts.watchedBrandId,
           productCount: sql<number>`count(*)`,
           unratedCount: unrated(sqliteSchema.trackedProducts.ratingCount),
+          noSellerCount: noSeller(sqliteSchema.trackedProducts.hasSellers),
+          neverLookedCount: neverLooked(sqliteSchema.trackedProducts.hasSellers),
         })
         .from(sqliteSchema.trackedProducts)
         .groupBy(sqliteSchema.trackedProducts.watchedBrandId),
@@ -359,6 +400,8 @@ export async function watchedBrandCounts(appDb: AppDatabase): Promise<WatchedBra
           watchedBrandId: postgresSchema.trackedProducts.watchedBrandId,
           productCount: sql<number>`count(*)`,
           unratedCount: unrated(postgresSchema.trackedProducts.ratingCount),
+          noSellerCount: noSeller(postgresSchema.trackedProducts.hasSellers),
+          neverLookedCount: neverLooked(postgresSchema.trackedProducts.hasSellers),
         })
         .from(postgresSchema.trackedProducts)
         .groupBy(postgresSchema.trackedProducts.watchedBrandId),
@@ -368,6 +411,8 @@ export async function watchedBrandCounts(appDb: AppDatabase): Promise<WatchedBra
           watchedBrandId: mysqlSchema.trackedProducts.watchedBrandId,
           productCount: sql<number>`count(*)`,
           unratedCount: unrated(mysqlSchema.trackedProducts.ratingCount),
+          noSellerCount: noSeller(mysqlSchema.trackedProducts.hasSellers),
+          neverLookedCount: neverLooked(mysqlSchema.trackedProducts.hasSellers),
         })
         .from(mysqlSchema.trackedProducts)
         .groupBy(mysqlSchema.trackedProducts.watchedBrandId),
@@ -379,5 +424,7 @@ export async function watchedBrandCounts(appDb: AppDatabase): Promise<WatchedBra
       // `count`/`sum` come back as strings on some drivers; normalise once, here.
       productCount: Number(row.productCount),
       unratedCount: Number(row.unratedCount ?? 0),
+      noSellerCount: Number(row.noSellerCount ?? 0),
+      neverLookedCount: Number(row.neverLookedCount ?? 0),
     }));
 }

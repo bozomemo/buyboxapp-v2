@@ -23,7 +23,21 @@
  * with `Number(...)` at the boundary of its branch rather than trusted as returned. Money is
  * the exception and is decoded explicitly — see `decodeSqliteMoney`.
  */
-import { and, eq, gte, inArray, isNotNull, isNull, lte, not, or, sql, type Column, type SQL } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  not,
+  or,
+  sql,
+  type Column,
+  type SQL,
+} from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -116,6 +130,22 @@ function priceRowsClause(o: ObservationsTable, window: BrandReportWindow): SQL {
     lte(o.observedAt, window.untilMs),
     eq(o.status, 'ok'),
     isNotNull(o.price),
+  )!;
+}
+
+/**
+ * A look that succeeded, whether or not anyone was on the page (2026-09-03).
+ *
+ * `noOffers` rows are a *success* — the page was read and nobody was selling — and this is the
+ * one clause that wants them: the trend's whole point is that "nobody sold this today" is a
+ * data point rather than a hole. Every other clause in this file stays on `status = 'ok'`, so no
+ * price figure can pick one up.
+ */
+function okOrEmptyClause(o: ObservationsTable, window: BrandReportWindow): SQL {
+  return and(
+    gte(o.observedAt, window.sinceMs),
+    lte(o.observedAt, window.untilMs),
+    or(eq(o.status, 'ok'), eq(o.status, 'noOffers')),
   )!;
 }
 
@@ -1261,7 +1291,9 @@ function evidenceSubjectClause(
  */
 function lookKeysClause(o: ObservationsTable, keys: readonly LookKey[]): SQL {
   return or(
-    ...keys.map((key) => and(eq(o.trackedProductId, key.trackedProductId), eq(o.observedAt, key.observedAt))!),
+    ...keys.map((key) =>
+      and(eq(o.trackedProductId, key.trackedProductId), eq(o.observedAt, key.observedAt))!,
+    ),
   )!;
 }
 
@@ -1418,5 +1450,494 @@ export async function sellerProductTargets(
     productRef: row.productRef,
     productUrl: row.productUrl,
     lastSeenAt: Number(row.lastSeenAt),
+  }));
+}
+
+// --------------------------------------- below the brand's own list price (2026-09-03)
+
+/**
+ * One seller, on one product, at some point in the window, below the price the brand published
+ * for it.
+ *
+ * `lowestPrice` is the **worst** offer that seller made in the window, not their latest and not
+ * their average. A list price is a floor someone either respected or did not, and averaging two
+ * looks would let a day at half price disappear into a week of compliance. `looksBelow` says how
+ * often it happened, so a single afternoon and a standing price are distinguishable on the row.
+ */
+export interface ReferencePriceViolationRow {
+  readonly marketplaceCode: string;
+  readonly sellerRef: string;
+  readonly observedName: string;
+  readonly trackedProductId: string;
+  readonly productLabel: string;
+  /** Kuruş, as the operator's own list states it. */
+  readonly referencePrice: bigint;
+  /** Kuruş — the lowest price this seller was seen at on this product in the window. */
+  readonly lowestPrice: bigint;
+  /** How many looks in the window had this seller below the list price. */
+  readonly looksBelow: number;
+  /** The most recent look that was below it. */
+  readonly lastBelowAt: number;
+}
+
+export interface ReferencePriceViolationOptions {
+  /** Rows to return, ordered deepest-below first. */
+  readonly limit: number;
+}
+
+interface RawViolationRow {
+  marketplaceCode: string;
+  sellerRef: string | null;
+  observedName: string | null;
+  trackedProductId: string;
+  productLabel: string | null;
+  referencePrice: unknown;
+  lowestPrice: unknown;
+  looksBelow: unknown;
+  lastBelowAt: unknown;
+}
+
+function toViolationRow(
+  r: RawViolationRow,
+  decode: (v: unknown) => bigint | null,
+): ReferencePriceViolationRow | null {
+  const referencePrice = decode(r.referencePrice);
+  const lowestPrice = decode(r.lowestPrice);
+  // Both are guaranteed non-null by the query's own predicates; a null here would mean the
+  // decoding disagreed with the comparison, which is worth dropping rather than reporting as a
+  // violation of an unknown price.
+  if (referencePrice === null || lowestPrice === null || referencePrice <= 0n) return null;
+  return {
+    marketplaceCode: r.marketplaceCode,
+    sellerRef: r.sellerRef as string,
+    observedName: r.observedName ?? '',
+    trackedProductId: r.trackedProductId,
+    productLabel: r.productLabel ?? '',
+    referencePrice,
+    lowestPrice,
+    looksBelow: Number(r.looksBelow),
+    lastBelowAt: Number(r.lastBelowAt),
+  };
+}
+
+/**
+ * Every (seller, product) pair that was seen below the brand's published price in the window.
+ *
+ * ## Why this is not another deviation query
+ *
+ * `worstSellerProductDeviations` compares a seller against *the other sellers on the page*: an
+ * interpretation of a sample, which is why the finding it feeds is ranked `measured`. This
+ * compares them against a number the brand owner wrote down. Nothing about the comparison is
+ * inferred — which price the list states, and what the page showed, are both facts — so the
+ * finding built on it is `stated`, and it is the only price finding on these screens that is.
+ *
+ * ## The filter is "below at all"; the threshold is applied in the core module
+ *
+ * The tolerance an operator sets (`referenceBelowPct`) is deliberately **not** in this query.
+ * The route may hand the core module a pair that turns out not to be a finding; it must never
+ * withhold one that is. That is the same split the deep-discount and category signals make, and
+ * it is what keeps one copy of every rule under test.
+ *
+ * Ordering is by the deepest cut, computed in SQL only to decide which rows survive `limit`. The
+ * figure actually reported is recomputed from the exact kuruş values, because the SQL ratio goes
+ * through floating point and a percentage shown next to two lira amounts has to agree with them.
+ */
+export async function referencePriceViolations(
+  appDb: AppDatabase,
+  window: BrandReportWindow,
+  options: ReferencePriceViolationOptions,
+): Promise<ReferencePriceViolationRow[]> {
+  return withDialect(appDb, {
+    sqlite: async (db) => {
+      const o = sqliteSchema.trackedProductObservations;
+      const p = sqliteSchema.trackedProducts;
+      const ratio = sql<number>`min(${sqliteNumericPrice(o.price)}) * 100.0 / max(${sqliteNumericPrice(p.referencePrice)})`;
+      const rows = await db
+        .select({
+          marketplaceCode: p.marketplaceCode,
+          sellerRef: o.sellerRef,
+          observedName: sql<string>`max(${o.sellerName})`,
+          trackedProductId: o.trackedProductId,
+          productLabel: sql<string>`max(${p.label})`,
+          referencePrice: sql<string>`max(${p.referencePrice})`,
+          lowestPrice: sql<string>`min(${o.price})`,
+          looksBelow: sql<number>`count(*)`,
+          lastBelowAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(
+          and(
+            priceRowsClause(o, window),
+            isNotNull(o.sellerRef),
+            isNotNull(p.referencePrice),
+            lt(o.price, p.referencePrice),
+            brandScopeClause(p, window),
+            excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
+          ),
+        )
+        .groupBy(p.marketplaceCode, o.sellerRef, o.trackedProductId)
+        .orderBy(sql`${ratio} asc`)
+        .limit(options.limit);
+      return rows.flatMap((r) => {
+        const row = toViolationRow(r as RawViolationRow, decodeSqliteMoney);
+        return row === null ? [] : [row];
+      });
+    },
+    postgres: async (db) => {
+      const o = postgresSchema.trackedProductObservations;
+      const p = postgresSchema.trackedProducts;
+      const ratio = sql<number>`min(${o.price}) * 100.0 / max(${p.referencePrice})`;
+      const rows = await db
+        .select({
+          marketplaceCode: p.marketplaceCode,
+          sellerRef: o.sellerRef,
+          observedName: sql<string>`max(${o.sellerName})`,
+          trackedProductId: o.trackedProductId,
+          productLabel: sql<string>`max(${p.label})`,
+          referencePrice: sql<string>`max(${p.referencePrice})`,
+          lowestPrice: sql<string>`min(${o.price})`,
+          looksBelow: sql<number>`count(*)`,
+          lastBelowAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(
+          and(
+            priceRowsClause(o, window),
+            isNotNull(o.sellerRef),
+            isNotNull(p.referencePrice),
+            lt(o.price, p.referencePrice),
+            brandScopeClause(p, window),
+            excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
+          ),
+        )
+        .groupBy(p.marketplaceCode, o.sellerRef, o.trackedProductId)
+        .orderBy(sql`${ratio} asc`)
+        .limit(options.limit);
+      return rows.flatMap((r) => {
+        const row = toViolationRow(r as RawViolationRow, decodeNativeMoney);
+        return row === null ? [] : [row];
+      });
+    },
+    mysql: async (db) => {
+      const o = mysqlSchema.trackedProductObservations;
+      const p = mysqlSchema.trackedProducts;
+      const ratio = sql<number>`min(${o.price}) * 100.0 / max(${p.referencePrice})`;
+      const rows = await db
+        .select({
+          marketplaceCode: p.marketplaceCode,
+          sellerRef: o.sellerRef,
+          observedName: sql<string>`max(${o.sellerName})`,
+          trackedProductId: o.trackedProductId,
+          productLabel: sql<string>`max(${p.label})`,
+          referencePrice: sql<string>`max(${p.referencePrice})`,
+          lowestPrice: sql<string>`min(${o.price})`,
+          looksBelow: sql<number>`count(*)`,
+          lastBelowAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(
+          and(
+            priceRowsClause(o, window),
+            isNotNull(o.sellerRef),
+            isNotNull(p.referencePrice),
+            lt(o.price, p.referencePrice),
+            brandScopeClause(p, window),
+            excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
+          ),
+        )
+        .groupBy(p.marketplaceCode, o.sellerRef, o.trackedProductId)
+        .orderBy(sql`${ratio} asc`)
+        .limit(options.limit);
+      return rows.flatMap((r) => {
+        const row = toViolationRow(r as RawViolationRow, decodeNativeMoney);
+        return row === null ? [] : [row];
+      });
+    },
+  });
+}
+
+// ------------------------------------------------- buybox share across a brand (2026-09-03)
+
+/**
+ * One seller's hold on a brand's buybox.
+ *
+ * `sellerRef` is **nullable here**, unlike every other aggregate in this file, and that is the
+ * whole reason this is a separate query rather than a column on `BrandSellerAggregateRow`. A
+ * share needs a denominator, and the denominator is *every* buybox moment on the brand's
+ * products — including the ones held by an offer the payload did not identify. Dropping those,
+ * as the seller aggregates rightly do, would divide by a smaller total and inflate every named
+ * seller's share. The unidentified rows come back as their own row so a screen can show the
+ * residue instead of quietly absorbing it.
+ */
+export interface BrandBuyboxShareRow {
+  readonly marketplaceCode: string;
+  /** `null` for the offers the payload carried no merchant id for. */
+  readonly sellerRef: string | null;
+  readonly observedName: string;
+  /** Stored looks in which this seller was rank 1. */
+  readonly buyboxLooks: number;
+  /** Distinct products they held it on. */
+  readonly productCount: number;
+  readonly lastHeldAt: number;
+}
+
+export interface BrandBuyboxShare {
+  readonly rows: readonly BrandBuyboxShareRow[];
+  /** Every rank-1 row in the window — the denominator, stated so a screen need not re-derive it. */
+  readonly totalBuyboxLooks: number;
+}
+
+/**
+ * Who holds a brand's buybox, and how much of it.
+ *
+ * The figure a brand owner asks for first — *"markanın buybox'ının ne kadarı tek bir satıcıda?"*
+ * — and the one the brand screens could not answer: `BrandSellerAggregateRow.buyboxCount` counts
+ * a seller's own wins with no denominator, so two sellers with 40 wins each read alike whether
+ * the brand has 50 buybox moments or 5,000.
+ *
+ * ## What the share is a share *of*, exactly
+ *
+ * **Stored looks, not time.** Since Faz 4 a look is only stored when the offer set moved, so a
+ * seller who holds the buybox undisturbed for a week contributes one row and a product whose
+ * sellers fight hourly contributes dozens. The count therefore over-weights volatile products,
+ * in the same way and for the same reason the count-based share on `/competitors` does — and
+ * the screens say so in those words.
+ *
+ * Time-weighting is the honest correction and it is deliberately **not** done here: it needs the
+ * interval to each product's next look, which is a window function this codebase will not write
+ * three dialect-specific versions of (see `avgDeviationPct` for the same call). Where it is
+ * affordable — one product, whose whole window is already in memory — the detail screen does it
+ * in JS. This is the brand-wide figure, and it is labelled as a count.
+ *
+ * Unbounded by design: rank-1 rows collapse to the number of sellers who have ever won the
+ * buybox on a brand, which is dozens even for a 4,863-product catalogue. A `limit` would make
+ * the returned rows sum to less than `totalBuyboxLooks` and turn every share into a wrong number.
+ */
+export async function brandBuyboxShare(
+  appDb: AppDatabase,
+  window: BrandReportWindow,
+): Promise<BrandBuyboxShare> {
+  const rows = await withDialect(appDb, {
+    sqlite: async (db) => {
+      const o = sqliteSchema.trackedProductObservations;
+      const p = sqliteSchema.trackedProducts;
+      return db
+        .select({
+          marketplaceCode: p.marketplaceCode,
+          sellerRef: o.sellerRef,
+          observedName: sql<string>`max(${o.sellerName})`,
+          buyboxLooks: sql<number>`count(*)`,
+          productCount: sql<number>`count(distinct ${o.trackedProductId})`,
+          lastHeldAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(
+          and(
+            okRowsClause(o, window),
+            eq(o.rank, 1),
+            brandScopeClause(p, window),
+            excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
+          ),
+        )
+        .groupBy(p.marketplaceCode, o.sellerRef);
+    },
+    postgres: async (db) => {
+      const o = postgresSchema.trackedProductObservations;
+      const p = postgresSchema.trackedProducts;
+      return db
+        .select({
+          marketplaceCode: p.marketplaceCode,
+          sellerRef: o.sellerRef,
+          observedName: sql<string>`max(${o.sellerName})`,
+          buyboxLooks: sql<number>`count(*)`,
+          productCount: sql<number>`count(distinct ${o.trackedProductId})`,
+          lastHeldAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(
+          and(
+            okRowsClause(o, window),
+            eq(o.rank, 1),
+            brandScopeClause(p, window),
+            excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
+          ),
+        )
+        .groupBy(p.marketplaceCode, o.sellerRef);
+    },
+    mysql: async (db) => {
+      const o = mysqlSchema.trackedProductObservations;
+      const p = mysqlSchema.trackedProducts;
+      return db
+        .select({
+          marketplaceCode: p.marketplaceCode,
+          sellerRef: o.sellerRef,
+          observedName: sql<string>`max(${o.sellerName})`,
+          buyboxLooks: sql<number>`count(*)`,
+          productCount: sql<number>`count(distinct ${o.trackedProductId})`,
+          lastHeldAt: sql<number>`max(${o.observedAt})`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(
+          and(
+            okRowsClause(o, window),
+            eq(o.rank, 1),
+            brandScopeClause(p, window),
+            excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
+          ),
+        )
+        .groupBy(p.marketplaceCode, o.sellerRef);
+    },
+  });
+
+  const mapped: BrandBuyboxShareRow[] = rows.map((r) => ({
+    marketplaceCode: r.marketplaceCode,
+    sellerRef: r.sellerRef,
+    observedName: r.observedName ?? '',
+    buyboxLooks: Number(r.buyboxLooks),
+    productCount: Number(r.productCount),
+    lastHeldAt: Number(r.lastHeldAt),
+  }));
+
+  return {
+    rows: mapped.sort((a, b) => b.buyboxLooks - a.buyboxLooks),
+    totalBuyboxLooks: mapped.reduce((sum, r) => sum + r.buyboxLooks, 0),
+  };
+}
+
+// ------------------------------------------------------- brand-level trend (2026-09-03)
+
+/**
+ * One day of a brand's market, as the looks stored that day saw it.
+ *
+ * Everything on the brand screens until now answered "how does it look *right now*" or "what is
+ * the band *over the window*". Neither answers the question a brand owner asks in a meeting —
+ * *is it getting better or worse?* — and both are computed from the same rows this reads.
+ */
+export interface BrandTrendPoint {
+  /** Midnight UTC of the day, in epoch ms. */
+  readonly dayMs: number;
+  /** Mean offer price across every stored offer that day. Kuruş. */
+  readonly avgPrice: bigint | null;
+  /** Distinct identified sellers seen that day. Unidentified offers are counted in `offers`. */
+  readonly sellerCount: number;
+  /** Distinct products anybody was selling that day. */
+  readonly productsWithOffers: number;
+  /** Distinct products a look found **nobody** selling that day — lost shelf, as it moves. */
+  readonly productsWithoutOffers: number;
+  readonly offers: number;
+}
+
+/** Midnight-aligned buckets without a date function: `x - x % day` is integer maths everywhere. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The same number, written into the SQL text rather than bound as a parameter.
+ *
+ * PostgreSQL matches a `GROUP BY` expression to a select-list expression **textually**, and a
+ * bind parameter is opaque to that comparison — grouping by `observed_at - (observed_at % $1)`
+ * while selecting the same thing fails with *"observed_at must appear in the GROUP BY clause"*,
+ * on Postgres only, while SQLite and MySQL accept it. Caught by the cross-dialect run,
+ * 2026-09-03. Safe to inline: it is a compile-time constant, never operator input.
+ */
+const DAY_LITERAL = sql.raw(String(DAY_MS));
+
+/**
+ * A brand's market, day by day.
+ *
+ * ## Bucketed with arithmetic rather than a date function, deliberately
+ *
+ * `strftime`, `to_char` and `DATE_FORMAT` are three different spellings of the same idea and the
+ * codebase already refuses that trade once (see `avgDeviationPct` on why the median is computed
+ * in JS). `observed_at - observed_at % 86400000` is integer arithmetic on a bigint column, means
+ * the same thing on all three engines, and returns the bucket as epoch ms — which is what every
+ * caller wants anyway, since the formatting is a display concern.
+ *
+ * ## What a gap in the series means, and why it is left as a gap
+ *
+ * A day with no row is a day nothing was **stored**, and since Faz 4 that includes days when
+ * every product held its price. It is emphatically not a day with no sellers. Nothing here
+ * interpolates, and the caller renders a gap: a line drawn through a quiet week would invent a
+ * trend out of the change-detection that exists to save writes.
+ */
+export async function brandDailyTrend(
+  appDb: AppDatabase,
+  window: BrandReportWindow,
+): Promise<BrandTrendPoint[]> {
+  const rows = await withDialect(appDb, {
+    sqlite: async (db) => {
+      const o = sqliteSchema.trackedProductObservations;
+      const p = sqliteSchema.trackedProducts;
+      const day = sql<number>`${o.observedAt} - (${o.observedAt} % ${DAY_LITERAL})`;
+      return db
+        .select({
+          dayMs: day,
+          avgPrice: sql<number | null>`avg(${sqliteNumericPrice(o.price)})`,
+          sellerCount: sql<number>`count(distinct ${o.sellerRef})`,
+          productsWithOffers: sql<number>`count(distinct case when ${o.status} = 'ok' then ${o.trackedProductId} end)`,
+          productsWithoutOffers: sql<number>`count(distinct case when ${o.status} = 'noOffers' then ${o.trackedProductId} end)`,
+          offers: sql<number>`sum(case when ${o.status} = 'ok' then 1 else 0 end)`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(and(okOrEmptyClause(o, window), brandScopeClause(p, window)))
+        .groupBy(day)
+        .orderBy(day);
+    },
+    postgres: async (db) => {
+      const o = postgresSchema.trackedProductObservations;
+      const p = postgresSchema.trackedProducts;
+      const day = sql<number>`${o.observedAt} - (${o.observedAt} % ${DAY_LITERAL})`;
+      return db
+        .select({
+          dayMs: day,
+          avgPrice: sql<number | null>`avg(${o.price})`,
+          sellerCount: sql<number>`count(distinct ${o.sellerRef})`,
+          productsWithOffers: sql<number>`count(distinct case when ${o.status} = 'ok' then ${o.trackedProductId} end)`,
+          productsWithoutOffers: sql<number>`count(distinct case when ${o.status} = 'noOffers' then ${o.trackedProductId} end)`,
+          offers: sql<number>`sum(case when ${o.status} = 'ok' then 1 else 0 end)`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(and(okOrEmptyClause(o, window), brandScopeClause(p, window)))
+        .groupBy(day)
+        .orderBy(day);
+    },
+    mysql: async (db) => {
+      const o = mysqlSchema.trackedProductObservations;
+      const p = mysqlSchema.trackedProducts;
+      const day = sql<number>`${o.observedAt} - (${o.observedAt} % ${DAY_LITERAL})`;
+      return db
+        .select({
+          dayMs: day,
+          avgPrice: sql<number | null>`avg(${o.price})`,
+          sellerCount: sql<number>`count(distinct ${o.sellerRef})`,
+          productsWithOffers: sql<number>`count(distinct case when ${o.status} = 'ok' then ${o.trackedProductId} end)`,
+          productsWithoutOffers: sql<number>`count(distinct case when ${o.status} = 'noOffers' then ${o.trackedProductId} end)`,
+          offers: sql<number>`sum(case when ${o.status} = 'ok' then 1 else 0 end)`,
+        })
+        .from(o)
+        .innerJoin(p, eq(p.id, o.trackedProductId))
+        .where(and(okOrEmptyClause(o, window), brandScopeClause(p, window)))
+        .groupBy(day)
+        .orderBy(day);
+    },
+  });
+
+  return rows.map((r) => ({
+    dayMs: Number(r.dayMs),
+    // The average is a number on every engine (it is arithmetic, not a stored value), so it is
+    // rounded back to whole kuruş here rather than carried as a float any further. Money is
+    // `bigint` at every layer above this line (CLAUDE.md).
+    avgPrice: r.avgPrice === null || r.avgPrice === undefined ? null : BigInt(Math.round(Number(r.avgPrice))),
+    sellerCount: Number(r.sellerCount),
+    productsWithOffers: Number(r.productsWithOffers),
+    productsWithoutOffers: Number(r.productsWithoutOffers),
+    offers: Number(r.offers),
   }));
 }

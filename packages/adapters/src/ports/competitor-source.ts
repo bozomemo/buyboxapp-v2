@@ -95,6 +95,28 @@ export interface ScrapeDiagnostics {
   readonly listingCount: number;
 }
 
+/**
+ * What the page says about the **product**, as opposed to about any one offer (2026-09-03).
+ *
+ * Deliberately tiny, and deliberately not "whatever else the payload holds". Only the rating is
+ * mapped, because it is the one product-level field whose meaning the payload states plainly and
+ * which something already reads: `tracked_product_metrics` is the sales-velocity proxy the brand
+ * audit leans on (doc 05 §5), and until now it was fed only by the once-a-day catalogue sweep
+ * while the per-product scrape read the same number off the same page and discarded it.
+ *
+ * **Not mapped, and why** — the product page also carries `images`, `attributes` and `variants`
+ * (guide §25). None is mapped here: the recorded payload's `variants[]` carries an item number
+ * and an attribute name and **no stock or price**, so variant-level availability cannot be read
+ * from it, and mapping a field whose unit or meaning the payload does not state is the rule
+ * CLAUDE.md forbids breaking. If a fresh recording ever shows variant stock, this is where it
+ * would land.
+ */
+export interface CompetitorProductFacts {
+  /** `null` is unknown — never `0`, which the marketplace uses for "genuinely unrated". */
+  readonly ratingCount: number | null;
+  readonly ratingAverage: number | null;
+}
+
 export interface CompetitorPageSnapshot {
   readonly marketplaceCode: MarketplaceCode;
   readonly productRef: ProductPageRef;
@@ -102,6 +124,12 @@ export interface CompetitorPageSnapshot {
   readonly fetchedUrl: string;
   readonly observedAt: Date;
   readonly offers: readonly CompetitorOffer[];
+  /**
+   * Product-level facts, where the source reads any. Optional because a source is free to have
+   * none — Hepsiburada's listings endpoint is offers and nothing else — and an absent block is
+   * "this source does not say", which a caller must not read as "unrated".
+   */
+  readonly product?: CompetitorProductFacts;
   readonly diagnostics: ScrapeDiagnostics;
   /** True when this snapshot was served from the in-process cache rather than the network. */
   readonly fromCache: boolean;

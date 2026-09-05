@@ -143,7 +143,8 @@ export class TrendyolPublicPageSource implements ICompetitorSource {
     this.cacheTtlMs = config.cacheTtlMs ?? TRENDYOL_SCRAPE_DEFAULTS.cacheTtlMs;
     this.requestTimeoutMs = config.requestTimeoutMs ?? TRENDYOL_SCRAPE_DEFAULTS.requestTimeoutMs;
     this.nowMs = config.nowMs ?? (() => Date.now());
-    this.retryOn403MaxAttempts = config.retryOn403MaxAttempts ?? TRENDYOL_SCRAPE_DEFAULTS.retryOn403MaxAttempts;
+    this.retryOn403MaxAttempts =
+      config.retryOn403MaxAttempts ?? TRENDYOL_SCRAPE_DEFAULTS.retryOn403MaxAttempts;
     this.retryOn403BaseMs = config.retryOn403BaseMs ?? TRENDYOL_SCRAPE_DEFAULTS.retryOn403BaseMs;
     this.sleep = config.sleep ?? realSleep;
     const perMinute = config.requestsPerMinute ?? TRENDYOL_SCRAPE_DEFAULTS.requestsPerMinute;
@@ -281,6 +282,7 @@ export class TrendyolPublicPageSource implements ICompetitorSource {
       fetchedUrl,
       observedAt: new Date(this.nowMs()),
       offers: normalized.offers,
+      product: normalized.product,
       diagnostics: normalized.diagnostics,
       fromCache: false,
     };

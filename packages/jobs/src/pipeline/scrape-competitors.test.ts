@@ -8,6 +8,7 @@ import {
   CompetitorSourceError,
   type CompetitorOffer,
   type CompetitorPageSnapshot,
+  type CompetitorProductFacts,
   type ICompetitorSource,
   type ProductPageRef,
 } from '@buybox/adapters';
@@ -69,8 +70,18 @@ function offer(overrides: Partial<CompetitorOffer> = {}): CompetitorOffer {
   };
 }
 
-/** A controllable `ICompetitorSource` double — never a network call (doc 10 §10). */
-function fakeSource(behaviour: (ref: ProductPageRef, callIndex: number) => CompetitorOffer[] | Error): {
+/**
+ * A controllable `ICompetitorSource` double — never a network call (doc 10 §10).
+ *
+ * `product` is optional and left **undefined** when the caller says nothing, which is what an
+ * offers-only source returns. That absence is deliberately distinct from a product block whose
+ * rating is `null`: one source does not state a rating at all, the other read the page and could
+ * not find one, and neither means "unrated".
+ */
+function fakeSource(
+  behaviour: (ref: ProductPageRef, callIndex: number) => CompetitorOffer[] | Error,
+  product?: CompetitorProductFacts,
+): {
   source: ICompetitorSource;
   calls: ProductPageRef[];
 } {
@@ -88,6 +99,7 @@ function fakeSource(behaviour: (ref: ProductPageRef, callIndex: number) => Compe
         fetchedUrl: 'https://www.trendyol.com/x-p-1',
         observedAt: new Date(NOW),
         offers: result,
+        ...(product === undefined ? {} : { product }),
         diagnostics: {
           extractionMethod: 'embeddedJson',
           parserVersion: 'test',
@@ -651,6 +663,151 @@ describe('tracked products (doc 06 §12.2) — customer feedback 2026-08-25', ()
     expect(obs).toHaveLength(1);
     expect(obs[0]?.status).toBe('fetchFailed');
     expect(obs[0]?.price).toBeNull();
+  });
+
+  /**
+   * 2026-09-03. The offer's seller score, dispatch time, promotion and listing ref were arriving
+   * on every `CompetitorOffer` and being dropped here, while the listings half stored all of
+   * them. The asymmetry cost the brand audit "who is cutting with a coupon" and "who holds the
+   * buybox on something other than price", so it is pinned down in both directions: written on a
+   * successful look, and left `null` — never `false` — on a failed one.
+   */
+  it('stores the rest of the offer: seller score, dispatch time, promotion and listing ref', async () => {
+    await trackedProductsRepo.addTrackedProduct(db.appDb, {
+      id: 'tracked-fields',
+      marketplaceCode: 'trendyol',
+      productRef: '3',
+      productUrl: 'https://www.trendyol.com/x-p-3',
+      label: 'Kuponlu',
+      isActive: true,
+      addedAt: NOW,
+    });
+    const { source } = fakeSource(() => [
+      offer({
+        sellerRating: 8.4,
+        dispatchTime: 2,
+        hasPromotion: true,
+        promotionText: "300 TL'ye 30 TL İndirim",
+        listingRef: 'listing-xyz',
+      }),
+    ]);
+
+    await run(source);
+
+    const [row] = await trackedProductsRepo.latestTrackedProductObservations(db.appDb, 'tracked-fields');
+    expect(row?.sellerRating).toBe(8.4);
+    expect(row?.dispatchTime).toBe(2);
+    expect(row?.hasPromotion).toBe(true);
+    expect(row?.promotionText).toBe("300 TL'ye 30 TL İndirim");
+    expect(row?.listingRef).toBe('listing-xyz');
+  });
+
+  it('leaves the new offer fields null on a failed look rather than claiming no promotion', async () => {
+    await trackedProductsRepo.addTrackedProduct(db.appDb, {
+      id: 'tracked-fields-failed',
+      marketplaceCode: 'trendyol',
+      productRef: '4',
+      productUrl: 'https://www.trendyol.com/x-p-4',
+      label: 'Okunamayan',
+      isActive: true,
+      addedAt: NOW,
+    });
+    const { source } = fakeSource(() => new CompetitorSourceError('boom', 'fetchFailed'));
+
+    await run(source);
+
+    const [row] = await trackedProductsRepo.latestTrackedProductObservations(
+      db.appDb,
+      'tracked-fields-failed',
+    );
+    expect(row?.status).toBe('fetchFailed');
+    // `null`, not `false`: nothing was read, so nothing can be said about a promotion.
+    expect(row?.hasPromotion).toBeNull();
+    expect(row?.sellerRating).toBeNull();
+    expect(row?.listingRef).toBeNull();
+  });
+
+  /**
+   * 2026-09-03. The product page states the product's rating and the deep scrape was discarding
+   * it, so `tracked_product_metrics` — the sales-velocity proxy the brand audit reads — moved
+   * only once a day, from the catalogue sweep. The three cases that matter are all silent ones:
+   * a rating that did not move must not add a row, an unreadable one must not erase a known
+   * count, and a source that states no rating at all must not be read as stating zero.
+   */
+  describe('product rating from the deep scrape', () => {
+    async function seedRated(id: string, ratingCount: number | null): Promise<void> {
+      await trackedProductsRepo.addTrackedProduct(db.appDb, {
+        id,
+        marketplaceCode: 'trendyol',
+        productRef: id,
+        productUrl: `https://www.trendyol.com/x-p-${id}`,
+        label: id,
+        isActive: true,
+        addedAt: NOW,
+        ratingCount,
+        ratingAverage: ratingCount === null ? null : 4.0,
+      });
+    }
+
+    it('records the rating the page states, and updates the product row', async () => {
+      await seedRated('rated-1', 100);
+      const { source } = fakeSource(() => [offer()], { ratingCount: 219, ratingAverage: 4.68 });
+
+      await run(source);
+
+      const row = await trackedProductsRepo.getTrackedProduct(db.appDb, 'rated-1');
+      expect(row?.ratingCount).toBe(219);
+      expect(row?.ratingAverage).toBeCloseTo(4.68);
+      const samples = await trackedProductsRepo.trackedProductMetricsSince(db.appDb, 'rated-1', 0);
+      expect(samples.map((s) => s.ratingCount)).toEqual([219]);
+    });
+
+    it('adds no sample when the rating has not moved', async () => {
+      await seedRated('rated-2', 219);
+      const { source } = fakeSource(() => [offer()], { ratingCount: 219, ratingAverage: 4.68 });
+
+      await run(source);
+
+      // A rating moves slowly; a row per look would be millions a year saying "unchanged".
+      expect(await trackedProductsRepo.trackedProductMetricsSince(db.appDb, 'rated-2', 0)).toHaveLength(0);
+    });
+
+    it('leaves a known count alone when the page states no rating', async () => {
+      await seedRated('rated-3', 219);
+      const { source } = fakeSource(() => [offer()], { ratingCount: null, ratingAverage: null });
+
+      await run(source);
+
+      // Our failure to read the node is not an event in the product's life, and writing it
+      // would replace a known count with an unknown one.
+      const row = await trackedProductsRepo.getTrackedProduct(db.appDb, 'rated-3');
+      expect(row?.ratingCount).toBe(219);
+      expect(await trackedProductsRepo.trackedProductMetricsSince(db.appDb, 'rated-3', 0)).toHaveLength(0);
+    });
+
+    it('writes nothing when the source states no product facts at all', async () => {
+      await seedRated('rated-4', 219);
+      // An offers-only source (Hepsiburada's listings endpoint) carries no product block. That
+      // is "this source does not say", never "unrated".
+      const { source } = fakeSource(() => [offer()]);
+
+      await run(source);
+
+      const row = await trackedProductsRepo.getTrackedProduct(db.appDb, 'rated-4');
+      expect(row?.ratingCount).toBe(219);
+      expect(await trackedProductsRepo.trackedProductMetricsSince(db.appDb, 'rated-4', 0)).toHaveLength(0);
+    });
+
+    it('keeps a genuine zero as a first sample rather than treating it as unknown', async () => {
+      await seedRated('rated-5', null);
+      const { source } = fakeSource(() => [offer()], { ratingCount: 0, ratingAverage: null });
+
+      await run(source);
+
+      const samples = await trackedProductsRepo.trackedProductMetricsSince(db.appDb, 'rated-5', 0);
+      expect(samples.map((s) => s.ratingCount)).toEqual([0]);
+      expect((await trackedProductsRepo.getTrackedProduct(db.appDb, 'rated-5'))?.ratingCount).toBe(0);
+    });
   });
 
   it('an inactive tracked product is not scraped', async () => {

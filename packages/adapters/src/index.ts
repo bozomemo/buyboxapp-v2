@@ -24,6 +24,7 @@ export {
   hasProductPageRef,
   type CompetitorOffer,
   type CompetitorPageSnapshot,
+  type CompetitorProductFacts,
   type CompetitorSourceFailureKind,
   type ICompetitorSource,
   type ProductPageRef,

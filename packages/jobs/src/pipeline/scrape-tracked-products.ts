@@ -27,6 +27,7 @@ import { CompetitorSourceError, type ICompetitorSource } from '@buybox/adapters'
 import type { JobContext } from '../job.js';
 import { SCRAPE_MAX_TRACKED_PER_RUN, SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT } from '../scrape-config.js';
 import { hashOffers } from './scrape-competitors.js';
+import { byRotationPriority } from './tracked-rotation.js';
 
 export interface ScrapeTrackedProductsResult {
   readonly itemsOk: number;
@@ -47,10 +48,14 @@ export interface ScrapeTrackedProductsResult {
 }
 
 /**
- * The cadence path's candidates: never-looked first, then oldest look first — the same
- * ordering, for the same reason, as `scrapeCompetitors`' candidate sort. It is what turns the
- * ceiling into a rotation through the catalogue rather than a permanent cut-off after the
- * first N rows.
+ * The cadence path's candidates: never-looked first, then **most overdue** first.
+ *
+ * Until 2026-09-03 the second half of that was simply "oldest look first" — every product equal,
+ * which is right for the operator-curated list this job was written for and wasteful over a
+ * brand catalogue, where a product nobody sells and nobody has ever rated took exactly as much
+ * of the hourly budget as the brand's most contested line. `tracked-rotation.ts` scales each
+ * product's interval by what the row already says about it; overdue-ness is then measured in
+ * multiples of that interval, which is what stops a deprioritised product from starving.
  */
 async function rotatedProducts(
   ctx: JobContext,
@@ -58,17 +63,10 @@ async function rotatedProducts(
   maxProducts: number,
 ): Promise<trackedProductsRepo.TrackedProductRow[]> {
   const products = await trackedProductsRepo.listTrackedProducts(ctx.appDb, { activeOnly: true });
-  return products
-    .filter((p) => p.marketplaceCode === marketplaceCode)
-    .sort((a, b) => {
-      const aAt = a.lastScrapedAt ?? -1;
-      const bAt = b.lastScrapedAt ?? -1;
-      if (aAt !== bAt) return aAt - bAt;
-      // Stable tie-break so a catalogue that has never been looked at (every row -1) can't
-      // re-select a different arbitrary subset each run and starve the rest. Ids are UUID v7.
-      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-    })
-    .slice(0, maxProducts);
+  return byRotationPriority(
+    products.filter((p) => p.marketplaceCode === marketplaceCode),
+    ctx.clock.nowMs(),
+  ).slice(0, maxProducts);
 }
 
 /**
@@ -153,27 +151,109 @@ export async function scrapeTrackedProducts(
     processed += 1;
 
     try {
-      const snapshot = await source.fetchProductOffers({ url: product.productUrl, contentId: product.productRef });
+      const snapshot = await source.fetchProductOffers({
+        url: product.productUrl,
+        contentId: product.productRef,
+      });
       const { changed } = await trackedProductsRepo.recordTrackedProductLook(ctx.appDb, {
         trackedProductId: product.id,
         observedAt: nowMs,
         offersHash: hashOffers(snapshot.offers),
-        rows: snapshot.offers.map((offer) => ({
-          id: newId(),
-          trackedProductId: product.id,
-          observedAt: nowMs,
-          status: 'ok' as const,
-          rank: offer.rank,
-          sellerName: offer.sellerName ?? '',
-          sellerRef: offer.sellerRef,
-          price: offer.price?.toKurus() ?? null,
-          finalPrice: offer.finalPrice?.toKurus() ?? null,
-          offeredStock: offer.offeredStock,
-        })),
+        /**
+         * A page with nobody on it stores **one `noOffers` row** rather than nothing at all
+         * (2026-09-03).
+         *
+         * Before this, an empty seller list wrote no rows, so the newest observation stayed the
+         * last look that *had* sellers — a product no marketplace seller carries any more kept
+         * reporting its final seller set indefinitely, and lost shelf was the one thing the
+         * brand archive could not express. `noOffers` is a success, not a failure: `status` is
+         * filtered to `'ok'` in every price aggregate, so the row lands in the history without
+         * touching a single price figure.
+         *
+         * Change detection still applies unchanged — `hashOffers([])` is a stable hash, so a
+         * product that stays empty writes this row once rather than once an hour.
+         */
+        rows:
+          snapshot.offers.length === 0
+            ? [
+                {
+                  id: newId(),
+                  trackedProductId: product.id,
+                  observedAt: nowMs,
+                  status: 'noOffers' as const,
+                  rank: null,
+                  sellerName: null,
+                  sellerRef: null,
+                  price: null,
+                  finalPrice: null,
+                  offeredStock: null,
+                  sellerRating: null,
+                  dispatchTime: null,
+                  hasPromotion: null,
+                  promotionText: null,
+                  listingRef: null,
+                },
+              ]
+            : snapshot.offers.map((offer) => ({
+                id: newId(),
+                trackedProductId: product.id,
+                observedAt: nowMs,
+                status: 'ok' as const,
+                rank: offer.rank,
+                sellerName: offer.sellerName ?? '',
+                sellerRef: offer.sellerRef,
+                price: offer.price?.toKurus() ?? null,
+                finalPrice: offer.finalPrice?.toKurus() ?? null,
+                offeredStock: offer.offeredStock,
+                // The rest of what the page already told us (2026-09-03). These were being dropped
+                // while `competitor_observations` stored the same fields for the listings half — see
+                // the doc comment on `trackedProductObservations`. No extra request; the offer is
+                // already in hand.
+                sellerRating: offer.sellerRating,
+                dispatchTime: offer.dispatchTime,
+                hasPromotion: offer.hasPromotion,
+                promotionText: offer.promotionText,
+                listingRef: offer.listingRef,
+              })),
       });
       itemsOk += 1;
       consecutiveFailures = 0;
       if (changed) itemsChanged += 1;
+
+      /**
+       * The product's own rating, refreshed from the page we just read (2026-09-03).
+       *
+       * `tracked_product_metrics` is the sales-velocity proxy the brand audit leans on — a brand
+       * owner cannot see anyone's unit sales, and the rate a product accumulates ratings is the
+       * closest public signal — and it was fed only by the once-a-day catalogue sweep while this
+       * job read the same number off the same page and threw it away. Feeding it here costs
+       * nothing: the page is already in hand.
+       *
+       * Change-detected by `recordTrackedProductMetrics`, which writes only when the count
+       * actually moved and never writes a `null`. Both writes are skipped entirely when the
+       * source reports no product block at all — a source that does not state a rating (an
+       * offers-only endpoint) must not be read as one stating zero.
+       */
+      const rating = snapshot.product;
+      if (rating && rating.ratingCount !== null) {
+        await trackedProductsRepo.recordTrackedProductMetrics(ctx.appDb, [
+          {
+            id: newId(),
+            trackedProductId: product.id,
+            observedAt: nowMs,
+            ratingCount: rating.ratingCount,
+            ratingAverage: rating.ratingAverage,
+            // What is on the row *before* this write — the same comparison the sweep makes.
+            previousRatingCount: product.ratingCount,
+          },
+        ]);
+        await trackedProductsRepo.setTrackedProductRating(
+          ctx.appDb,
+          product.id,
+          rating.ratingCount,
+          rating.ratingAverage,
+        );
+      }
 
       // Registered on every look, not only on a changed one: a seller who has held the same
       // price all month is still here, and `last_seen_at` is the field that says so. Only
@@ -199,7 +279,9 @@ export async function scrapeTrackedProducts(
       itemsFailed += 1;
       consecutiveFailures += 1;
       const status =
-        error instanceof CompetitorSourceError && error.kind === 'parseFailed' ? 'parseFailed' : 'fetchFailed';
+        error instanceof CompetitorSourceError && error.kind === 'parseFailed'
+          ? 'parseFailed'
+          : 'fetchFailed';
       // `offersHash: null` — the failure row is always stored, and the stored hash is left
       // alone. Clearing it would make the next successful look read as a change and store a
       // duplicate offer set, turning every transient network error into a fake price event.
@@ -219,6 +301,13 @@ export async function scrapeTrackedProducts(
             price: null,
             finalPrice: null,
             offeredStock: null,
+            // `hasPromotion: null`, not `false`: this row records that the page could not be
+            // read, and `false` would state that it carried no promotion.
+            sellerRating: null,
+            dispatchTime: null,
+            hasPromotion: null,
+            promotionText: null,
+            listingRef: null,
           },
         ],
       });

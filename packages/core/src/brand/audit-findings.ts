@@ -26,6 +26,13 @@
  *   *interpretation* of a sample: it moves with the window, with which competitors happened to
  *   be on the page, and with a threshold someone chose.
  *
+ * "Below the brand's own published price" (2026-09-03) is the one **price** finding that is
+ * `stated`, and the distinction is worth being exact about: the comparison is against a number
+ * the brand owner wrote down, not against whoever else happened to be on the page. Both halves
+ * of it are facts — what the list says, and what the page showed — so nothing about it is a
+ * sample. It is still not a *violation*: an auditor decides that, and the wording never says
+ * otherwise.
+ *
  * A stated finding therefore always outranks a measured one, however dramatic the measured
  * one's number. That ordering is a property of the two bases and not a weight anyone tunes.
  *
@@ -76,6 +83,16 @@ export interface AuditThresholds {
    * seller seen once is still a blocked seller seen selling.
    */
   readonly minObservations: number;
+  /**
+   * How far under the brand's own published price a seller may go before it is a finding
+   * (2026-09-03).
+   *
+   * Not zero, and the reason is not leniency. A list price is quoted to the lira while a
+   * marketplace price moves by kuruş, and a campaign badge routinely shaves a percent off the
+   * displayed figure without anyone deciding to undercut anything. A zero tolerance would file
+   * every one of those beside a genuine 30% cut, and the operator would learn to skim the list.
+   */
+  readonly referenceBelowPct: number;
   /** A category holding at most this share of the brand's products is an unusual place for it. */
   readonly unrelatedCategoryMaxSharePct: number;
   /** …and at most this many products, so the share test cannot be met by a large catalogue. */
@@ -99,6 +116,7 @@ export const DEFAULT_AUDIT_THRESHOLDS: AuditThresholds = {
   undercutMinProducts: 3,
   newSellerDays: 7,
   minObservations: 3,
+  referenceBelowPct: 5,
   unrelatedCategoryMaxSharePct: 2,
   unrelatedCategoryMaxProducts: 5,
 };
@@ -140,6 +158,31 @@ export interface AuditSellerFacts {
   readonly avgDeviationPctExcludingWorst: number | null;
 }
 
+/**
+ * One seller seen below the brand's own published price on one product (2026-09-03).
+ *
+ * The prices are kuruş, and the percentage is derived here rather than passed in: it is the
+ * whole content of the finding, and computing it in one place is what stops the screen and the
+ * query from disagreeing about what "18% below" means.
+ *
+ * `lowestPrice` is the seller's **worst** offer in the window rather than their latest or their
+ * mean. A published price is a floor that was either respected or not, and averaging would let
+ * an afternoon at half price vanish into a fortnight of compliance.
+ */
+export interface AuditReferenceViolation {
+  readonly marketplaceCode: string;
+  readonly sellerRef: string;
+  readonly sellerName: string;
+  readonly trackedProductId: string;
+  readonly productLabel: string;
+  /** Kuruş, as the operator's own list states it. Never observed, never inferred. */
+  readonly referencePrice: bigint;
+  /** Kuruş — the lowest price this seller was seen at on this product in the window. */
+  readonly lowestPrice: bigint;
+  readonly looksBelow: number;
+  readonly lastBelowAt: number;
+}
+
 /** One tracked product, for the two findings that are about a product rather than a seller. */
 export interface AuditProductFacts {
   readonly trackedProductId: string;
@@ -156,6 +199,12 @@ export interface AuditInput {
   readonly thresholds: AuditThresholds;
   readonly sellers: readonly AuditSellerFacts[];
   readonly products: readonly AuditProductFacts[];
+  /**
+   * Sellers seen below the brand's published price. Empty on an install that has imported no
+   * price list — which is not the same as "nobody is below it", and the screen says so rather
+   * than reporting a clean audit (the same distinction the "not on the list" signal draws).
+   */
+  readonly referenceViolations?: readonly AuditReferenceViolation[];
   /** How many of the brand's products sit in each category ref. */
   readonly categoryProductCounts: ReadonlyMap<string, number>;
   /** The brand's total product count, the denominator of the category share. */
@@ -175,6 +224,7 @@ export interface AuditInput {
 
 export type AuditFindingKind =
   | 'blockedSellerPresent'
+  | 'belowReferencePrice'
   | 'notOnAuthorisedList'
   | 'deepDiscountOnOneProduct'
   | 'persistentUndercut'
@@ -228,6 +278,21 @@ export type AuditFinding =
       readonly note: string | null;
     })
   | (FindingBase & {
+      readonly kind: 'belowReferencePrice';
+      readonly trackedProductId: string;
+      readonly productLabel: string;
+      readonly sellerName: string;
+      readonly sellerRef: string;
+      readonly marketplaceCode: string;
+      /** Kuruş. Both are carried so the screen can show the arithmetic rather than only its result. */
+      readonly referencePrice: bigint;
+      readonly lowestPrice: bigint;
+      /** Positive: how far under the published price the worst offer sat. */
+      readonly shortfallPct: number;
+      readonly looksBelow: number;
+      readonly lastBelowAt: number;
+    })
+  | (FindingBase & {
       readonly kind: 'notOnAuthorisedList';
       readonly productCount: number;
       readonly lastSeenAt: number;
@@ -276,21 +341,29 @@ export type AuditFinding =
 /**
  * Rank order, lowest first.
  *
- * The two `stated` kinds occupy 0 and 1 **by construction**, which is the plan's "kara liste
- * eşleşmesi fiyat sapmasından önce gelir". Below them the order is by how much a person can
- * conclude from the finding alone: a deep discount on one line is a specific, checkable claim; a
- * new seller is barely a claim at all and sits last among the seller findings, because a new
- * seller is usually just a new seller.
+ * The three `stated` kinds occupy 0, 1 and 2 **by construction**, which is the plan's "kara
+ * liste eşleşmesi fiyat sapmasından önce gelir". Below them the order is by how much a person
+ * can conclude from the finding alone: a deep discount on one line is a specific, checkable
+ * claim; a new seller is barely a claim at all and sits last among the seller findings, because
+ * a new seller is usually just a new seller.
+ *
+ * Within the stated tier the order is by how *specific* the claim is rather than by how serious
+ * it sounds. `blockedSellerPresent` names one seller the operator personally ruled on.
+ * `belowReferencePrice` names one seller, one product and two prices — as checkable as it gets.
+ * `notOnAuthorisedList` is stated too, but it fires across a whole population: on a brand with
+ * a short whitelist it can be most of the sellers on the page, and putting it above a specific
+ * price violation would bury the checkable finding under the categorical one.
  */
 const KIND_ORDER: Record<AuditFindingKind, number> = {
   blockedSellerPresent: 0,
-  notOnAuthorisedList: 1,
-  deepDiscountOnOneProduct: 2,
-  persistentUndercut: 3,
-  belowMarketAverage: 4,
-  unrelatedCategory: 5,
-  brandRefDisagreement: 6,
-  newSeller: 7,
+  belowReferencePrice: 1,
+  notOnAuthorisedList: 2,
+  deepDiscountOnOneProduct: 3,
+  persistentUndercut: 4,
+  belowMarketAverage: 5,
+  unrelatedCategory: 6,
+  brandRefDisagreement: 7,
+  newSeller: 8,
 };
 
 /** The rank of a kind, for a caller that wants to group or sort without re-deriving it. */
@@ -329,6 +402,50 @@ export function deriveAuditFindings(
 ): AuditFinding[] {
   const { thresholds: t, sellers, products, nowMs } = input;
   const findings: AuditFinding[] = [];
+
+  /**
+   * Below the brand's own published price — `stated`, and the only price finding that is.
+   *
+   * `minObservations` is deliberately not consulted, for the same reason the two policy signals
+   * ignore it: that threshold guards a *mean*, and there is no mean here. One look showing a
+   * seller under a price the brand published is one look showing exactly that, and withholding
+   * it until a third would suppress the single most actionable row on the screen.
+   *
+   * The shortfall is computed from the exact kuruş amounts and only then turned into a
+   * percentage, so the figure on the row and the two prices beside it always agree. A reference
+   * price of zero cannot reach here (the importer refuses it) but is guarded anyway: it would
+   * otherwise divide by zero and produce `Infinity`, which sorts above every real finding.
+   */
+  for (const violation of input.referenceViolations ?? []) {
+    if (violation.referencePrice <= 0n) continue;
+    const shortfallPct =
+      Number(((violation.referencePrice - violation.lowestPrice) * 10_000n) / violation.referencePrice) / 100;
+    if (shortfallPct <= t.referenceBelowPct) continue;
+    findings.push({
+      kind: 'belowReferencePrice',
+      id: `belowReferencePrice::${violation.marketplaceCode}::${violation.sellerRef}::${violation.trackedProductId}`,
+      basis: 'stated',
+      // The **product** is the subject, as it is for the deep-discount finding: the evidence to
+      // open is that product's looks, with this seller one row inside them.
+      subject: {
+        kind: 'product',
+        trackedProductId: violation.trackedProductId,
+        label: violation.productLabel,
+      },
+      thresholdKey: 'referenceBelowPct',
+      magnitude: shortfallPct,
+      trackedProductId: violation.trackedProductId,
+      productLabel: violation.productLabel,
+      sellerName: violation.sellerName,
+      sellerRef: violation.sellerRef,
+      marketplaceCode: violation.marketplaceCode,
+      referencePrice: violation.referencePrice,
+      lowestPrice: violation.lowestPrice,
+      shortfallPct,
+      looksBelow: violation.looksBelow,
+      lastBelowAt: violation.lastBelowAt,
+    });
+  }
 
   for (const seller of sellers) {
     // ---- stated -------------------------------------------------------------------------

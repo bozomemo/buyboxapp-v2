@@ -5,6 +5,7 @@ import {
   type AuditFinding,
   type AuditInput,
   type AuditProductFacts,
+  type AuditReferenceViolation,
   type AuditSellerFacts,
   type AuditThresholds,
 } from './audit-findings.js';
@@ -392,5 +393,166 @@ describe('ordering', () => {
       }),
     );
     expect(new Set(found.map((f) => f.id)).size).toBe(found.length);
+  });
+});
+
+/**
+ * Below the brand's own published price (2026-09-03).
+ *
+ * The one price signal that is `stated` rather than `measured`, and the tests are mostly about
+ * that claim holding: it must outrank every measured finding however dramatic, it must not be
+ * gated by `minObservations` (which guards a mean, and there is no mean here), and its
+ * percentage must agree exactly with the two kuruş amounts printed beside it.
+ */
+function violation(over: Partial<AuditReferenceViolation> = {}): AuditReferenceViolation {
+  return {
+    marketplaceCode: 'trendyol',
+    sellerRef: '111',
+    sellerName: 'Bir Mağaza',
+    trackedProductId: 'p1',
+    productLabel: 'Whiskas Ton Balıklı 85g',
+    referencePrice: 100_00n,
+    lowestPrice: 80_00n,
+    looksBelow: 3,
+    lastBelowAt: NOW,
+    ...over,
+  };
+}
+
+describe('below the reference price', () => {
+  it('raises a stated finding carrying both prices and the shortfall between them', () => {
+    const found = deriveAuditFindings(input({ referenceViolations: [violation()] }));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      kind: 'belowReferencePrice',
+      basis: 'stated',
+      thresholdKey: 'referenceBelowPct',
+      referencePrice: 100_00n,
+      lowestPrice: 80_00n,
+      shortfallPct: 20,
+      looksBelow: 3,
+      sellerRef: '111',
+    });
+  });
+
+  /** The subject is the product, so the evidence panel opens the look this was measured in. */
+  it('makes the product the subject, not the seller', () => {
+    const found = deriveAuditFindings(input({ referenceViolations: [violation()] }));
+    expect(found[0]!.subject).toEqual({
+      kind: 'product',
+      trackedProductId: 'p1',
+      label: 'Whiskas Ton Balıklı 85g',
+    });
+  });
+
+  it('stays silent within the tolerance and speaks past it', () => {
+    const within = deriveAuditFindings(input({ referenceViolations: [violation({ lowestPrice: 96_00n })] }));
+    expect(within).toHaveLength(0);
+
+    const past = deriveAuditFindings(input({ referenceViolations: [violation({ lowestPrice: 94_00n })] }));
+    expect(kinds(past)).toEqual(['belowReferencePrice']);
+  });
+
+  it('moves with the operator threshold rather than a baked-in number', () => {
+    const violations = [violation({ lowestPrice: 92_00n })];
+    const strict: AuditThresholds = { ...DEFAULT_AUDIT_THRESHOLDS, referenceBelowPct: 5 };
+    const loose: AuditThresholds = { ...DEFAULT_AUDIT_THRESHOLDS, referenceBelowPct: 20 };
+    expect(deriveAuditFindings(input({ referenceViolations: violations, thresholds: strict }))).toHaveLength(
+      1,
+    );
+    expect(deriveAuditFindings(input({ referenceViolations: violations, thresholds: loose }))).toHaveLength(
+      0,
+    );
+  });
+
+  /**
+   * `minObservations` guards an average. This is not one: a single look showing a seller under
+   * a price the brand published is that seller, under that price, on that day.
+   */
+  it('is not withheld for a seller seen only once', () => {
+    const found = deriveAuditFindings(
+      input({
+        sellers: [seller({ observationCount: 1, avgDeviationPct: -40 })],
+        referenceViolations: [violation({ looksBelow: 1 })],
+      }),
+    );
+    expect(kinds(found)).toEqual(['belowReferencePrice']);
+  });
+
+  it('ranks above every measured finding, however large the measured number', () => {
+    const found = deriveAuditFindings(
+      input({
+        sellers: [seller({ sellerRef: '222', avgDeviationPct: -60, cheapestCount: 20 })],
+        referenceViolations: [violation({ lowestPrice: 94_00n })],
+      }),
+    );
+    expect(found[0]!.kind).toBe('belowReferencePrice');
+    expect(found.map((f) => f.basis)[0]).toBe('stated');
+  });
+
+  /**
+   * Both are stated, so the ordering cannot come from the basis. It comes from specificity: a
+   * seller the operator personally blocked is a narrower claim than one product's price, which
+   * is narrower than "everyone not on the list" — a signal that can name most of a page.
+   */
+  it('sits below a blacklist match and above the not-on-the-list signal', () => {
+    const found = deriveAuditFindings(
+      input({
+        hasAuthorisedList: true,
+        sellers: [
+          seller({ sellerRef: 'blocked-one', verdict: 'blocked' }),
+          seller({ sellerRef: 'unknown-one' }),
+        ],
+        referenceViolations: [violation({ sellerRef: 'unknown-one' })],
+      }),
+    );
+    expect(kinds(found).slice(0, 3)).toEqual([
+      'blockedSellerPresent',
+      'belowReferencePrice',
+      'notOnAuthorisedList',
+    ]);
+  });
+
+  it('orders the deepest cut first', () => {
+    const found = deriveAuditFindings(
+      input({
+        referenceViolations: [
+          violation({ trackedProductId: 'shallow', lowestPrice: 90_00n }),
+          violation({ trackedProductId: 'deep', lowestPrice: 50_00n }),
+        ],
+      }),
+    );
+    expect(found.map((f) => (f.kind === 'belowReferencePrice' ? f.trackedProductId : ''))).toEqual([
+      'deep',
+      'shallow',
+    ]);
+  });
+
+  /**
+   * The importer refuses a zero list price, so this cannot arrive from the screen — but a
+   * division by it would produce `Infinity`, which sorts above every real finding and would put
+   * a nonsense row at the top of the auditor's list.
+   */
+  it('ignores a product whose reference price is zero rather than dividing by it', () => {
+    const found = deriveAuditFindings(input({ referenceViolations: [violation({ referencePrice: 0n })] }));
+    expect(found).toHaveLength(0);
+  });
+
+  it('raises nothing at all on an install that has imported no price list', () => {
+    expect(deriveAuditFindings(input({ sellers: [seller()] }))).toHaveLength(0);
+  });
+
+  it('gives each seller-and-product pair its own row and its own id', () => {
+    const found = deriveAuditFindings(
+      input({
+        referenceViolations: [
+          violation({ sellerRef: 'a', trackedProductId: 'p1' }),
+          violation({ sellerRef: 'a', trackedProductId: 'p2' }),
+          violation({ sellerRef: 'b', trackedProductId: 'p1' }),
+        ],
+      }),
+    );
+    expect(found).toHaveLength(3);
+    expect(new Set(found.map((f) => f.id)).size).toBe(3);
   });
 });

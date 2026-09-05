@@ -10,7 +10,11 @@
  * numeric fields only — never a Turkish display string, never `price.text`, never a CSS class.
  */
 import { Money } from '@buybox/shared';
-import type { CompetitorOffer, ScrapeDiagnostics } from '../../ports/competitor-source.js';
+import type {
+  CompetitorOffer,
+  CompetitorProductFacts,
+  ScrapeDiagnostics,
+} from '../../ports/competitor-source.js';
 
 /** Bumped whenever the extraction rules change, so `scrape_runs` rows stay attributable (guide §33). */
 export const TRENDYOL_PARSER_VERSION = '1.0.0';
@@ -170,7 +174,25 @@ function buildOffer(source: OfferSource, rank: number): CompetitorOffer {
 
 export interface TrendyolPageOffers {
   readonly offers: readonly CompetitorOffer[];
+  readonly product: CompetitorProductFacts;
   readonly diagnostics: ScrapeDiagnostics;
+}
+
+/**
+ * The product's rating, from the same node the brand catalogue reads (api-references §1.7, §1.6).
+ *
+ * `null` is **unknown** and `0` is *genuinely unrated*, and the two must not merge: the
+ * dead-product suggestion acts on the second only, and offering an operator rows to deactivate
+ * on the strength of our own parse failure is the mistake that split exists to prevent
+ * (api-references §1.7 note 5).
+ */
+function readRating(node: unknown): CompetitorProductFacts {
+  const score = asObject(node);
+  if (!score) return { ratingCount: null, ratingAverage: null };
+  return {
+    ratingCount: asFiniteNumber(score.totalCount),
+    ratingAverage: asFiniteNumber(score.averageRating),
+  };
 }
 
 /**
@@ -264,6 +286,7 @@ export function normalizeTrendyolPage(state: unknown): TrendyolPageOffers {
 
   return {
     offers,
+    product: readRating(product?.ratingScore),
     diagnostics: {
       extractionMethod: 'embeddedJson',
       parserVersion: TRENDYOL_PARSER_VERSION,

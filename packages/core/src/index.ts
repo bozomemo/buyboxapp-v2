@@ -82,13 +82,10 @@ export type {
   AuditFindingKind,
   AuditInput,
   AuditProductFacts,
+  AuditReferenceViolation,
   AuditSellerFacts,
   AuditSubject,
   AuditThresholds,
   AuditWorstProduct,
 } from './brand/audit-findings.js';
-export {
-  auditFindingOrder,
-  deriveAuditFindings,
-  DEFAULT_AUDIT_THRESHOLDS,
-} from './brand/audit-findings.js';
+export { auditFindingOrder, deriveAuditFindings, DEFAULT_AUDIT_THRESHOLDS } from './brand/audit-findings.js';

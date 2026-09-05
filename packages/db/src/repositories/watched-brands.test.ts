@@ -88,6 +88,87 @@ for (const dialect of ALL_DIALECTS) {
       db = undefined;
     }, 30_000);
 
+    /**
+     * Own brand vs a competitor's (2026-09-03). The flag gates the audit off, so the test that
+     * matters is the one asserting a rival is *not* returned where the audit asks.
+     */
+    describe('own brands and competitors', () => {
+      it('defaults a brand written without the flag to one we own', async () => {
+        db = await createTestDb(dialect);
+        await seedGroupAndBrand(db.appDb);
+
+        const [row] = await watchedBrandsRepo.listWatchedBrands(db.appDb);
+        // Every brand watched before the column existed was one the operator owned.
+        expect(row!.isOwnBrand).toBe(true);
+      }, 30_000);
+
+      it('stores a competitor brand and leaves it out of the audit scope', async () => {
+        db = await createTestDb(dialect);
+        const { groupId } = await seedGroupAndBrand(db.appDb);
+        await watchedBrandsRepo.createWatchedBrand(db.appDb, {
+          id: newId(),
+          groupId,
+          marketplaceCode: MARKETPLACE,
+          label: 'Felix',
+          brandRef: null,
+          searchTerm: 'felix',
+          isActive: true,
+          isOwnBrand: false,
+          lastSweptAt: null,
+          lastSweepProductCount: null,
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+
+        const all = await watchedBrandsRepo.listWatchedBrands(db.appDb);
+        const own = await watchedBrandsRepo.listWatchedBrands(db.appDb, { ownOnly: true });
+
+        expect(all.map((b) => b.label).sort()).toEqual(['Felix', 'Whiskas']);
+        // The comparison report wants both; the audit wants only ours.
+        expect(own.map((b) => b.label)).toEqual(['Whiskas']);
+      }, 30_000);
+
+      it('carries the flag through an update rather than resetting it', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seedGroupAndBrand(db.appDb, { isOwnBrand: false, label: 'Felix' });
+
+        await watchedBrandsRepo.updateWatchedBrand(db.appDb, brandId, {
+          label: 'Felix',
+          brandRef: '104703',
+          searchTerm: 'felix',
+          isActive: true,
+          isOwnBrand: false,
+          updatedAt: NOW + 1_000,
+        });
+
+        expect(await watchedBrandsRepo.listWatchedBrands(db.appDb, { ownOnly: true })).toHaveLength(0);
+      }, 30_000);
+
+      it('combines the own filter with the active one rather than replacing it', async () => {
+        db = await createTestDb(dialect);
+        const { groupId } = await seedGroupAndBrand(db.appDb);
+        await watchedBrandsRepo.createWatchedBrand(db.appDb, {
+          id: newId(),
+          groupId,
+          marketplaceCode: MARKETPLACE,
+          label: 'Paused',
+          brandRef: null,
+          searchTerm: 'paused',
+          isActive: false,
+          lastSweptAt: null,
+          lastSweepProductCount: null,
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+
+        const due = await watchedBrandsRepo.listWatchedBrands(db.appDb, {
+          activeOnly: true,
+          ownOnly: true,
+        });
+        expect(due.map((b) => b.label)).toEqual(['Whiskas']);
+      }, 30_000);
+    });
+
     it('requires at least one selector', async () => {
       db = await createTestDb(dialect);
       const { groupId } = await seedGroupAndBrand(db.appDb);
@@ -470,13 +551,34 @@ for (const dialect of ALL_DIALECTS) {
       )!;
 
       const written = await trackedProductsRepo.recordTrackedProductMetrics(db.appDb, [
-        { id: newId(), trackedProductId: row.id, observedAt: NOW, ratingCount: 219, ratingAverage: 4.6, previousRatingCount: 219 },
-        { id: newId(), trackedProductId: row.id, observedAt: NOW, ratingCount: null, ratingAverage: null, previousRatingCount: 219 },
+        {
+          id: newId(),
+          trackedProductId: row.id,
+          observedAt: NOW,
+          ratingCount: 219,
+          ratingAverage: 4.6,
+          previousRatingCount: 219,
+        },
+        {
+          id: newId(),
+          trackedProductId: row.id,
+          observedAt: NOW,
+          ratingCount: null,
+          ratingAverage: null,
+          previousRatingCount: 219,
+        },
       ]);
       expect(written).toBe(0);
 
       const changed = await trackedProductsRepo.recordTrackedProductMetrics(db.appDb, [
-        { id: newId(), trackedProductId: row.id, observedAt: NOW + 1, ratingCount: 231, ratingAverage: 4.6, previousRatingCount: 219 },
+        {
+          id: newId(),
+          trackedProductId: row.id,
+          observedAt: NOW + 1,
+          ratingCount: 231,
+          ratingAverage: 4.6,
+          previousRatingCount: 219,
+        },
       ]);
       expect(changed).toBe(1);
       const series = await trackedProductsRepo.trackedProductMetricsSince(db.appDb, row.id, 0);

@@ -72,11 +72,7 @@ async function seed(appDb: AppDatabase): Promise<Fixture> {
   return { groupId, brandId, otherBrandId, productIds: [] };
 }
 
-async function addProduct(
-  appDb: AppDatabase,
-  watchedBrandId: string,
-  ref: string,
-): Promise<string> {
+async function addProduct(appDb: AppDatabase, watchedBrandId: string, ref: string): Promise<string> {
   const id = newId();
   await trackedProductsRepo.addTrackedProduct(appDb, {
     id,
@@ -128,6 +124,369 @@ for (const dialect of ALL_DIALECTS) {
       await db?.cleanup();
       db = undefined;
     }, 30_000);
+
+    /**
+     * Below the brand's own published price (2026-09-03).
+     *
+     * Every branch here is per-engine in a way a single-dialect run would not catch: the price
+     * comparison is against another *column* rather than a literal, and on SQLite both sides are
+     * the zero-padded sortable text encoding — the comparison is only correct because that
+     * encoding sorts lexicographically in numeric order. The ordering expression divides two
+     * money columns, which needs the decode on SQLite and not on the other two.
+     */
+    /**
+     * Buybox share across a brand (2026-09-03) — the figure `buyboxCount` could not give,
+     * because a count with no denominator reads the same on a 50-look brand and a 5,000-look one.
+     */
+    /**
+     * The brand's market day by day (2026-09-03) — the first figure on these screens that
+     * answers "is it getting better or worse" rather than "what is it now".
+     *
+     * The bucketing is integer arithmetic rather than a date function precisely so it means the
+     * same thing on three engines, which is the one thing a single-dialect run could not show.
+     */
+    describe('brandDailyTrend', () => {
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const midnight = (offsetDays: number): number =>
+        Date.UTC(2026, 7, 20 - offsetDays, 0, 0, 0) - (Date.UTC(2026, 7, 20 - offsetDays, 0, 0, 0) % DAY_MS);
+
+      it('buckets looks into days and averages the offers in each', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const p = await addProduct(db.appDb, brandId, '1');
+        // Two looks on the same day, at different hours: one bucket, four offers.
+        await look(db.appDb, p, midnight(2) + 3 * 60 * 60_000, [
+          ['a', 100],
+          ['b', 120],
+        ]);
+        await look(db.appDb, p, midnight(2) + 20 * 60 * 60_000, [
+          ['a', 100],
+          ['b', 140],
+        ]);
+        await look(db.appDb, p, midnight(1) + 60_000, [['a', 200]]);
+
+        const trend = await brandReportsRepo.brandDailyTrend(db.appDb, WINDOW);
+
+        expect(trend.map((t) => t.dayMs)).toEqual([midnight(2), midnight(1)]);
+        expect(trend[0]!.avgPrice).toBe(lira(115));
+        expect(trend[0]!.offers).toBe(4);
+        expect(trend[0]!.sellerCount).toBe(2);
+        expect(trend[1]!.avgPrice).toBe(lira(200));
+      }, 30_000);
+
+      /**
+       * The point of including `noOffers` in this one query: "nobody sold this today" is the
+       * lost-shelf signal as it *moves*, and every other aggregate in this file correctly
+       * refuses to see those rows.
+       */
+      it('counts a day nobody was selling as a data point, not as a missing day', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await addProduct(db.appDb, brandId, '1');
+        await trackedProductsRepo.insertTrackedProductObservations(db.appDb, [
+          {
+            id: newId(),
+            trackedProductId: productId,
+            observedAt: midnight(1) + 60_000,
+            status: 'noOffers',
+            rank: null,
+            sellerName: null,
+            sellerRef: null,
+            price: null,
+            finalPrice: null,
+            offeredStock: null,
+          },
+        ]);
+
+        const trend = await brandReportsRepo.brandDailyTrend(db.appDb, WINDOW);
+
+        expect(trend).toHaveLength(1);
+        expect(trend[0]!.productsWithoutOffers).toBe(1);
+        expect(trend[0]!.productsWithOffers).toBe(0);
+        // No prices were on the page, so there is no average — never a zero.
+        expect(trend[0]!.avgPrice).toBeNull();
+      }, 30_000);
+
+      it('leaves a quiet day out rather than interpolating one', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const p = await addProduct(db.appDb, brandId, '1');
+        await look(db.appDb, p, midnight(3) + 60_000, [['a', 100]]);
+        await look(db.appDb, p, midnight(1) + 60_000, [['a', 100]]);
+
+        const trend = await brandReportsRepo.brandDailyTrend(db.appDb, WINDOW);
+
+        // Two points, not three: a day nothing was stored is a day nothing changed, and a line
+        // drawn through it would invent a trend out of change detection.
+        expect(trend.map((t) => t.dayMs)).toEqual([midnight(3), midnight(1)]);
+      }, 30_000);
+
+      it('stays inside the brand and the window', async () => {
+        db = await createTestDb(dialect);
+        const { brandId, otherBrandId } = await seed(db.appDb);
+        const mine = await addProduct(db.appDb, brandId, 'mine');
+        const theirs = await addProduct(db.appDb, otherBrandId, 'theirs');
+        await look(db.appDb, mine, NOW - 90 * DAY, [['ancient', 100]]);
+        await look(db.appDb, theirs, midnight(1) + 60_000, [['other-brand', 100]]);
+        await look(db.appDb, mine, midnight(1) + 60_000, [['current', 100]]);
+
+        const trend = await brandReportsRepo.brandDailyTrend(db.appDb, {
+          ...WINDOW,
+          watchedBrandIds: [brandId],
+        });
+        expect(trend).toHaveLength(1);
+        expect(trend[0]!.sellerCount).toBe(1);
+      }, 30_000);
+
+      it('returns nothing at all for a brand with no looks', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        await addProduct(db.appDb, brandId, '1');
+
+        expect(await brandReportsRepo.brandDailyTrend(db.appDb, WINDOW)).toEqual([]);
+      }, 30_000);
+    });
+
+    describe('brandBuyboxShare', () => {
+      it('counts each sellers rank-1 looks and states the denominator', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const a = await addProduct(db.appDb, brandId, 'a');
+        const b = await addProduct(db.appDb, brandId, 'b');
+        await look(db.appDb, a, NOW - 3 * DAY, [
+          ['winner', 100],
+          ['loser', 110],
+        ]);
+        await look(db.appDb, a, NOW - 2 * DAY, [
+          ['winner', 100],
+          ['loser', 110],
+        ]);
+        await look(db.appDb, b, NOW - DAY, [
+          ['loser', 90],
+          ['winner', 95],
+        ]);
+
+        const share = await brandReportsRepo.brandBuyboxShare(db.appDb, WINDOW);
+
+        expect(share.totalBuyboxLooks).toBe(3);
+        expect(share.rows.map((r) => [r.sellerRef, r.buyboxLooks, r.productCount])).toEqual([
+          ['winner', 2, 1],
+          ['loser', 1, 1],
+        ]);
+        expect(share.rows[0]!.lastHeldAt).toBe(NOW - 2 * DAY);
+      }, 30_000);
+
+      /**
+       * The reason `sellerRef` is nullable on this row and not on any other aggregate. An
+       * unidentified offer that holds the buybox is still holding it; leaving it out of the
+       * denominator would hand its share to the named sellers.
+       */
+      it('keeps an unidentified buybox holder in the denominator, as its own row', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const p = await addProduct(db.appDb, brandId, 'a');
+        await look(db.appDb, p, NOW - 2 * DAY, [[null, 100]]);
+        await look(db.appDb, p, NOW - DAY, [['named', 100]]);
+
+        const share = await brandReportsRepo.brandBuyboxShare(db.appDb, WINDOW);
+
+        expect(share.totalBuyboxLooks).toBe(2);
+        expect(share.rows.filter((r) => r.sellerRef === null)).toHaveLength(1);
+      }, 30_000);
+
+      it('counts only rank 1 — being on the page is not holding the buybox', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const p = await addProduct(db.appDb, brandId, 'a');
+        await look(db.appDb, p, NOW - DAY, [
+          ['first', 100],
+          ['second', 105],
+          ['third', 110],
+        ]);
+
+        const share = await brandReportsRepo.brandBuyboxShare(db.appDb, WINDOW);
+        expect(share.totalBuyboxLooks).toBe(1);
+        expect(share.rows.map((r) => r.sellerRef)).toEqual(['first']);
+      }, 30_000);
+
+      it('stays inside the brand and the window', async () => {
+        db = await createTestDb(dialect);
+        const { brandId, otherBrandId } = await seed(db.appDb);
+        const mine = await addProduct(db.appDb, brandId, 'mine');
+        const theirs = await addProduct(db.appDb, otherBrandId, 'theirs');
+        await look(db.appDb, mine, NOW - 90 * DAY, [['ancient', 100]]);
+        await look(db.appDb, theirs, NOW - DAY, [['other-brand', 100]]);
+        await look(db.appDb, mine, NOW - DAY, [['current', 100]]);
+
+        const share = await brandReportsRepo.brandBuyboxShare(db.appDb, {
+          ...WINDOW,
+          watchedBrandIds: [brandId],
+        });
+        expect(share.rows.map((r) => r.sellerRef)).toEqual(['current']);
+        expect(share.totalBuyboxLooks).toBe(1);
+      }, 30_000);
+
+      it('excludes our own store from both the rows and the denominator when asked to', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const p = await addProduct(db.appDb, brandId, 'a');
+        await look(db.appDb, p, NOW - 2 * DAY, [['ours', 100]]);
+        await look(db.appDb, p, NOW - DAY, [['theirs', 100]]);
+
+        const share = await brandReportsRepo.brandBuyboxShare(db.appDb, {
+          ...WINDOW,
+          excludeSellers: [{ marketplaceCode: MARKETPLACE, sellerRef: 'ours' }],
+        });
+        expect(share.rows.map((r) => r.sellerRef)).toEqual(['theirs']);
+        // The denominator moves with the rows — a share of a total that included an excluded
+        // seller would never reach 100% and would read as missing data.
+        expect(share.totalBuyboxLooks).toBe(1);
+      }, 30_000);
+
+      it('reports nothing rather than dividing by zero on a brand with no looks', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        await addProduct(db.appDb, brandId, 'never-looked');
+
+        expect(await brandReportsRepo.brandBuyboxShare(db.appDb, WINDOW)).toEqual({
+          rows: [],
+          totalBuyboxLooks: 0,
+        });
+      }, 30_000);
+    });
+
+    describe('referencePriceViolations', () => {
+      async function priced(appDb: AppDatabase, brandId: string, ref: string, major: number) {
+        const id = await addProduct(appDb, brandId, ref);
+        await trackedProductsRepo.applyReferencePrices(
+          appDb,
+          [{ barcode: null, marketplaceCode: MARKETPLACE, productRef: ref, referencePrice: lira(major) }],
+          'liste.csv',
+          NOW,
+        );
+        return id;
+      }
+
+      it('reports a seller below the published price, with both prices and how often', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await priced(db.appDb, brandId, '1', 100);
+        await look(db.appDb, productId, NOW - 2 * DAY, [
+          ['cutter', 80],
+          ['honest', 100],
+        ]);
+        await look(db.appDb, productId, NOW - DAY, [
+          ['cutter', 85],
+          ['honest', 100],
+        ]);
+
+        const rows = await brandReportsRepo.referencePriceViolations(db.appDb, WINDOW, { limit: 50 });
+
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          sellerRef: 'cutter',
+          trackedProductId: productId,
+          referencePrice: lira(100),
+          // The **worst** offer in the window, not the latest and not the mean: a list price is
+          // a floor that was either respected or not.
+          lowestPrice: lira(80),
+          looksBelow: 2,
+          lastBelowAt: NOW - DAY,
+        });
+      }, 30_000);
+
+      it('says nothing about a seller exactly at the published price', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await priced(db.appDb, brandId, '1', 100);
+        await look(db.appDb, productId, NOW - DAY, [['honest', 100]]);
+
+        expect(await brandReportsRepo.referencePriceViolations(db.appDb, WINDOW, { limit: 50 })).toEqual([]);
+      }, 30_000);
+
+      /**
+       * A product with no published price is not a product nobody undercuts — it is one there is
+       * nothing to undercut. It must produce no row at all, or an install that imported a list
+       * for a tenth of its catalogue would read as nine-tenths compliant.
+       */
+      it('ignores a product with no published price entirely', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await addProduct(db.appDb, brandId, 'unpriced');
+        await look(db.appDb, productId, NOW - DAY, [['cutter', 1]]);
+
+        expect(await brandReportsRepo.referencePriceViolations(db.appDb, WINDOW, { limit: 50 })).toEqual([]);
+      }, 30_000);
+
+      it('never reports an offer the payload did not identify a seller for', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await priced(db.appDb, brandId, '1', 100);
+        await look(db.appDb, productId, NOW - DAY, [[null, 40]]);
+
+        expect(await brandReportsRepo.referencePriceViolations(db.appDb, WINDOW, { limit: 50 })).toEqual([]);
+      }, 30_000);
+
+      it('stays inside the window and inside the brand', async () => {
+        db = await createTestDb(dialect);
+        const { brandId, otherBrandId } = await seed(db.appDb);
+        const mine = await priced(db.appDb, brandId, 'mine', 100);
+        const theirs = await priced(db.appDb, otherBrandId, 'theirs', 100);
+        await look(db.appDb, mine, NOW - 90 * DAY, [['old', 10]]);
+        await look(db.appDb, theirs, NOW - DAY, [['other-brand', 10]]);
+
+        const rows = await brandReportsRepo.referencePriceViolations(
+          db.appDb,
+          { ...WINDOW, watchedBrandIds: [brandId] },
+          { limit: 50 },
+        );
+        expect(rows).toEqual([]);
+      }, 30_000);
+
+      it('leaves out the sellers the report was told to exclude — our own store', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await priced(db.appDb, brandId, '1', 100);
+        await look(db.appDb, productId, NOW - DAY, [
+          ['ours', 70],
+          ['theirs', 80],
+        ]);
+
+        const rows = await brandReportsRepo.referencePriceViolations(
+          db.appDb,
+          { ...WINDOW, excludeSellers: [{ marketplaceCode: MARKETPLACE, sellerRef: 'ours' }] },
+          { limit: 50 },
+        );
+        expect(rows.map((r) => r.sellerRef)).toEqual(['theirs']);
+      }, 30_000);
+
+      /** The cut that survives a truncation must be the deepest one, not an arbitrary one. */
+      it('orders the deepest cut first, so a truncation drops the mildest', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const a = await priced(db.appDb, brandId, 'a', 100);
+        const b = await priced(db.appDb, brandId, 'b', 100);
+        await look(db.appDb, a, NOW - DAY, [['mild', 95]]);
+        await look(db.appDb, b, NOW - DAY, [['deep', 40]]);
+
+        const rows = await brandReportsRepo.referencePriceViolations(db.appDb, WINDOW, { limit: 1 });
+        expect(rows.map((r) => r.sellerRef)).toEqual(['deep']);
+      }, 30_000);
+
+      it('gives each seller on a product its own row', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await priced(db.appDb, brandId, '1', 100);
+        await look(db.appDb, productId, NOW - DAY, [
+          ['a', 80],
+          ['b', 90],
+          ['c', 100],
+        ]);
+
+        const rows = await brandReportsRepo.referencePriceViolations(db.appDb, WINDOW, { limit: 50 });
+        expect(rows.map((r) => r.sellerRef).sort()).toEqual(['a', 'b']);
+      }, 30_000);
+    });
 
     describe('trackedProductPeriodStats', () => {
       it('reports the band the product traded in across the window', async () => {
@@ -240,12 +599,7 @@ for (const dialect of ALL_DIALECTS) {
         const { brandId } = await seed(db.appDb);
         const [p1] = await seedMarket(db.appDb, brandId);
 
-        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(
-          db.appDb,
-          WINDOW,
-          [KEY('a')],
-          100,
-        );
+        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [KEY('a')], 100);
 
         expect(rows).toHaveLength(1);
         expect(rows[0]!.trackedProductId).toBe(p1);
@@ -265,12 +619,7 @@ for (const dialect of ALL_DIALECTS) {
         const { brandId } = await seed(db.appDb);
         await seedMarket(db.appDb, brandId);
 
-        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(
-          db.appDb,
-          WINDOW,
-          [KEY('a')],
-          100,
-        );
+        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [KEY('a')], 100);
         // 90 against a look mean of 120 — 25% below the market, on both looks.
         expect(rows[0]!.avgDeviationPct).toBeCloseTo(-25, 5);
         expect(rows[0]!.comparedCount).toBe(2);
@@ -302,12 +651,7 @@ for (const dialect of ALL_DIALECTS) {
         const other = await addProduct(db.appDb, otherBrandId, '9999999');
         await look(db.appDb, other, NOW - DAY, [['a', 50]]);
 
-        const all = await brandReportsRepo.sellerTrackedProductBreakdown(
-          db.appDb,
-          WINDOW,
-          [KEY('a')],
-          100,
-        );
+        const all = await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [KEY('a')], 100);
         expect(all).toHaveLength(2);
 
         const scoped = await brandReportsRepo.sellerTrackedProductBreakdown(
@@ -330,9 +674,7 @@ for (const dialect of ALL_DIALECTS) {
           await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [KEY('zzz')], 100),
         ).toEqual([]);
         // An empty group expansion must match nothing, never everything.
-        expect(await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [], 100)).toEqual(
-          [],
-        );
+        expect(await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [], 100)).toEqual([]);
       }, 30_000);
 
       it('ignores looks outside the window and offers with no merchant id', async () => {
@@ -345,12 +687,7 @@ for (const dialect of ALL_DIALECTS) {
           [null, 80],
         ]);
 
-        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(
-          db.appDb,
-          WINDOW,
-          [KEY('a')],
-          100,
-        );
+        const rows = await brandReportsRepo.sellerTrackedProductBreakdown(db.appDb, WINDOW, [KEY('a')], 100);
         expect(rows[0]!.observationCount).toBe(1);
         expect(rows[0]!.minPrice).toBe(lira(100));
       }, 30_000);
@@ -494,7 +831,7 @@ for (const dialect of ALL_DIALECTS) {
         expect(rows[0]!.sellerRef).toBe('a');
         // Still part of the market it could not be attributed to: mean of 100 and 80 is 90, so
         // `a` reads +11.1%, not 0%.
-        expect(rows[0]!.avgDeviationPct).toBeCloseTo((100 - 90) / 90 * 100, 6);
+        expect(rows[0]!.avgDeviationPct).toBeCloseTo(((100 - 90) / 90) * 100, 6);
         expect(rows[0]!.cheapestCount).toBe(0);
 
         expect(await brandReportsRepo.countUnidentifiedTrackedObservations(db.appDb, WINDOW)).toBe(1);
