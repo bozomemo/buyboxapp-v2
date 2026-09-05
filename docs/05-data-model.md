@@ -362,6 +362,7 @@ column happened to be null.
 | `brand_ref` | text nullable | the marketplace's own brand id (Trendyol `webBrands[].id`) |
 | `search_term` | text nullable | free-text query |
 | `is_active` | int | swept while true |
+| `is_own_brand` | int, default `true` | A brand **we own and audit**, or a competitor's watched only for price comparison (2026-09-03) |
 | `last_swept_at`, `last_sweep_product_count` | nullable | written only on a **completed** sweep |
 
 Index on `group_id`; `UNIQUE(group_id, marketplace_code, label)` — two groups may legitimately
@@ -377,6 +378,15 @@ partial failure leaves the previous values standing — "swept 3 hours ago, 1,84
 true until a newer sweep replaces it, rather than reporting a catalogue that shrank to nothing.
 
 ---
+
+**`is_own_brand` gates the audit, not just the label.** Every `stated` signal the audit
+produces is a statement about *our* distribution agreements — "yasaklı satıcı satışta", "yetkili
+listesinde yok" — and nobody is unauthorised **by us** to sell somebody else's brand. So a
+competitor's brand is swept and priced like any other and produces **no findings at all**;
+`EvaluateBrandFindings` and `/watched-brands/findings` both ask for own brands only. Auditing a
+rival would open findings that are wrong in kind rather than in degree, which is the fastest way
+to make an audit list unreadable. `true` by default, which is what every brand watched before
+the column existed was.
 
 ### `tracked_products` / `tracked_product_observations` (doc 06 §12.2, customer feedback 2026-08-25)
 
@@ -444,10 +454,33 @@ row per offer per look:
 | `id` | text PK | |
 | `tracked_product_id` | text FK, cascade | |
 | `observed_at` | bigint | |
-| `status` | text | `ok` \| `parseFailed` \| `fetchFailed` |
+| `status` | text | `ok` \| `noOffers` \| `parseFailed` \| `fetchFailed` |
 | `rank`, `seller_name`, `seller_ref`, `price`, `final_price`, `offered_stock` | nullable | null on a failed look |
+| `seller_rating`, `dispatch_time`, `has_promotion`, `promotion_text`, `listing_ref` | nullable | the rest of the offer — added 2026-09-03 |
 
 Index `(tracked_product_id, observed_at)`.
+
+**`noOffers` is a success, not a failure (2026-09-03).** A look that read the page and found
+nobody selling stores one status-only row. Before this an empty seller list wrote nothing at
+all, so the newest observation stayed the last look that *had* sellers — a product no
+marketplace seller carries any more kept reporting its final seller set indefinitely, and lost
+shelf was the one thing this archive could not express. Every aggregate in `brand-reports.ts`
+filters on `status = 'ok'`, so these rows cannot reach a price figure; the one query that wants
+them (`brandDailyTrend`) says so in its own clause.
+
+**The rest of the offer (2026-09-03).** `seller_rating`, `dispatch_time`, `has_promotion`,
+`promotion_text` and `listing_ref` arrive on every `CompetitorOffer` and were being dropped here
+while `competitor_observations` beside them stored the same data — an accident of order, since
+this table was written for a handful of hand-added products. It cost the brand audit the two
+questions it is most often asked: *who is cutting with a coupon rather than on the shelf*, and
+*who holds the buybox on something other than price*. `has_promotion` is **nullable**, unlike its
+counterpart: a failed look stores one status-only row, and `false` on it would state that the
+page carried no promotion when the page was never read.
+
+⚠️ These five do **not** open a new batch on their own. `hashOffers` keys on rank, seller, price
+and final price only (measured — widening it rewrites the whole batch on stock churn alone), so
+a coupon appearing without moving a price is carried into the archive at the next stored look.
+They describe the offer set of the look that was stored.
 
 **Change-detected since Faz 4 (2026-08-28).** This table was written unconditionally while the
 tracked set was operator-curated and a few dozen products; a brand sweep makes it a catalogue of
@@ -463,6 +496,28 @@ Still no `scrape_runs` row — the proof of the look is two columns on `tracked_
 |--------|------|-------|
 | `last_offers_hash` | text nullable | Hash of the last **stored** offer set |
 | `last_scraped_at` | bigint nullable | When the scrape last **looked** |
+
+#### Availability and the brand's own price (2026-09-03)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `has_sellers` | int nullable | Did the last **successful** look find anyone? `null` = no successful look yet — a third state, not `false` |
+| `last_seller_seen_at` | bigint nullable | When a seller was last on the page. Guarded forward like `last_scraped_at` |
+| `reference_price` | money nullable | The brand owner's own recommended retail price, kuruş |
+| `reference_price_source` | text nullable | Free text — the file or list version it came from |
+| `reference_price_updated_at` | bigint nullable | When it was imported |
+
+**`has_sellers` is derived from the look's own rows, not from what was stored**, because a look
+whose offer set has not moved stores nothing at all — and "we looked and the same three sellers
+were there" is exactly the case where the flag must stay true. A **failed** look leaves both
+availability columns alone: a page we could not read is not evidence that nobody is selling, and
+writing `false` there would turn every network blip into a lost-shelf finding.
+
+**The reference price is operator-owned**, like `competitor_sellers.tax_number`: no sweep and no
+scrape writes it. A marketplace has no idea what our list price is, and a value a nightly job
+could overwrite is one nobody would trust enough to write a notice from. It is also the **only
+price on the brand side that is not an observation** — which is what makes the finding built on
+it `stated` rather than `measured` (doc 06 §12.4).
 
 #### Barcodes — the cross-marketplace key (Faz 8, 2026-08-28)
 
@@ -628,6 +683,42 @@ readable count is always written, so a series starts at a known point.
 Scraped as the last step of each per-marketplace `ScrapeCompetitors` run
 (`pipeline/scrape-tracked-products.ts`), under its own `try`/`catch` so a failure here can never
 fail the listings half of the same run.
+
+### `brand_findings` — which findings are open, and which have been sent (2026-09-03)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `watched_brand_id` | text FK, cascade | |
+| `finding_key` | text | `AuditFinding.id` — stable across runs by construction |
+| `kind`, `basis` | text | copied so a notification can rank without re-deriving |
+| `state` | text | `open` \| `resolved` |
+| `magnitude` | real | |
+| `first_seen_at`, `last_seen_at`, `resolved_at` | bigint | |
+| `notified_at` | bigint nullable | when someone was actually told |
+| `payload` | json | the finding as it stands now |
+
+Indexes `(watched_brand_id, state)` and `(finding_key, state)`.
+
+**A state, not a log** — the same distinction `alerts` draws, for the same reason. "A blocked
+seller appeared on Whiskas" is an event; "a blocked seller is still on Whiskas" is a condition,
+and only the second can be counted on a dashboard or notified about once.
+
+**Why a table at all, when findings are derived.** `deriveAuditFindings` recomputes everything
+from the archive on demand, and that is right for a screen: changing a threshold re-answers the
+whole history. A *notification* needs the one thing derivation cannot give — memory of what was
+already said. Without it a cadence job either announces the same twelve findings every run or
+announces nothing. This table therefore stores no judgement, only bookkeeping.
+
+`finding_key` is deliberately **not unique**: a finding that clears and returns later is two
+spans, and collapsing them would erase that it happened twice — and would leave the second
+occurrence unnotified, because the row would already be marked sent. At most one row per key is
+`open` at a time, which the repository enforces when reconciling.
+
+`payload` is held rather than looked up later because `tracked_product_observations` is pruned
+at 90 days and the numbers behind an old finding would otherwise simply vanish — the same
+argument `alerts.snapshot` makes. `notified_at` is a separate column, written **after** a
+successful send, so a finding whose notification failed is retried rather than lost.
 
 ---
 
@@ -804,6 +895,7 @@ re-probe the entire catalogue).
 | `job_runs` | 90 days |
 | `job_queue` done/failed | 7 days |
 | `tracked_product_observations` | 90 days (added 2026-08-26) |
+| `brand_findings` | **indefinite** (added 2026-09-03) — one row per finding *span*, not per look; it is the record of what was already announced, and pruning it would re-announce old findings |
 | `tracked_product_metrics` | 365 days (added 2026-08-28) — longer because it is change-detected and therefore a fraction of the rows, and because "is this product moving?" needs more than a quarter to answer |
 
 A `PruneHistory` job enforces these nightly. Every retention window is configurable.

@@ -1,0 +1,56 @@
+Öncelikle pazaryerlerindeki marka ve kategori bilgileri gelmeli. Filtrenelebilir ve marka/kategorinde bazında ürünlere girilebilmeli. Yani Marka/kategori üzerine basınca o markaya ait ürünler görünmeli.
+
+Satılmayan / ürün kartına girilmemiş ürünlerde de rakip takibi yapılabilmeli. Hangi ürünlerin takibe alınacağı kullanıcı dostu bir arayüz ile belirlencek. Pazaryeri markası yazıldıgında bütün markadaki ürünler çıkmalı ve liste icerisinden secilerek ürünler takibe eklenebilmeli. Sadece ürün linki ile ekleme yapılabilmeli.
+
+İlanlar ekranına buyboxtaki satıcının mağaza adı eklenecek. 
+
+Ekrandaki tablolardaki sütunlar eklenip/kaldırabilir, resize edilebilir olacka. Bu veri localStorage da tutulup tekrar girdiğinde aynı görünüm korunmalı. Birde sutünlarda sıralama olmalı. 
+
+Bütün tablolu ekranlarda Excel export mekanizması olmalı. 
+
+Dark mode da dropdownlar renk paletine uymuyor. kontrol edilmeli.
+
+Ürünler  buybox magazası stok 0 olsa bile cekilmeli.
+
+ürünün piyasası ne?
+
+Kimler benim ürünümü satıyor? 
+
+buybox fiyat geçmişindeki grafigin üzerine gelince detaylı veriler gozuksun. 
+
+Takip edilen ürünlerde marka bazlı çekim yapılacak. Değerlendirme de gelmesi lazım. Filtrelerede marka, değerlendirme, kategori filtresi olması lazım.
+
+Satış stok olmayanların da gözlemi yapılsın.
+
+Takip edilen ürünler rakip geçmişi alanıda olmalı.
+
+Buybox payıda takip edilen ürünlerde satıcı bazlı eklenmeli. Gözlenen alanlarda ne kadar buyboxta kim kalmış ona bakıcaz.
+
+--- 2026-09-03 — marka sorumlusu taramasından uygulananlar ---
+
+Uygulandı (doc 06 §12.4 "Marka sorumlusu genişletmesi"):
+- Tavsiye edilen satış fiyatı + "tavsiye fiyatın altında" bulgusu (Excel ile yükleme)
+- Satıcısı olmayan ürünler (kaybedilen raf): noOffers gözlemi, has_sellers, filtre + sayaçlar
+- Takip edilen ürünlerde satıcı bazlı buybox payı
+- Teklif satırında saklanmayan alanlar: satıcı puanı, termin, kampanya, listing ref
+- Derin tarama rotasyonunda önceliklendirme
+- EvaluateBrandFindings işi + webhook bildirimi (bulgular artık itiliyor, sadece çekilmiyor)
+- Panoda Marka Denetimi bölümü + 30 günlük marka seyri
+- Kenar çubuğu gruplandı (Satış / Marka Denetimi / Sistem)
+
+- Ürün puanı artık derin taramadan da besleniyor (önceden yalnızca günlük katalog süpürmesi)
+- Rakip marka izleme + fiyat endeksi: watched_brands.is_own_brand ve /watched-brands/comparison
+
+Hâlâ açık:
+- Varyant bazlı bulunabilirlik ve içerik denetimi (görsel/özellik). ENGELLİ: kayıtlı payload'da
+  product.variants[] stok ve fiyat taşımıyor, images boş. Canlı sayfadan yeni bir kayıt alınması
+  gerekiyor; alınırsa yeri hazır (CompetitorProductFacts).
+- Raf payı / arama görünürlüğü. ENGELLİ: süpürme sst=MOST_RECENT ile sayfalıyor, o da listelenme
+  tarihi sıralaması — alaka değil. Sayfadaki sırayı "görünürlük" diye saklamak yanlış olur.
+  Gerçek görünürlük varsayılan (alaka) sıralamasını ister; o sıralamanın derin sayfalamada bir
+  markanın %18'ini kaybettiği ölçülmüş, dolayısıyla ilk 1-2 sayfa için ayrı bir istek deseni ve
+  ayrı bir ölçüm gerekiyor.
+- Kolon genişliği/sırası kalıcılığı diğer rapor ekranlarında yok
+- Dark mode dropdown renk uyumu
+- apps/web/src/lib/csv.ts:10 — doc yorumunun içinde gerçek bir BOM karakteri var, eslint
+  no-irregular-whitespace hatası veriyor (bu çalışmadan önce de vardı)

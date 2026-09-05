@@ -25,6 +25,7 @@ per job from the Jobs screen (§8 "Operator-configurable cadence").
 | `SubmitPriceChanges` | continuous | Drain the outbox in marketplace-sized batches |
 | `ConfirmSubmissions` | continuous | Poll batch status to a terminal state |
 | `ResetBudget` | daily, marketplace midnight | Roll `update_budget_usage` |
+| `EvaluateBrandFindings` | every 6 h, **enabled by default** | Re-derive each watched brand's audit findings, reconcile `brand_findings`, push what is new (§7.2) |
 | `PruneHistory` | nightly | Apply retention (doc 05 §10) |
 | `ImportOrders` | — | **MAY-ADD-LATER** |
 
@@ -520,6 +521,53 @@ named in its payload** and nothing else. It is enqueued only from
   scheduler, or `claimNextJob` would leave its rows `ready` for ever.
 
 ---
+
+### 7.2 `EvaluateBrandFindings` — the push half of the brand audit
+
+Added 2026-09-03. Every signal the brand audit produces was correct and none of it reached
+anyone who was not looking at `/watched-brands/findings`. A brand manager does not open a
+dashboard hourly, and the findings where a day's delay costs most — a blocked seller returning,
+a seller under the brand's published price — were exactly the ones that sat unread.
+
+```
+for each active watched brand:
+    collect the same facts the findings screen collects  (collectBrandFindings)
+    derive the same findings with the operator's thresholds  (deriveAuditFindings)
+    reconcile against brand_findings
+    send the ones nobody has been told about
+```
+
+**Enabled by default, and the only reporting job that is.** `ScrapeCompetitors`,
+`SweepBrandCatalogue` and `ResolveProductBarcodes` all make requests to a marketplace and so
+need an explicit business decision (api-references §1.6). This one makes **no requests at all**
+— it reads the archive those jobs already wrote — so an install that enabled them has already
+made that decision and would gain nothing from a second switch.
+
+**Global, not per marketplace.** A finding belongs to a *brand*, and brands are enumerated
+inside the job; ticking it per marketplace would evaluate every brand once per marketplace and
+open each finding twice.
+
+Four rules, each of which is a way this feature fails silently if broken:
+
+- **A finding is announced once.** `brand_findings` is a state, not a log (doc 05 §5): an open
+  row that is still true has its `last_seen_at` moved and its `notified_at` left alone. Without
+  that, a six-hourly job announces the same condition four times a day until the operator stops
+  reading the channel.
+- **A resolution is never announced.** A finding disappears because the condition ended *or*
+  because someone moved a threshold, and nothing can tell those apart — a "resolved" message
+  would fire on every threshold edit.
+- **A notification failure is not a run failure.** The finding is stored either way; only
+  `notified_at` stays null and the next run retries. `notified_at` exists as its own column
+  precisely so this is recoverable: recording the send optimistically would lose the finding the
+  first time a webhook was down.
+- **A finding that clears and returns is two spans.** Collapsing them would erase that it
+  happened twice, and would leave the second occurrence unnotified because the row is already
+  marked sent.
+
+The transport is a webhook whose URL comes from `FINDINGS_WEBHOOK_URL` (doc 08 §13) — a webhook
+address is a bearer token and must not live in a settings row (CLAUDE.md). Absent is normal and
+disables pushing entirely: findings are still derived, stored and on the screen, and the screen
+says in as many words that nobody is being told.
 
 ## 8. Scheduling and concurrency
 

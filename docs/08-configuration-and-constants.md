@@ -241,3 +241,28 @@ R-CFG-2 applies: the tier multipliers and per-run ceiling are job payload fields
 per run without a rebuild; the rate limit is now an `app_settings` override with the same
 property. Cache TTL and timeout remain construction parameters of each source with the defaults
 above.
+
+---
+
+## 13. Brand-audit constants — **added 2026-09-03**
+
+The nine audit thresholds already live in `app_settings` under `brandAudit.thresholds`, merged
+over `DEFAULT_AUDIT_THRESHOLDS` and edited from `/watched-brands/findings` (doc 06 §12.4). The
+2026-09-03 extension adds one threshold, one environment variable and three scheduling weights.
+
+| Constant | Default | Where | Why this value |
+|----------|---------|-------|----------------|
+| `referenceBelowPct` | 5 | `DEFAULT_AUDIT_THRESHOLDS`, overridable in `app_settings` | How far under the brand's own published price a seller may sit before it is a finding. **Not zero**, and not leniency: a list price is quoted to the lira while a marketplace price moves by kuruş, and a campaign badge routinely takes a percent off the displayed figure without anyone deciding to undercut anything. Zero tolerance would file every one of those beside a genuine 30% cut, and the operator would learn to skim the list. |
+| `FINDINGS_WEBHOOK_URL` | *(unset)* | env (`packages/shared` bootstrap) | Where new audit findings are pushed. **Bootstrap configuration rather than a settings row because the URL is a credential**: a Slack or Teams webhook address is a bearer token in URL form, and CLAUDE.md forbids a credential in a database column. Unset is the normal state and disables pushing entirely — findings are still derived, still stored and still on the screen, and the screen says nobody is being told. |
+| `MAX_FINDINGS_PER_MESSAGE` | 10 | `packages/jobs/pipeline/findings-notifier.ts` | Findings described in one message; the rest are counted. A first run over an established archive can open hundreds at once, and a message that pastes all of them is one nobody reads — the same failure as sending nothing, arrived at more expensively. |
+| `EvaluateBrandFindings` cadence | 6 h | `JOB_CATALOG`, operator-overridable | Roughly a working half-day. The job makes **no marketplace requests**, so the cadence is set by how fresh a notification should be rather than by politeness to anyone: fast enough that a blocked seller returning is noticed the same day, slow enough that nobody learns to ignore the channel. |
+| `ROTATION_BASE_INTERVAL_MS` | 1 h | `packages/jobs/pipeline/tracked-rotation.ts` | The interval an ordinary tracked product waits between deep-scrape looks — one cycle of `ScrapeCompetitors`. |
+| `ROTATION_WEIGHTS.noSellers` | ×6 | same | A product the last successful look found nobody selling. Checking an empty page hourly buys almost nothing: the interesting event is a seller *appearing*, and a day's delay in noticing that is acceptable where a day's delay on a live price war is not. Emphatically not "never" — a product only leaves the rotation by being deactivated, which is a person's decision. |
+| `ROTATION_WEIGHTS.neverRated` | ×3 | same | The marketplace has never recorded a rating — the same "nobody buys this" proxy the dead-product suggestion acts on (doc 06 §12.4), used here for something far gentler than deactivation. Only a genuine `0` counts; `null` is our own failure to read and earns no penalty. |
+| `ROTATION_WEIGHTS.hasReferencePrice` | ×0.5 | same | The brand published a price for it, which is an operator saying in as many words that this product matters — and a violation of a published price is the one finding on these screens actionable on its own. |
+
+⚠️ The rotation weights scale an **interval**, and overdue-ness is measured in multiples of each
+product's own interval. That is what stops a deprioritised product from starving: its position
+rises without limit as it waits and it eventually overtakes a favoured product that was read
+recently. A fixed weight instead would let a large enough favoured set hold the head of the
+queue for ever, and nothing would say so.

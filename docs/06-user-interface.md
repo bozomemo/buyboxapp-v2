@@ -755,7 +755,7 @@ on `/watched-brands` navigate to (§12.4). Seeded **once, as the initial value**
 owns the state from then on. Syncing both directions would fight the operator every time they
 cleared a filter, and is the same call §12.1's `/listings?brandId=` link made.
 
-### 12.4 Brand-owner audit — built (Faz 1–8, 2026-08-28)
+### 12.4 Brand-owner audit — built (Faz 1–8, 2026-08-28; extended 2026-09-03)
 
 The product is also used by **brand owners**, not only by sellers: the person responsible for
 Whiskas in Turkey wants every Whiskas listing on the marketplace, whoever sells it. That is a
@@ -1066,6 +1066,172 @@ kept only while it is needed; this is the operator saying it no longer is.
 ⚠️ Everything here is **reporting**. `Reprice` and `ObserveBuybox` read `listings`; none of these
 screens writes there, and turning the sweep off changes nothing about repricing. A blocked seller
 is a place for a person to look, never an input to a price.
+
+#### Marka sorumlusu genişletmesi (2026-09-03)
+
+Bir marka sorumlusunun sorduğu sorular gözden geçirildi ve modülün cevaplayamadıkları
+uygulandı. Faz 1–8 "markayı kim satıyor, kim satmalı, ne bulunmalı" sorularını çözmüştü;
+buradaki altı ekleme **fiyat politikası**, **bulunabilirlik**, **pay**, **tazelik** ve
+**iletim** tarafındaki boşlukları kapatır.
+
+##### Tavsiye edilen satış fiyatı ve `belowReferencePrice` bulgusu
+
+Bu ekranlardaki her fiyat rakamı bugüne kadar **ölçülmüştü**: piyasa sapması, makas ve dönem
+bandı, o an sayfada kim varsa ona göre hesaplanır. Hepsi bir örneklemin yorumudur, ki
+`audit-findings.ts` bu yüzden onları `measured` sayar. Marka sahibinin elindeki **yayımlanmış
+fiyat** eksik olan `stated` yarısıydı: markanın yazdığı bir rakamın altında satan bir satıcı,
+o rakam hakkında bir olgudur — bir örneklem yorumu değil.
+
+- `tracked_products.reference_price` (+ `reference_price_source`, `reference_price_updated_at`),
+  **operatör sahipli**: hiçbir tarama yazmaz, çünkü pazaryerinin bizim liste fiyatımızdan haberi
+  yoktur ve gece işinin üzerine yazabildiği bir değere kimse ihtar yazacak kadar güvenmez.
+- Excel/CSV içe aktarma (`lib/reference-price-import.ts`), satıcı politikası listesiyle aynı
+  desende: **barkod ya da (pazaryeri + ürün kodu)** ile eşleşir, **asla isimle**. Türkçe ondalık
+  (`1.249,90`) ve İngilizce ondalık (`1249.90`) birlikte okunur; ayıraçtan sonra tam üç hane bir
+  **binlik grubudur**, ondalık değil — `1.249`'u 1,25 ₺ okumak bir kataloğu üç basamak yanlış
+  fiyatlandırır ve piyasadaki herkesi ihlalci gösterirdi.
+- **Ayrıştırmada hep-ya-hiç, eşleşmede kısmi** — ve ikisi farklı şeyler. Bozuk bir dosya hiçbir
+  satır yazmaz; düzgün bir dosyanın bu kurulumda takip edilmeyen ürünleri adlandıran satırları
+  ise normaldir ve **sayısı söylenir**. "300 satır yüklendi" demek, 258'i hiçbir şeye eşleşmişken
+  operatöre dokunulmamış ürünler üzerinde fiyat yürürlükte sanısı verirdi.
+- Bulgu `stated`'dır ve sıralamada `blockedSellerPresent` ile `notOnAuthorisedList` arasına
+  girer. Gerekçe iddianın *belirginliğidir*, ciddiyeti değil: kara liste eşleşmesi operatörün
+  şahsen karar verdiği tek satıcıyı adlandırır; tavsiye fiyat ihlali bir satıcı, bir ürün ve iki
+  fiyat adlandırır — kontrol edilebilirliğin sınırı; "listede yok" ise sayfadaki satıcıların
+  çoğunu birden kapsayabilir ve spesifik bulguyu altına gömerdi.
+- Eşik `referenceBelowPct`, varsayılan **%5** ve sıfır değil: liste fiyatı liraya yuvarlıdır,
+  pazaryeri fiyatı kuruşla oynar, kampanya rozeti kimse bir şeye karar vermeden yüzde birini
+  alır. Sıfır tolerans bunların hepsini gerçek bir %30 indirimin yanına dizerdi.
+- **Kapsam her yerde raporlanır.** "Tavsiye fiyatın altında kimse yok" cümlesi, 887 üründen
+  yalnızca 12'sinin liste fiyatı varsa hiçbir şey söylemez — Pazaryeri Eşleşmesi ekranının
+  alanının yarısını kapsama ayırmasıyla aynı gerekçe.
+
+##### Bulunabilirlik — kaybedilen raf
+
+Boş bir sayfa hiç satır yazmıyordu, dolayısıyla en yeni gözlem hâlâ satıcısı **olan** son
+bakıştı: üç haftadır kimsenin satmadığı bir ürün, son satıcı listesini sonsuza kadar bildirmeye
+devam ediyordu. Arşivin ifade edemediği tek şey buydu.
+
+- `tracked_product_observations.status` yeni bir değer alır: **`noOffers`** — okunan ve üzerinde
+  kimse bulunmayan sayfa. Bir başarısızlık **değildir**; `brand-reports.ts`'teki her toplama
+  `status = 'ok'` filtreler, dolayısıyla hiçbir fiyat rakamına yapısal olarak giremez.
+- `tracked_products.has_sellers` ve `last_seller_seen_at`, her **başarılı** bakışta yazılır
+  (değişsin ya da değişmesin) ve **başarısız bakışta hiç dokunulmaz**: okunamayan sayfa,
+  kimsenin satmadığının kanıtı değildir. `null` üçüncü bir durumdur — "henüz başarılı bakış yok"
+  — ve `false` ile aynı şey değildir.
+- `/watched-brands`'te *Satıcısız* sütunu (yanında "+N bakılmadı"), `/tracked-products`'ta
+  *satıcısı olmayanlar* filtresi ve panoda toplam.
+
+##### Buybox payı ve teklif satırının tamamı
+
+- `brandBuyboxShare`: markanın **bütün** buybox anları içinde her satıcının payı. Yanındaki
+  `buyboxRate`'ten farklı bir soruya cevap verir — o "bu satıcı çıktığı sayfaların kaçını
+  kazandı", bu "markanın buybox'ının ne kadarı onda". Kimliksiz buybox sahibi **paydada kalır**
+  ve kendi satırı olarak raporlanır; dışarıda bırakmak payını adlandırılmış satıcılara dağıtırdı.
+  Pay **kayıtlı bakışlar** üzerindendir, süre değil, ve ekran bunu bu kelimelerle söyler.
+- `tracked_product_observations` artık teklifin geri kalanını da saklar: `seller_rating`,
+  `dispatch_time`, `has_promotion`, `promotion_text`, `listing_ref`. Beşi de `CompetitorOffer`
+  üzerinde zaten geliyordu ve yere düşürülüyordu, `competitor_observations` yanı başında aynı
+  veriyi saklarken. `has_promotion` **nullable**, komşusundan farklı olarak: başarısız bakışın
+  tek satırında `false`, okunmamış bir sayfa hakkında "kampanya yoktu" demek olurdu.
+
+##### Rotasyon önceliği
+
+Derin tarama saatte 300 ürün okur; 4.863 ürünlük bir markada bu ~16 saatte bir tam turdur.
+Rotasyon düzdü: kimsenin satmadığı ve hiç değerlendirilmemiş bir ürün, markanın en çekişmeli
+satırıyla aynı bütçeyi harcıyordu. `tracked-rotation.ts` her ürünün **aralığını** satırın zaten
+taşıdığı alanlarla ölçekler (satıcısız ×6, hiç değerlendirilmemiş ×3, tavsiye fiyatı olan ×0,5)
+ve gecikmişlik **ürünün kendi aralığının katı** olarak ölçülür — bu, önceliği düşürülmüş bir
+ürünün açlıktan ölmesini engelleyen özelliktir, ve hiç bakılmamış ürün her koşulda en başta
+kalır.
+
+##### İtme: `EvaluateBrandFindings` ve bildirim
+
+Modül tamamen **çekmeydi**: ürettiği her sinyal doğruydu ve ekrana bakmayan kimseye ulaşmıyordu.
+Bir marka sorumlusu panoyu saat başı açan biri değildir, ve gecikmenin en pahalı olduğu bulgular
+— yasaklı satıcının dönmesi, yayımlanmış fiyatın altına inen satıcı — tam da okunmadan
+duranlardı.
+
+- `brand_findings` tablosu, `alerts`'in deseninde bir **durumdur**, kayıt değil: anahtar başına
+  aynı anda tek açık satır, dönen bir bulgu ikinci bir aralık, ve bulgunun sayıları satırda
+  saklanır çünkü altındaki gözlemler 90 günde budanır.
+- `collectBrandFindings` web route'undan `packages/jobs`'a taşındı ve **ikisi de onu çağırır**.
+  Bu orkestrasyonun iki kopyası olsaydı, ilk belirti ekranda yeniden üretilemeyen bir alarm olurdu.
+- **Çözülme hiç bildirilmez.** Bir bulgu, koşul bittiği için de kaybolur, biri eşiği oynattığı
+  için de; ikisi ayırt edilemez, ve "kapandı" mesajı her eşik düzenlemesinde ateşlenip kanalı
+  görmezden gelinir hale getirirdi.
+- **Bildirim hatası çalıştırma hatası değildir.** Bulgu her hâlükârda saklanır; yalnızca
+  `notified_at` boş kalır ve bir sonraki tur yeniden dener. Webhook adresi `FINDINGS_WEBHOOK_URL`
+  ortam değişkeninden okunur — adres taşıyıcı bir anahtardır, veritabanı sütununda duramaz
+  (CLAUDE.md). Yapılandırılmamış olmak normaldir: bildirim kaybedilir, bulgu asla.
+- İş **varsayılan olarak açıktır** ve tek raporlama işi öyle: pazaryerine hiçbir istek atmaz,
+  yalnızca diğer işlerin zaten yazdığı arşivi okur.
+
+##### Panel ve gezinme
+
+- Panoda **Marka Denetimi** bölümü: açık bulgular (kesin bilgi / yorum ayrı), satıcısız ürün,
+  tavsiye fiyat kapsamı, marka başına satır ve 30 günlük seyir (ortalama piyasa fiyatı, satıcı
+  sayısı, satıcısı olan/olmayan ürün). İzlenen marka yoksa bölüm hiç çizilmez.
+- Seyirde **boş gün doldurulmaz**: hiçbir şeyin saklanmadığı gün, Faz 4'ten beri hiçbir şeyin
+  *değişmediği* gündür — satıcı olmayan gün değil. Boşluktan çizgi geçirmek, yazma tasarrufu
+  için var olan değişiklik tespitinden bir trend uydururdu.
+- Kenar çubuğu üç gruba ayrıldı — **Satış**, **Marka Denetimi**, **Sistem**. On altı düz link,
+  sekizde sorun değildi; marka modülü altı tane daha ekleyince *Marka Satıcıları* ile *Rakip
+  Satıcılar* iki satır arayla, farklı kişilere farklı soruları cevaplar hâlde duruyordu.
+
+##### Ürün puanı derin taramadan da beslenir
+
+`tracked_product_metrics` — bir marka sahibinin görebileceği satış hızına en yakın kamuya açık
+sinyal — yalnızca günde bir çalışan katalog süpürmesinden besleniyordu. Derin tarama aynı sayfayı
+zaten okuyor ve `product.ratingScore`'u yere düşürüyordu (guide §25, api-references §1.6).
+Artık okunuyor: `CompetitorPageSnapshot.product` üzerinden gelir, `recordTrackedProductMetrics`
+değişiklik tespitiyle yazar ve `tracked_products.rating_count/average` tazelenir.
+
+- Puan sütunları için **iki yazıcı** vardır ve bu bilinçlidir: ikisi de *pazaryerinin ürün
+  hakkındaki kendi ifadesini* yazar, aynı kaynaktan. `label`, `is_active` ve tavsiye fiyat
+  operatörün malıdır ve hiçbir tarama onlara dokunmaz — ayrım bu.
+- `null` asla yazılmaz: okunamayan puan bizim başarısızlığımızdır, ürünün hayatında bir olay
+  değil, ve bilinen bir sayının üzerine bilinmeyen yazmak seriyi bozardı.
+- Kaynak hiç ürün bloğu bildirmiyorsa (yalnızca teklif dönen bir uç nokta) hiçbir şey yazılmaz.
+  "Bu kaynak söylemiyor" ile "değerlendirilmemiş" aynı şey değildir.
+
+⚠️ **Varyant bazlı bulunabilirlik ve içerik denetimi uygulanmadı.** Kayıtlı payload'da
+`product.variants[]` bir `itemNumber` ve bir `attributeName` taşıyor — **stok ve fiyat yok** —
+ve `images` boş. Birimini ya da anlamını payload'ın belirtmediği bir alanı eşlemek CLAUDE.md'nin
+yasakladığı şeydir; canlı sayfadan yeni bir kayıt alınmadan bu özellik dürüstçe yazılamaz.
+Alınırsa yeri hazır: `CompetitorProductFacts`.
+
+##### Marka Karşılaştırması ve `is_own_brand`
+
+`/watched-brands/comparison`. Modül, izlenen markanın operatörün sorumlu olduğu marka olduğu
+varsayımı üzerine kuruluydu. Aynı süpürme ve aynı derin tarama bir **rakip** markaya
+çevrildiğinde hiç sorulmamış bir soruyu cevaplar: o marka ne fiyata satılıyor, bizimki ona göre
+nerede duruyor. Eksik olan tek şey niyetti.
+
+- `watched_brands.is_own_brand` (varsayılan `true`) iki iş yapar ve ikisi de önemlidir: denetimi
+  **kapatır** (rakip marka bulgu üretmez — ilk gün yüzlerce anlamsız bulgu yerine hiç) ve markayı
+  karşılaştırma tabanı olarak işaretler.
+- `EvaluateBrandFindings` ve `/watched-brands/findings` yalnızca bizim markalarımızı görür.
+  Rakip markayı denetlemek, derece olarak değil **tür olarak** yanlış bulgular üretirdi:
+  "yetkili satıcı listesinde yok" bizim dağıtım anlaşmalarımız hakkında bir ifadedir.
+- Endeks, bizim markamızın dönem ortalamasının rakip markanınkine oranıdır. **Birebir fiyat
+  karşılaştırması değildir ve ekran bunu söyler**: gramaj ve ürün kırılımı farklıdır, üst segment
+  hattı ağır basan bir marka karşılaştırılabilir her üründe daha ucuzken endekste yüksek çıkar.
+  Dürüstçe izlediği şey seviyenin kendisi değil, zaman içindeki **hareketidir**.
+- Dönem ortalaması, her teklifin değil **günlük ortalamaların ortalamasıdır**: bir gün kırk kez
+  taranan oynak bir ürün yoksa bütün ayı domine ederdi, ve grafikle rakamın uyuşmasını sağlayan
+  şey her günün bir kez sayılmasıdır.
+- Markalar tek bir zaman eksenine `alignBrandSeries` ile hizalanır. Ayrı ayrı toplandıkları için
+  her marka yalnızca kendi verisi olan günlerle döner; eşit uzunlukta iki dizi kusursuz bir
+  grafik çizip **farklı günleri** karşılaştırırdı, ve bunu ekranda söyleyen hiçbir şey olmazdı.
+
+⚠️ **Raf payı / arama görünürlüğü uygulanmadı, ve gerekçesi ölçümdedir.** Katalog süpürmesi
+`sst=MOST_RECENT` ile sayfalar (api-references §1.7) — bu **listelenme tarihi** sıralamasıdır,
+alaka değil. Sayfadaki sırayı "görünürlük" diye saklamak, kendinden emin biçimde yanlış bir
+metrik üretirdi. Gerçek arama görünürlüğü varsayılan (alaka) sıralamasını ister; o sıralamanın
+derin sayfalamada bir markanın %18'ini kaybettiği ölçülmüştür, dolayısıyla sayım için
+kullanılamaz — ilk bir iki sayfa için ayrı bir istek deseni ve ayrı bir ölçüm gerekir. Ölçüm
+yapılmadan yazılacak şey tahmin olurdu.
 
 ---
 
