@@ -29,6 +29,8 @@ interface Seller {
   buyboxCount: number;
   cheapestCount: number;
   buyboxRate: number;
+  /** Bu satıcının, markanın **tüm** buybox'ı içindeki payı — kendi maçlarındaki galibiyet oranı değil. */
+  buyboxSharePct: number;
   cheapestRate: number;
   avgDeviationPct: number | null;
   /** `null` unless the report is scoped to a single brand — a verdict is per brand. */
@@ -51,6 +53,7 @@ interface Report {
   brands: { id: string; groupId: string; label: string; marketplaceCode: string }[];
   sellers: Seller[];
   unidentifiedCount: number;
+  buybox: { totalLooks: number; unidentifiedLooks: number };
 }
 
 function daysAgo(n: number): number {
@@ -92,6 +95,7 @@ type ColumnId =
   | 'cheapestCount'
   | 'deviation'
   | 'priceRange'
+  | 'buyboxSharePct'
   | 'firstSeenAt'
   | 'lastSeenAt'
   | 'identity';
@@ -103,6 +107,7 @@ const COLUMN_DEFS: ColumnDef<ColumnId>[] = [
   { id: 'productCount', label: 'Ürün', defaultWidth: 80 },
   { id: 'observationCount', label: 'Teklif', defaultWidth: 80, hiddenByDefault: true },
   { id: 'buyboxCount', label: 'Buybox', defaultWidth: 110 },
+  { id: 'buyboxSharePct', label: 'Buybox payı', defaultWidth: 110 },
   { id: 'cheapestCount', label: 'En ucuz', defaultWidth: 110 },
   { id: 'deviation', label: 'Piyasa sapması', defaultWidth: 130 },
   { id: 'priceRange', label: 'Fiyat aralığı', defaultWidth: 170 },
@@ -155,7 +160,10 @@ function renderSellerCell(
       // and colouring it as a problem trains the operator to ignore the colour that matters.
       if (s.verdict === null) {
         return (
-          <span className="text-xs text-(--color-muted)" title="Politika markaya özeldir — kapsamdan bir marka seçin">
+          <span
+            className="text-xs text-(--color-muted)"
+            title="Politika markaya özeldir — kapsamdan bir marka seçin"
+          >
             marka seçin
           </span>
         );
@@ -178,13 +186,22 @@ function renderSellerCell(
           <span className="ml-1 text-xs text-(--color-muted)">({formatPercent(s.buyboxRate * 100)})</span>
         </span>
       );
+    case 'buyboxSharePct':
+      // The market-level figure, beside the seller-level one. A seller can win 90% of their own
+      // appearances and hold 2% of the brand; the two columns exist to make that visible.
+      return (
+        <span
+          className={`tabular-nums${s.buyboxSharePct >= 50 ? ' text-(--color-warning)' : ''}`}
+          title="Markanın kayıtlı bütün buybox anları içindeki payı"
+        >
+          {formatPercent(s.buyboxSharePct)}
+        </span>
+      );
     case 'cheapestCount':
       return (
         <span className="tabular-nums">
           {formatNumber(s.cheapestCount)}
-          <span className="ml-1 text-xs text-(--color-muted)">
-            ({formatPercent(s.cheapestRate * 100)})
-          </span>
+          <span className="ml-1 text-xs text-(--color-muted)">({formatPercent(s.cheapestRate * 100)})</span>
         </span>
       );
     case 'deviation':
@@ -273,10 +290,7 @@ export function BrandSellersClient() {
 
   useEffect(load, [load]);
 
-  const visibleColumns = useMemo(
-    () => columns.order.filter((id) => columns.isVisible(id)),
-    [columns],
-  );
+  const visibleColumns = useMemo(() => columns.order.filter((id) => columns.isVisible(id)), [columns]);
 
   /** Sellers averaging well under the market — the line a distributor reads first. */
   const belowMarket = (report?.sellers ?? []).filter(
@@ -285,15 +299,27 @@ export function BrandSellersClient() {
   /** Blocked *and* under the market — the pairing the audit is actually looking for. */
   const blockedAndCheap = belowMarket.filter((s) => s.verdict === 'blocked');
 
+  /**
+   * The seller holding the largest slice of the brand's buybox, named in the summary line.
+   *
+   * `null` when nobody holds a majority worth naming — under a fifth is a normal, fragmented
+   * market, and calling out its leader would invent a finding out of an ordinary distribution.
+   */
+  const topShare = (report?.sellers ?? []).reduce<Seller | null>(
+    (best, s) =>
+      s.buyboxSharePct >= 20 && (best === null || s.buyboxSharePct > best.buyboxSharePct) ? s : best,
+    null,
+  );
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Markalarımı Kimler Satıyor</h1>
           <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-            İzlenen markaların ürünlerinde görülen satıcılar, markanın en çok ürününde
-            görülenden başlayarak. Sayılar <strong>tekliflerden</strong> gelir: bir satıcının
-            ürünü kaç kez <em>listelediğini</em> gösterir, kaç adet sattığını değil.
+            İzlenen markaların ürünlerinde görülen satıcılar, markanın en çok ürününde görülenden başlayarak.
+            Sayılar <strong>tekliflerden</strong> gelir: bir satıcının ürünü kaç kez <em>listelediğini</em>{' '}
+            gösterir, kaç adet sattığını değil.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -357,9 +383,8 @@ export function BrandSellersClient() {
         <>
           {report.sellers.length === 0 && !loading && (
             <div className="rounded border border-(--color-border) p-4 text-sm text-(--color-muted)">
-              Bu dönemde hiç teklif kaydı yok. Marka taraması ürünleri bulur ama fiyatları
-              getirmez — satıcı ve fiyat verisi için ürün başına derin tarama
-              (<code>ScrapeCompetitors</code>) çalışmalıdır.{' '}
+              Bu dönemde hiç teklif kaydı yok. Marka taraması ürünleri bulur ama fiyatları getirmez — satıcı
+              ve fiyat verisi için ürün başına derin tarama (<code>ScrapeCompetitors</code>) çalışmalıdır.{' '}
               <Link className="underline" href="/jobs">
                 İşler
               </Link>{' '}
@@ -370,8 +395,7 @@ export function BrandSellersClient() {
           {blockedAndCheap.length > 0 && (
             <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
               <strong>
-                {formatNumber(blockedAndCheap.length)} yasaklı satıcı piyasanın belirgin altında
-                satıyor.
+                {formatNumber(blockedAndCheap.length)} yasaklı satıcı piyasanın belirgin altında satıyor.
               </strong>{' '}
               {blockedAndCheap
                 .slice(0, 5)
@@ -383,11 +407,42 @@ export function BrandSellersClient() {
             </div>
           )}
 
+          {/*
+            Markanın buybox'ı ne kadar tek elde toplanmış — bir marka sorumlusunun ilk sorduğu
+            sayı. Payın neyin payı olduğu ve kimliksiz dilim burada açıkça yazılıyor: yoksa
+            sütunlar %100'e tamamlanmıyor ve sayfada bunun bir açıklaması olmuyor.
+          */}
+          {report.buybox && report.buybox.totalLooks > 0 && (
+            <div className="rounded border border-(--color-border) p-3 text-sm">
+              Bu dönemde markanın <strong>{formatNumber(report.buybox.totalLooks)}</strong> kayıtlı buybox anı
+              var
+              {topShare && (
+                <>
+                  {' '}
+                  ve bunun <strong>{formatPercent(topShare.buyboxSharePct)}</strong> kadarı tek bir satıcıda:{' '}
+                  <strong>{topShare.sellerName || topShare.sellerRef}</strong>
+                </>
+              )}
+              .
+              {report.buybox.unidentifiedLooks > 0 && (
+                <>
+                  {' '}
+                  {formatNumber(report.buybox.unidentifiedLooks)} anın buybox sahibi
+                  <em> kimliksizdi</em> ve hiçbir satırın payına yazılmadı.
+                </>
+              )}
+              <div className="mt-1 text-xs text-(--color-muted)">
+                Pay, <em>kayıtlı bakışlar</em> üzerindendir — süre değil. Teklif seti değişmedikçe yeni bakış
+                saklanmadığı için, fiyatı sık oynayan ürünler bu sayıda daha ağır basar. Süreye göre ağırlıklı
+                pay tek ürün ekranında hesaplanır.
+              </div>
+            </div>
+          )}
+
           {belowMarket.length > 0 && (
             <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
-              <strong>{formatNumber(belowMarket.length)}</strong> satıcı bulunduğu listelemelerde
-              ortalama olarak piyasanın %{Math.abs(DEVIATION_ALERT_PCT)} veya daha altında fiyat
-              veriyor:{' '}
+              <strong>{formatNumber(belowMarket.length)}</strong> satıcı bulunduğu listelemelerde ortalama
+              olarak piyasanın %{Math.abs(DEVIATION_ALERT_PCT)} veya daha altında fiyat veriyor:{' '}
               {belowMarket
                 .slice(0, 5)
                 .map((s) => `${s.sellerName || s.sellerRef} (${formatPercent(s.avgDeviationPct!)})`)
@@ -403,10 +458,10 @@ export function BrandSellersClient() {
 
           {report.unidentifiedCount > 0 && (
             <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
-              Bu dönemde <strong>{formatNumber(report.unidentifiedCount)}</strong> teklif,
-              pazaryeri satıcı kimliği vermediği için aşağıdaki listede yer almıyor. Bu teklifler
-              isme göre eşleştirilmez — aynı isim aynı firma anlamına gelmediği için yanlış
-              satıcıya atfetmektense hiç atfetmemek tercih edilir.
+              Bu dönemde <strong>{formatNumber(report.unidentifiedCount)}</strong> teklif, pazaryeri satıcı
+              kimliği vermediği için aşağıdaki listede yer almıyor. Bu teklifler isme göre eşleştirilmez —
+              aynı isim aynı firma anlamına gelmediği için yanlış satıcıya atfetmektense hiç atfetmemek tercih
+              edilir.
             </div>
           )}
 
@@ -436,6 +491,7 @@ export function BrandSellersClient() {
                     Teklif: s.observationCount,
                     Buybox: s.buyboxCount,
                     'Buybox %': (s.buyboxRate * 100).toFixed(1),
+                    'Buybox Payı %': s.buyboxSharePct.toFixed(1),
                     'En Ucuz': s.cheapestCount,
                     'En Ucuz %': (s.cheapestRate * 100).toFixed(1),
                     'Piyasa Sapması %': s.avgDeviationPct?.toFixed(2) ?? '',
@@ -465,7 +521,10 @@ export function BrandSellersClient() {
               </thead>
               <tbody>
                 {paged.rows.map((s) => (
-                  <tr key={`${s.marketplaceCode}::${s.sellerRef}`} className="border-t border-(--color-border)">
+                  <tr
+                    key={`${s.marketplaceCode}::${s.sellerRef}`}
+                    className="border-t border-(--color-border)"
+                  >
                     {visibleColumns.map((id) => (
                       <td key={id} className="px-2 py-1">
                         {renderSellerCell(
@@ -486,11 +545,10 @@ export function BrandSellersClient() {
           <Pagination state={paged} label="satıcı" />
 
           <p className="text-xs text-(--color-muted)">
-            &ldquo;İlk görülme&rdquo; bir <em>gözlem</em> tarihidir, satışa başlama tarihi değil:
-            satıcı ondan önce de orada olabilir, taramalar arasındaki boşlukta fark edilmemiş
-            olabilir. Bu yüzden ≥ ile gösterilir. &ldquo;Piyasa sapması&rdquo; satıcının
-            bulunduğu her listelemedeki <em>ortalama</em> fiyata göre farkıdır; medyana göre
-            değil — nedeni <code>brand-reports.ts</code> içinde yazılı.
+            &ldquo;İlk görülme&rdquo; bir <em>gözlem</em> tarihidir, satışa başlama tarihi değil: satıcı ondan
+            önce de orada olabilir, taramalar arasındaki boşlukta fark edilmemiş olabilir. Bu yüzden ≥ ile
+            gösterilir. &ldquo;Piyasa sapması&rdquo; satıcının bulunduğu her listelemedeki <em>ortalama</em>{' '}
+            fiyata göre farkıdır; medyana göre değil — nedeni <code>brand-reports.ts</code> içinde yazılı.
           </p>
         </>
       )}

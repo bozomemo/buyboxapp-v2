@@ -53,12 +53,21 @@ export async function GET() {
             brandRef: brand.brandRef,
             searchTerm: brand.searchTerm,
             isActive: brand.isActive,
+            isOwnBrand: brand.isOwnBrand ?? true,
             lastSweptAt: brand.lastSweptAt,
             lastSweepProductCount: brand.lastSweepProductCount,
             productCount: countsById.get(brand.id)?.productCount ?? 0,
             // Products the marketplace itself has never had rated — what the "drop these?"
             // suggestion acts on. Deliberately not products whose rating we failed to read.
             unratedCount: countsById.get(brand.id)?.unratedCount ?? 0,
+            /**
+             * Lost shelf: products whose last successful look found nobody selling, and products
+             * no successful look has reached yet. Reported side by side because the second is
+             * the denominator's honest caveat — a brand halfway through its first rotation has
+             * a `noSellerCount` that means very little until `neverLookedCount` comes down.
+             */
+            noSellerCount: countsById.get(brand.id)?.noSellerCount ?? 0,
+            neverLookedCount: countsById.get(brand.id)?.neverLookedCount ?? 0,
             // Offered, not applied: adding it changes what the next sweep fetches, which is
             // the operator's call. Null once the brand already has a brand id.
             suggestedBrandRef:
@@ -80,6 +89,8 @@ export async function POST(request: Request) {
     label?: string;
     brandRef?: string;
     searchTerm?: string;
+    /** `false` marks a competitor's brand: swept and priced, but never audited. */
+    isOwnBrand?: boolean;
   };
 
   const groupId = (body.groupId ?? '').trim();
@@ -110,6 +121,7 @@ export async function POST(request: Request) {
       brandRef: brandRef || null,
       searchTerm: searchTerm || null,
       isActive: true,
+      isOwnBrand: body.isOwnBrand ?? true,
       lastSweptAt: null,
       lastSweepProductCount: null,
       createdAt: nowMs,

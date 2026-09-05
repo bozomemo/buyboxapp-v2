@@ -17,6 +17,15 @@ interface WatchedBrand {
   lastSweepProductCount: number | null;
   productCount: number;
   unratedCount: number;
+  /**
+   * `false` ise rakip marka: aynı süpürme ve derin tarama çalışır, ama denetim bulgusu
+   * üretilmez — "yetkili satıcı" bizim markamız hakkında bir ifadedir.
+   */
+  isOwnBrand: boolean;
+  /** Son başarılı bakışta hiç satıcısı olmayan ürünler — kaybedilen raf. */
+  noSellerCount: number;
+  /** Henüz başarılı bakış yapılmamış ürünler. "Satıcısız" değil, "bilinmiyor". */
+  neverLookedCount: number;
   suggestedBrandRef: { ref: string; share: number } | null;
 }
 
@@ -138,6 +147,22 @@ export function WatchedBrandsClient() {
     load();
   }
 
+  /**
+   * Flips a brand between "ours" and "a competitor's".
+   *
+   * It is a two-state control rather than a setting buried in an edit form because it changes
+   * what the brand *is for*: a competitor's brand is swept and priced but never audited, so
+   * turning this off silently stops findings — which the operator must be able to see they did.
+   */
+  async function toggleOwnBrand(brand: WatchedBrand) {
+    await fetch(`/api/watched-brands/${brand.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isOwnBrand: !brand.isOwnBrand }),
+    });
+    load();
+  }
+
   async function toggleActive(brand: WatchedBrand) {
     await fetch(`/api/watched-brands/${brand.id}`, {
       method: 'PATCH',
@@ -163,7 +188,10 @@ export function WatchedBrandsClient() {
     const { ids, total } = (await res.json()) as { ids: string[]; total: number };
     if (ids.length === 0) return;
 
-    const more = total > ids.length ? `\n\nBu adımda ${ids.length} tanesi işlenecek; kalanı için tekrar çalıştırın.` : '';
+    const more =
+      total > ids.length
+        ? `\n\nBu adımda ${ids.length} tanesi işlenecek; kalanı için tekrar çalıştırın.`
+        : '';
     if (
       !confirm(
         `${suggestion.label}: hiç değerlendirmesi olmayan ${formatNumber(total)} ürün duraklatılacak.\n\nSilinmez — listede kalır ve istediğinizde geri alabilirsiniz. Derin tarama ${suggestion.currentScanMinutes} dk yerine ${suggestion.prunedScanMinutes} dk sürer.${more}`,
@@ -219,6 +247,9 @@ export function WatchedBrandsClient() {
                 Aktif: brand.isActive ? 'evet' : 'hayır',
                 Ürün: brand.productCount,
                 'Değerlendirmesi Yok': brand.unratedCount,
+                Tür: brand.isOwnBrand ? 'bizim' : 'rakip',
+                Satıcısız: brand.noSellerCount,
+                Bakılmadı: brand.neverLookedCount,
                 'Son Tarama': brand.lastSweptAt ? formatDateTime(brand.lastSweptAt) : '',
               })),
             )
@@ -231,10 +262,10 @@ export function WatchedBrandsClient() {
 
       <p className="max-w-3xl text-sm text-(--color-muted)">
         Bir markanın pazaryerindeki <strong>bütün</strong> ürünlerini tek seferde izlemeye alır. Bu liste{' '}
-        <strong>raporlamadır</strong> — hiçbir fiyat kararını etkilemez. Bir marka iki şekilde
-        aranabilir: pazaryerinin <em>marka id&apos;si</em> ve <em>arama terimi</em>. İkisi de taranır,
-        çünkü aradaki fark bir bulgudur — arama terimiyle çıkıp marka id&apos;siyle çıkmayan bir ürün,
-        marka adını izinsiz kullanıyor olabilir.
+        <strong>raporlamadır</strong> — hiçbir fiyat kararını etkilemez. Bir marka iki şekilde aranabilir:
+        pazaryerinin <em>marka id&apos;si</em> ve <em>arama terimi</em>. İkisi de taranır, çünkü aradaki fark
+        bir bulgudur — arama terimiyle çıkıp marka id&apos;siyle çıkmayan bir ürün, marka adını izinsiz
+        kullanıyor olabilir.
       </p>
 
       {/* ---- grup ekle ---- */}
@@ -257,8 +288,8 @@ export function WatchedBrandsClient() {
           Grup Ekle
         </button>
         <span className="text-xs text-(--color-muted)">
-          Bir grup birden fazla marka tutar — Mars&apos;ın hem Whiskas&apos;a hem Royal Canin&apos;e
-          sahip olması gibi.
+          Bir grup birden fazla marka tutar — Mars&apos;ın hem Whiskas&apos;a hem Royal Canin&apos;e sahip
+          olması gibi.
         </span>
       </div>
 
@@ -326,8 +357,8 @@ export function WatchedBrandsClient() {
             Marka Ekle
           </button>
           <span className="w-full text-xs text-(--color-muted)">
-            Marka id&apos;sini bilmiyorsanız boş bırakın — sadece arama terimiyle de tarama yapılır, ve
-            ilk taramadan sonra sistem pazaryerinin bu markaya verdiği id&apos;yi size önerir.
+            Marka id&apos;sini bilmiyorsanız boş bırakın — sadece arama terimiyle de tarama yapılır, ve ilk
+            taramadan sonra sistem pazaryerinin bu markaya verdiği id&apos;yi size önerir.
           </span>
         </div>
       )}
@@ -339,9 +370,9 @@ export function WatchedBrandsClient() {
           <h2 className="text-sm font-semibold text-(--color-warning)">Ölü ürün önerisi</h2>
           <p className="max-w-3xl text-xs text-(--color-muted)">
             Pazaryerinin hiç değerlendirme kaydetmediği ürünler. Değerlendirme sayısı, satış hızının
-            elimizdeki en iyi göstergesi — hiç değerlendirmesi olmayan bir ürün büyük olasılıkla hiç
-            satmıyor. Bunları duraklatmak derin taramayı kısaltır. Oran markadan markaya çok değişir,
-            bu yüzden aşağıdaki sayılar her marka için ayrı hesaplanır.
+            elimizdeki en iyi göstergesi — hiç değerlendirmesi olmayan bir ürün büyük olasılıkla hiç satmıyor.
+            Bunları duraklatmak derin taramayı kısaltır. Oran markadan markaya çok değişir, bu yüzden
+            aşağıdaki sayılar her marka için ayrı hesaplanır.
           </p>
           <ul className="space-y-1 text-sm">
             {pruneSuggestions.map((suggestion) => (
@@ -390,7 +421,9 @@ export function WatchedBrandsClient() {
                   <th className="px-2 py-2">Marka</th>
                   <th className="px-2 py-2">Pazaryeri</th>
                   <th className="px-2 py-2">Nasıl aranıyor</th>
+                  <th className="px-2 py-2">Tür</th>
                   <th className="px-2 py-2">Ürün</th>
+                  <th className="px-2 py-2">Satıcısız</th>
                   <th className="px-2 py-2">Son Tarama</th>
                   <th className="px-2 py-2">Durum</th>
                   <th className="px-2 py-2" />
@@ -430,6 +463,20 @@ export function WatchedBrandsClient() {
                       </div>
                     </td>
                     <td className="px-2 py-1">
+                      <button
+                        type="button"
+                        onClick={() => void toggleOwnBrand(brand)}
+                        className="text-xs hover:underline"
+                        title={
+                          brand.isOwnBrand
+                            ? 'Bizim markamız — denetim bulguları üretilir'
+                            : 'Rakip marka — sadece fiyat karşılaştırması, denetim bulgusu üretilmez'
+                        }
+                      >
+                        {brand.isOwnBrand ? 'bizim' : 'rakip'}
+                      </button>
+                    </td>
+                    <td className="px-2 py-1">
                       <Link
                         href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}`}
                         className="text-(--color-accent) hover:underline"
@@ -444,6 +491,32 @@ export function WatchedBrandsClient() {
                         >
                           ({formatNumber(brand.unratedCount)} değerlendirmesiz)
                         </Link>
+                      )}
+                    </td>
+                    {/*
+                      Kaybedilen raf. Sayı bir link, çünkü bir marka sorumlusunun bu sayıyla
+                      yapacağı ilk şey satırları açmaktır. "Henüz bakılmadı" yanında duruyor:
+                      ilk turunu tamamlamamış bir markada satıcısız sayısı tek başına yanıltıcıdır.
+                    */}
+                    <td className="px-2 py-1">
+                      {brand.noSellerCount > 0 ? (
+                        <Link
+                          href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}&noSellerOnly=true`}
+                          className="text-(--color-warning) hover:underline"
+                          title="Son başarılı bakışta bu ürünleri satan kimse yoktu"
+                        >
+                          {formatNumber(brand.noSellerCount)}
+                        </Link>
+                      ) : (
+                        <span className="text-(--color-muted)">0</span>
+                      )}
+                      {brand.neverLookedCount > 0 && (
+                        <span
+                          className="ml-1 text-xs text-(--color-muted)"
+                          title="Derin tarama bu ürünlere henüz ulaşmadı — satıcısız değil, bilinmiyor"
+                        >
+                          (+{formatNumber(brand.neverLookedCount)} bakılmadı)
+                        </span>
                       )}
                     </td>
                     <td className="px-2 py-1">
@@ -479,7 +552,7 @@ export function WatchedBrandsClient() {
                 ))}
                 {group.brands.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-2 py-4 text-center text-(--color-muted)">
+                    <td colSpan={9} className="px-2 py-4 text-center text-(--color-muted)">
                       Bu grupta henüz marka yok.
                     </td>
                   </tr>

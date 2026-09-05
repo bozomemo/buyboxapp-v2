@@ -26,6 +26,7 @@ import { marketplaceProductUrl } from '@/lib/product-url';
 
 type FindingKind =
   | 'blockedSellerPresent'
+  | 'belowReferencePrice'
   | 'notOnAuthorisedList'
   | 'deepDiscountOnOneProduct'
   | 'persistentUndercut'
@@ -59,6 +60,24 @@ interface Finding {
   daysAgo?: number;
   categoryName?: string;
   categoryProductCount?: number;
+  /** Kuruş, dizge olarak — para her zaman bigint, asla float (CLAUDE.md). */
+  referencePrice?: string;
+  lowestPrice?: string;
+  shortfallPct?: number;
+  looksBelow?: number;
+  lastBelowAt?: number;
+  marketplaceCode?: string;
+  /**
+   * `EvaluateBrandFindings`'ın bu bulguyu **ilk açtığı** an, ve bildirimin gönderildiği an.
+   * `firstSeenAt` değil: o ad bu nesnede zaten `newSeller` bulgusunun "satıcının ilk görülmesi"
+   * için kullanılıyor ve aynı adın altındaki iki farklı tarih, ekranı hata vermeden yanlış
+   * çizdiren türden bir karışıklıktır.
+   * İkisi de `null` olabilir: bulgular bu ekranda her seferinde yeniden hesaplandığı için,
+   * operatör iş henüz değerlendirmeden önce gelmiş olabilir. O zaman tarih gösterilmez —
+   * bugünün tarihi gösterilmez.
+   */
+  openedAt?: number | null;
+  notifiedAt?: number | null;
 }
 
 interface Thresholds {
@@ -69,6 +88,7 @@ interface Thresholds {
   undercutMinProducts: number;
   newSellerDays: number;
   minObservations: number;
+  referenceBelowPct: number;
   unrelatedCategoryMaxSharePct: number;
   unrelatedCategoryMaxProducts: number;
 }
@@ -81,6 +101,8 @@ interface Report {
   thresholdsAreDefault: boolean;
   needsBrand: boolean;
   findings: Finding[];
+  /** Yeni bulgunun itileceği bir yer yapılandırılmış mı. Adresin kendisi asla gönderilmez. */
+  notificationsConfigured?: boolean;
   filters?: { sinceMs: number; untilMs: number };
   context?: {
     hasAuthorisedList: boolean;
@@ -89,6 +111,11 @@ interface Report {
     truncatedDeviations: boolean;
     truncatedDisagreements: boolean;
     disagreementTotal: number;
+    referencePrice?: {
+      productsWithPrice: number;
+      productsTotal: number;
+      truncated: boolean;
+    };
   };
 }
 
@@ -112,6 +139,7 @@ interface EvidenceLook {
 
 const KIND_LABEL: Record<FindingKind, string> = {
   blockedSellerPresent: 'Yasaklı satıcı satışta',
+  belowReferencePrice: 'Tavsiye fiyatın altında',
   notOnAuthorisedList: 'Yetkili listesinde yok',
   deepDiscountOnOneProduct: 'Tek üründe derin indirim',
   persistentUndercut: 'Sistematik fiyat kırma',
@@ -166,6 +194,12 @@ const THRESHOLD_FIELDS: { key: keyof Thresholds; label: string; unit: string; he
     help: 'Bunun altında hiçbir yorum bulgusu üretilmez. Kesin bilgi bulguları bundan etkilenmez.',
   },
   {
+    key: 'referenceBelowPct',
+    label: 'Tavsiye fiyat toleransı',
+    unit: '%',
+    help: 'Yayımladığınız fiyatın bu kadar altına inen satıcı bulgudur. Sıfır değil: liste fiyatı liraya yuvarlıdır, pazaryeri fiyatı kuruşla oynar.',
+  },
+  {
     key: 'unrelatedCategoryMaxSharePct',
     label: 'Seyrek kategori payı',
     unit: '%',
@@ -190,50 +224,58 @@ function describe(f: Finding): React.ReactNode {
       return (
         <>
           Bu satıcı bu marka için <strong>yasaklı</strong> olarak işaretli ve dönem içinde{' '}
-          {formatNumber(f.productCount ?? 0)} üründe görüldü. Son görülme{' '}
-          {formatDateTime(f.lastSeenAt)}.
+          {formatNumber(f.productCount ?? 0)} üründe görüldü. Son görülme {formatDateTime(f.lastSeenAt)}.
           {f.note && <div className="mt-1 text-xs italic text-(--color-muted)">“{f.note}”</div>}
+        </>
+      );
+    case 'belowReferencePrice':
+      return (
+        <>
+          <strong>{f.sellerName || f.sellerRef}</strong> bu ürünü, sizin yayımladığınız{' '}
+          <strong>{formatMoney(f.referencePrice ? BigInt(f.referencePrice) : null)}</strong> tavsiye fiyatın{' '}
+          <strong>%{(f.shortfallPct ?? 0).toFixed(1)}</strong> altında —{' '}
+          {formatMoney(f.lowestPrice ? BigInt(f.lowestPrice) : null)} — {formatNumber(f.looksBelow ?? 0)}{' '}
+          bakışta. Son {formatDateTime(f.lastBelowAt)}.
+          <div className="mt-1 text-xs text-(--color-muted)">
+            Gösterilen, dönem içindeki <em>en düşük</em> teklifidir; ortalaması değil.
+          </div>
         </>
       );
     case 'notOnAuthorisedList':
       return (
         <>
-          Yetkili satıcı listesi tanımlı, bu satıcı listede yok ve{' '}
-          {formatNumber(f.productCount ?? 0)} üründe görüldü. Son görülme{' '}
-          {formatDateTime(f.lastSeenAt)}.
+          Yetkili satıcı listesi tanımlı, bu satıcı listede yok ve {formatNumber(f.productCount ?? 0)} üründe
+          görüldü. Son görülme {formatDateTime(f.lastSeenAt)}.
         </>
       );
     case 'belowMarketAverage':
       return (
         <>
-          Bulunduğu listelemelerde ortalama <strong>{formatPercent(f.deviationPct ?? 0)}</strong>{' '}
-          piyasa farkı — {formatNumber(f.observationCount ?? 0)} teklif,{' '}
-          {formatNumber(f.productCount ?? 0)} ürün.
+          Bulunduğu listelemelerde ortalama <strong>{formatPercent(f.deviationPct ?? 0)}</strong> piyasa farkı
+          — {formatNumber(f.observationCount ?? 0)} teklif, {formatNumber(f.productCount ?? 0)} ürün.
         </>
       );
     case 'deepDiscountOnOneProduct':
       return (
         <>
           <strong>{f.sellerName || f.sellerRef}</strong> bu üründe{' '}
-          <strong>{formatPercent(f.deviationPct ?? 0)}</strong> piyasa farkıyla satıyor; aynı
-          satıcının diğer ürünlerindeki farkı {formatPercent(f.otherDeviationPct ?? 0)}. Aradaki
-          karşıtlık bulgunun kendisidir.
+          <strong>{formatPercent(f.deviationPct ?? 0)}</strong> piyasa farkıyla satıyor; aynı satıcının diğer
+          ürünlerindeki farkı {formatPercent(f.otherDeviationPct ?? 0)}. Aradaki karşıtlık bulgunun
+          kendisidir.
         </>
       );
     case 'persistentUndercut':
       return (
         <>
-          Kendi tekliflerinin <strong>%{(f.sharePct ?? 0).toFixed(0)}</strong> kadarında listenin
-          en ucuzu — {formatNumber(f.productCount ?? 0)} ürün,{' '}
-          {formatNumber(f.observationCount ?? 0)} teklif.
+          Kendi tekliflerinin <strong>%{(f.sharePct ?? 0).toFixed(0)}</strong> kadarında listenin en ucuzu —{' '}
+          {formatNumber(f.productCount ?? 0)} ürün, {formatNumber(f.observationCount ?? 0)} teklif.
         </>
       );
     case 'newSeller':
       return (
         <>
-          İlk kez {formatDateTime(f.firstSeenAt)} tarihinde görüldü (
-          {(f.daysAgo ?? 0).toFixed(1)} gün önce), {formatNumber(f.productCount ?? 0)} üründe.
-          İlk <em>görülme</em>dir, satışa başlama tarihi değil.
+          İlk kez {formatDateTime(f.firstSeenAt)} tarihinde görüldü ({(f.daysAgo ?? 0).toFixed(1)} gün önce),{' '}
+          {formatNumber(f.productCount ?? 0)} üründe. İlk <em>görülme</em>dir, satışa başlama tarihi değil.
         </>
       );
     case 'unrelatedCategory':
@@ -247,8 +289,8 @@ function describe(f: Finding): React.ReactNode {
       return (
         <>
           Bu ürünü markanın <strong>arama terimi</strong> buldu ama pazaryeri onu markanın{' '}
-          <strong>marka id&apos;sine</strong> bağlamıyor. İkisinden biri yanlış: ya ürün başka bir
-          markanın altında listelenmiş, ya da marka adını taşıyan başka bir firmanın ürünü.
+          <strong>marka id&apos;sine</strong> bağlamıyor. İkisinden biri yanlış: ya ürün başka bir markanın
+          altında listelenmiş, ya da marka adını taşıyan başka bir firmanın ürünü.
         </>
       );
   }
@@ -372,8 +414,8 @@ export function FindingsClient() {
         <div>
           <h1 className="text-2xl font-semibold">Denetim Bulguları</h1>
           <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-            Marka arşivinden çıkan, bakılmaya değer noktalar. Hiçbiri bir ihlal iddiası değildir —
-            her bulgu dayandığı ham gözleme kadar açılır ve kararı okuyan verir.
+            Marka arşivinden çıkan, bakılmaya değer noktalar. Hiçbiri bir ihlal iddiası değildir — her bulgu
+            dayandığı ham gözleme kadar açılır ve kararı okuyan verir.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -477,18 +519,17 @@ export function FindingsClient() {
             </button>
           </div>
           <p className="text-xs text-(--color-muted)">
-            Eşik değişiklikleri kim değiştirdiyse onunla birlikte kaydedilir (
-            <code>settings_audit</code>). Bir satıcının denetim listesine girip girmeyeceğini
-            belirleyen sayı, izsiz değişmemeli.
+            Eşik değişiklikleri kim değiştirdiyse onunla birlikte kaydedilir (<code>settings_audit</code>).
+            Bir satıcının denetim listesine girip girmeyeceğini belirleyen sayı, izsiz değişmemeli.
           </p>
         </div>
       )}
 
       {report?.needsBrand && !loading && (
         <div className="rounded border border-(--color-border) p-4 text-sm">
-          Bulgular için bir <strong>marka</strong> seçin. Politika markaya özeldir — aynı firma
-          çoğu zaman bir markanın yetkili distribütörü, diğerininse hiç tanımlanmamış satıcısıdır;
-          grup genelinde tek bir yanıt vermek ikisinden biri hakkında yanlış olurdu.
+          Bulgular için bir <strong>marka</strong> seçin. Politika markaya özeldir — aynı firma çoğu zaman bir
+          markanın yetkili distribütörü, diğerininse hiç tanımlanmamış satıcısıdır; grup genelinde tek bir
+          yanıt vermek ikisinden biri hakkında yanlış olurdu.
         </div>
       )}
 
@@ -499,8 +540,7 @@ export function FindingsClient() {
               <strong>{formatNumber(findings.length)}</strong> bulgu
             </span>
             <span className="text-(--color-muted)">
-              {formatNumber(statedCount)} kesin bilgi · {formatNumber(findings.length - statedCount)}{' '}
-              yorum
+              {formatNumber(statedCount)} kesin bilgi · {formatNumber(findings.length - statedCount)} yorum
             </span>
             <span className="text-(--color-muted)">
               {formatNumber(report.context?.sellerCount ?? 0)} satıcı,{' '}
@@ -508,11 +548,24 @@ export function FindingsClient() {
             </span>
           </div>
 
+          {/*
+            İtme kanalı yoksa bunu söylemek gerekir: kimseye haber verilmeyen bir denetim
+            listesi, kimsenin haber almasına gerek olmayan bir listeye benziyor.
+          */}
+          {report.notificationsConfigured === false && (
+            <div className="rounded border border-(--color-border) p-3 text-sm text-(--color-muted)">
+              Yeni bulgular için <strong>bildirim yapılandırılmamış</strong> — bulgular hesaplanıyor ve
+              saklanıyor, ama kimseye iletilmiyor. Bir webhook adresi
+              <code className="mx-1">FINDINGS_WEBHOOK_URL</code>
+              ortam değişkeninden okunur (adres bir anahtar sayıldığı için veritabanında tutulmaz).
+            </div>
+          )}
+
           {!report.context?.hasAuthorisedList && (
             <div className="rounded border border-(--color-border) p-3 text-sm text-(--color-muted)">
-              Bu marka için <strong>yetkili satıcı listesi tanımlı değil</strong>, bu yüzden
-              “yetkili listesinde yok” sinyali hiç üretilmiyor. Liste girilmemiş olması diğer
-              herkesin yetkisiz olduğu anlamına gelmez — hiçbir şey söylenmemiş demektir.{' '}
+              Bu marka için <strong>yetkili satıcı listesi tanımlı değil</strong>, bu yüzden “yetkili
+              listesinde yok” sinyali hiç üretilmiyor. Liste girilmemiş olması diğer herkesin yetkisiz olduğu
+              anlamına gelmez — hiçbir şey söylenmemiş demektir.{' '}
               <Link className="underline" href="/watched-brands/policy">
                 Satıcı Politikası
               </Link>{' '}
@@ -520,17 +573,54 @@ export function FindingsClient() {
             </div>
           )}
 
+          {/*
+            Kapsam, bulgunun kendisi kadar önemli: "tavsiye fiyatın altında kimse yok" cümlesi,
+            887 üründen yalnızca 12'sinin liste fiyatı varsa hiçbir şey söylemiyordur. Bu yüzden
+            bulgu çıksa da çıkmasa da gösterilir — en çok liste boşken anlamlıdır.
+          */}
+          {report.context?.referencePrice && (
+            <div className="rounded border border-(--color-border) p-3 text-sm text-(--color-muted)">
+              {report.context.referencePrice.productsWithPrice === 0 ? (
+                <>
+                  Bu marka için <strong>tavsiye edilen satış fiyatı girilmemiş</strong>, bu yüzden “tavsiye
+                  fiyatın altında” sinyali hiç üretilmiyor. Fiyat listenizi{' '}
+                  <Link className="underline" href="/tracked-products">
+                    Takip Edilen Ürünler
+                  </Link>{' '}
+                  ekranından Excel olarak yükleyebilirsiniz.
+                </>
+              ) : (
+                <>
+                  Tavsiye fiyat kapsamı:{' '}
+                  <strong>
+                    {formatNumber(report.context.referencePrice.productsWithPrice)} /{' '}
+                    {formatNumber(report.context.referencePrice.productsTotal)}
+                  </strong>{' '}
+                  ürün. Fiyat listesi olmayan ürünler bu sinyalin dışındadır — “altında değil” değil,
+                  “bilinmiyor”.
+                </>
+              )}
+            </div>
+          )}
+
+          {report.context?.referencePrice?.truncated && (
+            <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
+              Tavsiye fiyatın altındaki eşleşmeler sınıra dayandı ve liste kesildi. Gösterilenler en derin
+              sapanlar; toleransı yükseltmek listeyi daraltır.
+            </div>
+          )}
+
           {report.context?.truncatedDeviations && (
             <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
-              Derin indirim eşiği çok geniş: sınırın üstünde eşleşme var ve liste kesildi. Eşiği
-              yükseltmek listeyi daraltır.
+              Derin indirim eşiği çok geniş: sınırın üstünde eşleşme var ve liste kesildi. Eşiği yükseltmek
+              listeyi daraltır.
             </div>
           )}
 
           {findings.length === 0 && !loading && (
             <div className="rounded border border-(--color-border) p-4 text-sm text-(--color-muted)">
-              Bu dönemde ve bu eşiklerle bulgu yok. Eşikler bir keşif aracıdır — hiçbir şey
-              çıkmıyorsa <em>Eşikler</em> panelinden daraltmayı deneyin.
+              Bu dönemde ve bu eşiklerle bulgu yok. Eşikler bir keşif aracıdır — hiçbir şey çıkmıyorsa{' '}
+              <em>Eşikler</em> panelinden daraltmayı deneyin.
             </div>
           )}
 
@@ -620,6 +710,19 @@ export function FindingsClient() {
                           {f.subject.label}
                         </Link>
                       )}
+                      {/*
+                        "Ne zamandır burada?" — bir denetçinin listeyi tararken sorduğu ikinci
+                        soru. Türetilmiş bulgu bunu bilemez; saklanan durum bilir. Değerlendirme
+                        henüz bu bulguyu görmediyse tarih yok, bugünün tarihi değil.
+                      */}
+                      {f.openedAt != null && (
+                        <span
+                          className="rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)"
+                          title={`Bu bulgu ilk kez ${formatDateTime(f.openedAt)} tarihinde açıldı`}
+                        >
+                          {f.openedAt >= daysAgo(1) ? 'yeni' : formatDateTime(f.openedAt)}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1 text-sm text-(--color-muted)">{describe(f)}</div>
                   </div>
@@ -691,10 +794,7 @@ export function FindingsClient() {
                             </tbody>
                           </table>
                           {(() => {
-                            const pageUrl = marketplaceProductUrl(
-                              look.marketplaceCode,
-                              look.productUrl,
-                            );
+                            const pageUrl = marketplaceProductUrl(look.marketplaceCode, look.productUrl);
                             return pageUrl ? (
                               <a
                                 className="text-xs text-(--color-accent) hover:underline"
@@ -715,11 +815,10 @@ export function FindingsClient() {
           </div>
 
           <p className="text-xs text-(--color-muted)">
-            Sayılar <strong>tekliflerden</strong> gelir: bir satıcının ürünü kaç kez{' '}
-            <em>listelediğini</em> gösterir, kaç adet sattığını değil. “Piyasa farkı” satıcının
-            bulunduğu her listelemedeki <em>ortalama</em> fiyata göredir; medyana göre değil —
-            nedeni <code>brand-reports.ts</code> içinde yazılı. Kanıt penceresi ham gözlem
-            satırlarının kendisidir, özeti değil.
+            Sayılar <strong>tekliflerden</strong> gelir: bir satıcının ürünü kaç kez <em>listelediğini</em>{' '}
+            gösterir, kaç adet sattığını değil. “Piyasa farkı” satıcının bulunduğu her listelemedeki{' '}
+            <em>ortalama</em> fiyata göredir; medyana göre değil — nedeni <code>brand-reports.ts</code> içinde
+            yazılı. Kanıt penceresi ham gözlem satırlarının kendisidir, özeti değil.
           </p>
         </>
       )}

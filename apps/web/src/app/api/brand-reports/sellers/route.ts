@@ -17,12 +17,7 @@
  */
 import { NextResponse } from 'next/server';
 import { resolveSellerPolicy, type SellerPolicyRule } from '@buybox/core';
-import {
-  brandReportsRepo,
-  competitorSellersRepo,
-  sellerPoliciesRepo,
-  watchedBrandsRepo,
-} from '@buybox/db';
+import { brandReportsRepo, competitorSellersRepo, sellerPoliciesRepo, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -68,18 +63,34 @@ export async function GET(request: Request) {
    */
   const scopedBrand = watchedBrandId ? brands.find((b) => b.id === watchedBrandId) : undefined;
 
-  const [aggregates, unidentifiedCount, knownSellers, sellerGroups, policyRows] = await Promise.all([
-    brandReportsRepo.brandSellerAggregatesInRange(appDb, window),
-    brandReportsRepo.countUnidentifiedTrackedObservations(appDb, window),
-    competitorSellersRepo.listCompetitorSellers(appDb, marketplaceCode ? { marketplaceCode } : {}),
-    competitorSellersRepo.listSellerGroups(appDb),
-    scopedBrand
-      ? sellerPoliciesRepo.listSellerPolicies(appDb, {
-          watchedBrandGroupId: scopedBrand.groupId,
-          watchedBrandIds: [scopedBrand.id],
-        })
-      : Promise.resolve([]),
-  ]);
+  const [aggregates, unidentifiedCount, knownSellers, sellerGroups, policyRows, buyboxShare] =
+    await Promise.all([
+      brandReportsRepo.brandSellerAggregatesInRange(appDb, window),
+      brandReportsRepo.countUnidentifiedTrackedObservations(appDb, window),
+      competitorSellersRepo.listCompetitorSellers(appDb, marketplaceCode ? { marketplaceCode } : {}),
+      competitorSellersRepo.listSellerGroups(appDb),
+      scopedBrand
+        ? sellerPoliciesRepo.listSellerPolicies(appDb, {
+            watchedBrandGroupId: scopedBrand.groupId,
+            watchedBrandIds: [scopedBrand.id],
+          })
+        : Promise.resolve([]),
+      brandReportsRepo.brandBuyboxShare(appDb, window),
+    ]);
+
+  /**
+   * Each seller's slice of the brand's whole buybox, keyed for the row loop below.
+   *
+   * A different question from `buyboxRate` beside it, and the two are reported together because
+   * neither answers the other. `buyboxRate` is "when this seller was on a page, how often did
+   * they win it" — a fact about the seller. This is "of every buybox moment across the brand,
+   * how many were theirs" — a fact about the *market*, and the one a brand owner asks first:
+   * a seller who wins 90% of their own appearances on two products is not the seller holding
+   * the brand.
+   */
+  const shareBySeller = new Map(
+    buyboxShare.rows.map((r) => [`${r.marketplaceCode}::${r.sellerRef ?? ''}`, r]),
+  );
 
   /** Stored rows shaped for the pure resolver; a hand-edited row with no identity is dropped. */
   const rules: SellerPolicyRule[] = policyRows.flatMap((row) => {
@@ -142,6 +153,15 @@ export async function GET(request: Request) {
       // score; one holding the buybox without being cheapest is winning on something other than
       // price. Collapsing them into a single "performance" number would hide both.
       buyboxRate: a.observationCount > 0 ? a.buyboxCount / a.observationCount : 0,
+      /**
+       * Percent of the brand's entire buybox this seller holds, over stored looks. `0` when the
+       * brand had no buybox moment at all in the window — the denominator, not the seller.
+       */
+      buyboxSharePct:
+        buyboxShare.totalBuyboxLooks > 0
+          ? ((shareBySeller.get(`${a.marketplaceCode}::${a.sellerRef}`)?.buyboxLooks ?? 0) * 100) /
+            buyboxShare.totalBuyboxLooks
+          : 0,
       cheapestRate: a.observationCount > 0 ? a.cheapestCount / a.observationCount : 0,
       avgDeviationPct: a.avgDeviationPct,
       /** `null` when the report is not scoped to one brand — see `scopedBrand` above. */
@@ -175,5 +195,19 @@ export async function GET(request: Request) {
      * exhaustive when it is not.
      */
     unidentifiedCount,
+    /**
+     * The denominator behind `buyboxSharePct`, and the unidentified slice of it.
+     *
+     * Both are stated rather than left implicit: a share is only readable next to what it is a
+     * share of, and an unidentified holder is in the denominator but in no seller's row (see
+     * `brandBuyboxShare`), so a screen that did not report it would have columns that do not
+     * add up to 100% with no explanation on the page.
+     */
+    buybox: {
+      totalLooks: buyboxShare.totalBuyboxLooks,
+      unidentifiedLooks: buyboxShare.rows
+        .filter((r) => r.sellerRef === null)
+        .reduce((sum, r) => sum + r.buyboxLooks, 0),
+    },
   });
 }

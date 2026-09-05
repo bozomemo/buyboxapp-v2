@@ -14,51 +14,20 @@
  * rather than guessing, except in the one case where there is nothing to guess: an install that
  * watches exactly one brand.
  *
- * ## Every query is bounded by a threshold, not by the catalogue
+ * ## The gathering is shared with the cadence job
  *
- * A brand sweep puts thousands of products behind this question (887 for Whiskas, 4,863 for
- * Royal Canin), so nothing here fetches "all products" and filters in JS:
- *
- * - the deep-discount pairs come back already filtered by `deepDiscountPct` in SQL;
- * - the brand-attribution disagreements are a repository filter (`searchTermOnly`);
- * - the category candidates are only the products sitting in categories small enough to be
- *   candidates at all.
- *
- * The last two narrowings are deliberately **weaker** than the test in the core module: this
- * route may hand over a product that turns out not to be a finding, but it can never withhold
- * one that is. A route that applied the same predicate would be a second copy of the rule,
- * free to drift from the one that is tested.
+ * Since 2026-09-03 the facts are collected by `collectBrandFindings` in `packages/jobs`, which
+ * `EvaluateBrandFindings` also calls. This route is the *pull* — an operator asking now, with
+ * their own window — and the job is the *push*. Two copies of that orchestration would drift,
+ * and the first symptom would be an alert nobody could reproduce on the screen.
  */
 import { NextResponse } from 'next/server';
-import {
-  deriveAuditFindings,
-  resolveSellerPolicy,
-  type AuditProductFacts,
-  type AuditSellerFacts,
-  type AuditWorstProduct,
-  type SellerPolicyRule,
-} from '@buybox/core';
-import {
-  brandReportsRepo,
-  competitorSellersRepo,
-  sellerPoliciesRepo,
-  trackedProductsRepo,
-  watchedBrandsRepo,
-} from '@buybox/db';
+import { collectBrandFindings } from '@buybox/jobs';
+import { brandFindingsRepo, watchedBrandsRepo } from '@buybox/db';
 import { readAuditThresholds } from '@/lib/server/audit-thresholds';
 import { getAppDb } from '@/lib/server/db';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-
-/**
- * How many deep-discount pairs to consider. Far above what the threshold yields on real data,
- * and there so a misconfigured threshold (`deepDiscountPct: 0`) degrades into a long list
- * rather than into fetching the whole archive.
- */
-const DEVIATION_LIMIT = 2000;
-
-/** Product candidates fetched per signal. Both feed a screen a person reads, not an export. */
-const PRODUCT_CANDIDATE_LIMIT = 500;
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
@@ -70,7 +39,10 @@ export async function GET(request: Request) {
 
   const [groups, brands, { thresholds, isDefault }] = await Promise.all([
     watchedBrandsRepo.listWatchedBrandGroups(appDb),
-    watchedBrandsRepo.listWatchedBrands(appDb),
+    // Own brands only: a competitor's brand is watched for price comparison, and every `stated`
+    // signal on this screen is a statement about *our* distribution agreements. Offering a rival
+    // in the brand picker would invite an audit that is wrong in kind (see the job's comment).
+    watchedBrandsRepo.listWatchedBrands(appDb, { ownOnly: true }),
     readAuditThresholds(),
   ]);
 
@@ -100,203 +72,54 @@ export async function GET(request: Request) {
     return NextResponse.json({ ...catalogue, brand: null, findings: [], needsBrand: true });
   }
 
-  const window = {
-    sinceMs,
-    untilMs,
-    marketplaceCode: brand.marketplaceCode,
-    watchedBrandIds: [brand.id],
-  };
-
-  const [aggregates, policyRows, knownSellers, deviations, categories, totals] = await Promise.all([
-    brandReportsRepo.brandSellerAggregatesInRange(appDb, window),
-    sellerPoliciesRepo.listSellerPolicies(appDb, {
-      watchedBrandGroupId: brand.groupId,
-      watchedBrandIds: [brand.id],
-    }),
-    competitorSellersRepo.listCompetitorSellers(appDb, { marketplaceCode: brand.marketplaceCode }),
-    brandReportsRepo.worstSellerProductDeviations(appDb, window, {
-      maxDeviationPct: thresholds.deepDiscountPct,
-      limit: DEVIATION_LIMIT,
-    }),
-    trackedProductsRepo.trackedProductCategories(appDb, brand.id),
-    trackedProductsRepo.queryTrackedProducts(appDb, { watchedBrandId: brand.id, limit: 1, offset: 0 }),
+  const [{ findings, context }, tracked] = await Promise.all([
+    collectBrandFindings(appDb, { brand, sinceMs, untilMs, thresholds }),
+    brandFindingsRepo.openFindings(appDb, brand.id),
   ]);
 
-  /** Stored rows shaped for the pure resolver; a hand-edited row with no identity is dropped. */
-  const rules: SellerPolicyRule[] = policyRows.flatMap((row) => {
-    const identity =
-      row.sellerRef !== null && row.marketplaceCode !== null
-        ? ({ kind: 'sellerRef', marketplaceCode: row.marketplaceCode, sellerRef: row.sellerRef } as const)
-        : row.taxNumber !== null
-          ? ({ kind: 'taxNumber', taxNumber: row.taxNumber } as const)
-          : null;
-    return identity === null
-      ? []
-      : [
-          {
-            id: row.id,
-            watchedBrandGroupId: row.watchedBrandGroupId,
-            watchedBrandId: row.watchedBrandId,
-            identity,
-            status: row.status,
-            note: row.note,
-          },
-        ];
-  });
-
   /**
-   * Whether a whitelist exists **for this brand**, which gates the "not on the list" signal.
+   * When the cadence job first saw each finding, and whether anyone has been told.
    *
-   * Read off the rules already scoped to the brand and its group defaults, so a whitelist
-   * entered for Whiskas does not make every Royal Canin seller unauthorised. This is the case
-   * Faz 6's definition of done names: an install that has entered no list has not said everyone
-   * else is unauthorised — it has said nothing.
+   * The findings themselves are recomputed here from the archive, as they always were — so this
+   * screen still re-answers the whole history when a threshold moves. What the stored rows add
+   * is the one thing derivation cannot know: *since when*. An operator working through a list
+   * needs to tell "this appeared overnight" from "this has been here for three weeks", and both
+   * render identically without it.
+   *
+   * A finding with no stored row is one the job has not evaluated yet — the operator has simply
+   * arrived first, which is normal on a screen that computes on demand. It shows no date rather
+   * than today's.
    */
-  const hasAuthorisedList = rules.some((rule) => rule.status === 'authorised');
-
-  const known = new Map(knownSellers.map((s) => [`${s.marketplaceCode}::${s.sellerRef}`, s]));
-
-  /** The worst product per seller, and how much of their record it accounts for. */
-  const worstBySeller = new Map<string, (typeof deviations)[number]>();
-  for (const row of deviations) {
-    const key = `${row.marketplaceCode}::${row.sellerRef}`;
-    const current = worstBySeller.get(key);
-    if (current === undefined || row.avgDeviationPct < current.avgDeviationPct) {
-      worstBySeller.set(key, row);
-    }
-  }
-
-  const policyNoteOf = new Map<string, string | null>();
-
-  const sellers: AuditSellerFacts[] = aggregates.map((a) => {
-    const key = `${a.marketplaceCode}::${a.sellerRef}`;
-    const identity = known.get(key);
-    const policy = resolveSellerPolicy(
-      rules,
-      {
-        marketplaceCode: a.marketplaceCode,
-        sellerRef: a.sellerRef,
-        taxNumber: identity?.taxNumber ?? null,
-      },
-      { watchedBrandId: brand.id, watchedBrandGroupId: brand.groupId },
-    );
-    if (policy.rule?.note) policyNoteOf.set(key, policy.rule.note);
-
-    const worstRow = worstBySeller.get(key);
-    const worstProduct: AuditWorstProduct | null =
-      worstRow === undefined
-        ? null
-        : {
-            trackedProductId: worstRow.trackedProductId,
-            label: worstRow.productLabel,
-            deviationPct: worstRow.avgDeviationPct,
-          };
-
-    /**
-     * The seller's mean over everything *except* that product, by subtraction rather than by a
-     * second query: both figures are averaged over the same rows, which is what `comparedCount`
-     * is reported for. `null` when there is nothing left to average — a seller whose entire
-     * record is the one product has no contrast to draw, and the finding is not raised.
-     */
-    const remaining = worstRow === undefined ? 0 : a.comparedCount - worstRow.comparedCount;
-    const avgDeviationPctExcludingWorst =
-      worstRow === undefined || a.avgDeviationPct === null || remaining <= 0
-        ? null
-        : (a.avgDeviationPct * a.comparedCount - worstRow.avgDeviationPct * worstRow.comparedCount) /
-          remaining;
-
-    return {
-      marketplaceCode: a.marketplaceCode,
-      sellerRef: a.sellerRef,
-      // The durable name where the operator has recorded one, else the name the observations
-      // carried — the same precedence the seller report uses, so one company reads as one
-      // company on both screens.
-      sellerName: identity?.sellerName ?? a.observedName,
-      verdict: policy.verdict,
-      productCount: a.productCount,
-      observationCount: a.observationCount,
-      cheapestCount: a.cheapestCount,
-      avgDeviationPct: a.avgDeviationPct,
-      firstSeenAt: a.firstSeenAt,
-      lastSeenAt: a.lastSeenAt,
-      worstProduct,
-      avgDeviationPctExcludingWorst,
-    };
-  });
-
-  const categoryProductCounts = new Map(categories.map((c) => [c.ref, c.productCount]));
-  const totalProductCount = totals.total;
-
-  /**
-   * Products worth asking the category question about: those in a category holding few enough
-   * of the brand's products to be a candidate. The share test — the other half of the rule —
-   * is left to the core module, so this narrowing can only ever be wider than the rule.
-   */
-  const rareCategories = categories.filter(
-    (c) => c.productCount > 0 && c.productCount <= thresholds.unrelatedCategoryMaxProducts,
-  );
-
-  const categoryCandidates = await Promise.all(
-    rareCategories.map((c) =>
-      trackedProductsRepo.queryTrackedProducts(appDb, {
-        watchedBrandId: brand.id,
-        categoryRef: c.ref,
-        limit: thresholds.unrelatedCategoryMaxProducts,
-        offset: 0,
-      }),
-    ),
-  );
-
-  const disagreements = await trackedProductsRepo.queryTrackedProducts(appDb, {
-    watchedBrandId: brand.id,
-    searchTermOnly: true,
-    limit: PRODUCT_CANDIDATE_LIMIT,
-    offset: 0,
-  });
-
-  const productById = new Map<string, AuditProductFacts>();
-  for (const row of [...categoryCandidates.flatMap((page) => page.rows), ...disagreements.rows]) {
-    productById.set(row.id, {
-      trackedProductId: row.id,
-      label: row.label,
-      categoryRef: row.categoryRef ?? null,
-      categoryName: row.categoryName ?? null,
-      viaBrandRef: row.viaBrandRef ?? false,
-      viaSearchTerm: row.viaSearchTerm ?? false,
-    });
-  }
-
-  const findings = deriveAuditFindings(
-    {
-      thresholds,
-      sellers,
-      products: [...productById.values()],
-      categoryProductCounts,
-      totalProductCount,
-      hasAuthorisedList,
-      nowMs: untilMs,
-    },
-    policyNoteOf,
-  );
+  const trackedByKey = new Map(tracked.map((row) => [row.findingKey, row]));
 
   return NextResponse.json({
     ...catalogue,
     brand: { id: brand.id, label: brand.label, marketplaceCode: brand.marketplaceCode },
     filters: { sinceMs, untilMs },
-    findings,
+    findings: findings.map((finding) => ({
+      ...finding,
+      // `openedAt`, not `firstSeenAt`: the `newSeller` finding already carries a `firstSeenAt`
+      // meaning "when the seller was first observed", and two different dates under one name on
+      // the same object is exactly the confusion a screen renders wrongly without failing.
+      openedAt: trackedByKey.get(finding.id)?.firstSeenAt ?? null,
+      notifiedAt: trackedByKey.get(finding.id)?.notifiedAt ?? null,
+    })),
     needsBrand: false,
     /**
-     * What the screen has to say about itself. `hasAuthorisedList` explains a whole absent
-     * signal — without it the operator cannot tell "everyone is authorised" from "no list has
-     * been entered" — and the counts say how much archive the findings rest on.
+     * What the screen has to say about itself — every field of it exists to stop a silence from
+     * being misread. Built by `collectBrandFindings` so the cadence job and this screen report
+     * the same caveats about the same run.
      */
-    context: {
-      hasAuthorisedList,
-      sellerCount: sellers.length,
-      productCount: totalProductCount,
-      truncatedDeviations: deviations.length >= DEVIATION_LIMIT,
-      truncatedDisagreements: disagreements.total > disagreements.rows.length,
-      disagreementTotal: disagreements.total,
-    },
+    context,
+    /**
+     * Whether this install has somewhere to push a new finding, and nothing else about it.
+     *
+     * A boolean, never the URL: a webhook address is a bearer token, which is why it lives in
+     * the environment rather than in a settings row (CLAUDE.md), and a screen that displayed it
+     * would put it in every screenshot and browser cache. The screen needs only to be able to
+     * say "nobody is being told about these" — which is worth saying, because an audit list
+     * nobody is notified about looks exactly like one nobody needed to be.
+     */
+    notificationsConfigured: Boolean(process.env.FINDINGS_WEBHOOK_URL),
   });
 }

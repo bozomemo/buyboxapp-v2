@@ -15,6 +15,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     brandRef?: string | null;
     searchTerm?: string | null;
     isActive?: boolean;
+    isOwnBrand?: boolean;
   };
 
   const appDb = getAppDb();
@@ -24,8 +25,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // A partial patch: anything the caller omitted keeps its current value. This is what lets the
   // "marka id’sini de ekle" button send only `brandRef` without having to restate the rest.
   const label = body.label === undefined ? existing.label : body.label.trim();
-  const brandRef =
-    body.brandRef === undefined ? existing.brandRef : (body.brandRef ?? '').trim() || null;
+  const brandRef = body.brandRef === undefined ? existing.brandRef : (body.brandRef ?? '').trim() || null;
   const searchTerm =
     body.searchTerm === undefined ? existing.searchTerm : (body.searchTerm ?? '').trim() || null;
 
@@ -37,6 +37,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       brandRef,
       searchTerm,
       isActive: body.isActive ?? existing.isActive,
+      // `?? true` for a row written before the column existed — every brand watched then was
+      // one the operator owned, which is what the column's default says too.
+      isOwnBrand: body.isOwnBrand ?? existing.isOwnBrand ?? true,
       updatedAt: Date.now(),
     });
   } catch (error) {
