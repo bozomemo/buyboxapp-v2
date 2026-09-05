@@ -1,0 +1,1 @@
+ALTER TABLE `watched_brands` ADD `is_own_brand` boolean DEFAULT true NOT NULL;

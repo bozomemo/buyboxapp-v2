@@ -120,6 +120,34 @@
       "when": 1787929405462,
       "tag": "0016_brave_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788460186678,
+      "tag": "0017_peaceful_zodiak",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788462883872,
+      "tag": "0018_long_hitman",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788463669767,
+      "tag": "0019_curvy_emma_frost",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1788469576249,
+      "tag": "0020_yielding_jazinda",
+      "breakpoints": true
     }
   ]
 }

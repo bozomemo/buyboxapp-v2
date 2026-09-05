@@ -120,6 +120,34 @@
       "when": 1787929406558,
       "tag": "0016_previous_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788460194579,
+      "tag": "0017_motionless_rumiko_fujikawa",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788462884977,
+      "tag": "0018_lucky_vengeance",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788463670941,
+      "tag": "0019_bent_norman_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788469647171,
+      "tag": "0020_worthless_gressill",
+      "breakpoints": true
     }
   ]
 }

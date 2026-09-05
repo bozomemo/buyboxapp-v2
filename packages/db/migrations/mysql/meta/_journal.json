@@ -120,6 +120,34 @@
       "when": 1787929425207,
       "tag": "0016_flat_mercury",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1788460195779,
+      "tag": "0017_nosy_liz_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1788462886073,
+      "tag": "0018_fair_korg",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1788463672140,
+      "tag": "0019_nebulous_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1788469648222,
+      "tag": "0020_cultured_paibok",
+      "breakpoints": true
     }
   ]
 }

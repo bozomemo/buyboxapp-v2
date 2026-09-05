@@ -422,6 +422,11 @@ export const watchedBrands = mysqlTable(
     brandRef: code('brand_ref', 128),
     searchTerm: text('search_term'),
     isActive: bool('is_active').notNull(),
+    /**
+     * Whether this is a brand **we own** or a competitor's, watched for comparison (2026-09-03).
+     * See the column's doc comment in `schema/sqlite.ts`.
+     */
+    isOwnBrand: bool('is_own_brand').notNull().default(true),
     lastSweptAt: timestampMs('last_swept_at'),
     lastSweepProductCount: int('last_sweep_product_count'),
     createdAt: timestampMs('created_at').notNull(),
@@ -496,7 +501,9 @@ export const sellerPolicies = mysqlTable(
     /** Null = the group default. */
     watchedBrandId: code('watched_brand_id', 36),
     /** Set with `seller_ref`, null with `tax_number` — a firm is not marketplace-specific. */
-    marketplaceCode: code('marketplace_code', 20).references(() => marketplaces.code, { onDelete: 'cascade' }),
+    marketplaceCode: code('marketplace_code', 20).references(() => marketplaces.code, {
+      onDelete: 'cascade',
+    }),
     sellerRef: code('seller_ref', 128),
     taxNumber: code('tax_number', 32),
     /** `authorised` | `blocked`. The third state is the absence of a row. */
@@ -613,6 +620,52 @@ export const trackedProducts = mysqlTable(
      * the products nobody has asked about yet.
      */
     barcodeAttempts: int('barcode_attempts').notNull().default(0),
+    /**
+     * The brand owner's own recommended retail price for this product, in kuruş, and where it
+     * came from (2026-09-03).
+     *
+     * **This is the only price on the brand side that is not an observation.** Every other price
+     * figure the audit reports — piyasa sapması, makas, dönem bandı — is measured against
+     * whoever happened to be on the page, which makes each of them an interpretation of a
+     * sample. A recommended price is a *statement the brand owner made*, so a seller below it is
+     * a `stated` finding in exactly the sense `audit-findings.ts` means: someone wrote it down,
+     * and the seller is under it. That is the difference between "22% below the market" and "18%
+     * below the price we published", and only the second is a thing an auditor can act on.
+     *
+     * **Operator-owned, like `competitor_sellers.tax_number`.** No sweep and no scrape writes
+     * these: a marketplace has no idea what our list price is, and a value that a nightly job
+     * could overwrite is one nobody would trust enough to write a notice from.
+     *
+     * `referencePriceSource` is free text — the file name or the price-list version the operator
+     * imported, shown back beside the value so "where did this number come from" has an answer
+     * on the screen rather than in someone's memory. `referencePriceUpdatedAt` dates it, because
+     * a list price from four seasons ago is worse than none: it produces confident findings
+     * about a price nobody sells at any more.
+     */
+    referencePrice: money('reference_price'),
+    referencePriceSource: text('reference_price_source'),
+    referencePriceUpdatedAt: timestampMs('reference_price_updated_at'),
+    /**
+     * Whether the last successful look found **anyone** selling this product, and when a seller
+     * was last seen on it (2026-09-03).
+     *
+     * A brand owner's second question after price is *availability*: a product of theirs that no
+     * marketplace seller carries is lost shelf, and until these columns existed the system could
+     * not express it. An empty page stores no offer rows — there is nothing to store — so the
+     * newest observation stayed the last look that *had* sellers, and a product abandoned three
+     * weeks ago kept reporting its final seller set for ever.
+     *
+     * Written on every **successful** look, changed or not, exactly like `last_scraped_at`, and
+     * deliberately **not** touched by a failed one: a page we could not read is not evidence
+     * that nobody is selling. `null` means no successful look has happened yet, which is a third
+     * state and not the same as `false`.
+     *
+     * A boolean column rather than a query over the archive because it is asked as a filter and
+     * a count over a whole catalogue ("kaç ürünüm satıcısız?"), and answering that from
+     * observations would mean a per-product correlated subquery on every screen that asks.
+     */
+    hasSellers: bool('has_sellers'),
+    lastSellerSeenAt: timestampMs('last_seller_seen_at'),
   },
   (t) => [
     uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
@@ -634,6 +687,16 @@ export const trackedProductObservations = mysqlTable(
     id: code('id', 36).primaryKey(),
     trackedProductId: code('tracked_product_id', 36).notNull(),
     observedAt: timestampMs('observed_at').notNull(),
+    /**
+     * `ok` | `noOffers` | `parseFailed` | `fetchFailed`.
+     *
+     * `noOffers` (2026-09-03) is a look that **succeeded and found nobody selling** — one row,
+     * no seller, no price. It is not a failure and must never be read as one: a page we could
+     * not fetch and a page with an empty seller list are opposite facts, and the second is the
+     * lost-shelf signal a brand owner watches for. Every aggregate in `brand-reports.ts` filters
+     * on `status = 'ok'`, so these rows stay out of the price and seller figures by construction
+     * rather than by remembering to exclude them.
+     */
     status: text('status').notNull(),
     rank: int('rank'),
     sellerName: text('seller_name'),
@@ -641,6 +704,38 @@ export const trackedProductObservations = mysqlTable(
     price: money('price'),
     finalPrice: money('final_price'),
     offeredStock: int('offered_stock'),
+    /**
+     * The rest of what the offer carried, added 2026-09-03 (marka denetimi genişletmesi).
+     *
+     * These fields were arriving on every `CompetitorOffer` and being dropped on the floor here
+     * while `competitor_observations` beside them stored the same data. The asymmetry was an
+     * accident of order — this table was written for a handful of hand-added products and never
+     * caught up — and it cost the brand audit the two questions it is most often asked: *who is
+     * cutting the price with a coupon rather than on the shelf*, and *who is holding the buybox
+     * on something other than price*. Same request, same payload, no extra cost.
+     *
+     * All are **nullable, including `hasPromotion`**, which is where this differs from
+     * `competitor_observations`. A failed look stores one status-only row here, and a `false`
+     * on it would state "this offer had no promotion" about a page that was never read. `null`
+     * is unknown; `false` is a page that was read and carried none.
+     *
+     * ⚠️ They do **not** open a new batch on their own. `hashOffers` keys on rank, seller,
+     * price and final price only (measured, `scrape-competitors.ts`), so a coupon that appears
+     * without moving any price is carried into the archive at the next stored look rather than
+     * at the moment it appeared. Widening the key to these fields was measured to rewrite the
+     * whole batch on stock churn alone; the fields describe the offer set of the look that was
+     * stored, which is what every reader of this table already assumes.
+     */
+    /** 0–10 on Trendyol (`sellerScore.value`, guide §9). `null` when the payload had none. */
+    sellerRating: real('seller_rating'),
+    /** Days, and only where the payload states the unit (api-references §1.6, §2.11). */
+    dispatchTime: int('dispatch_time'),
+    /** `null` on a failed look — see above. */
+    hasPromotion: bool('has_promotion'),
+    /** Verbatim, operator-facing display data. Never parsed (guide §19, §26). */
+    promotionText: text('promotion_text'),
+    /** The seller's own commercial listing id, distinct from `sellerRef` (guide §10). */
+    listingRef: text('listing_ref'),
   },
   (t) => [
     index('tracked_product_observations_product_observed').on(t.trackedProductId, t.observedAt),
@@ -909,4 +1004,70 @@ export const alertSellers = mysqlTable(
     leftAt: timestampMs('left_at'),
   },
   (t) => [index('alert_sellers_alert').on(t.alertId)],
+);
+
+/**
+ * An audit finding that is **currently true**, and when it stopped being true (2026-09-03).
+ *
+ * A **state**, not a log line — the same distinction `alerts` draws next door, for the same
+ * reason. "A blocked seller appeared on Whiskas" is an event; "a blocked seller is still on
+ * Whiskas" is a condition, and only the second can be counted on a dashboard or notified about
+ * once. Modelling this as an append-only log would make "how many findings are open right now"
+ * unanswerable without replaying history, and would make "tell me when one *opens*" impossible
+ * to place.
+ *
+ * ## Why a table at all, when findings are derived
+ *
+ * `deriveAuditFindings` recomputes everything from the archive on demand, and that is the right
+ * design for a screen: changing a threshold re-answers the whole history. But a *notification*
+ * needs one thing derivation cannot give — memory of what was already said. Without it, a
+ * cadence job either notifies the same twelve findings every hour or notifies nothing.
+ *
+ * So this table stores no judgement, only bookkeeping: the finding's own stable `finding_key`
+ * (the id `deriveAuditFindings` computes, which is stable across runs by construction), when it
+ * was first and last seen, and whether anyone has been told. A row is never the source of truth
+ * about whether a finding *holds* — the archive is, and a rerun that no longer produces the key
+ * resolves the row.
+ *
+ * `finding_key` is deliberately **not unique**: a finding that clears and returns later is two
+ * spans, and collapsing them would erase that it happened twice. At most one row per key is
+ * `open` at a time, which the repository enforces when reconciling.
+ *
+ * `payload` is the finding as it stood when it opened, JSON. Held rather than looked up later
+ * because `tracked_product_observations` is pruned at 90 days and the numbers behind an old
+ * finding would otherwise simply vanish — the same argument `alerts.snapshot` makes.
+ */
+export const brandFindings = mysqlTable(
+  'brand_findings',
+  {
+    id: code('id', 36).primaryKey(),
+    watchedBrandId: code('watched_brand_id', 36).notNull(),
+    /** `deriveAuditFindings`' own id — stable across runs, which is what makes this table work. */
+    findingKey: code('finding_key', 255).notNull(),
+    kind: text('kind').notNull(),
+    /** `stated` | `measured`. Copied so a notification can rank without re-deriving. */
+    basis: text('basis').notNull(),
+    state: code('state', 20).notNull(), // 'open' | 'resolved'
+    magnitude: real('magnitude').notNull(),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    resolvedAt: timestampMs('resolved_at'),
+    /**
+     * When someone was actually told. `null` on an open finding means nobody has been — either
+     * because notification is off, or because the attempt failed. Separate from `first_seen_at`
+     * precisely so a failed send is retried rather than silently counted as delivered.
+     */
+    notifiedAt: timestampMs('notified_at'),
+    payload: json('payload').notNull(),
+  },
+  (t) => [
+    index('brand_findings_brand_state').on(t.watchedBrandId, t.state),
+    index('brand_findings_key_state').on(t.findingKey, t.state),
+    // Named explicitly: the auto-generated name exceeds MySQL's 64-char identifier limit.
+    foreignKey({
+      name: 'fk_brand_findings_watched_brand_id',
+      columns: [t.watchedBrandId],
+      foreignColumns: [watchedBrands.id],
+    }).onDelete('cascade'),
+  ],
 );
