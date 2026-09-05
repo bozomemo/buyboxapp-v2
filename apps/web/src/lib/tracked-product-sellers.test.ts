@@ -139,3 +139,42 @@ describe('seriesBySeller', () => {
     expect(series[0]!.current).toBeNull();
   });
 });
+
+/**
+ * 2026-09-03. The offer's seller score, dispatch time and promotion now reach this layer. The
+ * failure mode worth pinning is the quiet one: a row stored before the columns existed carries
+ * `undefined`, and a screen that read that as `false` would tell an auditor a seller ran no
+ * promotion on a look that never recorded whether it did.
+ */
+describe('the rest of the offer', () => {
+  it('carries seller score, dispatch time and promotion onto each point', () => {
+    const series = seriesBySeller(
+      [
+        offer({
+          observedAt: T1,
+          sellerRating: 8.4,
+          dispatchTime: 2,
+          hasPromotion: true,
+          promotionText: 'Sepette %10',
+        }),
+      ],
+      T1,
+    );
+    expect(series[0]!.current).toMatchObject({
+      sellerRating: 8.4,
+      dispatchTime: 2,
+      hasPromotion: true,
+      promotionText: 'Sepette %10',
+    });
+  });
+
+  it('reads a row written before the columns existed as unknown, never as "no promotion"', () => {
+    const series = seriesBySeller([offer({ observedAt: T1 })], T1);
+    expect(series[0]!.current).toMatchObject({
+      sellerRating: null,
+      dispatchTime: null,
+      hasPromotion: null,
+      promotionText: null,
+    });
+  });
+});

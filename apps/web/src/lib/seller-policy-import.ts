@@ -6,7 +6,9 @@
  * goes unused. Excel writes CSV, which is what this reads.
  *
  * Pure and separate from the route so the awkward part — what counts as a row, what counts as a
- * refusal — is table-testable without a database or an HTTP request.
+ * refusal — is table-testable without a database or an HTTP request. The Excel mechanics it sits
+ * on (semicolons, folded headers, the BOM) live in `csv-parse.ts`, shared with the reference
+ * price import.
  *
  * ## What it will not do
  *
@@ -22,6 +24,8 @@
  * exactly the ones nobody looks at again. Errors come back together, with line numbers, so one
  * pass over the spreadsheet fixes all of them.
  */
+
+import { foldHeader, parseCsvTable } from './csv-parse';
 
 export type ImportedStatus = 'authorised' | 'blocked';
 
@@ -76,89 +80,18 @@ const STATUS_WORDS: Record<string, ImportedStatus> = {
 };
 
 /**
- * Lower-cases and strips Turkish diacritics so `Satıcı Kodu`, `SATICI KODU` and `satici kodu` are
- * one header.
- *
- * `toLocaleLowerCase('tr')` is used deliberately: in Turkish, `I` lower-cases to `ı` and not to
- * `i`, so the default locale turns `SATICI` into `satici` on one machine and something else on
- * another. Folding after that removes the distinction entirely, which is right for matching a
- * header and would be wrong for anything we store.
- */
-function foldHeader(value: string): string {
-  return value
-    .trim()
-    .toLocaleLowerCase('tr')
-    .replace(/ı/g, 'i')
-    .replace(/ş/g, 's')
-    .replace(/ğ/g, 'g')
-    .replace(/ü/g, 'u')
-    .replace(/ö/g, 'o')
-    .replace(/ç/g, 'c')
-    .replace(/\s+/g, ' ');
-}
-
-/**
- * Splits one CSV line, honouring quoted fields and doubled quotes inside them.
- *
- * Hand-written rather than a dependency because the shape it must accept is narrow — one line,
- * comma or semicolon separated — and because Turkish Excel writes **semicolons**: on a
- * comma-decimal locale the list separator is `;`, so a file saved from the operator's own Excel
- * would not parse at all under a comma-only reader.
- */
-function splitLine(line: string, separator: string): string[] {
-  const fields: string[] = [];
-  let current = '';
-  let quoted = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i]!;
-    if (quoted) {
-      if (char === '"') {
-        if (line[i + 1] === '"') {
-          current += '"';
-          i += 1;
-        } else {
-          quoted = false;
-        }
-      } else {
-        current += char;
-      }
-    } else if (char === '"') {
-      quoted = true;
-    } else if (char === separator) {
-      fields.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  fields.push(current);
-  return fields.map((f) => f.trim());
-}
-
-/** Whichever of `,` and `;` the header line uses more. Excel writes one or the other by locale. */
-function detectSeparator(headerLine: string): string {
-  return (headerLine.match(/;/g)?.length ?? 0) > (headerLine.match(/,/g)?.length ?? 0) ? ';' : ',';
-}
-
-/**
  * Parses a whole file. `defaultStatus` fills rows whose file has no status column at all — the
  * common case, because an operator exporting "our authorised distributors" from their own system
  * has a list of sellers and no column saying so.
  */
 export function parseSellerPolicyCsv(text: string, defaultStatus: ImportedStatus): ImportResult {
-  // The BOM our own exports write, stripped so it does not become part of the first header.
-  const clean = text.replace(/^\uFEFF/, '');
-  const lines = clean.split(/\r?\n/);
-  const headerIndex = lines.findIndex((l) => l.trim() !== '');
-  if (headerIndex === -1) {
+  const table = parseCsvTable(text);
+  if (!table) {
     return { ok: false, errors: [{ line: 1, message: 'Dosya boş.' }] };
   }
 
-  const separator = detectSeparator(lines[headerIndex]!);
-  const headers = splitLine(lines[headerIndex]!, separator).map(foldHeader);
-
   const columnOf = (field: keyof typeof HEADERS): number =>
-    headers.findIndex((h) => HEADERS[field].includes(h));
+    table.headers.findIndex((h) => HEADERS[field].includes(h));
 
   const columns = {
     marketplaceCode: columnOf('marketplaceCode'),
@@ -174,7 +107,7 @@ export function parseSellerPolicyCsv(text: string, defaultStatus: ImportedStatus
       ok: false,
       errors: [
         {
-          line: headerIndex + 1,
+          line: table.headerLine,
           message:
             'Dosyada satıcı kodu veya vergi numarası sütunu yok. Satıcılar isimle eşleştirilmez — en az birini ekleyin.',
         },
@@ -185,11 +118,7 @@ export function parseSellerPolicyCsv(text: string, defaultStatus: ImportedStatus
   const rows: ImportedPolicyRow[] = [];
   const errors: ImportError[] = [];
 
-  for (let i = headerIndex + 1; i < lines.length; i += 1) {
-    const raw = lines[i]!;
-    if (raw.trim() === '') continue;
-    const line = i + 1;
-    const fields = splitLine(raw, separator);
+  for (const { line, fields } of table.rows) {
     const at = (index: number): string | null => (index === -1 ? null : fields[index]?.trim() || null);
 
     const sellerRef = at(columns.sellerRef);
@@ -247,7 +176,7 @@ export function parseSellerPolicyCsv(text: string, defaultStatus: ImportedStatus
 
   if (errors.length > 0) return { ok: false, errors };
   if (rows.length === 0) {
-    return { ok: false, errors: [{ line: headerIndex + 1, message: 'Dosyada hiç satır yok.' }] };
+    return { ok: false, errors: [{ line: table.headerLine, message: 'Dosyada hiç satır yok.' }] };
   }
   return { ok: true, rows };
 }

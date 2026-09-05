@@ -15,11 +15,7 @@
 import { NextResponse } from 'next/server';
 import { parseProductLink } from '@buybox/adapters';
 import { brandReportsRepo, newId, trackedProductsRepo } from '@buybox/db';
-import {
-  exportHeaders,
-  exportRow,
-  resolveExportColumns,
-} from '@/lib/tracked-product-columns';
+import { exportHeaders, exportRow, resolveExportColumns } from '@/lib/tracked-product-columns';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 
@@ -111,6 +107,7 @@ export async function GET(request: Request) {
     isActive: triState(params, 'isActive'),
     searchTermOnly: params.get('searchTermOnly') === 'true',
     unratedOnly: params.get('unratedOnly') === 'true',
+    noSellerOnly: params.get('noSellerOnly') === 'true',
     minRatingCount: optionalInt(params, 'minRatingCount'),
     sort,
     sortDir: (params.get('sortDir') === 'desc' ? 'desc' : 'asc') as 'asc' | 'desc',
@@ -212,6 +209,14 @@ export async function GET(request: Request) {
        * say so rather than report it as unchecked.
        */
       lastScrapedAt: row.lastScrapedAt ?? null,
+      /**
+       * The brand's own published price, with where it came from and when — the one price on
+       * this row that nothing observed. Carried beside the measured columns rather than in
+       * place of them: the point of the screen is the comparison.
+       */
+      referencePrice: row.referencePrice?.toString() ?? null,
+      referencePriceSource: row.referencePriceSource ?? null,
+      referencePriceUpdatedAt: row.referencePriceUpdatedAt ?? null,
       period: (() => {
         const stats = periods.get(row.id);
         return stats

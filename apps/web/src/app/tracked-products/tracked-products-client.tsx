@@ -50,6 +50,10 @@ interface TrackedProduct {
   viaSearchTerm: boolean;
   latest: Observation[];
   period: PeriodStats | null;
+  /** Kuruş as a string. The brand's own published price — a statement, not an observation. */
+  referencePrice: string | null;
+  referencePriceSource: string | null;
+  referencePriceUpdatedAt: number | null;
 }
 
 /** The window's price band, aggregated server-side over every look in it. */
@@ -81,6 +85,7 @@ interface Filters {
   active: string;
   searchTermOnly: boolean;
   unratedOnly: boolean;
+  noSellerOnly: boolean;
   minRatingCount: string;
 }
 
@@ -91,6 +96,7 @@ const EMPTY_FILTERS: Filters = {
   active: '',
   searchTermOnly: false,
   unratedOnly: false,
+  noSellerOnly: false,
   minRatingCount: '',
 };
 
@@ -118,6 +124,8 @@ type ColumnId =
   | 'periodMinPrice'
   | 'periodMaxPrice'
   | 'periodSellerCount'
+  | 'referencePrice'
+  | 'refGapPct'
   | 'discovery'
   | 'lastSwept'
   | 'lastScraped'
@@ -151,6 +159,8 @@ const COLUMN_DEFS: readonly ColumnDef<ColumnId>[] = [
   { id: 'periodMinPrice', label: 'Dönem En Düşük', defaultWidth: 130, hiddenByDefault: true },
   { id: 'periodMaxPrice', label: 'Dönem En Yüksek', defaultWidth: 130, hiddenByDefault: true },
   { id: 'periodSellerCount', label: 'Dönem Satıcı', defaultWidth: 110, hiddenByDefault: true },
+  { id: 'referencePrice', label: 'Tavsiye Fiyat', defaultWidth: 120 },
+  { id: 'refGapPct', label: 'Tavsiyeye Fark', defaultWidth: 120 },
   { id: 'discovery', label: 'Bulunma', defaultWidth: 130, hiddenByDefault: true },
   { id: 'lastSwept', label: 'Son Tarama', defaultWidth: 150 },
   { id: 'lastScraped', label: 'Son Bakış', defaultWidth: 150, hiddenByDefault: true },
@@ -210,6 +220,7 @@ export function TrackedProductsClient() {
     categoryRef: searchParams.get('categoryRef') ?? '',
     text: searchParams.get('text') ?? '',
     unratedOnly: searchParams.get('unratedOnly') === 'true',
+    noSellerOnly: searchParams.get('noSellerOnly') === 'true',
     searchTermOnly: searchParams.get('searchTermOnly') === 'true',
   }));
   const [sort, setSort] = useState<Sort>('label');
@@ -227,6 +238,16 @@ export function TrackedProductsClient() {
    */
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
+  const [referenceNotice, setReferenceNotice] = useState<string | null>(null);
+  const [referenceErrors, setReferenceErrors] = useState<{ line: number; message: string }[]>([]);
+  /**
+   * Which marketplace a price list's **product codes** belong to. Asked rather than inferred:
+   * the same digits are different products on different marketplaces, and a file whose codes
+   * were silently attributed to the wrong one would price somebody else's catalogue. Irrelevant
+   * to a barcode file, which is why the parser ignores it there.
+   */
+  const [referenceMarketplace, setReferenceMarketplace] = useState('');
+  const [marketplaces, setMarketplaces] = useState<{ code: string; displayName: string }[]>([]);
 
   const columns = useColumnPrefs<ColumnId>('trackedProducts.columns', COLUMN_DEFS);
   const presets = useFilterPresets<Filters>('trackedProducts.filterPresets');
@@ -256,6 +277,7 @@ export function TrackedProductsClient() {
     if (filters.active) p.set('isActive', filters.active);
     if (filters.searchTermOnly) p.set('searchTermOnly', 'true');
     if (filters.unratedOnly) p.set('unratedOnly', 'true');
+    if (filters.noSellerOnly) p.set('noSellerOnly', 'true');
     if (filters.minRatingCount.trim()) p.set('minRatingCount', filters.minRatingCount.trim());
     return p;
   }, [filters, sort, sortDir]);
@@ -282,6 +304,15 @@ export function TrackedProductsClient() {
       .then((d: { groups: { brands: WatchedBrandOption[] }[] }) =>
         setBrands(d.groups.flatMap((g) => g.brands)),
       );
+    // Only for the price-list import's "which marketplace are these codes from" pick. A single
+    // configured marketplace answers the question by itself and the control preselects it.
+    fetch('/api/settings/marketplaces')
+      .then((r) => r.json())
+      .then((d: { marketplaces: { code: string; displayName: string }[] }) => {
+        setMarketplaces(d.marketplaces);
+        if (d.marketplaces.length === 1) setReferenceMarketplace(d.marketplaces[0]!.code);
+      })
+      .catch(() => setMarketplaces([]));
   }, []);
 
   useEffect(() => {
@@ -321,6 +352,64 @@ export function TrackedProductsClient() {
         setError(data.error ?? 'Eklenemedi.');
       }
     } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Uploads a brand price list and reports what it actually reached.
+   *
+   * Two outcomes are deliberately reported differently, because they are different things. A
+   * **parse** failure writes nothing at all and lists every bad line — the operator fixes the
+   * file once. A **match** shortfall is not a failure: a brand's list covers its whole catalogue
+   * while this install tracks what a sweep found on one marketplace, so lines that match nothing
+   * are the normal case. They are still stated out loud, because "300 satır yüklendi" over a
+   * list where 258 matched nothing would leave the operator believing prices are in force over
+   * products they never touched.
+   *
+   * The file input is reset either way, so re-uploading the same corrected file fires `change`.
+   */
+  async function importReferencePrices(file: File | null, input: HTMLInputElement) {
+    if (!file) return;
+    setBusy(true);
+    setReferenceNotice(null);
+    setReferenceErrors([]);
+    try {
+      const csv = await file.text();
+      const res = await fetch('/api/tracked-products/reference-prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          csv,
+          source: file.name,
+          // Rows that name a product code without a marketplace column take the filtered
+          // marketplace. Sent only when the filter names one — guessing a marketplace for a
+          // whole file would attach a brand's prices to the wrong catalogue.
+          defaultMarketplaceCode: referenceMarketplace || null,
+        }),
+      });
+      const data = (await res.json()) as {
+        errors?: { line: number; message: string }[];
+        linesRead?: number;
+        productsMatched?: number;
+        linesUnmatched?: number;
+      };
+      if (!res.ok) {
+        setReferenceErrors(data.errors ?? [{ line: 0, message: 'Dosya okunamadı.' }]);
+        return;
+      }
+      setReferenceNotice(
+        `${formatNumber(data.linesRead ?? 0)} satır okundu · ${formatNumber(
+          data.productsMatched ?? 0,
+        )} ürüne fiyat yazıldı${
+          (data.linesUnmatched ?? 0) > 0
+            ? ` · ${formatNumber(data.linesUnmatched ?? 0)} satır bu kurulumda takip edilen bir ürünle eşleşmedi`
+            : ''
+        }`,
+      );
+      load();
+    } finally {
+      input.value = '';
       setBusy(false);
     }
   }
@@ -372,10 +461,7 @@ export function TrackedProductsClient() {
     load();
   }
 
-  const visibleColumns = useMemo(
-    () => columns.order.filter((id) => columns.isVisible(id)),
-    [columns],
-  );
+  const visibleColumns = useMemo(() => columns.order.filter((id) => columns.isVisible(id)), [columns]);
 
   // "Select all" is **this page**, never the whole filtered set. A brand holds thousands of rows
   // and the rescan ceiling is fifty, so a header tick that meant "all 4,863" could only ever be
@@ -464,11 +550,36 @@ export function TrackedProductsClient() {
       case 'periodMaxPrice':
         return moneyCell(p.period?.maxPrice);
       case 'periodSellerCount':
+        return <span className="tabular-nums">{p.period ? formatNumber(p.period.sellerCount) : '—'}</span>;
+      case 'referencePrice':
+        return moneyCell(p.referencePrice);
+      case 'refGapPct': {
+        // The two prices are unrelated facts until this column puts them side by side: a
+        // published price with nothing measured against it is a number in a spreadsheet.
+        // `—` for either half missing, never `0%` — "we published no price" and "the market is
+        // exactly on it" would then look the same.
+        if (!p.referencePrice || market.buyboxPrice === null) {
+          return (
+            <span
+              className="text-(--color-muted)"
+              title={
+                p.referencePrice ? 'Bu bakışta buybox fiyatı yok' : 'Bu ürün için tavsiye fiyat girilmemiş'
+              }
+            >
+              —
+            </span>
+          );
+        }
+        const reference = BigInt(p.referencePrice);
+        if (reference <= 0n) return <span className="text-(--color-muted)">—</span>;
+        // Exact kuruş arithmetic, then a percentage — never a float division of two prices.
+        const gapPct = Number(((market.buyboxPrice - reference) * 10_000n) / reference) / 100;
         return (
-          <span className="tabular-nums">
-            {p.period ? formatNumber(p.period.sellerCount) : '—'}
+          <span className={`tabular-nums${gapPct <= -5 ? ' text-(--color-warning)' : ''}`}>
+            {formatPercent(gapPct)}
           </span>
         );
+      }
       case 'discovery':
         return <span className="text-xs">{discoveryLabel(p)}</span>;
       case 'lastSwept':
@@ -506,8 +617,8 @@ export function TrackedProductsClient() {
       </div>
 
       <p className="max-w-3xl text-sm text-(--color-muted)">
-        Satmadığımız ürünlerin fiyat, satıcı ve değerlendirme bilgisi. Buraya iki yoldan ürün gelir:
-        tek tek link yapıştırarak, veya{' '}
+        Satmadığımız ürünlerin fiyat, satıcı ve değerlendirme bilgisi. Buraya iki yoldan ürün gelir: tek tek
+        link yapıştırarak, veya{' '}
         <Link href="/watched-brands" className="text-(--color-accent) hover:underline">
           izlenen bir markanın
         </Link>{' '}
@@ -601,6 +712,17 @@ export function TrackedProductsClient() {
             />
             Değerlendirmesi olmayanlar
           </label>
+          <label
+            className="flex items-center gap-1 text-xs"
+            title="Son başarılı bakışta bu ürünleri satan kimse yoktu. Henüz bakılmamış ürünler bu listede yer almaz — o başka bir durum."
+          >
+            <input
+              type="checkbox"
+              checked={filters.noSellerOnly}
+              onChange={(e) => setFilters({ ...filters, noSellerOnly: e.target.checked })}
+            />
+            Satıcısı olmayanlar
+          </label>
           <button
             type="button"
             onClick={() => setFilters(EMPTY_FILTERS)}
@@ -682,6 +804,62 @@ export function TrackedProductsClient() {
           Ekle
         </button>
       </div>
+      {/* ---- tavsiye edilen satış fiyatı listesi ---- */}
+      <div className="rounded border border-(--color-border) p-3 text-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col text-xs">
+            Fiyat listesi (Excel/CSV)
+            <input
+              type="file"
+              accept=".csv,text/csv,text/plain"
+              onChange={(e) => void importReferencePrices(e.target.files?.[0] ?? null, e.target)}
+              className="w-80 rounded border border-(--color-border) px-2 py-1 text-sm"
+            />
+          </label>
+          <label className="flex flex-col text-xs">
+            Ürün kodları hangi pazaryerinden?
+            <select
+              value={referenceMarketplace}
+              onChange={(e) => setReferenceMarketplace(e.target.value)}
+              className="w-44 rounded border border-(--color-border) px-2 py-1 text-sm"
+            >
+              <option value="">Dosyada yazıyor</option>
+              {marketplaces.map((m) => (
+                <option key={m.code} value={m.code}>
+                  {m.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="max-w-xl text-xs text-(--color-muted)">
+            Sütunlar: <strong>Barkod</strong> ya da <strong>Ürün Kodu</strong> (+ Pazaryeri), ve{' '}
+            <strong>Tavsiye Edilen Satış Fiyatı</strong>. Ürünler <em>isimle eşleştirilmez</em>. Tek bir
+            hatalı satır varsa dosyanın tamamı reddedilir — yarısı yüklenmiş bir fiyat listesi, yüklendiğini
+            sandığınız ama çalışmayan bir listedir.
+          </p>
+        </div>
+        {referenceNotice && <p className="mt-2 text-(--color-accent)">{referenceNotice}</p>}
+        {referenceErrors.length > 0 && (
+          <div className="mt-2 rounded border border-(--color-danger) p-2 text-xs">
+            <p className="mb-1 font-medium text-(--color-danger)">
+              Dosya yüklenmedi — {formatNumber(referenceErrors.length)} satırda sorun var:
+            </p>
+            <ul className="list-inside list-disc">
+              {referenceErrors.slice(0, 20).map((e) => (
+                <li key={e.line}>
+                  {e.line}. satır: {e.message}
+                </li>
+              ))}
+            </ul>
+            {referenceErrors.length > 20 && (
+              <p className="mt-1 text-(--color-muted)">
+                …ve {formatNumber(referenceErrors.length - 20)} satır daha.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       {error && <p className="text-sm text-(--color-danger)">{error}</p>}
       {notice && <p className="text-sm text-(--color-accent)">{notice}</p>}
 
@@ -705,8 +883,8 @@ export function TrackedProductsClient() {
         </button>
         {selected.size > RESCAN_MAX_PRODUCTS && (
           <span className="text-xs text-(--color-warning)">
-            Tek seferde en fazla {RESCAN_MAX_PRODUCTS} ürün — bir markanın tamamı için İzlenen
-            Markalar ekranındaki &quot;Şimdi tara&quot; kullanılır.
+            Tek seferde en fazla {RESCAN_MAX_PRODUCTS} ürün — bir markanın tamamı için İzlenen Markalar
+            ekranındaki &quot;Şimdi tara&quot; kullanılır.
           </span>
         )}
         {selected.size > 0 && (
@@ -727,10 +905,7 @@ export function TrackedProductsClient() {
         </span>
       </div>
 
-      <Pagination
-        state={{ page, pageSize, total, setPage, setPageSize }}
-        label="ürün"
-      />
+      <Pagination state={{ page, pageSize, total, setPage, setPageSize }} label="ürün" />
 
       <TableFrame>
         <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns, 32 + 140)}>

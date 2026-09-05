@@ -11,13 +11,29 @@
 
 export interface ObservationRow {
   readonly observedAt: number;
-  readonly status: 'ok' | 'parseFailed' | 'fetchFailed';
+  /**
+   * `noOffers` (2026-09-03) is a look that succeeded and found nobody selling. It is deliberately
+   * **not** grouped with the two failures: a page we could not read and a page with an empty
+   * seller list are opposite facts, and only the second is a statement about the market. Both
+   * functions below already skip anything that is not `'ok'`, so it lands in the look history
+   * without contributing an offer — which is exactly the record wanted.
+   */
+  readonly status: 'ok' | 'noOffers' | 'parseFailed' | 'fetchFailed';
   readonly rank: number | null;
   readonly sellerName: string | null;
   readonly sellerRef: string | null;
   readonly price: bigint | null;
   readonly finalPrice: bigint | null;
   readonly offeredStock: number | null;
+  /**
+   * The rest of the offer (2026-09-03). Optional, because rows written before the columns
+   * existed have nothing here and a screen that rendered `undefined` as "no promotion" would be
+   * stating something about a look that never recorded it.
+   */
+  readonly sellerRating?: number | null;
+  readonly dispatchTime?: number | null;
+  readonly hasPromotion?: boolean | null;
+  readonly promotionText?: string | null;
 }
 
 export interface LookSummary {
@@ -34,6 +50,10 @@ export interface SellerPoint {
   readonly price: bigint | null;
   readonly finalPrice: bigint | null;
   readonly offeredStock: number | null;
+  readonly sellerRating: number | null;
+  readonly dispatchTime: number | null;
+  readonly hasPromotion: boolean | null;
+  readonly promotionText: string | null;
 }
 
 export interface SellerSeries {
@@ -125,6 +145,12 @@ export function seriesBySeller(
       price: row.price,
       finalPrice: row.finalPrice,
       offeredStock: row.offeredStock,
+      // `?? null` collapses "the column did not exist yet" into the same unknown the column
+      // itself uses. There is no third state worth carrying to a screen.
+      sellerRating: row.sellerRating ?? null,
+      dispatchTime: row.dispatchTime ?? null,
+      hasPromotion: row.hasPromotion ?? null,
+      promotionText: row.promotionText ?? null,
     });
     bySeller.set(key, entry);
   }

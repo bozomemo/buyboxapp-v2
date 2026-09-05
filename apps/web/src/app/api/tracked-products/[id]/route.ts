@@ -76,6 +76,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             price: s.current.price?.toString() ?? null,
             finalPrice: s.current.finalPrice?.toString() ?? null,
             offeredStock: s.current.offeredStock,
+            sellerRating: s.current.sellerRating,
+            dispatchTime: s.current.dispatchTime,
+            hasPromotion: s.current.hasPromotion,
+            promotionText: s.current.promotionText,
           }
         : null,
       previousPrice: s.previousPrice?.toString() ?? null,
@@ -87,6 +91,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         price: p.price?.toString() ?? null,
         finalPrice: p.finalPrice?.toString() ?? null,
         offeredStock: p.offeredStock,
+        sellerRating: p.sellerRating,
+        dispatchTime: p.dispatchTime,
+        hasPromotion: p.hasPromotion,
+        promotionText: p.promotionText,
       })),
     })),
   });

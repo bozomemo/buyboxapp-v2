@@ -38,6 +38,7 @@ export type TrackedColumnId =
   | 'periodMinPrice'
   | 'periodMaxPrice'
   | 'periodSellerCount'
+  | 'referencePrice'
   | 'discovery'
   | 'lastSwept'
   | 'lastScraped'
@@ -69,6 +70,11 @@ export interface ExportableProduct {
     readonly maxPrice: bigint | null;
     readonly sellerCount: number;
   } | null;
+  /**
+   * The brand's own published price, in kuruş. Exportable — unlike the current-market columns —
+   * because it comes off the row itself and costs no per-row query.
+   */
+  readonly referencePrice?: bigint | null;
 }
 
 interface ColumnSpec {
@@ -120,6 +126,7 @@ const EXPORTABLE: Readonly<Record<TrackedColumnId, ColumnSpec | null>> = {
     // and "we never looked" are different findings and must not render the same.
     value: (r) => (r.period ? String(r.period.sellerCount) : ''),
   },
+  referencePrice: { header: 'Tavsiye Fiyat', value: (r) => money(r.referencePrice) },
   discovery: { header: 'Bulunma', value: (r) => discoveryLabel(r) },
   lastSwept: { header: 'Son Tarama', value: (r) => isoOrEmpty(r.lastSweptAt) },
   lastScraped: { header: 'Son Bakış', value: (r) => isoOrEmpty(r.lastScrapedAt) },
@@ -144,6 +151,7 @@ export const DEFAULT_EXPORT_COLUMNS: readonly TrackedColumnId[] = [
   'periodMinPrice',
   'periodMaxPrice',
   'periodSellerCount',
+  'referencePrice',
   'discovery',
   'lastSwept',
   'lastScraped',

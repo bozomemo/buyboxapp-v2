@@ -15,6 +15,11 @@ interface SellerPoint {
   price: string | null;
   finalPrice: string | null;
   offeredStock: number | null;
+  /** `null` is unknown — an older row, or a look that failed. Never rendered as "no promotion". */
+  sellerRating: number | null;
+  dispatchTime: number | null;
+  hasPromotion: boolean | null;
+  promotionText: string | null;
 }
 
 interface Seller {
@@ -48,6 +53,9 @@ interface Detail {
 
 const STATUS_LABELS: Record<string, string> = {
   ok: 'Başarılı',
+  // Bir başarısızlık değil: sayfa okundu ve bu ürünü satan kimse yoktu. Marka sahibi için
+  // kaybedilen raf, hata değil — bu yüzden ayrı bir etiketi var.
+  noOffers: 'Satıcı yok',
   parseFailed: 'Sayfa okunamadı',
   fetchFailed: 'Sayfaya ulaşılamadı',
 };
@@ -94,6 +102,19 @@ function BuyboxChart({ looks, sellers }: { looks: Detail['looks']; sellers: Sell
       ]}
     />
   );
+}
+
+/**
+ * The promotion cell, and the reason it is a function rather than an inline ternary: it has
+ * **three** outcomes, not two. `true` shows the promotion's own name when the page carried one;
+ * `false` is a page that was read and had none; `null` — an older row, or a failed look — is
+ * unknown, and rendering it as "yok" would tell an auditor a seller ran no campaign on a look
+ * that never recorded whether they did.
+ */
+function promotionCell(point: SellerPoint | null): string {
+  if (!point || point.hasPromotion === null) return '—';
+  if (!point.hasPromotion) return 'yok';
+  return point.promotionText ?? 'var';
 }
 
 /** Which way this seller's price moved since the look before — `null` when there is no earlier one. */
@@ -243,7 +264,15 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                   'Müşteri Fiyatı': s.current?.finalPrice
                     ? (Number(s.current.finalPrice) / 100).toFixed(2)
                     : '',
+                  Kampanya:
+                    s.current?.hasPromotion === null || !s.current
+                      ? ''
+                      : s.current.hasPromotion
+                        ? (s.current.promotionText ?? 'var')
+                        : 'yok',
                   Stok: s.current?.offeredStock ?? '',
+                  'Satıcı Puanı': s.current?.sellerRating ?? '',
+                  'Termin (gün)': s.current?.dispatchTime ?? '',
                   Durum: s.current ? 'teklifte' : 'çekilmiş',
                   'İlk Görülme': s.firstSeenAt ? formatDateTime(s.firstSeenAt) : '',
                   'Son Görülme': s.lastSeenAt ? formatDateTime(s.lastSeenAt) : '',
@@ -265,7 +294,10 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                 <th className="px-2 py-1">Fiyat</th>
                 <th className="px-2 py-1">Değişim</th>
                 <th className="px-2 py-1">Müşteri Fiyatı</th>
+                <th className="px-2 py-1">Kampanya</th>
                 <th className="px-2 py-1">Stok</th>
+                <th className="px-2 py-1">Puan</th>
+                <th className="px-2 py-1">Termin</th>
                 <th className="px-2 py-1">Son Görülme</th>
               </tr>
             </thead>
@@ -299,16 +331,29 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                     <td className="px-2 py-1">
                       {formatMoney(s.current?.finalPrice ? BigInt(s.current.finalPrice) : null)}
                     </td>
+                    <td className="px-2 py-1" title={s.current?.promotionText ?? undefined}>
+                      {promotionCell(s.current)}
+                    </td>
                     <td className="px-2 py-1">
                       {s.current?.offeredStock === null || s.current === null
                         ? '—'
                         : formatNumber(s.current.offeredStock)}
                     </td>
+                    <td className="px-2 py-1">
+                      {s.current?.sellerRating === null || s.current === null
+                        ? '—'
+                        : s.current.sellerRating.toFixed(1)}
+                    </td>
+                    <td className="px-2 py-1">
+                      {s.current?.dispatchTime === null || s.current === null
+                        ? '—'
+                        : `${formatNumber(s.current.dispatchTime)} gün`}
+                    </td>
                     <td className="px-2 py-1">{s.lastSeenAt ? formatDateTime(s.lastSeenAt) : '—'}</td>
                   </tr>,
                   isOpen && (
                     <tr key={`${s.key}-history`}>
-                      <td colSpan={7} className="bg-(--color-hover) px-4 py-2">
+                      <td colSpan={11} className="bg-(--color-hover) px-4 py-2">
                         <div className="mb-1 text-xs text-(--color-muted)">
                           {s.sellerName || '(isimsiz)'} · bu satıcının pencere içindeki bakışları
                           {s.unverifiedKey && ' · satıcı numarası okunamadı, satırlar isme göre gruplandı'}
@@ -325,6 +370,7 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                                 <td className="py-0.5 pr-4">
                                   Stok {p.offeredStock === null ? '—' : formatNumber(p.offeredStock)}
                                 </td>
+                                <td className="py-0.5 pr-4">{promotionCell(p)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -336,7 +382,7 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
               })}
               {ordered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-2 py-6 text-center text-(--color-muted)">
+                  <td colSpan={11} className="px-2 py-6 text-center text-(--color-muted)">
                     Bu ürün için henüz satıcı gözlemi yok. ScrapeCompetitors işi çalıştığında dolar
                     (varsayılan kapalı — Ayarlar&apos;dan açılmalı).
                   </td>
