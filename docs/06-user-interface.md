@@ -476,6 +476,26 @@ are running the button says so — they are drained, not killed, so the click ta
 longest in-flight handler. Where no worker runs in this process (a standalone `apps/worker`
 deployment) the route answers 409 saying which, rather than reporting a restart of nothing.
 
+### 7.4 Section order and the six states (doc 15 §6, Phase 2.1)
+
+Reworked 2026-09-06 around the screen's stated task — "is a job stuck, and why?" — rather than
+the order its endpoints happen to answer in:
+
+1. **İş Kataloğu** first — it is where triage starts.
+2. **Devre Kesici** ranks above **Kuyruk Derinliği ve Alınan İşler**: a tripped circuit breaker is
+   a direct answer to "why is this stuck", the queue counters are supporting detail.
+3. **Tarama Hızı** sits collapsed behind a closed `<details>`, labelled "gelişmiş ayar" — a
+   reporting-only rate limit tuned when 403s show up, not information an operator scans on a
+   normal pass, and it no longer competes with the sections above for attention.
+4. **Çalışma Geçmişi** stays last — history, not triage.
+
+The primary load (`GET /api/jobs`) now follows doc 15 §3.2 in full: a failed first load renders
+the shared `ErrorState` with **Tekrar dene**, and a poll that fails *after* the screen already has
+data leaves that data on screen behind a "may be stale" banner rather than going silent. Before
+this fix the loading check ran ahead of the error render, so a failed first load left the operator
+on a permanent "Yükleniyor…" with no error visible and no way to retry short of reloading the
+page.
+
 ---
 
 ## 8. Events (`/events`)

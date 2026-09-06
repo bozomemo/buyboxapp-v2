@@ -2,8 +2,9 @@
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { EmptyState, ErrorState, LoadingState, Section } from '@/components/ui';
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '@/lib/format';
-import { CIRCUIT_LABELS } from '@/lib/labels';
+import { CIRCUIT_LABELS, JOB_LABELS, JOB_RUN_STATE_LABELS, labelOf } from '@/lib/labels';
 
 /**
  * How often the Jobs screen re-reads the overview.
@@ -108,8 +109,10 @@ interface JobsOverview {
  * The banner that answers "why is nothing running?" in one line.
  *
  * Returns nothing when the scheduler is ticking normally — a healthy system should not carry a
- * status bar it never needs. `running: false` is only reported when this process is *supposed*
- * to host the worker; a split deployment sends `scheduler` absent instead of false.
+ * status bar it never needs. `GET /api/jobs` always sends `scheduler` (`app/api/jobs/route.ts`
+ * spreads `getWorkerStatus()` unconditionally); `status === undefined` here only means the
+ * overview has not loaded yet, never a split deployment. `running: false` inside it is the
+ * signal for "no worker in this process".
  */
 function SchedulerBanner({ status }: { status: SchedulerStatus | undefined }) {
   if (!status) return null;
@@ -349,7 +352,15 @@ export function JobsClient() {
   });
   const [selectedMarketplace, setSelectedMarketplace] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  /** An action's own failure (run-now, save, reset…) — shown as a banner near the top. */
   const [error, setError] = useState<string | null>(null);
+  /**
+   * `/api/jobs` itself failing, kept apart from `error` above. Before this screen had no way to
+   * distinguish "the overview never loaded" from "a button click failed" — both fell into one
+   * `error` string, and the initial-load case additionally could never reach the render that
+   * would have shown it (see the early return below).
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [scrapeRates, setScrapeRates] = useState<ScrapeRateRow[]>([]);
   const [scrapeRateDraft, setScrapeRateDraft] = useState<
     Record<string, { requestsPerMinute: string; burst: string }>
@@ -406,6 +417,7 @@ export function JobsClient() {
       .then((r) => r.json())
       .then((data: JobsOverview) => {
         setOverview(data);
+        setLoadError(null);
         // Seed the cadence draft from the effective value, once per job — an in-progress edit
         // must never be clobbered by the next poll.
         setCadenceDraft((prev) => {
@@ -437,7 +449,7 @@ export function JobsClient() {
           return changed ? next : prev;
         });
       })
-      .catch((e) => setError(String(e)));
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)));
   }, []);
 
   const loadHistory = () => {
@@ -723,20 +735,40 @@ export function JobsClient() {
     }
   }
 
-  if (!overview) return <p className="text-(--color-muted)">Yükleniyor…</p>;
+  // Primary load failed and nothing has ever been shown — the six-states contract (doc 15 §3.2)
+  // requires this to be reachable and retryable. Before this fix `!overview` was checked first,
+  // so a failed first load left the operator on a permanent "Yükleniyor…" with no error and no
+  // way to retry short of reloading the page.
+  if (!overview && loadError) {
+    return <ErrorState message={loadError} onRetry={loadOverview} />;
+  }
+  if (!overview) {
+    return <LoadingState message="İşler yükleniyor…" skeletonRows={4} />;
+  }
 
   const pendingRestartCount = overview.jobs.filter((job) => job.pendingRestart).length;
   const runningCount = overview.jobs.filter((job) => job.activeRun !== null).length;
 
   return (
     <div className="space-y-8">
-      {error && <p className="text-(--color-danger)">{error}</p>}
-      <SchedulerBanner status={overview?.scheduler} />
+      {error && (
+        <p role="alert" className="text-(--color-danger)">
+          {error}
+        </p>
+      )}
+      {/* A poll after the screen already has data failed — the data below is real but ageing.
+          Silently going quiet here (the old behaviour) is how a stuck screen looks fine. */}
+      {loadError && (
+        <p
+          role="alert"
+          className="rounded border border-(--color-warning) bg-(--color-warning-bg) px-3 py-2 text-sm"
+        >
+          Son yenileme başarısız oldu ({loadError}). Aşağıdaki bilgiler artık güncel olmayabilir.
+        </p>
+      )}
+      <SchedulerBanner status={overview.scheduler} />
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
-          İş Kataloğu
-        </h2>
+      <Section id="job-catalog" title="İş Kataloğu">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <p className="text-xs text-(--color-muted)">
             Sıklık değişiklikleri worker yeniden başlatılınca etkili olur, kaydedilir kaydedilmez değil.
@@ -830,9 +862,9 @@ export function JobsClient() {
                             type="button"
                             disabled={busy === `cadence-${job.jobName}`}
                             onClick={() => saveCadence(job.jobName)}
-                            className="rounded bg-(--color-accent) px-1.5 py-0.5 text-xs text-(--color-accent-ink)"
+                            className="rounded bg-(--color-accent) px-1.5 py-0.5 text-xs text-(--color-accent-ink) disabled:opacity-50"
                           >
-                            Kaydet
+                            {busy === `cadence-${job.jobName}` ? 'Kaydediliyor…' : 'Kaydet'}
                           </button>
                           {job.isCadenceOverride && (
                             <button
@@ -867,8 +899,8 @@ export function JobsClient() {
                     </td>
                     <td className="px-3 py-2">
                       {job.lastRun ? (
-                        <span>
-                          {formatDateTime(job.lastRun.startedAt)} —{' '}
+                        <span title={formatDateTime(job.lastRun.startedAt)}>
+                          {formatDuration(Math.max(0, Date.now() - job.lastRun.startedAt))} önce —{' '}
                           <span
                             className={
                               job.lastRun.state === 'failed'
@@ -876,7 +908,7 @@ export function JobsClient() {
                                 : 'text-(--color-muted)'
                             }
                           >
-                            {job.lastRun.state}
+                            {labelOf(JOB_RUN_STATE_LABELS, job.lastRun.state)}
                           </span>
                         </span>
                       ) : (
@@ -884,7 +916,15 @@ export function JobsClient() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-(--color-muted)">
-                      {job.nextRunAt ? formatDateTime(job.nextRunAt) : '—'}
+                      {job.nextRunAt === null ? (
+                        '—'
+                      ) : (
+                        <span title={formatDateTime(job.nextRunAt)}>
+                          {job.nextRunAt <= Date.now()
+                            ? 'şimdi'
+                            : `${formatDuration(job.nextRunAt - Date.now())} sonra`}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <button
@@ -962,40 +1002,11 @@ export function JobsClient() {
             </tbody>
           </table>
         </TableFrame>
-      </section>
+      </Section>
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
-          Kuyruk Derinliği ve Alınan İşler
-        </h2>
-        <div className="flex flex-wrap gap-4">
-          {['ready', 'locked', 'done', 'failed'].map((state) => (
-            <div key={state} className="rounded border border-(--color-border) px-4 py-2 text-center">
-              <div className="text-xl font-bold">{formatNumber(overview.queueDepth[state] ?? 0)}</div>
-              <div className="text-xs text-(--color-muted)">{state}</div>
-            </div>
-          ))}
-        </div>
-        {overview.claimed.length > 0 && (
-          <ul className="mt-3 divide-y divide-(--color-border) rounded border border-(--color-border) text-sm">
-            {overview.claimed.map((j) => (
-              <li key={j.id} className="flex justify-between px-3 py-2">
-                <span>
-                  {j.jobName} — {j.lockedBy}
-                </span>
-                <span className="text-(--color-muted)">
-                  {j.attempts}. deneme, kilit bitiş: {formatDateTime(j.lockedUntil)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
-          Devre Kesici (Circuit Breaker)
-        </h2>
+      {/* Ranked above queue depth: a tripped breaker is a direct answer to "is a job stuck, and
+          why" (doc 15 §6 2.1's stated primary task), not a supporting number. */}
+      <Section id="circuit-breaker" title="Devre Kesici (Circuit Breaker)">
         {overview.circuitBreakers.length === 0 ? (
           <p className="text-sm text-(--color-muted)">Hiç tetiklenmedi.</p>
         ) : (
@@ -1005,7 +1016,7 @@ export function JobsClient() {
                 <div>
                   <span className="font-medium">{c.marketplaceCode}</span> —{' '}
                   <span className={c.state === 'closed' ? 'text-(--color-muted)' : 'text-(--color-danger)'}>
-                    {CIRCUIT_LABELS[c.state]}
+                    {labelOf(CIRCUIT_LABELS, c.state)}
                   </span>
                   {c.state !== 'closed' && (
                     <span className="ml-2 text-xs text-(--color-muted)">
@@ -1032,95 +1043,123 @@ export function JobsClient() {
           Devre açıkken ilgili pazaryerine giden istekler duraklatılır; yeniden fiyatlandırma ve diğer işler
           bloke olmaz, yalnızca o pazaryerine giden çağrılar ertelenir.
         </p>
-      </section>
+      </Section>
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
-          Tarama Hızı (Rakip Verisi Toplama)
-        </h2>
-        <p className="mb-2 text-xs text-(--color-muted)">
-          Bu değerler yalnızca raporlama amaçlı rakip taramasının (ScrapeCompetitors) pazaryerine gönderdiği
-          istek hızını belirler; fiyatlandırma kararlarını etkilemez. 403 hataları sıklaşırsa istek/dakika
-          değerini düşürün. Değişiklik, worker bir sonraki başlatıldığında etkin olur.
-        </p>
-        <TableFrame maxHeight="50vh">
-          <table className="w-full text-sm">
-            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
-              <tr>
-                <th className="px-3 py-2">Pazaryeri</th>
-                <th className="px-3 py-2">İstek/Dakika</th>
-                <th className="px-3 py-2">Patlama (burst)</th>
-                <th className="px-3 py-2">Varsayılan</th>
-                <th className="px-3 py-2">Kaydet</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-(--color-border)">
-              {scrapeRates.map((rate) => (
-                <tr key={rate.marketplaceCode}>
-                  <td className="px-3 py-2 font-medium">{rate.marketplaceCode}</td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="number"
-                      min={1}
-                      className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
-                      value={scrapeRateDraft[rate.marketplaceCode]?.requestsPerMinute ?? ''}
-                      onChange={(e) =>
-                        setScrapeRateDraft((prev) => ({
-                          ...prev,
-                          [rate.marketplaceCode]: {
-                            requestsPerMinute: e.target.value,
-                            burst: prev[rate.marketplaceCode]?.burst ?? String(rate.burst),
-                          },
-                        }))
-                      }
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="number"
-                      min={1}
-                      className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
-                      value={scrapeRateDraft[rate.marketplaceCode]?.burst ?? ''}
-                      onChange={(e) =>
-                        setScrapeRateDraft((prev) => ({
-                          ...prev,
-                          [rate.marketplaceCode]: {
-                            requestsPerMinute:
-                              prev[rate.marketplaceCode]?.requestsPerMinute ?? String(rate.requestsPerMinute),
-                            burst: e.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-xs text-(--color-muted)">
-                    {rate.default.requestsPerMinute}/dk, patlama {rate.default.burst}
-                    {rate.isOverride ? ' (özelleştirildi)' : ''}
-                  </td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      disabled={busy === `scrape-rate-${rate.marketplaceCode}`}
-                      onClick={() => saveScrapeRate(rate.marketplaceCode)}
-                      className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface)"
-                    >
-                      Kaydet
-                    </button>
-                    {scrapeRateSaved === rate.marketplaceCode && (
-                      <span className="ml-2 text-xs text-(--color-success)">Kaydedildi</span>
-                    )}
-                  </td>
+      <Section id="queue" title="Kuyruk Derinliği ve Alınan İşler">
+        <div className="flex flex-wrap gap-4">
+          {['ready', 'locked', 'done', 'failed'].map((state) => (
+            <div key={state} className="rounded border border-(--color-border) px-4 py-2 text-center">
+              <div className="text-xl font-bold">{formatNumber(overview.queueDepth[state] ?? 0)}</div>
+              <div className="text-xs text-(--color-muted)">{state}</div>
+            </div>
+          ))}
+        </div>
+        {overview.claimed.length > 0 && (
+          <ul className="mt-3 divide-y divide-(--color-border) rounded border border-(--color-border) text-sm">
+            {overview.claimed.map((j) => (
+              <li key={j.id} className="flex justify-between px-3 py-2">
+                <span>
+                  {labelOf(JOB_LABELS, j.jobName)} — {j.lockedBy}
+                </span>
+                <span className="text-(--color-muted)">
+                  {j.attempts}. deneme, kilit bitiş: {formatDateTime(j.lockedUntil)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      {/* Config, not triage: touched when 403s show up, not on a daily pass. Closed by default so
+          it stops competing for attention with the sections above that actually answer the
+          screen's question. */}
+      <details className="rounded border border-(--color-border)">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
+          Tarama Hızı (Rakip Verisi Toplama) — gelişmiş ayar
+        </summary>
+        <div className="border-t border-(--color-border) p-4">
+          <p className="mb-2 text-xs text-(--color-muted)">
+            Bu değerler yalnızca raporlama amaçlı rakip taramasının (ScrapeCompetitors) pazaryerine gönderdiği
+            istek hızını belirler; fiyatlandırma kararlarını etkilemez. 403 hataları sıklaşırsa istek/dakika
+            değerini düşürün. Değişiklik, worker bir sonraki başlatıldığında etkin olur.
+          </p>
+          <TableFrame maxHeight="50vh">
+            <table className="w-full text-sm">
+              <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
+                <tr>
+                  <th className="px-3 py-2">Pazaryeri</th>
+                  <th className="px-3 py-2">İstek/Dakika</th>
+                  <th className="px-3 py-2">Patlama (burst)</th>
+                  <th className="px-3 py-2">Varsayılan</th>
+                  <th className="px-3 py-2">Kaydet</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableFrame>
-      </section>
+              </thead>
+              <tbody className="divide-y divide-(--color-border)">
+                {scrapeRates.map((rate) => (
+                  <tr key={rate.marketplaceCode}>
+                    <td className="px-3 py-2 font-medium">{rate.marketplaceCode}</td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
+                        value={scrapeRateDraft[rate.marketplaceCode]?.requestsPerMinute ?? ''}
+                        onChange={(e) =>
+                          setScrapeRateDraft((prev) => ({
+                            ...prev,
+                            [rate.marketplaceCode]: {
+                              requestsPerMinute: e.target.value,
+                              burst: prev[rate.marketplaceCode]?.burst ?? String(rate.burst),
+                            },
+                          }))
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
+                        value={scrapeRateDraft[rate.marketplaceCode]?.burst ?? ''}
+                        onChange={(e) =>
+                          setScrapeRateDraft((prev) => ({
+                            ...prev,
+                            [rate.marketplaceCode]: {
+                              requestsPerMinute:
+                                prev[rate.marketplaceCode]?.requestsPerMinute ??
+                                String(rate.requestsPerMinute),
+                              burst: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-(--color-muted)">
+                      {rate.default.requestsPerMinute}/dk, patlama {rate.default.burst}
+                      {rate.isOverride ? ' (özelleştirildi)' : ''}
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        disabled={busy === `scrape-rate-${rate.marketplaceCode}`}
+                        onClick={() => saveScrapeRate(rate.marketplaceCode)}
+                        className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface) disabled:opacity-50"
+                      >
+                        {busy === `scrape-rate-${rate.marketplaceCode}` ? 'Kaydediliyor…' : 'Kaydet'}
+                      </button>
+                      {scrapeRateSaved === rate.marketplaceCode && (
+                        <span className="ml-2 text-xs text-(--color-success)">Kaydedildi</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableFrame>
+        </div>
+      </details>
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
-          Çalışma Geçmişi
-        </h2>
+      <Section id="run-history" title="Çalışma Geçmişi">
         <div className="mb-2 flex gap-2">
           <select
             className="rounded border border-(--color-border) px-2 py-1 text-sm"
@@ -1140,58 +1179,62 @@ export function JobsClient() {
             onChange={(e) => setHistoryFilter((f) => ({ ...f, state: e.target.value }))}
           >
             <option value="">Tüm durumlar</option>
-            <option value="success">success</option>
-            <option value="failed">failed</option>
+            <option value="success">{labelOf(JOB_RUN_STATE_LABELS, 'success')}</option>
+            <option value="failed">{labelOf(JOB_RUN_STATE_LABELS, 'failed')}</option>
           </select>
         </div>
-        <TableFrame>
-          <table className="w-full text-sm">
-            <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
-              <tr>
-                <th className="px-3 py-2">İş</th>
-                <th className="px-3 py-2">Başlangıç</th>
-                <th className="px-3 py-2">Süre</th>
-                <th className="px-3 py-2">Durum</th>
-                <th className="px-3 py-2">Öğeler</th>
-                <th className="px-3 py-2">Hata</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-(--color-border)">
-              {pagedHistory.rows.map((r) => (
-                <tr key={r.id}>
-                  <td className="px-3 py-2">{r.jobName}</td>
-                  <td className="px-3 py-2 text-(--color-muted)">{formatDateTime(r.startedAt)}</td>
-                  <td className="px-3 py-2 text-(--color-muted)">
-                    {r.finishedAt ? `${((r.finishedAt - r.startedAt) / 1000).toFixed(1)} sn` : '—'}
-                  </td>
-                  <td className={r.state === 'failed' ? 'px-3 py-2 text-(--color-danger)' : 'px-3 py-2'}>
-                    {r.state}
-                  </td>
-                  <td className="px-3 py-2 text-(--color-muted)">
-                    {r.itemsOk}/{r.itemsTotal} başarılı
-                    {r.itemsFailed > 0 ? `, ${r.itemsFailed} başarısız` : ''}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-(--color-danger)">{r.error ?? ''}</td>
-                </tr>
-              ))}
-              {runHistory.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-4 text-center text-(--color-muted)">
-                    Kayıt yok.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </TableFrame>
-        <div className="mt-2">
-          <Pagination state={pagedHistory} label="çalışma">
-            {historyLimit !== null && runHistory.length >= historyLimit && (
-              <> — en yeni {historyLimit} çalışma gösteriliyor</>
-            )}
-          </Pagination>
-        </div>
-      </section>
+        {runHistory.length === 0 ? (
+          <EmptyState
+            message="Henüz çalışma yok."
+            reason="Bir işi yukarıdan Çalıştır'a basarak başlatabilir ya da zamanlanmış ilk çalışmayı bekleyebilirsiniz."
+          />
+        ) : (
+          <>
+            <TableFrame>
+              <table className="w-full text-sm">
+                <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
+                  <tr>
+                    <th className="px-3 py-2">İş</th>
+                    <th className="px-3 py-2">Başlangıç</th>
+                    <th className="px-3 py-2">Süre</th>
+                    <th className="px-3 py-2">Durum</th>
+                    <th className="px-3 py-2">Öğeler</th>
+                    <th className="px-3 py-2">Hata</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-(--color-border)">
+                  {pagedHistory.rows.map((r) => (
+                    <tr key={r.id}>
+                      <td className="px-3 py-2">{labelOf(JOB_LABELS, r.jobName)}</td>
+                      {/* Absolute, deliberately: this row is a log entry — the exact instant is
+                          the point (doc 15 §3.3's own carve-out), not staleness at a glance. */}
+                      <td className="px-3 py-2 text-(--color-muted)">{formatDateTime(r.startedAt)}</td>
+                      <td className="px-3 py-2 text-(--color-muted)">
+                        {r.finishedAt ? `${((r.finishedAt - r.startedAt) / 1000).toFixed(1)} sn` : '—'}
+                      </td>
+                      <td className={r.state === 'failed' ? 'px-3 py-2 text-(--color-danger)' : 'px-3 py-2'}>
+                        {labelOf(JOB_RUN_STATE_LABELS, r.state)}
+                      </td>
+                      <td className="px-3 py-2 text-(--color-muted)">
+                        {r.itemsOk}/{r.itemsTotal} başarılı
+                        {r.itemsFailed > 0 ? `, ${r.itemsFailed} başarısız` : ''}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-(--color-danger)">{r.error ?? ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableFrame>
+            <div className="mt-2">
+              <Pagination state={pagedHistory} label="çalışma">
+                {historyLimit !== null && runHistory.length >= historyLimit && (
+                  <> — en yeni {historyLimit} çalışma gösteriliyor</>
+                )}
+              </Pagination>
+            </div>
+          </>
+        )}
+      </Section>
     </div>
   );
 }

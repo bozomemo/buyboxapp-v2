@@ -122,6 +122,18 @@ export const CIRCUIT_LABELS: Record<string, string> = {
 };
 
 /**
+ * `job_runs.state` — running|success|failed (`packages/db` `repositories/jobs.ts`). Added during
+ * `/jobs`' Phase 2.1 rework (doc 15 §6, 2.1): the catalogue's "Son Çalışma" column and the run
+ * history table both printed this raw (R-UI-11), which the plan's baseline recorded as a known
+ * issue ("raw run `state`").
+ */
+export const JOB_RUN_STATE_LABELS: Record<string, string> = {
+  running: 'Çalışıyor',
+  success: 'Başarılı',
+  failed: 'Başarısız',
+};
+
+/**
  * A tracked (rival) product's last scrape outcome. Moved from
  * `tracked-product-detail-client.tsx` (doc 15 §1b). `noOffers` is phrased as a fact about the
  * market, not a failure of the scrape: the page was read fine and nobody was selling.
