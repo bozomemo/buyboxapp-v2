@@ -887,6 +887,19 @@ screen reports can be clicked through to the rows behind them. This screen count
 products but cannot show them, and the count is exactly the number an operator wants to open —
 before this they had to leave for `/tracked-products` and re-pick the brand from a dropdown.
 
+**IA rework (Faz 2.7, 2026-09-06).** The primary task here is registry/triage — "hangi markaları
+izliyorum, taramalar sağlıklı mı?" — not adding brands, so the add-group/add-brand forms sit
+behind a collapsed "Marka veya grup ekle" toggle rather than above the fold; the toggle opens
+itself automatically only on a first visit with zero groups. The grid gained column preferences
+(`useColumnPrefs`, R-UI-12) and the shared `Ago` component in place of an absolute "Son Tarama"
+timestamp — absolute time stays only in the CSV export, which is a record rather than a live
+view. The primary load (`/api/watched-brands`) now has an explicit loading state and a
+"Tekrar dene" error state; before this pass a rejected fetch silently rendered as "no groups yet"
+(§3.2's loading/error conflation) because neither `fetch` chain in `load()` carried a `.catch`.
+Turning a brand from "bizim" to "rakip" now asks for confirmation (§3.6) because it silently
+stops that brand's audit findings; the reverse direction, and pausing/resuming a brand, stay a
+single click because neither creates risk.
+
 **`/tracked-products`** — now serves both hand-added products and swept ones, server-paged,
 filtered and sorted. Filters: text, brand, category, status, minimum rating count, and two
 switches that exist for the audit specifically — _sadece aramada çıkanlar_ and _değerlendirmesi
