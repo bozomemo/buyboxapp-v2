@@ -15,7 +15,20 @@ import {
   useFilterPresets,
   type ColumnDef,
 } from '@/components/table';
-import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import {
+  Ago,
+  Button,
+  Chip,
+  ConfirmButton,
+  EmptyState,
+  ErrorState,
+  Field,
+  LoadingState,
+  PageHeader,
+  Select,
+  TextInput,
+} from '@/components/ui';
+import { formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { marketSnapshot } from '@/lib/market-stats';
 import { marketplaceProductUrl } from '@/lib/product-url';
 import { discoveryLabel, isBrandNameOnly } from '@/lib/tracked-product-discovery';
@@ -194,12 +207,25 @@ function moneyCell(value: string | null | undefined) {
  */
 export function TrackedProductsClient() {
   const searchParams = useSearchParams();
-  const [products, setProducts] = useState<TrackedProduct[]>([]);
+  /**
+   * `null` until the first successful load — distinct from "loaded, zero rows" (doc 15 §3.2's
+   * six-state contract). An empty array here would make a failed first load indistinguishable
+   * from a filter that genuinely matches nothing.
+   */
+  const [products, setProducts] = useState<TrackedProduct[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
+  /** An action's own failure (add, rescan) — shown as a banner near that action. */
   const [error, setError] = useState<string | null>(null);
+  /**
+   * `/api/tracked-products` itself failing, kept apart from `error` above (mirrors `jobs-client`'s
+   * `loadError`/`error` split). Before this the primary load had no failure path at all — a
+   * rejected fetch left `loading` cleared and the grid silently read as "Bu filtrelerle ürün
+   * bulunamadı," which is the §3.2 loading/error conflation the baseline recorded elsewhere.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [brands, setBrands] = useState<WatchedBrandOption[]>([]);
@@ -288,11 +314,13 @@ export function TrackedProductsClient() {
     p.set('limit', String(pageSize));
     p.set('offset', String(page * pageSize));
     fetch(`/api/tracked-products?${p.toString()}`)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: { products: TrackedProduct[]; total: number }) => {
         setProducts(d.products);
         setTotal(d.total);
+        setLoadError(null);
       })
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }, [filterParams, page, pageSize]);
 
@@ -414,8 +442,8 @@ export function TrackedProductsClient() {
     }
   }
 
+  /** Confirmation lives on the button (`ConfirmButton`, §3.6) — this only performs the removal. */
   async function remove(id: string) {
-    if (!confirm('Bu ürünü takipten çıkar?')) return;
     await fetch(`/api/tracked-products?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
     load();
   }
@@ -463,10 +491,30 @@ export function TrackedProductsClient() {
 
   const visibleColumns = useMemo(() => columns.order.filter((id) => columns.isVisible(id)), [columns]);
 
+  // The primary load's own six-state handling (doc 15 §3.2): a failed first load is retryable, a
+  // first load in flight says so. After this point `products` is never `null` — every reference
+  // below assumes a real array, loaded or genuinely empty.
+  if (!products && loadError) {
+    return <ErrorState message={loadError} onRetry={load} />;
+  }
+  if (!products) {
+    return <LoadingState message="Ürünler yükleniyor…" skeletonRows={4} />;
+  }
+
   // "Select all" is **this page**, never the whole filtered set. A brand holds thousands of rows
   // and the rescan ceiling is fifty, so a header tick that meant "all 4,863" could only ever be
   // refused — and the row it would have selected is one the operator never saw.
   const pageAllSelected = products.length > 0 && products.every((p) => selected.has(p.id));
+
+  const hasActiveFilters =
+    filters.text !== '' ||
+    filters.brandId !== '' ||
+    filters.categoryRef !== '' ||
+    filters.active !== '' ||
+    filters.searchTermOnly ||
+    filters.unratedOnly ||
+    filters.noSellerOnly ||
+    filters.minRatingCount !== '';
 
   function renderCell(id: ColumnId, p: TrackedProduct) {
     // One reduction of the latest look, shared by every current-market cell — so Satıcı, Medyan,
@@ -495,11 +543,13 @@ export function TrackedProductsClient() {
             })()}
             {/* Marka adını taşıyor ama pazaryeri markaya atfetmiyor — denetim sinyali. */}
             {isBrandNameOnly(p) && (
-              <span
-                className="ml-1 rounded bg-(--color-warning-bg) px-1 text-xs text-(--color-warning)"
-                title="Bu ürün marka adıyla arandığında çıkıyor ama pazaryeri onu bu markaya atfetmiyor."
-              >
-                sadece arama
+              <span className="ml-1 inline-block align-middle">
+                <Chip
+                  tone="warn"
+                  title="Bu ürün marka adıyla arandığında çıkıyor ama pazaryeri onu bu markaya atfetmiyor."
+                >
+                  sadece arama
+                </Chip>
               </span>
             )}
           </>
@@ -583,113 +633,117 @@ export function TrackedProductsClient() {
       case 'discovery':
         return <span className="text-xs">{discoveryLabel(p)}</span>;
       case 'lastSwept':
-        return p.lastSweptAt ? formatDateTime(p.lastSweptAt) : 'henüz taranmadı';
+        return <Ago at={p.lastSweptAt} never="henüz taranmadı" />;
       case 'lastScraped':
         // "Son Tarama" is the catalogue sweep, "Son Bakış" is the per-product price scrape.
         // Two different jobs at two different cadences, so two columns rather than one.
-        return p.lastScrapedAt ? formatDateTime(p.lastScrapedAt) : 'hiç bakılmadı';
+        return <Ago at={p.lastScrapedAt} never="hiç bakılmadı" />;
       case 'addedAt':
-        return formatDateTime(p.addedAt);
+        return <Ago at={p.addedAt} />;
     }
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Takip Edilen Ürünler</h1>
-        <div className="flex items-center gap-2">
-          <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
-          <a
-            href={`/api/tracked-products?${(() => {
-              const p = filterParams();
-              p.set('format', 'csv');
-              // What the grid is showing, in the order it is showing it — the export honours the
-              // operator's column choices, not a second list living in the route.
-              p.set('columns', visibleColumns.join(','));
-              return p.toString();
-            })()}`}
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-            title={`Geçerli filtreyle eşleşen ilk ${CSV_EXPORT_ROW_CAP.toLocaleString('tr-TR')} ürünü indirir — ekrandaki sayfayı değil`}
-          >
-            Excel&apos;e Aktar
-          </a>
-        </div>
-      </div>
+      <PageHeader
+        title="Takip Edilen Ürünler"
+        description={
+          <>
+            Satmadığımız ürünlerin fiyat, satıcı ve değerlendirme bilgisi. Buraya iki yoldan ürün gelir: tek
+            tek link yapıştırarak, veya{' '}
+            <Link href="/watched-brands" className="text-(--color-accent) hover:underline">
+              izlenen bir markanın
+            </Link>{' '}
+            taramasıyla. Bu liste <strong>raporlamadır</strong> — hiçbir fiyat kararını etkilemez.
+          </>
+        }
+        action={
+          <div className="flex items-center gap-2">
+            <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+            <a
+              href={`/api/tracked-products?${(() => {
+                const p = filterParams();
+                p.set('format', 'csv');
+                // What the grid is showing, in the order it is showing it — the export honours the
+                // operator's column choices, not a second list living in the route.
+                p.set('columns', visibleColumns.join(','));
+                return p.toString();
+              })()}`}
+              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+              title={`Geçerli filtreyle eşleşen ilk ${CSV_EXPORT_ROW_CAP.toLocaleString('tr-TR')} ürünü indirir — ekrandaki sayfayı değil`}
+            >
+              Excel&apos;e Aktar
+            </a>
+          </div>
+        }
+      />
 
-      <p className="max-w-3xl text-sm text-(--color-muted)">
-        Satmadığımız ürünlerin fiyat, satıcı ve değerlendirme bilgisi. Buraya iki yoldan ürün gelir: tek tek
-        link yapıştırarak, veya{' '}
-        <Link href="/watched-brands" className="text-(--color-accent) hover:underline">
-          izlenen bir markanın
-        </Link>{' '}
-        taramasıyla. Bu liste <strong>raporlamadır</strong> — hiçbir fiyat kararını etkilemez.
-      </p>
+      {/* A refresh (filter/sayfa değişikliği) başarısız oldu ama önceki liste hâlâ ekranda —
+          sessizce eskimesine izin vermek yerine söylüyoruz (§3.2 "Stale"). */}
+      {loadError && (
+        <p
+          role="alert"
+          className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) px-3 py-2 text-sm"
+        >
+          Son yenileme başarısız oldu ({loadError}). Aşağıdaki liste artık güncel olmayabilir.
+        </p>
+      )}
 
       {/* ---- filtreler ---- */}
       <div className="space-y-2 rounded border border-(--color-border) p-3">
         <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col text-xs">
-            Ara
-            <input
+          <Field label="Ara">
+            <TextInput
               value={filters.text}
               onChange={(e) => setFilters({ ...filters, text: e.target.value })}
               placeholder="Ürün adı veya kodu"
-              className="w-56 rounded border border-(--color-border) px-2 py-1 text-sm"
+              className="w-56"
             />
-          </label>
-          <label className="flex flex-col text-xs">
-            Marka
-            <select
+          </Field>
+          <Field label="Marka">
+            <Select
               value={filters.brandId}
               onChange={(e) => setFilters({ ...filters, brandId: e.target.value, categoryRef: '' })}
-              className="w-40 rounded border border-(--color-border) px-2 py-1 text-sm"
-            >
-              <option value="">Tümü</option>
-              {brands.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col text-xs">
-            Kategori
-            <select
+              className="w-40"
+              options={[
+                { value: '', label: 'Tümü' },
+                ...brands.map((b) => ({ value: b.id, label: b.label })),
+              ]}
+            />
+          </Field>
+          <Field label="Kategori">
+            <Select
               value={filters.categoryRef}
               onChange={(e) => setFilters({ ...filters, categoryRef: e.target.value })}
-              className="w-52 rounded border border-(--color-border) px-2 py-1 text-sm"
-            >
-              <option value="">Tümü</option>
-              {categories.map((c) => (
-                <option key={c.ref} value={c.ref}>
-                  {c.name} ({c.productCount})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col text-xs">
-            Durum
-            <select
+              className="w-52"
+              options={[
+                { value: '', label: 'Tümü' },
+                ...categories.map((c) => ({ value: c.ref, label: `${c.name} (${c.productCount})` })),
+              ]}
+            />
+          </Field>
+          <Field label="Durum">
+            <Select
               value={filters.active}
               onChange={(e) => setFilters({ ...filters, active: e.target.value })}
-              className="w-32 rounded border border-(--color-border) px-2 py-1 text-sm"
-            >
-              <option value="">Tümü</option>
-              <option value="true">Aktif</option>
-              <option value="false">Duraklatıldı</option>
-            </select>
-          </label>
-          <label className="flex flex-col text-xs">
-            En az değerlendirme
-            <input
+              className="w-32"
+              options={[
+                { value: '', label: 'Tümü' },
+                { value: 'true', label: 'Aktif' },
+                { value: 'false', label: 'Duraklatıldı' },
+              ]}
+            />
+          </Field>
+          <Field label="En az değerlendirme">
+            <TextInput
               type="number"
               min={0}
               value={filters.minRatingCount}
               onChange={(e) => setFilters({ ...filters, minRatingCount: e.target.value })}
               placeholder="0"
-              className="w-28 rounded border border-(--color-border) px-2 py-1 text-sm"
+              className="w-28"
             />
-          </label>
+          </Field>
           <label
             className="flex items-center gap-1 text-xs"
             title="Marka adını taşıyan ama pazaryerinin markaya atfetmediği ürünler"
@@ -723,13 +777,14 @@ export function TrackedProductsClient() {
             />
             Satıcısı olmayanlar
           </label>
-          <button
+          <Button
+            variant="secondary"
             type="button"
             onClick={() => setFilters(EMPTY_FILTERS)}
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+            className="px-2! py-1! text-xs"
           >
             Temizle
-          </button>
+          </Button>
         </div>
 
         {/* ---- kayıtlı filtreler ---- */}
@@ -777,60 +832,48 @@ export function TrackedProductsClient() {
 
       {/* ---- link ile ekle ---- */}
       <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) p-3">
-        <label className="flex flex-col text-xs">
-          Ürün linki
-          <input
+        <Field label="Ürün linki">
+          <TextInput
             value={link}
             onChange={(e) => setLink(e.target.value)}
             placeholder="https://www.trendyol.com/... veya https://www.hepsiburada.com/..."
-            className="w-96 rounded border border-(--color-border) px-2 py-1 text-sm"
+            className="w-96"
           />
-        </label>
-        <label className="flex flex-col text-xs">
-          Etiket (opsiyonel)
-          <input
+        </Field>
+        <Field label="Etiket (opsiyonel)">
+          <TextInput
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Kolay tanımak için bir isim"
-            className="w-48 rounded border border-(--color-border) px-2 py-1 text-sm"
+            className="w-48"
           />
-        </label>
-        <button
-          type="button"
-          disabled={busy || !link.trim()}
-          onClick={() => void add()}
-          className="rounded bg-(--color-accent) px-3 py-1.5 text-sm text-(--color-accent-ink) disabled:opacity-40"
-        >
-          Ekle
-        </button>
+        </Field>
+        <Button type="button" disabled={busy || !link.trim()} onClick={() => void add()}>
+          {busy ? 'Ekleniyor…' : 'Ekle'}
+        </Button>
       </div>
       {/* ---- tavsiye edilen satış fiyatı listesi ---- */}
       <div className="rounded border border-(--color-border) p-3 text-sm">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col text-xs">
-            Fiyat listesi (Excel/CSV)
+          <Field label="Fiyat listesi (Excel/CSV)">
             <input
               type="file"
               accept=".csv,text/csv,text/plain"
               onChange={(e) => void importReferencePrices(e.target.files?.[0] ?? null, e.target)}
               className="w-80 rounded border border-(--color-border) px-2 py-1 text-sm"
             />
-          </label>
-          <label className="flex flex-col text-xs">
-            Ürün kodları hangi pazaryerinden?
-            <select
+          </Field>
+          <Field label="Ürün kodları hangi pazaryerinden?">
+            <Select
               value={referenceMarketplace}
               onChange={(e) => setReferenceMarketplace(e.target.value)}
-              className="w-44 rounded border border-(--color-border) px-2 py-1 text-sm"
-            >
-              <option value="">Dosyada yazıyor</option>
-              {marketplaces.map((m) => (
-                <option key={m.code} value={m.code}>
-                  {m.displayName}
-                </option>
-              ))}
-            </select>
-          </label>
+              className="w-44"
+              options={[
+                { value: '', label: 'Dosyada yazıyor' },
+                ...marketplaces.map((m) => ({ value: m.code, label: m.displayName })),
+              ]}
+            />
+          </Field>
           <p className="max-w-xl text-xs text-(--color-muted)">
             Sütunlar: <strong>Barkod</strong> ya da <strong>Ürün Kodu</strong> (+ Pazaryeri), ve{' '}
             <strong>Tavsiye Edilen Satış Fiyatı</strong>. Ürünler <em>isimle eşleştirilmez</em>. Tek bir
@@ -838,9 +881,13 @@ export function TrackedProductsClient() {
             sandığınız ama çalışmayan bir listedir.
           </p>
         </div>
-        {referenceNotice && <p className="mt-2 text-(--color-accent)">{referenceNotice}</p>}
+        {referenceNotice && (
+          <p role="status" aria-live="polite" className="mt-2 text-(--color-accent)">
+            {referenceNotice}
+          </p>
+        )}
         {referenceErrors.length > 0 && (
-          <div className="mt-2 rounded border border-(--color-danger) p-2 text-xs">
+          <div role="alert" className="mt-2 rounded border border-(--color-danger) p-2 text-xs">
             <p className="mb-1 font-medium text-(--color-danger)">
               Dosya yüklenmedi — {formatNumber(referenceErrors.length)} satırda sorun var:
             </p>
@@ -860,8 +907,16 @@ export function TrackedProductsClient() {
         )}
       </div>
 
-      {error && <p className="text-sm text-(--color-danger)">{error}</p>}
-      {notice && <p className="text-sm text-(--color-accent)">{notice}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-(--color-danger)">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" aria-live="polite" className="text-sm text-(--color-accent)">
+          {notice}
+        </p>
+      )}
 
       {/* ---- seçim işlemleri ---- */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -905,113 +960,126 @@ export function TrackedProductsClient() {
         </span>
       </div>
 
-      <Pagination state={{ page, pageSize, total, setPage, setPageSize }} label="ürün" />
+      <Pagination state={{ page, pageSize, total, setPage, setPageSize }} label="ürün">
+        {/* A filter/sayfa değişikliği sonrası yeniden yükleme — ilk yükleme değil, o zaten
+            `LoadingState` ile karşılanıyor (§3.2 "Busy"). */}
+        {loading && <span aria-live="polite"> · yükleniyor…</span>}
+      </Pagination>
 
-      <TableFrame>
-        <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns, 32 + 140)}>
-          <thead
-            className={`${STICKY_HEAD} bg-(--color-hover) text-left text-xs uppercase text-(--color-muted)`}
-          >
-            <tr>
-              <th className="px-2 py-2" style={{ width: 32 }}>
-                <input
-                  type="checkbox"
-                  checked={pageAllSelected}
-                  aria-label="Bu sayfadaki ürünleri seç"
-                  title="Bu sayfadaki ürünleri seç"
-                  onChange={(e) =>
-                    setSelected((prev) => {
-                      const next = new Set(prev);
-                      for (const p of products) {
-                        if (e.target.checked) next.add(p.id);
-                        else next.delete(p.id);
-                      }
-                      return next;
-                    })
-                  }
-                />
-              </th>
-              {visibleColumns.map((id) => {
-                const def = COLUMN_DEFS.find((d) => d.id === id)!;
-                const sortable = SORT_FOR_COLUMN[id];
-                const active = sortable === sort;
-                return (
-                  <ResizableTh key={id} id={id} prefs={columns} className="px-2 py-2">
-                    {sortable ? (
-                      <button
-                        type="button"
-                        onClick={() => onSort(id)}
-                        className={`flex items-center gap-1 uppercase ${active ? 'text-(--color-fg)' : ''}`}
-                      >
-                        {def.label}
-                        {active && <span aria-hidden>{sortDir === 'asc' ? '▲' : '▼'}</span>}
-                      </button>
-                    ) : (
-                      def.label
-                    )}
-                  </ResizableTh>
-                );
-              })}
-              <th className="px-2 py-2" style={{ width: 140 }} />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-(--color-border)">
-            {products.map((p) => (
-              <tr key={p.id} className={p.isActive ? undefined : 'opacity-50'}>
-                <td className="px-2 py-1">
+      {products.length === 0 ? (
+        <EmptyState
+          message={hasActiveFilters ? 'Bu filtrelerle ürün bulunamadı.' : 'Henüz takip edilen ürün yok.'}
+          reason={
+            hasActiveFilters
+              ? 'Farklı bir filtre deneyin ya da temizleyin.'
+              : 'Yukarıdan bir ürün linki yapıştırarak ekleyin, ya da izlenen bir markanın taramasını bekleyin.'
+          }
+          action={
+            hasActiveFilters ? (
+              <Button variant="secondary" type="button" onClick={() => setFilters(EMPTY_FILTERS)}>
+                Filtreleri Temizle
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <TableFrame>
+          <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns, 32 + 140)}>
+            <thead
+              className={`${STICKY_HEAD} bg-(--color-hover) text-left text-xs uppercase text-(--color-muted)`}
+            >
+              <tr>
+                <th className="px-2 py-2" style={{ width: 32 }}>
                   <input
                     type="checkbox"
-                    checked={selected.has(p.id)}
-                    aria-label={`${p.label} seç`}
-                    onChange={() => toggleSelected(p.id)}
+                    checked={pageAllSelected}
+                    aria-label="Bu sayfadaki ürünleri seç"
+                    title="Bu sayfadaki ürünleri seç"
+                    onChange={(e) =>
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        for (const p of products) {
+                          if (e.target.checked) next.add(p.id);
+                          else next.delete(p.id);
+                        }
+                        return next;
+                      })
+                    }
                   />
-                </td>
-                {visibleColumns.map((id) => (
-                  <td key={id} className="truncate px-2 py-1">
-                    {renderCell(id, p)}
+                </th>
+                {visibleColumns.map((id) => {
+                  const def = COLUMN_DEFS.find((d) => d.id === id)!;
+                  const sortable = SORT_FOR_COLUMN[id];
+                  const active = sortable === sort;
+                  return (
+                    <ResizableTh key={id} id={id} prefs={columns} className="px-2 py-2">
+                      {sortable ? (
+                        <button
+                          type="button"
+                          onClick={() => onSort(id)}
+                          className={`flex items-center gap-1 uppercase ${active ? 'text-(--color-fg)' : ''}`}
+                        >
+                          {def.label}
+                          {active && <span aria-hidden>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                        </button>
+                      ) : (
+                        def.label
+                      )}
+                    </ResizableTh>
+                  );
+                })}
+                <th className="px-2 py-2" style={{ width: 140 }} />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-(--color-border)">
+              {products.map((p) => (
+                <tr key={p.id} className={p.isActive ? undefined : 'opacity-50'}>
+                  <td className="px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(p.id)}
+                      aria-label={`${p.label} seç`}
+                      onChange={() => toggleSelected(p.id)}
+                    />
                   </td>
-                ))}
-                <td className="px-2 py-1 text-right whitespace-nowrap">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void rescan([p.id])}
-                    title="Bu ürünün satıcı ve fiyat verisini şimdi yeniden oku"
-                    className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent) disabled:opacity-40"
-                  >
-                    Tara
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void setActive(p.id, !p.isActive)}
-                    title={p.isActive ? 'Taramayı bu ürün için durdur' : 'Taramayı sürdür'}
-                    className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent)"
-                  >
-                    {p.isActive ? 'Duraklat' : 'Sürdür'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void remove(p.id)}
-                    className="text-xs text-(--color-muted) hover:text-(--color-danger)"
-                  >
-                    Kaldır
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {products.length === 0 && !loading && (
-              <tr>
-                <td
-                  colSpan={visibleColumns.length + 2}
-                  className="px-2 py-6 text-center text-(--color-muted)"
-                >
-                  Bu filtrelerle ürün bulunamadı.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </TableFrame>
+                  {visibleColumns.map((id) => (
+                    <td key={id} className="truncate px-2 py-1">
+                      {renderCell(id, p)}
+                    </td>
+                  ))}
+                  <td className="px-2 py-1 text-right whitespace-nowrap">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void rescan([p.id])}
+                      title="Bu ürünün satıcı ve fiyat verisini şimdi yeniden oku"
+                      className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent) disabled:opacity-40"
+                    >
+                      Tara
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void setActive(p.id, !p.isActive)}
+                      title={p.isActive ? 'Taramayı bu ürün için durdur' : 'Taramayı sürdür'}
+                      className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent)"
+                    >
+                      {p.isActive ? 'Duraklat' : 'Sürdür'}
+                    </button>
+                    <ConfirmButton
+                      requireConfirm
+                      confirmMessage={`"${p.label}" takipten çıkarılsın mı?`}
+                      onConfirmed={() => void remove(p.id)}
+                      className="text-xs text-(--color-muted) hover:text-(--color-danger)"
+                    >
+                      Kaldır
+                    </ConfirmButton>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableFrame>
+      )}
     </div>
   );
 }
