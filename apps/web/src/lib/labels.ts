@@ -186,6 +186,20 @@ export const FINDING_BASIS_LABELS: Record<string, string> = {
   measured: 'Yorum',
 };
 
+/**
+ * `sellerPoliciesRepo.SellerPolicyStatus` plus the resolver's third state (`undefined` — no rule
+ * applies). Was a local `VERDICT_LABEL` in `policy-client.tsx` (doc 15 §6, Phase 3.2); moved here
+ * per §2 rule 10 (no local `*_LABELS` map).
+ *
+ * `undefined` is a real state, not a fallback: it is the state almost every seller is in, and it
+ * means "nobody has looked at this seller yet", not "unauthorised" (doc 06 §12.4, Faz 5).
+ */
+export const POLICY_VERDICT_LABELS: Record<string, string> = {
+  authorised: 'Yetkili',
+  blocked: 'Yasaklı',
+  undefined: 'Tanımsız',
+};
+
 export const JOB_LABELS: Record<string, string> = {
   ImportListings: 'İlan İçe Aktarma',
   ObserveBuybox: 'Buybox Gözlemi',

@@ -1,14 +1,21 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import {
-  Pagination,
-  STICKY_HEAD,
-  TableFrame,
-  usePagedRows,
-} from '@/components/table';
+  Chip,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StatusBanner,
+  TONE_BOX,
+  TONE_TEXT,
+  type Tone,
+} from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
+import { POLICY_VERDICT_LABELS } from '@/lib/labels';
 
 type Verdict = 'authorised' | 'blocked' | 'undefined';
 
@@ -49,31 +56,21 @@ interface Report {
   sellers: SellerRow[];
 }
 
-const VERDICT_LABEL: Record<Verdict, string> = {
-  authorised: 'Yetkili',
-  blocked: 'Yasaklı',
-  undefined: 'Tanımsız',
-};
-
 /**
- * `undefined` is styled as a **neutral** state, not a warning.
+ * `undefined` is styled as a **neutral** `Chip` tone, not a warning.
  *
  * It is the state almost every seller is in, and colouring it as a problem would train the
  * operator to ignore the colour that matters. "Nobody has looked at this seller yet" is not
  * "this seller is unauthorised".
  */
-const VERDICT_CLASS: Record<Verdict, string> = {
-  authorised: 'bg-(--color-success-bg) text-(--color-success)',
-  blocked: 'bg-(--color-danger-bg) text-(--color-danger)',
-  undefined: 'text-(--color-muted)',
+const VERDICT_TONE: Record<Verdict, Tone> = {
+  authorised: 'ok',
+  blocked: 'danger',
+  undefined: 'neutral',
 };
 
 function VerdictChip({ verdict }: { verdict: Verdict }) {
-  return (
-    <span className={`rounded px-1.5 py-0.5 text-xs ${VERDICT_CLASS[verdict]}`}>
-      {VERDICT_LABEL[verdict]}
-    </span>
-  );
+  return <Chip tone={VERDICT_TONE[verdict]}>{POLICY_VERDICT_LABELS[verdict]}</Chip>;
 }
 
 /**
@@ -135,10 +132,7 @@ export function PolicyClient() {
     () => report?.brands.find((b) => b.id === watchedBrandId) ?? null,
     [report, watchedBrandId],
   );
-  const group = useMemo(
-    () => report?.groups.find((g) => g.id === brand?.groupId) ?? null,
-    [report, brand],
-  );
+  const group = useMemo(() => report?.groups.find((g) => g.id === brand?.groupId) ?? null, [report, brand]);
 
   async function post(url: string, body: unknown): Promise<Response> {
     setBusy(true);
@@ -242,6 +236,25 @@ export function PolicyClient() {
 
   const dormantCount = (report?.policies ?? []).filter((p) => p.dormant).length;
 
+  // Loading and error never share a line (doc 15 §3.2): the operator needs to tell "nothing has
+  // arrived yet" from "the request failed" at a glance, and a `Tekrar dene` button only makes
+  // sense once the primary load has actually failed.
+  if (error && !report) {
+    return (
+      <div className="p-6">
+        <ErrorState message={error} onRetry={load} />
+      </div>
+    );
+  }
+
+  if (!report) {
+    return (
+      <div className="p-6">
+        <LoadingState message="Politika yükleniyor…" skeletonRows={3} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -249,9 +262,9 @@ export function PolicyClient() {
           <h1 className="text-2xl font-semibold">Satıcı Politikası</h1>
           <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
             Bir satıcı, her marka için üç durumdan birindedir: <strong>yetkili</strong>,{' '}
-            <strong>yasaklı</strong> veya <strong>tanımsız</strong>. Tanımsız gerçek bir
-            durumdur — “henüz bakılmadı” demektir, “izinsiz” demek değildir. Eşleştirme
-            pazaryeri satıcı kodu ya da vergi numarası ile yapılır; <strong>isimle asla</strong>.
+            <strong>yasaklı</strong> veya <strong>tanımsız</strong>. Tanımsız gerçek bir durumdur — “henüz
+            bakılmadı” demektir, “izinsiz” demek değildir. Eşleştirme pazaryeri satıcı kodu ya da vergi
+            numarası ile yapılır; <strong>isimle asla</strong>.
           </p>
         </div>
         <label className="text-sm">
@@ -261,9 +274,9 @@ export function PolicyClient() {
             value={watchedBrandId}
             onChange={(e) => setWatchedBrandId(e.target.value)}
           >
-            {(report?.groups ?? []).map((g) => (
+            {report.groups.map((g) => (
               <optgroup key={g.id} label={g.name}>
-                {(report?.brands ?? [])
+                {report.brands
                   .filter((b) => b.groupId === g.id)
                   .map((b) => (
                     <option key={b.id} value={b.id}>
@@ -276,22 +289,16 @@ export function PolicyClient() {
         </label>
       </div>
 
-      {error && (
-        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded border border-(--color-success-border) bg-(--color-success-bg) p-3 text-sm">
-          {message}
-        </div>
-      )}
+      {error && <StatusBanner ok={false} message={error} />}
+      {message && <StatusBanner ok={true} message={message} />}
       {importErrors.length > 0 && (
-        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
-          <strong className="block">Dosya içe aktarılmadı — hiçbir satır yazılmadı.</strong>
+        <div className={`rounded border p-3 text-sm ${TONE_BOX.danger}`}>
+          <strong className={`block ${TONE_TEXT.danger}`}>
+            Dosya içe aktarılmadı — hiçbir satır yazılmadı.
+          </strong>
           <p className="mt-1 text-xs">
-            Yarım uygulanmış bir liste hiç olmamasından kötüdür: liste yürürlükte sanılır, hata
-            veren satırlara ise bir daha kimse bakmaz. Aşağıdakileri düzeltip tekrar deneyin.
+            Yarım uygulanmış bir liste hiç olmamasından kötüdür: liste yürürlükte sanılır, hata veren
+            satırlara ise bir daha kimse bakmaz. Aşağıdakileri düzeltip tekrar deneyin.
           </p>
           <ul className="mt-2 space-y-0.5">
             {importErrors.slice(0, 20).map((e) => (
@@ -305,263 +312,297 @@ export function PolicyClient() {
           )}
         </div>
       )}
-      {loading && <div className="text-sm text-(--color-muted)">Yükleniyor…</div>}
+      {/* A control mid-request must say so, not only disable (doc 15 §3.2) — every write on this
+          screen (manual add, import, row verdict change) shares this one `busy` flag. */}
+      {busy && (
+        <p aria-live="polite" className="text-sm text-(--color-muted)">
+          Kaydediliyor…
+        </p>
+      )}
+      {loading && (
+        <p aria-live="polite" className="text-sm text-(--color-muted)">
+          Yükleniyor…
+        </p>
+      )}
 
-      {/* Kapsam anahtarı — hem elle girişi hem içe aktarmayı etkiler, o yüzden ikisinin de
-          üstünde duruyor. */}
-      <label className="flex items-start gap-2 rounded border border-(--color-border) p-3 text-sm">
-        <input
-          type="checkbox"
-          className="mt-0.5"
-          checked={applyToWholeGroup}
-          onChange={(e) => setApplyToWholeGroup(e.target.checked)}
+      {!brand ? (
+        <EmptyState
+          message="Henüz izlenen marka yok."
+          reason="Bir satıcı kuralı bir markaya bağlıdır — önce İzlenen Markalar'dan bir marka ekleyin."
+          action={
+            <Link className="text-sm text-(--color-accent) hover:underline" href="/watched-brands">
+              İzlenen Markalar&apos;a git →
+            </Link>
+          }
         />
-        <span>
-          Kuralı <strong>{group?.name ?? 'grubun'}</strong> tamamına uygula ({brand?.label} yerine)
-          <span className="block text-xs text-(--color-muted)">
-            Grup kuralı, kendi kuralı olmayan her markada geçerlidir. Bir markaya ayrıca kural
-            yazarsanız o marka için grup kuralı geçersiz kalır — “hepsi için yetkili, Royal Canin
-            hariç” iki satırdır, marka başına bir satır değil.
-          </span>
-        </span>
-      </label>
+      ) : (
+        <>
+          {/* Kapsam anahtarı — hem elle girişi hem içe aktarmayı etkiler, o yüzden ikisinin de
+          üstünde duruyor. */}
+          <label className="flex items-start gap-2 rounded border border-(--color-border) p-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={applyToWholeGroup}
+              onChange={(e) => setApplyToWholeGroup(e.target.checked)}
+            />
+            <span>
+              Kuralı <strong>{group?.name ?? 'grubun'}</strong> tamamına uygula ({brand?.label} yerine)
+              <span className="block text-xs text-(--color-muted)">
+                Grup kuralı, kendi kuralı olmayan her markada geçerlidir. Bir markaya ayrıca kural yazarsanız
+                o marka için grup kuralı geçersiz kalır — “hepsi için yetkili, Royal Canin hariç” iki
+                satırdır, marka başına bir satır değil.
+              </span>
+            </span>
+          </label>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Elle giriş */}
-        <section className="rounded border border-(--color-border) p-4">
-          <h2 className="mb-3 text-lg font-medium">Elle ekle</h2>
-          <div className="space-y-2 text-sm">
-            <div className="flex gap-3">
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  checked={manualKind === 'sellerRef'}
-                  onChange={() => setManualKind('sellerRef')}
-                />
-                Satıcı kodu
-              </label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  checked={manualKind === 'taxNumber'}
-                  onChange={() => setManualKind('taxNumber')}
-                />
-                Vergi numarası
-              </label>
-            </div>
-            {manualKind === 'sellerRef' ? (
-              <div className="flex gap-2">
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Elle giriş */}
+            <section
+              className="rounded border border-(--color-border) p-4"
+              aria-labelledby="manual-add-heading"
+            >
+              <h2 id="manual-add-heading" className="mb-3 text-lg font-medium">
+                Elle ekle
+              </h2>
+              <div className="space-y-2 text-sm">
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="radio"
+                      checked={manualKind === 'sellerRef'}
+                      onChange={() => setManualKind('sellerRef')}
+                    />
+                    Satıcı kodu
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="radio"
+                      checked={manualKind === 'taxNumber'}
+                      onChange={() => setManualKind('taxNumber')}
+                    />
+                    Vergi numarası
+                  </label>
+                </div>
+                {manualKind === 'sellerRef' ? (
+                  <div className="flex gap-2">
+                    <select
+                      className="rounded border border-(--color-border) px-2 py-1"
+                      value={manualMarketplace}
+                      onChange={(e) => setManualMarketplace(e.target.value)}
+                    >
+                      <option value="trendyol">Trendyol</option>
+                      <option value="hepsiburada">Hepsiburada</option>
+                    </select>
+                    <input
+                      className="flex-1 rounded border border-(--color-border) px-2 py-1"
+                      placeholder="Satıcı kodu"
+                      value={manualRef}
+                      onChange={(e) => setManualRef(e.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <input
+                    className="w-full rounded border border-(--color-border) px-2 py-1"
+                    placeholder="Vergi numarası"
+                    value={manualTax}
+                    onChange={(e) => setManualTax(e.target.value)}
+                  />
+                )}
                 <select
-                  className="rounded border border-(--color-border) px-2 py-1"
-                  value={manualMarketplace}
-                  onChange={(e) => setManualMarketplace(e.target.value)}
+                  className="w-full rounded border border-(--color-border) px-2 py-1"
+                  value={manualStatus}
+                  onChange={(e) => setManualStatus(e.target.value as 'authorised' | 'blocked')}
                 >
-                  <option value="trendyol">Trendyol</option>
-                  <option value="hepsiburada">Hepsiburada</option>
+                  <option value="authorised">Yetkili</option>
+                  <option value="blocked">Yasaklı</option>
                 </select>
                 <input
-                  className="flex-1 rounded border border-(--color-border) px-2 py-1"
-                  placeholder="Satıcı kodu"
-                  value={manualRef}
-                  onChange={(e) => setManualRef(e.target.value)}
+                  className="w-full rounded border border-(--color-border) px-2 py-1"
+                  placeholder="Not (isteğe bağlı)"
+                  value={manualNote}
+                  onChange={(e) => setManualNote(e.target.value)}
+                />
+                <button
+                  type="button"
+                  disabled={busy || !watchedBrandId}
+                  onClick={addManual}
+                  className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
+                >
+                  Ekle
+                </button>
+                {manualKind === 'taxNumber' && (
+                  <p className="text-xs text-(--color-muted)">
+                    Vergi numarası kuralı, o numaranın hangi mağazaya ait olduğu kayıtlıysa çalışır. Henüz
+                    eşleşmediyse kural saklanır ama kimseyi etkilemez — aşağıdaki listede
+                    &ldquo;etkisiz&rdquo; olarak görünür.
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {/* Excel */}
+            <section className="rounded border border-(--color-border) p-4" aria-labelledby="import-heading">
+              <h2 id="import-heading" className="mb-3 text-lg font-medium">
+                Excel&apos;den içe aktar
+              </h2>
+              <div className="space-y-2 text-sm">
+                <p className="text-xs text-(--color-muted)">
+                  Sütunlar: <code>Pazaryeri</code>, <code>Satıcı Kodu</code> veya <code>Vergi No</code>,
+                  isteğe bağlı <code>Durum</code> ve <code>Not</code>. Türkçe Excel&apos;in noktalı virgüllü
+                  CSV&apos;si de okunur.
+                </p>
+                <label className="block">
+                  <span className="mb-1 block text-(--color-muted)">
+                    Durum sütunu yoksa hepsi şu kabul edilsin:
+                  </span>
+                  <select
+                    className="rounded border border-(--color-border) px-2 py-1"
+                    value={defaultStatus}
+                    onChange={(e) => setDefaultStatus(e.target.value as 'authorised' | 'blocked')}
+                  >
+                    <option value="authorised">Yetkili</option>
+                    <option value="blocked">Yasaklı</option>
+                  </select>
+                </label>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept=".csv,text/csv"
+                  disabled={busy || !watchedBrandId}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void importFile(file);
+                  }}
+                  className="block w-full text-xs"
                 />
               </div>
-            ) : (
-              <input
-                className="w-full rounded border border-(--color-border) px-2 py-1"
-                placeholder="Vergi numarası"
-                value={manualTax}
-                onChange={(e) => setManualTax(e.target.value)}
-              />
-            )}
-            <select
-              className="w-full rounded border border-(--color-border) px-2 py-1"
-              value={manualStatus}
-              onChange={(e) => setManualStatus(e.target.value as 'authorised' | 'blocked')}
-            >
-              <option value="authorised">Yetkili</option>
-              <option value="blocked">Yasaklı</option>
-            </select>
-            <input
-              className="w-full rounded border border-(--color-border) px-2 py-1"
-              placeholder="Not (isteğe bağlı)"
-              value={manualNote}
-              onChange={(e) => setManualNote(e.target.value)}
-            />
-            <button
-              type="button"
-              disabled={busy || !watchedBrandId}
-              onClick={addManual}
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
-            >
-              Ekle
-            </button>
-            {manualKind === 'taxNumber' && (
-              <p className="text-xs text-(--color-muted)">
-                Vergi numarası kuralı, o numaranın hangi mağazaya ait olduğu kayıtlıysa
-                çalışır. Henüz eşleşmediyse kural saklanır ama kimseyi etkilemez — aşağıdaki
-                listede &ldquo;etkisiz&rdquo; olarak görünür.
-              </p>
-            )}
-          </div>
-        </section>
-
-        {/* Excel */}
-        <section className="rounded border border-(--color-border) p-4">
-          <h2 className="mb-3 text-lg font-medium">Excel&apos;den içe aktar</h2>
-          <div className="space-y-2 text-sm">
-            <p className="text-xs text-(--color-muted)">
-              Sütunlar: <code>Pazaryeri</code>, <code>Satıcı Kodu</code> veya{' '}
-              <code>Vergi No</code>, isteğe bağlı <code>Durum</code> ve <code>Not</code>. Türkçe
-              Excel&apos;in noktalı virgüllü CSV&apos;si de okunur.
-            </p>
-            <label className="block">
-              <span className="mb-1 block text-(--color-muted)">
-                Durum sütunu yoksa hepsi şu kabul edilsin:
-              </span>
-              <select
-                className="rounded border border-(--color-border) px-2 py-1"
-                value={defaultStatus}
-                onChange={(e) => setDefaultStatus(e.target.value as 'authorised' | 'blocked')}
-              >
-                <option value="authorised">Yetkili</option>
-                <option value="blocked">Yasaklı</option>
-              </select>
-            </label>
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".csv,text/csv"
-              disabled={busy || !watchedBrandId}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void importFile(file);
-              }}
-              className="block w-full text-xs"
-            />
-          </div>
-        </section>
-      </div>
-
-      {report && brand && (
-        <>
-          <div className="flex flex-wrap items-center gap-4 rounded border border-(--color-border) p-3 text-sm">
-            <span>
-              <VerdictChip verdict="authorised" /> {formatNumber(counts.authorised)}
-            </span>
-            <span>
-              <VerdictChip verdict="blocked" /> {formatNumber(counts.blocked)}
-            </span>
-            <span>
-              <VerdictChip verdict="undefined" /> {formatNumber(counts.undefinedCount)}
-            </span>
-            {dormantCount > 0 && (
-              <span className="text-(--color-muted)">
-                · {formatNumber(dormantCount)} kural şu an kimseyi etkilemiyor (satıcı bu dönemde
-                görülmedi ya da vergi numarası hiçbir mağazayla eşleşmiyor)
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() =>
-                downloadCsv(
-                  'satici-politikasi.csv',
-                  report.sellers.map((s) => ({
-                    Pazaryeri: s.marketplaceCode,
-                    'Satıcı Kodu': s.sellerRef,
-                    Satıcı: s.sellerName,
-                    'Vergi No': s.taxNumber ?? '',
-                    Durum: VERDICT_LABEL[s.verdict],
-                    Kaynak: s.fromGroupDefault ? 'grup kuralı' : s.ruleId ? 'marka kuralı' : '',
-                    Not: s.note ?? '',
-                    Ürün: s.productCount,
-                    'Son Görülme': formatDateTime(s.lastSeenAt),
-                  })),
-                )
-              }
-              className="ml-auto rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-            >
-              Excel&apos;e Aktar
-            </button>
+            </section>
           </div>
 
-          {report.sellers.length === 0 && !loading && (
-            <div className="rounded border border-(--color-border) p-4 text-sm text-(--color-muted)">
-              Bu markanın ürünlerinde bu dönemde hiç satıcı görülmedi. Kurallar yine de
-              yazılabilir — satıcı göründüğünde geçerli olurlar.
-            </div>
-          )}
+          <section aria-labelledby="sellers-heading" className="space-y-3">
+            <h2 id="sellers-heading" className="text-lg font-medium">
+              Satıcılar
+            </h2>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-4 rounded border border-(--color-border) p-3 text-sm">
+                <span>
+                  <VerdictChip verdict="authorised" /> {formatNumber(counts.authorised)}
+                </span>
+                <span>
+                  <VerdictChip verdict="blocked" /> {formatNumber(counts.blocked)}
+                </span>
+                <span>
+                  <VerdictChip verdict="undefined" /> {formatNumber(counts.undefinedCount)}
+                </span>
+                {dormantCount > 0 && (
+                  <span className="text-(--color-muted)">
+                    · {formatNumber(dormantCount)} kural şu an kimseyi etkilemiyor (satıcı bu dönemde
+                    görülmedi ya da vergi numarası hiçbir mağazayla eşleşmiyor)
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadCsv(
+                      'satici-politikasi.csv',
+                      report.sellers.map((s) => ({
+                        Pazaryeri: s.marketplaceCode,
+                        'Satıcı Kodu': s.sellerRef,
+                        Satıcı: s.sellerName,
+                        'Vergi No': s.taxNumber ?? '',
+                        Durum: POLICY_VERDICT_LABELS[s.verdict],
+                        Kaynak: s.fromGroupDefault ? 'grup kuralı' : s.ruleId ? 'marka kuralı' : '',
+                        Not: s.note ?? '',
+                        Ürün: s.productCount,
+                        'Son Görülme': formatDateTime(s.lastSeenAt),
+                      })),
+                    )
+                  }
+                  className="ml-auto rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+                >
+                  Excel&apos;e Aktar
+                </button>
+              </div>
 
-          <TableFrame>
-            <table className="w-full text-sm">
-              <thead className={`${STICKY_HEAD} text-left`}>
-                <tr>
-                  <th className="px-2 py-1">Satıcı</th>
-                  <th className="px-2 py-1">Vergi No</th>
-                  <th className="px-2 py-1">Ürün</th>
-                  <th className="px-2 py-1">Piyasa sapması</th>
-                  <th className="px-2 py-1">Durum</th>
-                  <th className="px-2 py-1">Değiştir</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paged.rows.map((s) => (
-                  <tr
-                    key={`${s.marketplaceCode}::${s.sellerRef}`}
-                    className="border-t border-(--color-border)"
-                  >
-                    <td className="px-2 py-1">
-                      {s.sellerName || s.sellerRef}
-                      <div className="font-mono text-xs text-(--color-muted)">
-                        {s.marketplaceCode} · {s.sellerRef}
-                      </div>
-                      {s.note && <div className="text-xs text-(--color-muted)">{s.note}</div>}
-                    </td>
-                    <td className="px-2 py-1 font-mono text-xs">{s.taxNumber ?? '—'}</td>
-                    <td className="px-2 py-1 tabular-nums">{formatNumber(s.productCount)}</td>
-                    <td className="px-2 py-1 tabular-nums">
-                      {s.avgDeviationPct === null ? '—' : formatPercent(s.avgDeviationPct)}
-                    </td>
-                    <td className="px-2 py-1">
-                      <VerdictChip verdict={s.verdict} />
-                      {/* Hangi kuralın karar verdiğini söylemek, bir sonucun şaşırttığı anda
+              {report.sellers.length === 0 && !loading && (
+                <EmptyState
+                  message="Bu markanın ürünlerinde bu dönemde hiç satıcı görülmedi."
+                  reason="Kurallar yine de yazılabilir — satıcı göründüğünde geçerli olurlar."
+                />
+              )}
+
+              <TableFrame>
+                <table className="w-full text-sm">
+                  <thead className={`${STICKY_HEAD} text-left`}>
+                    <tr>
+                      <th className="px-2 py-1">Satıcı</th>
+                      <th className="px-2 py-1">Vergi No</th>
+                      <th className="px-2 py-1">Ürün</th>
+                      <th className="px-2 py-1">Piyasa sapması</th>
+                      <th className="px-2 py-1">Durum</th>
+                      <th className="px-2 py-1">Değiştir</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.rows.map((s) => (
+                      <tr
+                        key={`${s.marketplaceCode}::${s.sellerRef}`}
+                        className="border-t border-(--color-border)"
+                      >
+                        <td className="px-2 py-1">
+                          {s.sellerName || s.sellerRef}
+                          <div className="font-mono text-xs text-(--color-muted)">
+                            {s.marketplaceCode} · {s.sellerRef}
+                          </div>
+                          {s.note && <div className="text-xs text-(--color-muted)">{s.note}</div>}
+                        </td>
+                        <td className="px-2 py-1 font-mono text-xs">{s.taxNumber ?? '—'}</td>
+                        <td className="px-2 py-1 tabular-nums">{formatNumber(s.productCount)}</td>
+                        <td className="px-2 py-1 tabular-nums">
+                          {s.avgDeviationPct === null ? '—' : formatPercent(s.avgDeviationPct)}
+                        </td>
+                        <td className="px-2 py-1">
+                          <VerdictChip verdict={s.verdict} />
+                          {/* Hangi kuralın karar verdiğini söylemek, bir sonucun şaşırttığı anda
                           operatörün ilk sorduğu şey. */}
-                      {s.fromGroupDefault && (
-                        <div className="text-xs text-(--color-muted)">grup kuralı</div>
-                      )}
-                      {s.overriddenRuleIds.length > 0 && (
-                        <div className="text-xs text-(--color-muted)">grup kuralını geçersiz kılar</div>
-                      )}
-                    </td>
-                    <td className="px-2 py-1">
-                      <div className="flex gap-1">
-                        {(['authorised', 'blocked', 'undefined'] as const).map((v) => (
-                          <button
-                            key={v}
-                            type="button"
-                            disabled={busy || s.verdict === v}
-                            onClick={() => void setVerdict(s, v)}
-                            className="rounded border border-(--color-border) px-1.5 py-0.5 text-xs hover:bg-(--color-hover) disabled:opacity-40"
-                          >
-                            {VERDICT_LABEL[v]}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableFrame>
+                          {s.fromGroupDefault && (
+                            <div className="text-xs text-(--color-muted)">grup kuralı</div>
+                          )}
+                          {s.overriddenRuleIds.length > 0 && (
+                            <div className="text-xs text-(--color-muted)">grup kuralını geçersiz kılar</div>
+                          )}
+                        </td>
+                        <td className="px-2 py-1">
+                          <div className="flex gap-1">
+                            {(['authorised', 'blocked', 'undefined'] as const).map((v) => (
+                              <button
+                                key={v}
+                                type="button"
+                                disabled={busy || s.verdict === v}
+                                onClick={() => void setVerdict(s, v)}
+                                className="rounded border border-(--color-border) px-1.5 py-0.5 text-xs hover:bg-(--color-hover) disabled:opacity-40"
+                              >
+                                {POLICY_VERDICT_LABELS[v]}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableFrame>
 
-          <Pagination state={paged} label="satıcı" />
+              <Pagination state={paged} label="satıcı" />
 
-          <p className="text-xs text-(--color-muted)">
-            Bu ekran <strong>raporlamadır</strong>. Bir satıcının yasaklı olması, fiyatlandırmayı
-            hiçbir şekilde etkilemez — <code>Reprice</code> ve <code>ObserveBuybox</code> yalnızca
-            kendi ilanlarımızı okur. Politika, ne yapılacağına karar veren kişiye bakacağı yeri
-            gösterir.
-          </p>
+              <p className="text-xs text-(--color-muted)">
+                Bu ekran <strong>raporlamadır</strong>. Bir satıcının yasaklı olması, fiyatlandırmayı hiçbir
+                şekilde etkilemez — <code>Reprice</code> ve <code>ObserveBuybox</code> yalnızca kendi
+                ilanlarımızı okur. Politika, ne yapılacağına karar veren kişiye bakacağı yeri gösterir.
+              </p>
+            </div>
+          </section>
         </>
       )}
     </div>

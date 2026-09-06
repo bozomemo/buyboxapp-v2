@@ -1079,6 +1079,18 @@ findings on `/watched-brands/sellers`: **blocked _and_ below the market** gets i
 because both halves were already on the row and asking an auditor to cross-reference two columns
 by eye across eighty rows is how the pairing gets missed.
 
+**IA rework (Faz 3.2, 2026-09-06).** This is a progressive-disclosure problem, not a hierarchy
+one — the information was already right, so the ordering (scope switch → manual entry / Excel
+import → verdict grid) is unchanged. The primary load (`/api/seller-policies`) now has an
+explicit loading state and a "Tekrar dene" error state, matching the six-state contract (doc 15
+§3.2); before this pass a rejected fetch left the operator on a permanently empty screen with no
+way back. An install with no watched brand yet now says so and links to `/watched-brands`, rather
+than showing disabled forms with no explanation. The verdict chip moved to the shared `Chip`
+component (`components/ui.tsx`) and its labels moved to `lib/labels.ts`
+(`POLICY_VERDICT_LABELS`) — both were previously local to this screen, against doc 15 §2 rule 10.
+The import's all-or-nothing error reporting (every bad line, no partial write) is unchanged; only
+its container now draws from the shared `Tone` palette instead of a hand-rolled class string.
+
 #### Audit findings (Faz 6)
 
 **`/watched-brands/findings`.** Faz 4 says who sells the brand, Faz 5 says who is supposed to;
