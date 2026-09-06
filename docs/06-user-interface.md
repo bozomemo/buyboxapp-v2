@@ -608,9 +608,18 @@ Two rules follow, and `lib/credential-merge.ts` is where both live:
 Fee and policy edits offer **"preview impact"**: run the engine in shadow over the current
 catalogue and report how many listings would change price and by how much, before saving.
 
----
-
-## 10. Cross-cutting requirements
+**Tier D consistency pass (doc 15 §6, Phase 5, 2026-09-07).** Marketplaces, Product sources,
+Retention, Database, `/license` and `/brands` were brought onto the shared kit and the six-state
+contract (§3.2 of doc 15) without changing what any of them ask for or return — every primary
+load that used to fail silently (a bare `.catch(() => undefined)`, or on `/license`, no error
+handling at all) now shows a message and a "Tekrar dene" button, and every screen states what it
+is doing while loading rather than jumping straight to an empty-looking form. Marketplaces'
+per-marketplace **Etkin** switch gained the same confirm-on-enable/one-click-disable asymmetry
+already used on `/settings/policy` (§3.6): turning a marketplace on lets the background jobs
+start submitting real prices to it, so that direction is confirmed; turning it off is not.
+`/brands` now renders its marketplace column through the shared `MARKETPLACE_LABELS` map instead
+of the raw `trendyol`/`hepsiburada` code (R-UI-11). `/settings/database` carries no destructive
+action, so §3.6 does not apply there — checked deliberately, not an oversight.
 
 | ID      | Requirement                                                                                                                                                              |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { LicenseInvalidReason, LicenseStatus } from '@buybox/shared';
+import { ErrorState, LoadingState, PageHeader, TONE_BOX, TONE_TEXT, type Tone } from '@/components/ui';
 
 /**
  * The licence screen (docs/13-licensing.md §6) — the one route reachable while unlicensed, and
  * therefore the only place an operator can fix a lapsed install from. Turkish throughout, like
- * the rest of the UI (doc 06).
+ * the rest of the UI (doc 06). Consistency pass (doc 15 §6, Phase 5): shared kit, six states,
+ * no local tone map.
  */
 
 const INVALID_MESSAGES: Record<LicenseInvalidReason, string> = {
@@ -17,7 +19,7 @@ const INVALID_MESSAGES: Record<LicenseInvalidReason, string> = {
   'clock-rollback': 'Sunucu saati geriye alınmış görünüyor. Sistem saatini düzeltin ve sayfayı yenileyin.',
 };
 
-function describe(status: LicenseStatus): { tone: 'ok' | 'warn' | 'bad'; title: string; detail: string } {
+function describe(status: LicenseStatus): { tone: Tone; title: string; detail: string } {
   switch (status.state) {
     case 'valid':
       return {
@@ -33,26 +35,20 @@ function describe(status: LicenseStatus): { tone: 'ok' | 'warn' | 'bad'; title: 
       };
     case 'expired':
       return {
-        tone: 'bad',
+        tone: 'danger',
         title: 'Lisans süresi doldu',
         detail: `${status.claims.customer} — ek süre de doldu, sistem durduruldu. Yenilenmiş anahtarı aşağıya yapıştırın.`,
       };
     case 'invalid':
-      return { tone: 'bad', title: 'Lisans geçersiz', detail: INVALID_MESSAGES[status.reason] };
+      return { tone: 'danger', title: 'Lisans geçersiz', detail: INVALID_MESSAGES[status.reason] };
     case 'missing':
       return {
-        tone: 'bad',
+        tone: 'danger',
         title: 'Lisans bulunamadı',
         detail: 'Bu kurulum henüz lisanslanmadı. Devam etmek için lisans anahtarınızı yapıştırın.',
       };
   }
 }
-
-const TONE_CLASS: Record<'ok' | 'warn' | 'bad', string> = {
-  ok: 'bg-(--color-success-bg) text-(--color-success)',
-  warn: 'bg-(--color-warning-bg) text-(--color-warning)',
-  bad: 'bg-(--color-danger-bg) text-(--color-danger)',
-};
 
 interface LicenseResponse {
   status: LicenseStatus;
@@ -61,13 +57,20 @@ interface LicenseResponse {
 
 export function LicenseClient() {
   const [data, setData] = useState<LicenseResponse | undefined>(undefined);
+  const [loadError, setLoadError] = useState<string | undefined>(undefined);
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
   const load = useCallback(async () => {
-    const response = await fetch('/api/license');
-    setData((await response.json()) as LicenseResponse);
+    setLoadError(undefined);
+    try {
+      const response = await fetch('/api/license');
+      if (!response.ok) throw new Error(`Lisans durumu okunamadı (HTTP ${response.status}).`);
+      setData((await response.json()) as LicenseResponse);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
   }, []);
 
   useEffect(() => {
@@ -98,33 +101,47 @@ export function LicenseClient() {
     }
   }
 
-  if (!data) return <p className="p-8 text-sm">Yükleniyor…</p>;
+  if (!data && loadError) {
+    return (
+      <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
+        <ErrorState message={loadError} onRetry={() => void load()} />
+      </main>
+    );
+  }
+
+  if (!data) {
+    return (
+      <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
+        <LoadingState message="Lisans durumu yükleniyor…" />
+      </main>
+    );
+  }
 
   const described = describe(data.status);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">Lisans</h1>
-        <p className="text-sm opacity-70">
-          BuyBoxApp lisanslı bir kurulum gerektirir. Lisans olmadan hiçbir iş çalışmaz, hiçbir fiyat
-          gönderilmez.
-        </p>
-      </header>
+      <PageHeader
+        title="Lisans"
+        description="BuyBoxApp lisanslı bir kurulum gerektirir. Lisans olmadan hiçbir iş çalışmaz, hiçbir fiyat gönderilmez."
+      />
 
-      <div className={`rounded px-4 py-3 ${TONE_CLASS[described.tone]}`}>
-        <p className="text-sm font-semibold">{described.title}</p>
+      <div className={`rounded border px-4 py-3 ${TONE_BOX[described.tone]}`}>
+        <p className={`text-sm font-semibold ${TONE_TEXT[described.tone]}`}>{described.title}</p>
         <p className="text-sm">{described.detail}</p>
       </div>
 
       {data.managedByEnvironment && (
         <p className="rounded border border-(--color-border) px-4 py-3 text-sm">
-          Bu kurulumun lisansı şu anda <code>LICENSE_TOKEN</code> ortam değişkeninden geliyor. Aşağıya
-          yeni bir anahtar kaydederseniz, anahtar veritabanına taşınır ve ortam değişkeni kaldırılır.
+          Bu kurulumun lisansı şu anda <code>LICENSE_TOKEN</code> ortam değişkeninden geliyor. Aşağıya yeni
+          bir anahtar kaydederseniz, anahtar veritabanına taşınır ve ortam değişkeni kaldırılır.
         </p>
       )}
 
-      <section className="flex flex-col gap-3">
+      <section aria-labelledby="license-form-heading" className="flex flex-col gap-3">
+        <h2 id="license-form-heading" className="sr-only">
+          Lisans anahtarı gir
+        </h2>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Lisans anahtarı</span>
           <textarea
@@ -136,7 +153,11 @@ export function LicenseClient() {
             className="rounded border border-(--color-border) px-3 py-2 font-mono text-xs outline-none focus:border-(--color-accent)"
           />
         </label>
-        {error && <p className="text-sm text-(--color-danger)">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-(--color-danger)">
+            {error}
+          </p>
+        )}
         <div>
           <button
             type="button"
@@ -148,7 +169,6 @@ export function LicenseClient() {
           </button>
         </div>
       </section>
-
     </main>
   );
 }
