@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
+import { Ago, Chip, EmptyState, ErrorState, LoadingState } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import { STATUS_LABELS } from '@/lib/labels';
@@ -129,7 +130,10 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  useEffect(() => {
+  // `useCallback` so the retry button in `ErrorState` and the effect below share one function
+  // identity — the same shape `listing-detail-client.tsx` uses.
+  const load = useCallback(() => {
+    setError(null);
     fetch(`/api/tracked-products/${id}`)
       .then(async (r) => {
         const d = (await r.json()) as Detail & { error?: string };
@@ -142,8 +146,24 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
       .catch(() => setError('Ürün yüklenemedi.'));
   }, [id]);
 
-  if (error) return <p className="text-(--color-danger)">{error}</p>;
-  if (!detail) return <p className="text-(--color-muted)">Yükleniyor…</p>;
+  useEffect(load, [load]);
+
+  // Loading and error never share a line (doc 15 §3.2), and error carries a retry (§2 rule 6:
+  // reuse the shared kit rather than a bare `<p>`).
+  if (error) {
+    return (
+      <div className="p-6">
+        <ErrorState message={error} onRetry={load} />
+      </div>
+    );
+  }
+  if (!detail) {
+    return (
+      <div className="p-6">
+        <LoadingState message="Ürün yükleniyor…" skeletonRows={3} />
+      </div>
+    );
+  }
 
   const { product, latestLook, looks, sellers } = detail;
 
@@ -182,14 +202,18 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
             </>
           )}
           {!product.isActive && (
-            <span className="ml-2 row-muted rounded px-1 text-xs">Takip duraklatıldı</span>
+            <span className="ml-2">
+              <Chip tone="neutral">Takip duraklatıldı</Chip>
+            </span>
           )}
         </p>
       </div>
 
       {/* Şu An */}
-      <section className="rounded border border-(--color-border) p-4">
-        <h2 className="mb-3 text-lg font-medium">Şu An</h2>
+      <section className="rounded border border-(--color-border) p-4" aria-labelledby="now-heading">
+        <h2 id="now-heading" className="mb-3 text-lg font-medium">
+          Şu An
+        </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
             <div className="text-xs text-(--color-muted)">Buybox Satıcı</div>
@@ -222,7 +246,7 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                 okunurdu — okunmasın diye ikisi ayrı gösteriliyor. */}
             <div className="text-xs text-(--color-muted)">Son Bakış</div>
             <div className="text-sm">
-              {product.lastScrapedAt ? formatDateTime(product.lastScrapedAt) : 'henüz taranmadı'}
+              <Ago at={product.lastScrapedAt} never="henüz taranmadı" />
               {latestLook && latestLook.status !== 'ok' && (
                 <span className="ml-1 text-(--color-danger)">
                   ⚠ {STATUS_LABELS[latestLook.status] ?? latestLook.status}
@@ -231,7 +255,7 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
             </div>
             {latestLook && (
               <div className="text-xs text-(--color-muted)">
-                son değişiklik: {formatDateTime(latestLook.observedAt)}
+                son değişiklik: <Ago at={latestLook.observedAt} />
               </div>
             )}
           </div>
@@ -239,9 +263,11 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
       </section>
 
       {/* Satıcılar */}
-      <section className="rounded border border-(--color-border) p-4">
+      <section className="rounded border border-(--color-border) p-4" aria-labelledby="sellers-heading">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-medium">Satıcılar</h2>
+          <h2 id="sellers-heading" className="text-lg font-medium">
+            Satıcılar
+          </h2>
           <button
             type="button"
             disabled={ordered.length === 0}
@@ -277,147 +303,161 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
           </button>
         </div>
 
-        <TableFrame maxHeight="60vh">
-          <table className="w-full text-xs">
-            <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
-              <tr>
-                <th className="px-2 py-1">Sıra</th>
-                <th className="px-2 py-1">Satıcı</th>
-                <th className="px-2 py-1">Fiyat</th>
-                <th className="px-2 py-1">Değişim</th>
-                <th className="px-2 py-1">Müşteri Fiyatı</th>
-                <th className="px-2 py-1">Kampanya</th>
-                <th className="px-2 py-1">Stok</th>
-                <th className="px-2 py-1">Puan</th>
-                <th className="px-2 py-1">Termin</th>
-                <th className="px-2 py-1">Son Görülme</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-(--color-border)">
-              {ordered.map((s) => {
-                const delta = priceDelta(s);
-                const isOpen = expanded === s.key;
-                return [
-                  <tr
-                    key={s.key}
-                    onClick={() => setExpanded(isOpen ? null : s.key)}
-                    className={`cursor-pointer hover:bg-(--color-hover) ${s.current ? '' : 'row-muted'}`}
-                  >
-                    <td className="px-2 py-1">{s.current?.rank ?? '—'}</td>
-                    <td className="px-2 py-1">
-                      {s.sellerName || '(isimsiz)'}
-                      {!s.current && <span className="ml-1 text-(--color-muted)">· teklifte değil</span>}
-                    </td>
-                    <td className="px-2 py-1">
-                      {formatMoney(s.current?.price ? BigInt(s.current.price) : null)}
-                    </td>
-                    <td className="px-2 py-1">
-                      {delta ? (
-                        <span className={delta.up ? 'text-(--color-danger)' : 'text-(--color-success)'}>
-                          {delta.up ? '▲' : '▼'} {formatMoney(delta.kurus)}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="px-2 py-1">
-                      {formatMoney(s.current?.finalPrice ? BigInt(s.current.finalPrice) : null)}
-                    </td>
-                    <td className="px-2 py-1" title={s.current?.promotionText ?? undefined}>
-                      {promotionCell(s.current)}
-                    </td>
-                    <td className="px-2 py-1">
-                      {s.current?.offeredStock === null || s.current === null
-                        ? '—'
-                        : formatNumber(s.current.offeredStock)}
-                    </td>
-                    <td className="px-2 py-1">
-                      {s.current?.sellerRating === null || s.current === null
-                        ? '—'
-                        : s.current.sellerRating.toFixed(1)}
-                    </td>
-                    <td className="px-2 py-1">
-                      {s.current?.dispatchTime === null || s.current === null
-                        ? '—'
-                        : `${formatNumber(s.current.dispatchTime)} gün`}
-                    </td>
-                    <td className="px-2 py-1">{s.lastSeenAt ? formatDateTime(s.lastSeenAt) : '—'}</td>
-                  </tr>,
-                  isOpen && (
-                    <tr key={`${s.key}-history`}>
-                      <td colSpan={11} className="bg-(--color-hover) px-4 py-2">
-                        <div className="mb-1 text-xs text-(--color-muted)">
-                          {s.sellerName || '(isimsiz)'} · bu satıcının pencere içindeki bakışları
-                          {s.unverifiedKey && ' · satıcı numarası okunamadı, satırlar isme göre gruplandı'}
-                        </div>
-                        <table className="w-full text-xs">
-                          <tbody className="divide-y divide-(--color-border)">
-                            {[...s.points].reverse().map((p) => (
-                              <tr key={p.observedAt}>
-                                <td className="py-0.5 pr-4">{formatDateTime(p.observedAt)}</td>
-                                <td className="py-0.5 pr-4">Sıra {p.rank ?? '—'}</td>
-                                <td className="py-0.5 pr-4">
-                                  {formatMoney(p.price ? BigInt(p.price) : null)}
-                                </td>
-                                <td className="py-0.5 pr-4">
-                                  Stok {p.offeredStock === null ? '—' : formatNumber(p.offeredStock)}
-                                </td>
-                                <td className="py-0.5 pr-4">{promotionCell(p)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
-                  ),
-                ];
-              })}
-              {ordered.length === 0 && (
+        {ordered.length === 0 ? (
+          <EmptyState
+            message="Bu ürün için henüz satıcı gözlemi yok."
+            reason="ScrapeCompetitors işi çalıştığında dolar (varsayılan kapalı — Ayarlar'dan açılmalı)."
+          />
+        ) : (
+          <TableFrame maxHeight="60vh">
+            <table className="w-full text-xs">
+              <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
                 <tr>
-                  <td colSpan={11} className="px-2 py-6 text-center text-(--color-muted)">
-                    Bu ürün için henüz satıcı gözlemi yok. ScrapeCompetitors işi çalıştığında dolar
-                    (varsayılan kapalı — Ayarlar&apos;dan açılmalı).
-                  </td>
+                  <th className="px-2 py-1">Sıra</th>
+                  <th className="px-2 py-1">Satıcı</th>
+                  <th className="px-2 py-1">Fiyat</th>
+                  <th className="px-2 py-1">Değişim</th>
+                  <th className="px-2 py-1">Müşteri Fiyatı</th>
+                  <th className="px-2 py-1">Kampanya</th>
+                  <th className="px-2 py-1">Stok</th>
+                  <th className="px-2 py-1">Puan</th>
+                  <th className="px-2 py-1">Termin</th>
+                  <th className="px-2 py-1">Son Görülme</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </TableFrame>
+              </thead>
+              <tbody className="divide-y divide-(--color-border)">
+                {ordered.map((s) => {
+                  const delta = priceDelta(s);
+                  const isOpen = expanded === s.key;
+                  return [
+                    <tr key={s.key} className={s.current ? undefined : 'row-muted'}>
+                      <td className="px-2 py-1">{s.current?.rank ?? '—'}</td>
+                      <td className="px-2 py-1">
+                        {/* A real button, not a row `onClick` (doc 15 §3.7: never a div/tr with
+                            onClick as the only way to trigger it). */}
+                        <button
+                          type="button"
+                          onClick={() => setExpanded(isOpen ? null : s.key)}
+                          aria-expanded={isOpen}
+                          className="text-left hover:underline"
+                        >
+                          {s.sellerName || '(isimsiz)'}
+                        </button>
+                        {!s.current && <span className="ml-1 text-(--color-muted)">· teklifte değil</span>}
+                      </td>
+                      <td className="px-2 py-1">
+                        {formatMoney(s.current?.price ? BigInt(s.current.price) : null)}
+                      </td>
+                      <td className="px-2 py-1">
+                        {delta ? (
+                          <span className={delta.up ? 'text-(--color-danger)' : 'text-(--color-success)'}>
+                            {delta.up ? '▲' : '▼'} {formatMoney(delta.kurus)}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-2 py-1">
+                        {formatMoney(s.current?.finalPrice ? BigInt(s.current.finalPrice) : null)}
+                      </td>
+                      <td className="px-2 py-1" title={s.current?.promotionText ?? undefined}>
+                        {promotionCell(s.current)}
+                      </td>
+                      <td className="px-2 py-1">
+                        {s.current?.offeredStock === null || s.current === null
+                          ? '—'
+                          : formatNumber(s.current.offeredStock)}
+                      </td>
+                      <td className="px-2 py-1">
+                        {s.current?.sellerRating === null || s.current === null
+                          ? '—'
+                          : s.current.sellerRating.toFixed(1)}
+                      </td>
+                      <td className="px-2 py-1">
+                        {s.current?.dispatchTime === null || s.current === null
+                          ? '—'
+                          : `${formatNumber(s.current.dispatchTime)} gün`}
+                      </td>
+                      <td className="px-2 py-1">
+                        <Ago at={s.lastSeenAt} />
+                      </td>
+                    </tr>,
+                    isOpen && (
+                      <tr key={`${s.key}-history`}>
+                        <td colSpan={10} className="bg-(--color-hover) px-4 py-2">
+                          <div className="mb-1 text-xs text-(--color-muted)">
+                            {s.sellerName || '(isimsiz)'} · bu satıcının pencere içindeki bakışları
+                            {s.unverifiedKey && ' · satıcı numarası okunamadı, satırlar isme göre gruplandı'}
+                          </div>
+                          {/* Bu iç tablo bir denetim kaydı — geçmişte hangi bakışta ne olduğu
+                              (doc 15 §3.3: "Absolute time is correct only where the exact instant
+                              is the point"), tıpkı `/listings/[id]`'nin Fiyat Geçmişi'nin mutlak
+                              zaman kullanmaya devam etmesi gibi. */}
+                          <table className="w-full text-xs">
+                            <tbody className="divide-y divide-(--color-border)">
+                              {[...s.points].reverse().map((p) => (
+                                <tr key={p.observedAt}>
+                                  <td className="py-0.5 pr-4">{formatDateTime(p.observedAt)}</td>
+                                  <td className="py-0.5 pr-4">Sıra {p.rank ?? '—'}</td>
+                                  <td className="py-0.5 pr-4">
+                                    {formatMoney(p.price ? BigInt(p.price) : null)}
+                                  </td>
+                                  <td className="py-0.5 pr-4">
+                                    Stok {p.offeredStock === null ? '—' : formatNumber(p.offeredStock)}
+                                  </td>
+                                  <td className="py-0.5 pr-4">{promotionCell(p)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    ),
+                  ];
+                })}
+              </tbody>
+            </table>
+          </TableFrame>
+        )}
       </section>
 
-      {/* Bakış geçmişi */}
-      <section className="rounded border border-(--color-border) p-4">
-        <h2 className="mb-3 text-lg font-medium">Buybox Fiyat Geçmişi</h2>
+      {/* Bakış geçmişi — bu iç tablo da bir denetim kaydı, mutlak zaman kalıyor (yukarıdaki not). */}
+      <section className="rounded border border-(--color-border) p-4" aria-labelledby="history-heading">
+        <h2 id="history-heading" className="mb-3 text-lg font-medium">
+          Buybox Fiyat Geçmişi
+        </h2>
         <BuyboxChart looks={looks} sellers={sellers} />
-        <TableFrame className="mt-3" maxHeight="40vh">
-          <table className="w-full text-xs">
-            <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
-              <tr>
-                <th className="px-2 py-1">Bakış</th>
-                <th className="px-2 py-1">Durum</th>
-                <th className="px-2 py-1">Satıcı Sayısı</th>
-                <th className="px-2 py-1">Buybox Fiyat</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-(--color-border)">
-              {[...looks].reverse().map((l) => (
-                <tr key={l.observedAt} className={l.status === 'ok' ? '' : 'row-danger'}>
-                  <td className="px-2 py-1">{formatDateTime(l.observedAt)}</td>
-                  <td className="px-2 py-1">{STATUS_LABELS[l.status] ?? l.status}</td>
-                  <td className="px-2 py-1">{l.status === 'ok' ? formatNumber(l.offers) : '—'}</td>
-                  <td className="px-2 py-1">{formatMoney(l.buyboxPrice ? BigInt(l.buyboxPrice) : null)}</td>
-                </tr>
-              ))}
-              {looks.length === 0 && (
+        {looks.length === 0 ? (
+          <div className="mt-3">
+            <EmptyState
+              message="Henüz bakış yok."
+              reason="ScrapeCompetitors işi bu ürünü ilk taradığında burası dolar."
+            />
+          </div>
+        ) : (
+          <TableFrame className="mt-3" maxHeight="40vh">
+            <table className="w-full text-xs">
+              <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
                 <tr>
-                  <td colSpan={4} className="px-2 py-4 text-center text-(--color-muted)">
-                    Henüz bakış yok.
-                  </td>
+                  <th className="px-2 py-1">Bakış</th>
+                  <th className="px-2 py-1">Durum</th>
+                  <th className="px-2 py-1">Satıcı Sayısı</th>
+                  <th className="px-2 py-1">Buybox Fiyat</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </TableFrame>
+              </thead>
+              <tbody className="divide-y divide-(--color-border)">
+                {[...looks].reverse().map((l) => (
+                  <tr key={l.observedAt} className={l.status === 'ok' ? '' : 'row-danger'}>
+                    <td className="px-2 py-1">{formatDateTime(l.observedAt)}</td>
+                    <td className="px-2 py-1">{STATUS_LABELS[l.status] ?? l.status}</td>
+                    <td className="px-2 py-1">{l.status === 'ok' ? formatNumber(l.offers) : '—'}</td>
+                    <td className="px-2 py-1">{formatMoney(l.buyboxPrice ? BigInt(l.buyboxPrice) : null)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableFrame>
+        )}
       </section>
     </div>
   );
