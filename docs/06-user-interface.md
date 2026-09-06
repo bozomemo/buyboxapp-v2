@@ -576,6 +576,18 @@ marketplace, listing, job run, date range, code. Each row links to its listing o
 
 Every change is audited and shows who changed it, when, and from what.
 
+**Policy screen grouping (doc 15 §6, Phase 4.5, 2026-09-07).** The 18-field policy form is grouped
+into four sections rather than laid out as one flat list — **Strateji** (coarse step mode/percent,
+refine tolerance, seek strategy, undercut-by, seek-step, sole-seller margin), **Kâr Koruma**
+(low-stock guard enabled/threshold/margin), **Stok** (stock mode, minimum physical stock), and
+**Hız ve Bütçe** (settle duration, competitor price delta, poll interval, concurrency, budget
+reserve). The per-marketplace `enabled` automation switch is shown separately, above the groups: it
+is the one control on this screen that submits live prices, so turning it **on** is confirmed
+(§3.6) while turning it **off** is one click. This closes a prior gap where nine of the eighteen
+fields (`coarseStepMode`, `seekStrategy`, `undercutBy`, `seekStep`, `lowStockThreshold`,
+`lowStockMarginPct`, `stockMode`, `minPhysicalStock`, `competitorPriceDelta`) had no input control
+at all and were silently re-saved with whatever value the setup wizard had last written.
+
 **Write-only credential fields mean one thing everywhere on these pages: a blank field keeps its
 stored value.** Saving has always worked that way; so must the Test button. Added 2026-09-02,
 after a live install where it did not — the test route built its adapter from the posted form
