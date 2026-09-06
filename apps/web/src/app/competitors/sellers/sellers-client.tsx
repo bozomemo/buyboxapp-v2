@@ -13,6 +13,7 @@ import {
   useColumnPrefs,
   usePagedRows,
 } from '@/components/table';
+import { ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge } from '../coverage-badge';
@@ -144,7 +145,9 @@ export function SellersClient() {
   const [marketplaceCode, setMarketplaceCode] = useState('');
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** The load's own failure, kept apart from `report` (doc 15 §3.2) so a failed refetch over an
+   * already-loaded report reads as "stale, refresh failed" rather than wiping the screen. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const paged = usePagedRows(report?.sellers ?? NO_SELLERS, {
     resetKey: `${sinceMs}|${marketplaceCode}`,
   });
@@ -152,200 +155,234 @@ export function SellersClient() {
 
   const load = useCallback(() => {
     setLoading(true);
-    setError(null);
     const params = new URLSearchParams({ sinceMs: String(sinceMs) });
     if (marketplaceCode) params.set('marketplaceCode', marketplaceCode);
     fetch(`/api/competitors/sellers?${params}`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Rapor yüklenemedi.'))))
-      .then((data: Report) => setReport(data))
-      .catch((e: Error) => setError(e.message))
+      .then((res) =>
+        res.ok
+          ? res.json()
+          : Promise.reject(new Error(`Rakip satıcı raporu yüklenemedi (HTTP ${res.status}).`)),
+      )
+      .then((data: Report) => {
+        setReport(data);
+        setLoadError(null);
+      })
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }, [sinceMs, marketplaceCode]);
 
   useEffect(load, [load]);
 
+  // The primary load's six-state handling (doc 15 §3.2): a failed first load is retryable and
+  // never shares a line with the loading state; a first load in flight says so on its own.
+  if (!report && loadError) {
+    return (
+      <div className="space-y-4 p-6">
+        <ErrorState message={loadError} onRetry={load} />
+      </div>
+    );
+  }
+  if (!report) {
+    return (
+      <div className="space-y-4 p-6">
+        <LoadingState message="Rakip satıcı raporu yükleniyor…" skeletonRows={3} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Rakip Satıcılar</h1>
-          <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-            İzlediğimiz ürünlerde karşımıza çıkan satıcılar, en çok çakışandan başlayarak. Bu
-            veriler <strong>tekliflerden</strong> gelir; bir satıcının ürünü kaç kez{' '}
-            <em>listelediğini</em> gösterir, kaç adet sattığını değil.
+      <PageHeader
+        title="Rakip Satıcılar"
+        description={
+          <>
+            İzlediğimiz ürünlerde karşımıza çıkan satıcılar, en çok çakışandan başlayarak. Bu veriler{' '}
+            <strong>tekliflerden</strong> gelir; bir satıcının ürünü kaç kez <em>listelediğini</em> gösterir,
+            kaç adet sattığını değil.
+          </>
+        }
+        action={
+          <div className="flex items-end gap-3">
+            <label className="text-sm">
+              <span className="mb-1 block text-(--color-muted)">Dönem</span>
+              <select
+                className="rounded border border-(--color-border) px-2 py-1"
+                value={String(sinceMs)}
+                onChange={(e) => setSinceMs(Number(e.target.value))}
+              >
+                <option value={String(daysAgo(7))}>Son 7 gün</option>
+                <option value={String(daysAgo(30))}>Son 30 gün</option>
+                <option value={String(daysAgo(90))}>Son 90 gün</option>
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-(--color-muted)">Pazaryeri</span>
+              <select
+                className="rounded border border-(--color-border) px-2 py-1"
+                value={marketplaceCode}
+                onChange={(e) => setMarketplaceCode(e.target.value)}
+              >
+                <option value="">Tümü</option>
+                <option value="trendyol">Trendyol</option>
+                <option value="hepsiburada">Hepsiburada</option>
+              </select>
+            </label>
+          </div>
+        }
+      />
+
+      {/* A later filter change failed but the previous report is still on screen — say so rather
+          than letting it silently go stale (§3.2 "Stale"). */}
+      {loadError && (
+        <p
+          role="alert"
+          className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) px-3 py-2 text-sm"
+        >
+          Son yenileme başarısız oldu ({loadError}). Aşağıdaki veriler artık güncel olmayabilir.
+        </p>
+      )}
+      {loading && !loadError && (
+        <p aria-live="polite" className="text-xs text-(--color-muted)">
+          Güncelleniyor…
+        </p>
+      )}
+
+      <CoverageBadge coverage={report.coverage} sinceMs={report.filters.sinceMs} />
+
+      {/* Our own store is in the archive by necessity — a rank means nothing without the
+          offers it ranks among — so this screen has to know which offer is ours. When it
+          cannot, we sit at the top of the competitor list on 100% of our own listings and
+          the report simply looks wrong, with nothing pointing at the cause. */}
+      {report.ownSellerUnresolved.length > 0 && (
+        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-4 text-sm text-(--color-danger)">
+          <strong className="block">Kendi mağazanız bu listede rakip olarak görünüyor.</strong>
+          <ul className="mt-2 space-y-1">
+            {report.ownSellerUnresolved.map((m) => (
+              <li key={m.marketplaceCode}>
+                <strong>{m.displayName}</strong>:{' '}
+                {m.configuredRef === null
+                  ? 'satıcı referansı tanımlı değil'
+                  : `tanımlı satıcı referansı (${m.configuredRef}) bu pazaryerinin tekliflerinde hiç görülmedi`}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2">
+            Kendi teklifimizi ayırt edebilmek için pazaryerindeki satıcı kimliğimiz gerekir; isme göre
+            eşleştirme yapılmaz.{' '}
+            <Link className="underline" href="/settings/marketplaces">
+              Pazaryerleri
+            </Link>{' '}
+            ekranından &ldquo;Satıcı Referansı&rdquo; alanını düzeltin — aşağıdaki tüm sayılar o zaman
+            yalnızca rakipleri sayar.
           </p>
         </div>
-        <div className="flex items-end gap-3">
-          <label className="text-sm">
-            <span className="mb-1 block text-(--color-muted)">Dönem</span>
-            <select
-              className="rounded border border-(--color-border) px-2 py-1"
-              value={String(sinceMs)}
-              onChange={(e) => setSinceMs(Number(e.target.value))}
-            >
-              <option value={String(daysAgo(7))}>Son 7 gün</option>
-              <option value={String(daysAgo(30))}>Son 30 gün</option>
-              <option value={String(daysAgo(90))}>Son 90 gün</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-(--color-muted)">Pazaryeri</span>
-            <select
-              className="rounded border border-(--color-border) px-2 py-1"
-              value={marketplaceCode}
-              onChange={(e) => setMarketplaceCode(e.target.value)}
-            >
-              <option value="">Tümü</option>
-              <option value="trendyol">Trendyol</option>
-              <option value="hepsiburada">Hepsiburada</option>
-            </select>
-          </label>
+      )}
+
+      {report.ownStores.length > 0 && (
+        <div className="rounded border border-(--color-border) bg-(--color-hover) p-3 text-sm">
+          <span className="font-medium">Kendi mağazamız</span> (rakip listesinden çıkarıldı):{' '}
+          {report.ownStores.map((o, i) => (
+            <span key={o.marketplaceCode}>
+              {i > 0 && ' · '}
+              {o.displayName} — {formatNumber(o.listingCount)} üründe, {formatNumber(o.buyboxCount)} kez
+              buybox ({formatPercent(o.buyboxRate * 100)})
+            </span>
+          ))}
         </div>
+      )}
+
+      {report.unidentifiedObservations > 0 && (
+        <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
+          Bu dönemde <strong>{formatNumber(report.unidentifiedObservations)}</strong> teklif, pazaryerinin
+          satıcı kimliği vermediği için aşağıdaki listede yer almıyor. Bu teklifler isme göre eşleştirilmez —
+          aynı isim aynı firma anlamına gelmediği için yanlış satıcıya atfetmektense hiç atfetmemek tercih
+          edilir.
+        </div>
+      )}
+
+      <div className="flex items-center justify-end gap-2">
+        <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+        <button
+          type="button"
+          onClick={() =>
+            downloadCsv(
+              'rakip-saticilar.csv',
+              report.sellers.map((s) => ({
+                Satıcı: s.sellerName,
+                Pazaryeri: s.marketplaceCode,
+                Grup: s.groupName ?? '',
+                Ürünümüz: s.listingCount,
+                Teklif: s.observationCount,
+                Buybox: s.buyboxCount,
+                'Buybox %': (s.buyboxRate * 100).toFixed(1),
+                'Ort. Sıra': s.avgRank ?? '',
+                'Min Fiyat': s.minPrice ? (Number(s.minPrice) / 100).toFixed(2) : '',
+                'Max Fiyat': s.maxPrice ? (Number(s.maxPrice) / 100).toFixed(2) : '',
+                'İlk Görülme': formatDateTime(s.firstSeenAt),
+                'Son Görülme': formatDateTime(s.lastSeenAt),
+              })),
+            )
+          }
+          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+        >
+          Excel&apos;e Aktar
+        </button>
       </div>
 
-      {error && (
-        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
-          {error}
-        </div>
-      )}
-      {loading && <div className="text-sm text-(--color-muted)">Yükleniyor…</div>}
-
-      {report && (
-        <>
-          <CoverageBadge coverage={report.coverage} sinceMs={report.filters.sinceMs} />
-
-          {/* Our own store is in the archive by necessity — a rank means nothing without the
-              offers it ranks among — so this screen has to know which offer is ours. When it
-              cannot, we sit at the top of the competitor list on 100% of our own listings and
-              the report simply looks wrong, with nothing pointing at the cause. */}
-          {report.ownSellerUnresolved.length > 0 && (
-            <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-4 text-sm text-(--color-danger)">
-              <strong className="block">Kendi mağazanız bu listede rakip olarak görünüyor.</strong>
-              <ul className="mt-2 space-y-1">
-                {report.ownSellerUnresolved.map((m) => (
-                  <li key={m.marketplaceCode}>
-                    <strong>{m.displayName}</strong>:{' '}
-                    {m.configuredRef === null
-                      ? 'satıcı referansı tanımlı değil'
-                      : `tanımlı satıcı referansı (${m.configuredRef}) bu pazaryerinin tekliflerinde hiç görülmedi`}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2">
-                Kendi teklifimizi ayırt edebilmek için pazaryerindeki satıcı kimliğimiz gerekir; isme
-                göre eşleştirme yapılmaz.{' '}
-                <Link className="underline" href="/settings/marketplaces">
-                  Pazaryerleri
-                </Link>{' '}
-                ekranından &ldquo;Satıcı Referansı&rdquo; alanını düzeltin — aşağıdaki tüm sayılar
-                o zaman yalnızca rakipleri sayar.
-              </p>
-            </div>
-          )}
-
-          {report.ownStores.length > 0 && (
-            <div className="rounded border border-(--color-border) bg-(--color-hover) p-3 text-sm">
-              <span className="font-medium">Kendi mağazamız</span> (rakip listesinden çıkarıldı):{' '}
-              {report.ownStores.map((o, i) => (
-                <span key={o.marketplaceCode}>
-                  {i > 0 && ' · '}
-                  {o.displayName} — {formatNumber(o.listingCount)} üründe,{' '}
-                  {formatNumber(o.buyboxCount)} kez buybox ({formatPercent(o.buyboxRate * 100)})
-                </span>
+      <TableFrame>
+        <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
+          <thead className={`${STICKY_HEAD} text-left`}>
+            <tr>
+              {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-3 py-2">
+                  {d.label}
+                </ResizableTh>
               ))}
-            </div>
-          )}
-
-          {report.unidentifiedObservations > 0 && (
-            <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
-              Bu dönemde <strong>{formatNumber(report.unidentifiedObservations)}</strong> teklif,
-              pazaryerinin satıcı kimliği vermediği için aşağıdaki listede yer almıyor. Bu teklifler
-              isme göre eşleştirilmez — aynı isim aynı firma anlamına gelmediği için yanlış satıcıya
-              atfetmektense hiç atfetmemek tercih edilir.
-            </div>
-          )}
-
-          <div className="flex items-center justify-end gap-2">
-            <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
-            <button
-              type="button"
-              onClick={() =>
-                downloadCsv(
-                  'rakip-saticilar.csv',
-                  report.sellers.map((s) => ({
-                    Satıcı: s.sellerName,
-                    Pazaryeri: s.marketplaceCode,
-                    Grup: s.groupName ?? '',
-                    Ürünümüz: s.listingCount,
-                    Teklif: s.observationCount,
-                    Buybox: s.buyboxCount,
-                    'Buybox %': (s.buyboxRate * 100).toFixed(1),
-                    'Ort. Sıra': s.avgRank ?? '',
-                    'Min Fiyat': s.minPrice ? (Number(s.minPrice) / 100).toFixed(2) : '',
-                    'Max Fiyat': s.maxPrice ? (Number(s.maxPrice) / 100).toFixed(2) : '',
-                    'İlk Görülme': formatDateTime(s.firstSeenAt),
-                    'Son Görülme': formatDateTime(s.lastSeenAt),
-                  })),
-                )
-              }
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-            >
-              Excel&apos;e Aktar
-            </button>
-          </div>
-
-          <TableFrame>
-            <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
-              <thead className={`${STICKY_HEAD} text-left`}>
-                <tr>
-                  {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
-                    <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-3 py-2">
-                      {d.label}
-                    </ResizableTh>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {paged.rows.map((s) => (
-                  <tr key={`${s.marketplaceCode}:${s.sellerRef}`} className="border-t border-(--color-border)">
-                    {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
-                      <td
-                        key={d.id}
-                        className={`px-3 py-2 ${
-                          d.id === 'listingCount' || d.id === 'observationCount' || d.id === 'buyboxCount' ||
-                          d.id === 'avgRank' || d.id === 'priceRange'
-                            ? 'text-right'
-                            : ''
-                        } ${d.id === 'listingCount' ? 'font-medium' : ''}`}
-                      >
-                        {renderSellerCell(d.id, s)}
-                      </td>
-                    ))}
-                  </tr>
+            </tr>
+          </thead>
+          <tbody>
+            {paged.rows.map((s) => (
+              <tr key={`${s.marketplaceCode}:${s.sellerRef}`} className="border-t border-(--color-border)">
+                {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                  <td
+                    key={d.id}
+                    className={`px-3 py-2 ${
+                      d.id === 'listingCount' ||
+                      d.id === 'observationCount' ||
+                      d.id === 'buyboxCount' ||
+                      d.id === 'avgRank' ||
+                      d.id === 'priceRange'
+                        ? 'text-right'
+                        : ''
+                    } ${d.id === 'listingCount' ? 'font-medium' : ''}`}
+                  >
+                    {renderSellerCell(d.id, s)}
+                  </td>
                 ))}
-                {report.sellers.length === 0 && (
-                  <tr>
-                    <td
-                      className="px-3 py-6 text-center text-(--color-muted)"
-                      colSpan={COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).length}
-                    >
-                      Bu dönemde kayıtlı rakip teklifi yok.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </TableFrame>
+              </tr>
+            ))}
+            {report.sellers.length === 0 && (
+              <tr>
+                <td
+                  className="px-3 py-6 text-center text-(--color-muted)"
+                  colSpan={COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).length}
+                >
+                  Bu dönemde kayıtlı rakip teklifi yok. Tarama işi kapalıysa İşler ekranından açın, ya da
+                  dönem/pazaryeri filtresini genişletin.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </TableFrame>
 
-          <Pagination state={paged} label="satıcı" />
+      <Pagination state={paged} label="satıcı" />
 
-          <p className="text-xs text-(--color-muted)">
-            &ldquo;İlk görülme&rdquo; bir <em>gözlem</em> tarihidir, satışa başlama tarihi değil:
-            satıcı ondan önce de orada olabilir, taramalar arasındaki boşlukta fark edilmemiş
-            olabilir. Bu yüzden ≥ ile gösterilir.
-          </p>
-        </>
-      )}
+      <p className="text-xs text-(--color-muted)">
+        &ldquo;İlk görülme&rdquo; bir <em>gözlem</em> tarihidir, satışa başlama tarihi değil: satıcı ondan
+        önce de orada olabilir, taramalar arasındaki boşlukta fark edilmemiş olabilir. Bu yüzden ≥ ile
+        gösterilir.
+      </p>
     </div>
   );
 }
