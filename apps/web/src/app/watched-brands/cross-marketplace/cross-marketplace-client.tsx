@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { EmptyState, ErrorState, LoadingState, PageHeader, Section } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatNumber, formatPercent } from '@/lib/format';
-import { MARKETPLACE_LABELS } from '@/lib/labels';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 /**
  * Pazaryeri eşleşmesi (doc 06 §12.5, Faz 8).
@@ -45,7 +46,7 @@ interface Response {
 }
 
 function marketplaceLabel(code: string): string {
-  return MARKETPLACE_LABELS[code] ?? code;
+  return labelOf(MARKETPLACE_LABELS, code);
 }
 
 function CoverageCard({ code, coverage }: { readonly code: string; readonly coverage: Coverage }) {
@@ -122,28 +123,30 @@ export function CrossMarketplaceClient() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-lg font-semibold">Pazaryeri Eşleşmesi</h1>
-        <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-          Aynı ürünün iki pazaryerindeki karşılıkları. Eşleşme <strong>yalnızca barkodla</strong> kurulur —
-          ada, markaya veya gramaja bakan hiçbir tahmin yoktur, çünkü bu satırlara göre ihtar yazılır ve
-          yanlış bir satır eksik bir satırdan kötüdür. Barkodu bilinmeyen ürünler burada görünmez; kaç tane
-          oldukları aşağıda yazar.
-        </p>
-      </header>
+      <PageHeader
+        title="Pazaryeri Eşleşmesi"
+        description={
+          <>
+            Aynı ürünün iki pazaryerindeki karşılıkları. Eşleşme <strong>yalnızca barkodla</strong> kurulur —
+            ada, markaya veya gramaja bakan hiçbir tahmin yoktur, çünkü bu satırlara göre ihtar yazılır ve
+            yanlış bir satır eksik bir satırdan kötüdür. Barkodu bilinmeyen ürünler burada görünmez; kaç tane
+            oldukları aşağıda yazar.
+          </>
+        }
+      />
 
-      {error && (
-        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-2 text-sm">
-          {error}
-        </div>
-      )}
+      {loading && !data && !error && <LoadingState message="Eşleşmeler yükleniyor…" skeletonRows={3} />}
+
+      {error && <ErrorState message={error} onRetry={load} />}
 
       {data && (
         <>
-          <section className="grid gap-3 sm:grid-cols-2">
-            <CoverageCard code={data.left.marketplaceCode} coverage={data.left.coverage} />
-            <CoverageCard code={data.right.marketplaceCode} coverage={data.right.coverage} />
-          </section>
+          <Section id="cross-marketplace-coverage" title="Barkod Kapsamı">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <CoverageCard code={data.left.marketplaceCode} coverage={data.left.coverage} />
+              <CoverageCard code={data.right.marketplaceCode} coverage={data.right.coverage} />
+            </div>
+          </Section>
 
           {data.left.coverage.pending + data.right.coverage.pending > 0 && (
             <p className="text-xs text-(--color-muted)">
@@ -153,66 +156,80 @@ export function CrossMarketplaceClient() {
             </p>
           )}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="search"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Barkod veya ürün adı"
-              className="rounded border border-(--color-border) px-2 py-1 text-sm"
-            />
-            <button
-              type="button"
-              onClick={exportCsv}
-              disabled={matches.length === 0}
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
-            >
-              Excel'e aktar
-            </button>
-            <span className="text-xs text-(--color-muted)">
-              {formatNumber(matches.length)} eşleşme
-              {data.truncated ? ' (liste kısaltıldı)' : ''}
-            </span>
-          </div>
-
-          {matches.length === 0 && !loading && (
-            <p className="text-sm text-(--color-muted)">
-              Henüz eşleşme yok. İki pazaryerinde de barkodu bilinen ortak bir ürün gerekir.
-            </p>
-          )}
-
-          {matches.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="text-left text-xs text-(--color-muted)">
-                  <tr>
-                    <th className="px-2 py-1">Barkod</th>
-                    <th className="px-2 py-1">{marketplaceLabel(data.left.marketplaceCode)}</th>
-                    <th className="px-2 py-1">{marketplaceLabel(data.right.marketplaceCode)}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {matches.map((m) => (
-                    <tr key={`${m.leftId}-${m.rightId}`} className="border-t border-(--color-border)">
-                      <td className="px-2 py-1 tabular-nums">{m.barcode}</td>
-                      <td className="px-2 py-1">
-                        <a className="underline" href={m.leftUrl} target="_blank" rel="noopener noreferrer">
-                          {m.leftLabel}
-                        </a>
-                        <span className="ml-1 text-xs text-(--color-muted)">{m.leftProductRef}</span>
-                      </td>
-                      <td className="px-2 py-1">
-                        <a className="underline" href={m.rightUrl} target="_blank" rel="noopener noreferrer">
-                          {m.rightLabel}
-                        </a>
-                        <span className="ml-1 text-xs text-(--color-muted)">{m.rightProductRef}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <Section
+            id="cross-marketplace-matches"
+            title="Eşleşmeler"
+            action={
+              <span className="text-xs text-(--color-muted)">
+                {formatNumber(matches.length)} eşleşme
+                {data.truncated ? ' (liste kısaltıldı)' : ''}
+              </span>
+            }
+          >
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Barkod veya ürün adı"
+                aria-label="Barkod veya ürün adına göre filtrele"
+                className="rounded border border-(--color-border) px-2 py-1 text-sm"
+              />
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={matches.length === 0}
+                className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
+              >
+                Excel&apos;e aktar
+              </button>
             </div>
-          )}
+
+            {matches.length === 0 && (
+              <EmptyState
+                message="Henüz eşleşme yok."
+                reason="İki pazaryerinde de barkodu bilinen ortak bir ürün gerekir; filtre uygulandıysa filtreyi de gevşetin."
+              />
+            )}
+
+            {matches.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="text-left text-xs text-(--color-muted)">
+                    <tr>
+                      <th className="px-2 py-1">Barkod</th>
+                      <th className="px-2 py-1">{marketplaceLabel(data.left.marketplaceCode)}</th>
+                      <th className="px-2 py-1">{marketplaceLabel(data.right.marketplaceCode)}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matches.map((m) => (
+                      <tr key={`${m.leftId}-${m.rightId}`} className="border-t border-(--color-border)">
+                        <td className="px-2 py-1 tabular-nums">{m.barcode}</td>
+                        <td className="px-2 py-1">
+                          <a className="underline" href={m.leftUrl} target="_blank" rel="noopener noreferrer">
+                            {m.leftLabel}
+                          </a>
+                          <span className="ml-1 text-xs text-(--color-muted)">{m.leftProductRef}</span>
+                        </td>
+                        <td className="px-2 py-1">
+                          <a
+                            className="underline"
+                            href={m.rightUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {m.rightLabel}
+                          </a>
+                          <span className="ml-1 text-xs text-(--color-muted)">{m.rightProductRef}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
         </>
       )}
     </div>
