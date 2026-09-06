@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { Ago, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDate, formatDateTime, formatDuration, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { formatDateTime, formatDuration, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge, type Coverage } from './coverage-badge';
 
 interface ListingOption {
@@ -70,6 +71,10 @@ export function CompetitorsClient() {
   const [listingId, setListingId] = useState('');
   const [listingLabel, setListingLabel] = useState('');
   const [report, setReport] = useState<Report | null>(null);
+  /** The primary load's own failure, kept apart from `report` (doc 15 §3.2) so a failed refetch
+   * over an already-loaded report reads as "stale, refresh failed" rather than wiping the screen. */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   // Every table here is paged against the same filter set, so they share one reset key: changing
   // the window or the product starts all of them at page 1.
@@ -103,6 +108,7 @@ export function CompetitorsClient() {
   }, [listingQuery]);
 
   function load() {
+    setLoading(true);
     const params = new URLSearchParams();
     params.set('sinceMs', String(sinceMs));
     params.set('untilMs', String(untilMs));
@@ -111,15 +117,58 @@ export function CompetitorsClient() {
     if (sellerRef) params.set('sellerRef', sellerRef);
     if (listingId) params.set('listingId', listingId);
     fetch(`/api/competitors?${params.toString()}`)
-      .then((r) => r.json())
-      .then((d: Report) => setReport(d));
+      .then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(`Rakip geçmişi yüklenemedi (HTTP ${r.status}).`)),
+      )
+      .then((d: Report) => {
+        setReport(d);
+        setLoadError(null);
+      })
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
   }
 
   useEffect(load, [sinceMs, untilMs, marketplaceCode, baseStockCode, sellerRef, listingId]);
 
+  // The primary load's six-state handling (doc 15 §3.2): a failed first load is retryable and
+  // never shares a line with the loading state; a first load in flight says so on its own.
+  if (!report && loadError) {
+    return (
+      <div className="space-y-4">
+        <ErrorState message={loadError} onRetry={load} />
+      </div>
+    );
+  }
+  if (!report) {
+    return (
+      <div className="space-y-4">
+        <LoadingState message="Rakip geçmişi yükleniyor…" skeletonRows={3} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Rakip Geçmişi</h1>
+      <PageHeader
+        title="Rakip Geçmişi"
+        description="Seçilen pazaryeri, ürün ve satıcı için buybox geçmişini, satıcı giriş/çıkışlarını ve tarama kapsamını gösterir."
+      />
+
+      {/* A later filter change failed but the previous report is still on screen — say so rather
+          than letting it silently go stale (§3.2 "Stale"). */}
+      {loadError && (
+        <p
+          role="alert"
+          className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) px-3 py-2 text-sm"
+        >
+          Son yenileme başarısız oldu ({loadError}). Aşağıdaki veriler artık güncel olmayabilir.
+        </p>
+      )}
+      {loading && !loadError && (
+        <p aria-live="polite" className="text-xs text-(--color-muted)">
+          Güncelleniyor…
+        </p>
+      )}
 
       <div className="flex flex-wrap items-end gap-3 rounded border border-(--color-border) p-3">
         <label className="flex flex-col text-xs">
@@ -222,9 +271,14 @@ export function CompetitorsClient() {
       )}
 
       {report?.priceTimeline && (
-        <section className="rounded border border-(--color-border) p-4">
+        <section
+          className="rounded border border-(--color-border) p-4"
+          aria-labelledby="price-timeline-heading"
+        >
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-lg font-medium">Fiyat Zaman Çizelgesi</h2>
+            <h2 id="price-timeline-heading" className="text-lg font-medium">
+              Fiyat Zaman Çizelgesi
+            </h2>
             <button
               type="button"
               onClick={() => downloadCsv('fiyat-zaman-cizelgesi.csv', report.priceTimeline!.buybox)}
@@ -271,9 +325,14 @@ export function CompetitorsClient() {
 
       {report && <CoverageBadge coverage={report.coverage} sinceMs={report.filters.sinceMs} />}
 
-      <section className="rounded border border-(--color-border) p-4">
+      <section
+        className="rounded border border-(--color-border) p-4"
+        aria-labelledby="seller-presence-heading"
+      >
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-lg font-medium">Satıcı Varlığı (Giriş/Çıkış)</h2>
+          <h2 id="seller-presence-heading" className="text-lg font-medium">
+            Satıcı Varlığı (Giriş/Çıkış)
+          </h2>
           <button
             type="button"
             onClick={() => report && downloadCsv('satici-varligi.csv', report.sellerPresence)}
@@ -298,8 +357,12 @@ export function CompetitorsClient() {
                 <tr key={i}>
                   <td className="px-2 py-1">{p.productName}</td>
                   <td className="px-2 py-1">{p.sellerName}</td>
-                  <td className="px-2 py-1">{formatDate(p.firstSeen)}</td>
-                  <td className="px-2 py-1">{formatDate(p.lastSeen)}</td>
+                  <td className="px-2 py-1">
+                    <Ago at={p.firstSeen} />
+                  </td>
+                  <td className="px-2 py-1">
+                    <Ago at={p.lastSeen} />
+                  </td>
                   <td className="px-2 py-1">{formatNumber(p.observationCount)}</td>
                 </tr>
               ))}
@@ -318,17 +381,16 @@ export function CompetitorsClient() {
         </div>
       </section>
 
-      <section className="rounded border border-(--color-border) p-4">
+      <section className="rounded border border-(--color-border) p-4" aria-labelledby="buybox-share-heading">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-lg font-medium">Buybox Payı</h2>
+          <h2 id="buybox-share-heading" className="text-lg font-medium">
+            Buybox Payı
+          </h2>
           <button
             type="button"
             onClick={() =>
               report &&
-              downloadCsv(
-                'buybox-payi.csv',
-                listingId ? report.timeWeightedBuyboxShare : report.buyboxShare,
-              )
+              downloadCsv('buybox-payi.csv', listingId ? report.timeWeightedBuyboxShare : report.buyboxShare)
             }
             className="rounded border px-2 py-1 text-xs"
           >
@@ -338,9 +400,9 @@ export function CompetitorsClient() {
         {listingId ? (
           <>
             <p className="mb-2 text-xs text-(--color-muted)">
-              Zaman ağırlıklı: her gözlem, bir sonraki gözleme kadar geçen süre kadar sayılır.
-              Tarama yapılmayan boşluklar paydaya <strong>dahil edilmez</strong> — o aralıkta
-              buybox&apos;ı kimin tuttuğunu bilmiyoruz.
+              Zaman ağırlıklı: her gözlem, bir sonraki gözleme kadar geçen süre kadar sayılır. Tarama
+              yapılmayan boşluklar paydaya <strong>dahil edilmez</strong> — o aralıkta buybox&apos;ı kimin
+              tuttuğunu bilmiyoruz.
             </p>
             <TableFrame maxHeight="50vh">
               <table className="w-full text-xs">
@@ -367,16 +429,16 @@ export function CompetitorsClient() {
             </div>
             {report && report.uncoveredMs > 0 && (
               <p className="mt-2 text-xs text-(--color-muted)">
-                Bu dönemin <strong>{formatDuration(report.uncoveredMs)}</strong> kadarında hiç
-                gözlem yok; yukarıdaki yüzdeler yalnızca gözlenen süreye aittir.
+                Bu dönemin <strong>{formatDuration(report.uncoveredMs)}</strong> kadarında hiç gözlem yok;
+                yukarıdaki yüzdeler yalnızca gözlenen süreye aittir.
               </p>
             )}
           </>
         ) : (
           <>
             <p className="mb-2 text-xs text-(--color-muted)">
-              Bu tabloda her satıcının kaç <em>gözlemde</em> buybox&apos;ta olduğu sayılır, ne
-              kadar <em>süre</em> tuttuğu değil. Süreye göre pay için tek bir ilan seçin.
+              Bu tabloda her satıcının kaç <em>gözlemde</em> buybox&apos;ta olduğu sayılır, ne kadar{' '}
+              <em>süre</em> tuttuğu değil. Süreye göre pay için tek bir ilan seçin.
             </p>
             <TableFrame maxHeight="50vh">
               <table className="w-full text-xs">
@@ -406,8 +468,13 @@ export function CompetitorsClient() {
       </section>
 
       {report?.sellerProfile && (
-        <section className="rounded border border-(--color-border) p-4">
-          <h2 className="mb-2 text-lg font-medium">Satıcı Profili — {report.sellerProfile.sellerName}</h2>
+        <section
+          className="rounded border border-(--color-border) p-4"
+          aria-labelledby="seller-profile-heading"
+        >
+          <h2 id="seller-profile-heading" className="mb-2 text-lg font-medium">
+            Satıcı Profili — {report.sellerProfile.sellerName}
+          </h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
               <div className="text-xs text-(--color-muted)">Görüldüğü Ürün</div>
@@ -424,16 +491,21 @@ export function CompetitorsClient() {
             <div>
               <div className="text-xs text-(--color-muted)">Aktiflik</div>
               <div className="text-sm">
-                {formatDate(report.sellerProfile.firstSeen)} – {formatDate(report.sellerProfile.lastSeen)}
+                <Ago at={report.sellerProfile.firstSeen} /> – <Ago at={report.sellerProfile.lastSeen} />
               </div>
             </div>
           </div>
         </section>
       )}
 
-      <section className="rounded border border-(--color-border) p-4">
+      <section
+        className="rounded border border-(--color-border) p-4"
+        aria-labelledby="observation-coverage-heading"
+      >
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-lg font-medium">Gözlem Kapsamı</h2>
+          <h2 id="observation-coverage-heading" className="text-lg font-medium">
+            Gözlem Kapsamı
+          </h2>
           <button
             type="button"
             onClick={() => report && downloadCsv('gozlem-kapsami.csv', report.observationCoverage)}
@@ -443,37 +515,45 @@ export function CompetitorsClient() {
           </button>
         </div>
         <TableFrame maxHeight="50vh">
-        <table className="w-full text-xs">
-          <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
-            <tr>
-              <th className="px-2 py-1">Tarih</th>
-              <th className="px-2 py-1">Başarılı</th>
-              <th className="px-2 py-1">Ayrıştırma Hatası</th>
-              <th className="px-2 py-1">Getirme Hatası</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-(--color-border)">
-            {pagedCoverage.rows.map((c) => (
-              <tr key={c.date}>
-                <td className="px-2 py-1">{c.date}</td>
-                <td className="px-2 py-1">{formatNumber(c.ok)}</td>
-                <td className="px-2 py-1">
-                  {c.parseFailed > 0 ? <span className="row-warning">{formatNumber(c.parseFailed)}</span> : 0}
-                </td>
-                <td className="px-2 py-1">
-                  {c.fetchFailed > 0 ? <span className="row-danger">{formatNumber(c.fetchFailed)}</span> : 0}
-                </td>
-              </tr>
-            ))}
-            {(report?.observationCoverage.length ?? 0) === 0 && (
+          <table className="w-full text-xs">
+            <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
               <tr>
-                <td colSpan={4} className="px-2 py-4 text-center text-(--color-muted)">
-                  Seçilen aralıkta tarama kaydı yok.
-                </td>
+                <th className="px-2 py-1">Tarih</th>
+                <th className="px-2 py-1">Başarılı</th>
+                <th className="px-2 py-1">Ayrıştırma Hatası</th>
+                <th className="px-2 py-1">Getirme Hatası</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-(--color-border)">
+              {pagedCoverage.rows.map((c) => (
+                <tr key={c.date}>
+                  <td className="px-2 py-1">{c.date}</td>
+                  <td className="px-2 py-1">{formatNumber(c.ok)}</td>
+                  <td className="px-2 py-1">
+                    {c.parseFailed > 0 ? (
+                      <span className="row-warning">{formatNumber(c.parseFailed)}</span>
+                    ) : (
+                      0
+                    )}
+                  </td>
+                  <td className="px-2 py-1">
+                    {c.fetchFailed > 0 ? (
+                      <span className="row-danger">{formatNumber(c.fetchFailed)}</span>
+                    ) : (
+                      0
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {(report?.observationCoverage.length ?? 0) === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-2 py-4 text-center text-(--color-muted)">
+                    Seçilen aralıkta tarama kaydı yok.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </TableFrame>
         <div className="mt-2">
           <Pagination state={pagedCoverage} label="gün" />
