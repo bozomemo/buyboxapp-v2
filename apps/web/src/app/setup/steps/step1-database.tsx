@@ -1,9 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Field, StatusBanner, TextInput } from '@/components/ui';
+import { Button, Field, StatusBanner, StepStopNotice, TextInput } from '@/components/ui';
 
 type Engine = 'sqlite' | 'postgres' | 'mysql';
+
+/**
+ * Per-field validation (doc 15 §6, Phase 6: field-level over end-of-step). This is a client-side
+ * hint only — the server (`/api/setup/database/test`) is still the actual authority on whether a
+ * connection string works, and its own "mutlak bir yol olmalıdır" rule (see the module doc
+ * comment below) already rejects a relative SQLite path outright. Catching the obvious case here
+ * just saves the operator a round trip for a mistake they can see before they click anything.
+ */
+function connectionStringError(engine: Engine, value: string): string | undefined {
+  if (value.trim() === '') return 'Bağlantı bilgisi gerekli.';
+  if (engine === 'sqlite') {
+    const path = value.replace(/^file:/, '');
+    const looksAbsolute = /^[/\\]/.test(path) || /^[a-zA-Z]:[/\\]/.test(path);
+    if (!looksAbsolute) {
+      return "Mutlak bir yol olmalı (örn. C:\\BuyBox\\app.db) — göreli bir yol web ve worker'ın farklı dosyalar açmasına yol açar.";
+    }
+  } else if (!value.includes('://')) {
+    return `Geçersiz görünüyor — beklenen biçim: ${engine}://kullanici:sifre@sunucu:port/veritabani`;
+  }
+  return undefined;
+}
 
 /**
  * SQLite deliberately has no compiled-in default: only the server knows where this deployment
@@ -31,6 +52,8 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | undefined>();
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | undefined>();
   const [busy, setBusy] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const fieldError = touched ? connectionStringError(engine, connectionString) : undefined;
 
   // The SQLite suggestion is the server's to make — it is absolute, and only the server knows
   // this deployment's data directory. Until it arrives the field stays empty rather than
@@ -122,29 +145,35 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
         </select>
       </Field>
 
-      <Field label="Bağlantı Bilgisi">
+      <Field
+        label="Bağlantı Bilgisi"
+        error={fieldError}
+        hint={
+          engine === 'sqlite' && suggestionIsConfigured && connectionString === suggestedSqlite
+            ? 'Bu, kurulumun hâlihazırda kullandığı veritabanıdır. Değiştirmeniz gerekmiyor — başka bir yol yazarsanız ikinci bir veritabanı oluşur ve servis yeniden başlatılana kadar worker eskisini kullanmaya devam eder.'
+            : engine === 'sqlite'
+              ? 'Mutlak bir yol olmalıdır. Göreli bir yol (örn. file:./data/app.db) uygulamanın web ve worker parçalarının farklı dosyalar açmasına yol açar; sunucu bunu reddeder.'
+              : undefined
+        }
+      >
         <TextInput
           value={connectionString}
           onChange={(e) => setConnectionString(e.target.value)}
+          onBlur={() => setTouched(true)}
           placeholder={defaultFor(engine)}
         />
-        {engine === 'sqlite' && suggestionIsConfigured && connectionString === suggestedSqlite && (
-          <p className="mt-1 text-xs text-(--color-success)">
-            Bu, kurulumun hâlihazırda kullandığı veritabanıdır. Değiştirmeniz gerekmiyor — başka bir yol
-            yazarsanız ikinci bir veritabanı oluşur ve servis yeniden başlatılana kadar worker eskisini
-            kullanmaya devam eder.
-          </p>
-        )}
-        {engine === 'sqlite' && (
-          <p className="mt-1 text-xs text-(--color-muted)">
-            Mutlak bir yol olmalıdır. Göreli bir yol (örn. <code>file:./data/app.db</code>) uygulamanın web ve
-            worker parçalarının farklı dosyalar açmasına yol açar; sunucu bunu reddeder.
-          </p>
-        )}
       </Field>
 
       <div className="flex gap-2">
-        <Button variant="secondary" type="button" onClick={() => void testConnection()} disabled={busy}>
+        <Button
+          variant="secondary"
+          type="button"
+          onClick={() => {
+            setTouched(true);
+            if (!connectionStringError(engine, connectionString)) void testConnection();
+          }}
+          disabled={busy}
+        >
           Bağlantıyı Test Et
         </Button>
         <Button type="button" onClick={() => void migrate()} disabled={busy || !testResult?.ok}>
@@ -154,6 +183,13 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
 
       {testResult && <StatusBanner ok={testResult.ok} message={testResult.message} />}
       {migrateResult && <StatusBanner ok={migrateResult.ok} message={migrateResult.message} />}
+
+      <StepStopNotice>
+        Bu adımda ilerlemeden çıkarsanız hiçbir şey kaydedilmez; sihirbaza döndüğünüzde kaldığınız adımdan
+        devam edersiniz ama veritabanı bağlantısını yeniden test edip migrasyonları tekrar çalıştırmanız
+        gerekir — bu adım her zaman yeniden onaylanır, çünkü sonraki her adım gerçekten çalışan bir şemaya
+        yazar.
+      </StepStopNotice>
 
       <div className="mt-4 flex justify-end">
         <Button type="button" onClick={onDone} disabled={!migrateResult?.ok}>

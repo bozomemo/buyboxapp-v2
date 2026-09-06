@@ -14,12 +14,36 @@ import { formatDateTime, formatDuration } from '@/lib/format';
  * later screen in the redesign pass is expected to reuse rather than fork.
  */
 
-/** A labelled form field. Puts the label above the control, the shape every form on this screen uses. */
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * A labelled form field. Puts the label above the control, the shape every form on this screen
+ * uses.
+ *
+ * `error` and `hint` were added for the setup wizard's per-field validation (doc 15 §6, Phase 6):
+ * the wizard used to give no field-level feedback at all, only a silently `disabled` submit
+ * button, which left the operator to guess why they could not proceed. Both are optional so every
+ * existing caller (`<Field label="...">…</Field>`) keeps compiling unchanged.
+ */
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="font-medium">{label}</span>
       {children}
+      {hint && !error && <span className="text-xs text-(--color-muted)">{hint}</span>}
+      {error && (
+        <span role="alert" className="text-xs text-(--color-danger)">
+          {error}
+        </span>
+      )}
     </label>
   );
 }
@@ -69,6 +93,20 @@ export function StatusBanner({ ok, message }: { ok: boolean; message: string }) 
       className={`rounded px-3 py-2 text-sm ${ok ? 'bg-(--color-success-bg) text-(--color-success)' : 'bg-(--color-danger-bg) text-(--color-danger)'}`}
     >
       {message}
+    </p>
+  );
+}
+
+/**
+ * "Bu adımı atlarsanız / şimdi çıkarsanız ne olur" sentence, stated once near the top of a wizard
+ * step (doc 15 §6, Phase 6: "her adım, kullanıcı burada dururursa ne olacağını açıkça belirtsin").
+ * Before this, only the ERP step said anything about the consequence of leaving mid-step; every
+ * other step was silent about it.
+ */
+export function StepStopNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded border border-(--color-border) bg-(--color-chip-bg) px-3 py-2 text-xs text-(--color-muted)">
+      {children}
     </p>
   );
 }

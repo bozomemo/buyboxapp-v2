@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Button, Field, StatusBanner, StepFooter, TextInput } from '@/components/ui';
+import { useEffect, useState } from 'react';
+import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
 
 interface PolicyForm {
   code: 'trendyol' | 'hepsiburada';
@@ -24,6 +24,8 @@ interface PolicyForm {
   concurrency: string;
   budgetReservePct: string;
   saved?: boolean;
+  /** Set when `/api/settings/policy` already had a row for this marketplace on mount. */
+  savedByServer?: boolean;
 }
 
 function initialForm(code: 'trendyol' | 'hepsiburada', title: string): PolicyForm {
@@ -55,6 +57,51 @@ const ALL_TITLES: Record<'trendyol' | 'hepsiburada', string> = {
   hepsiburada: 'Hepsiburada',
 };
 
+// --- Field-level validation (doc 15 §6, Phase 6) -----------------------------------------------
+//
+// Every numeric field here used to be a bare `TextInput` feeding straight into `Number(...)` on
+// save (`/api/setup/policy/save`'s `Number(body.soleSellerMarginPct)` etc.) — an invalid entry
+// became `NaN` silently. These mirror that route's own arithmetic so an invalid value is caught
+// before the request, not after.
+
+function percentError(value: string): string | undefined {
+  if (value.trim() === '') return 'Gerekli.';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'Sayı olmalı.';
+  if (n < 0 || n > 100) return '0 ile 100 arasında olmalı.';
+  return undefined;
+}
+
+function positiveIntegerError(value: string): string | undefined {
+  if (value.trim() === '') return 'Gerekli.';
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) return 'Negatif olmayan bir tam sayı olmalı.';
+  return undefined;
+}
+
+function amountError(value: string): string | undefined {
+  if (value.trim() === '') return 'Gerekli.';
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 'Geçerli, negatif olmayan bir tutar olmalı (örn. 0.50).';
+  return undefined;
+}
+
+interface FieldSpec {
+  key: keyof PolicyForm;
+  label: string;
+  validate: (value: string) => string | undefined;
+}
+
+const NUMERIC_FIELDS: FieldSpec[] = [
+  { key: 'coarseStepPercent', label: 'Kaba Adım (%)', validate: percentError },
+  { key: 'refineTolerance', label: 'İnceltme Toleransı (₺)', validate: amountError },
+  { key: 'soleSellerMarginPct', label: 'Tek Satıcı Marjı (%)', validate: percentError },
+  { key: 'settleDurationMinutes', label: 'Yerleşme Süresi (dakika)', validate: positiveIntegerError },
+  { key: 'pollIntervalMinutes', label: 'Sorgulama Aralığı (dakika)', validate: positiveIntegerError },
+  { key: 'concurrency', label: 'Eşzamanlılık', validate: positiveIntegerError },
+  { key: 'budgetReservePct', label: 'Günlük Bütçe Rezervi (%)', validate: percentError },
+];
+
 export function Step5Policy({
   enabledMarketplaces,
   onDone,
@@ -68,12 +115,69 @@ export function Step5Policy({
     enabledMarketplaces.map((code) => initialForm(code, ALL_TITLES[code])),
   );
   const [busyCode, setBusyCode] = useState<string | undefined>();
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+
+  // Never re-ask what `/api/settings/policy` already has (doc 15 §6, Phase 6) — same pattern as
+  // fees above.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const results = await Promise.all(
+        enabledMarketplaces.map(async (code) => {
+          try {
+            const res = await fetch(`/api/settings/policy?marketplaceCode=${code}`);
+            if (!res.ok) return null;
+            const data = (await res.json()) as {
+              current:
+                | (Omit<PolicyForm, 'code' | 'title' | 'saved' | 'savedByServer'> & { enabled: boolean })
+                | null;
+            };
+            return data.current ? { code, current: data.current } : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setForms((prev) =>
+        prev.map((f) => {
+          const hit = results.find((r) => r?.code === f.code);
+          if (!hit?.current) return f;
+          const { enabled: _enabled, ...rest } = hit.current;
+          return { ...f, ...rest, savedByServer: true };
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabledMarketplaces]);
 
   function update(code: PolicyForm['code'], patch: Partial<PolicyForm>) {
-    setForms((prev) => prev.map((f) => (f.code === code ? { ...f, ...patch } : f)));
+    setForms((prev) => prev.map((f) => (f.code === code ? { ...f, ...patch, savedByServer: false } : f)));
+  }
+
+  function touch(code: string, key: string) {
+    setTouched((prev) => new Set(prev).add(`${code}:${key}`));
+  }
+
+  function formErrors(form: PolicyForm): boolean {
+    return NUMERIC_FIELDS.some((spec) => spec.validate(String(form[spec.key])) !== undefined);
+  }
+
+  function touchAll(form: PolicyForm) {
+    setTouched((prev) => {
+      const next = new Set(prev);
+      for (const spec of NUMERIC_FIELDS) next.add(`${form.code}:${spec.key}`);
+      return next;
+    });
   }
 
   async function save(form: PolicyForm) {
+    if (formErrors(form)) {
+      touchAll(form);
+      return;
+    }
     setBusyCode(form.code);
     try {
       const res = await fetch('/api/setup/policy/save', {
@@ -87,7 +191,7 @@ export function Step5Policy({
     }
   }
 
-  const canProceed = forms.every((f) => f.saved);
+  const canProceed = forms.every((f) => f.saved || f.savedByServer);
 
   return (
     <div className="flex flex-col gap-6">
@@ -98,52 +202,33 @@ export function Step5Policy({
       {forms.map((form) => (
         <div key={form.code} className="rounded border border-(--color-border) p-4">
           <h3 className="mb-3 font-semibold">{form.title}</h3>
-          <div className="grid grid-cols-2 gap-4">
+          {form.savedByServer && (
+            <StatusBanner
+              ok
+              message="Bu pazaryeri için politika zaten kayıtlı — aşağıda gösteriliyor. Değiştirip yeniden kaydedebilirsiniz."
+            />
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-4">
             {/* Sabit-tutar modu Ayarlar ekranından (6.10) yapılandırılır — sihirbaz kasıtlı
                 olarak yalnızca yüzde modunu sunar, ölçülemeyen bir "0 tutar" adımı kaydedip
                 fiyatları sessizce donduran bir kurulum hatasını önlemek için. */}
-            <Field label="Kaba Adım (%)">
-              <TextInput
-                value={form.coarseStepPercent}
-                onChange={(e) => update(form.code, { coarseStepPercent: e.target.value })}
-              />
-            </Field>
-            <Field label="İnceltme Toleransı (₺)">
-              <TextInput
-                value={form.refineTolerance}
-                onChange={(e) => update(form.code, { refineTolerance: e.target.value })}
-              />
-            </Field>
-            <Field label="Tek Satıcı Marjı (%)">
-              <TextInput
-                value={form.soleSellerMarginPct}
-                onChange={(e) => update(form.code, { soleSellerMarginPct: e.target.value })}
-              />
-            </Field>
-            <Field label="Yerleşme Süresi (dakika)">
-              <TextInput
-                value={form.settleDurationMinutes}
-                onChange={(e) => update(form.code, { settleDurationMinutes: e.target.value })}
-              />
-            </Field>
-            <Field label="Sorgulama Aralığı (dakika)">
-              <TextInput
-                value={form.pollIntervalMinutes}
-                onChange={(e) => update(form.code, { pollIntervalMinutes: e.target.value })}
-              />
-            </Field>
-            <Field label="Eşzamanlılık">
-              <TextInput
-                value={form.concurrency}
-                onChange={(e) => update(form.code, { concurrency: e.target.value })}
-              />
-            </Field>
-            <Field label="Günlük Bütçe Rezervi (%)">
-              <TextInput
-                value={form.budgetReservePct}
-                onChange={(e) => update(form.code, { budgetReservePct: e.target.value })}
-              />
-            </Field>
+            {NUMERIC_FIELDS.map((spec) => (
+              <Field
+                key={spec.key}
+                label={spec.label}
+                error={
+                  touched.has(`${form.code}:${spec.key}`) ? spec.validate(String(form[spec.key])) : undefined
+                }
+              >
+                <TextInput
+                  value={String(form[spec.key])}
+                  onChange={(e) =>
+                    update(form.code, { [spec.key]: e.target.value } as unknown as Partial<PolicyForm>)
+                  }
+                  onBlur={() => touch(form.code, spec.key)}
+                />
+              </Field>
+            ))}
           </div>
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input
@@ -156,12 +241,16 @@ export function Step5Policy({
 
           <div className="mt-4">
             <Button type="button" onClick={() => void save(form)} disabled={busyCode === form.code}>
-              Kaydet
+              {busyCode === form.code ? 'Kaydediliyor…' : 'Kaydet'}
             </Button>
           </div>
           {form.saved && <StatusBanner ok message="Politika kaydedildi (otomasyon kapalı)." />}
         </div>
       ))}
+      <StepStopNotice>
+        Kaydetmeden çıkarsanız bu pazaryeri için fiyatlandırma politikası olmaz ve otomasyon Panel'den
+        açılamaz. Sihirbaza döndüğünüzde daha önce kaydettiğiniz pazaryerleri burada yeniden gösterilir.
+      </StepStopNotice>
       <StepFooter onBack={onBack} onNext={onDone} nextDisabled={!canProceed} />
     </div>
   );

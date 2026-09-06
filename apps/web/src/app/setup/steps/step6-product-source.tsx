@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { Button, Field, StatusBanner, StepFooter, TextInput } from '@/components/ui';
+import { useEffect, useRef, useState } from 'react';
+import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
 
 type SourceCode = 'manual' | 'excel' | 'marketplaceListing';
 
@@ -11,6 +11,8 @@ interface PreviewRow {
   unitCost: string;
   unitStock: number;
 }
+
+const MAPPING_FIELDS = ['baseStockCode', 'name', 'unitCost', 'unitStock'] as const;
 
 export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
   const [source, setSource] = useState<SourceCode>('manual');
@@ -22,8 +24,47 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
   });
   const [preview, setPreview] = useState<{ ok: boolean; rows?: PreviewRow[]; error?: string } | undefined>();
   const [saved, setSaved] = useState(false);
+  // Set when `/api/product-source/config` already had a configuration on mount (doc 15 §6, Phase
+  // 6) — never re-ask what is already configured. An Excel source's file itself is never
+  // persisted (only the column mapping is), so a prefilled Excel source still needs the file
+  // re-attached to preview or re-save; it is at least not asked to retype the column mapping.
+  const [savedByServer, setSavedByServer] = useState(false);
+  const [touchedMapping, setTouchedMapping] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/product-source/config');
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          configured: boolean;
+          sourceCode?: SourceCode;
+          sourceConfig?: { columnMapping?: Partial<typeof mapping> };
+        };
+        if (cancelled || !data.configured) return;
+        if (data.sourceCode) setSource(data.sourceCode);
+        if (data.sourceConfig?.columnMapping) {
+          setMapping((m) => ({ ...m, ...data.sourceConfig?.columnMapping }));
+        }
+        setSavedByServer(true);
+      } catch {
+        // No prefill — falls back to the manual default, same as before this read existed.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function mappingError(field: (typeof MAPPING_FIELDS)[number]): string | undefined {
+    if (!touchedMapping.has(field)) return undefined;
+    return mapping[field].trim() === '' ? 'Sütun başlığı boş olamaz.' : undefined;
+  }
+
+  const mappingValid = MAPPING_FIELDS.every((f) => mapping[f].trim() !== '');
 
   async function fileToBase64(file: File): Promise<string> {
     const buffer = await file.arrayBuffer();
@@ -35,7 +76,10 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
 
   async function testExcel() {
     const file = fileInput.current?.files?.[0];
-    if (!file) return;
+    if (!file || !mappingValid) {
+      setTouchedMapping(new Set(MAPPING_FIELDS));
+      return;
+    }
     setBusy(true);
     setPreview(undefined);
     try {
@@ -70,6 +114,7 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
         body: JSON.stringify({ sourceCode: source, sourceConfig }),
       });
       setSaved(res.ok);
+      if (res.ok) setSavedByServer(false); // now confirmed by this session's own save, not a stale prefill
     } finally {
       setBusy(false);
     }
@@ -77,6 +122,12 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
 
   return (
     <div className="flex flex-col gap-4">
+      {savedByServer && (
+        <StatusBanner
+          ok
+          message="Bir ürün kaynağı zaten yapılandırılmış — aşağıda gösteriliyor. Değiştirmek istemiyorsanız doğrudan İleri'ye geçebilirsiniz."
+        />
+      )}
       <Field label="Ürün Kaynağı">
         <select
           value={source}
@@ -95,19 +146,32 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
 
       {source === 'excel' && (
         <div className="flex flex-col gap-3 rounded border border-(--color-border) p-4">
-          <input ref={fileInput} type="file" accept=".xlsx" className="text-sm" />
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".xlsx"
+            className="text-sm"
+            aria-label="Excel dosyası seç"
+          />
+          {savedByServer && (
+            <p className="text-xs text-(--color-muted)">
+              Sütun eşlemesi daha önce kaydedilenden dolduruldu; dosyanın kendisi saklanmaz — önizlemek veya
+              yeniden kaydetmek için Excel dosyasını burada yeniden seçmeniz gerekir.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
-            {(['baseStockCode', 'name', 'unitCost', 'unitStock'] as const).map((field) => (
-              <Field key={field} label={`${field} sütun başlığı`}>
+            {MAPPING_FIELDS.map((field) => (
+              <Field key={field} label={`${field} sütun başlığı`} error={mappingError(field)}>
                 <TextInput
                   value={mapping[field]}
                   onChange={(e) => setMapping((m) => ({ ...m, [field]: e.target.value }))}
+                  onBlur={() => setTouchedMapping((prev) => new Set(prev).add(field))}
                 />
               </Field>
             ))}
           </div>
           <Button variant="secondary" type="button" onClick={() => void testExcel()} disabled={busy}>
-            İlk 20 Satırı Önizle
+            {busy ? 'Önizleniyor…' : 'İlk 20 Satırı Önizle'}
           </Button>
           {preview?.ok && preview.rows && (
             <div className="max-h-64 overflow-auto text-xs">
@@ -152,11 +216,15 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
           onClick={() => void save()}
           disabled={busy || (source === 'excel' && !preview?.ok)}
         >
-          Kaydet
+          {busy ? 'Kaydediliyor…' : 'Kaydet'}
         </Button>
       </div>
       {saved && <StatusBanner ok message="Ürün kaynağı yapılandırması kaydedildi." />}
-      <StepFooter onBack={onBack} onNext={onDone} nextDisabled={!saved} />
+      <StepStopNotice>
+        Kaydetmeden çıkarsanız ürün kaynağı "Manuel" varsayılanında kalır — stoklar Stok ekranından tek tek
+        eklenir; Excel veya pazaryeri kaynağını daha sonra bu adıma dönerek de kurabilirsiniz.
+      </StepStopNotice>
+      <StepFooter onBack={onBack} onNext={onDone} nextDisabled={!saved && !savedByServer} />
     </div>
   );
 }

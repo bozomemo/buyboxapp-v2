@@ -1,7 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { STEP_LABELS, WIZARD_STEPS, type WizardStep } from './wizard-types';
+import { useEffect, useState } from 'react';
+import {
+  loadWizardProgress,
+  saveWizardProgress,
+  STEP_LABELS,
+  WIZARD_STEPS,
+  type WizardStep,
+} from './wizard-types';
 import { Step1Database } from './steps/step1-database';
 import { Step2StoreIdentity } from './steps/step2-store-identity';
 import { Step3Marketplaces } from './steps/step3-marketplaces';
@@ -16,12 +22,37 @@ import { Step8Review } from './steps/step8-review';
  * own data through an API route as soon as the operator confirms it — the wizard's local state
  * only tracks *which step is showing*, so leaving and returning mid-way never loses already
  * committed configuration (only the current, unsaved step).
+ *
+ * *Which* step is showing is itself remembered across a reload, in `localStorage`
+ * (`wizard-types.ts`'s `loadWizardProgress`/`saveWizardProgress`) — before this, a reload always
+ * dropped the operator back at step 1 regardless of how far they had gotten, which read exactly
+ * like the "already answered, asked again" defect this pass exists to close even though nothing
+ * they had saved was actually lost (doc 15 §6, Phase 6).
  */
 export default function SetupWizard() {
   const [stepIndex, setStepIndex] = useState(0);
   const [databaseReady, setDatabaseReady] = useState(false);
   const [enabledMarketplaces, setEnabledMarketplaces] = useState<('trendyol' | 'hepsiburada')[]>([]);
+  // Restored client-side only, after mount: reading `localStorage` during the initial render
+  // would disagree with the server-rendered markup (SSR has no `window`) and React would warn
+  // about a hydration mismatch. A one-frame flash of "step 1" before this runs is the trade-off.
+  const [restored, setRestored] = useState(false);
   const step: WizardStep = WIZARD_STEPS[stepIndex]!;
+
+  useEffect(() => {
+    const progress = loadWizardProgress();
+    if (progress) {
+      setStepIndex(progress.stepIndex);
+      setDatabaseReady(progress.databaseReady);
+      setEnabledMarketplaces(progress.enabledMarketplaces);
+    }
+    setRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (!restored) return; // don't overwrite a saved position with the initial defaults
+    saveWizardProgress({ stepIndex, databaseReady, enabledMarketplaces });
+  }, [restored, stepIndex, databaseReady, enabledMarketplaces]);
 
   function next() {
     setStepIndex((i) => Math.min(i + 1, WIZARD_STEPS.length - 1));

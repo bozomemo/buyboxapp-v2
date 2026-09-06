@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, StatusBanner, StepFooter } from '@/components/ui';
+import { Button, StatusBanner, StepFooter, StepStopNotice } from '@/components/ui';
+import { clearWizardProgress } from '../wizard-types';
 
 export function Step8Review({ onBack }: { onBack: () => void }) {
   const router = useRouter();
@@ -15,6 +16,7 @@ export function Step8Review({ onBack }: { onBack: () => void }) {
       const res = await fetch('/api/setup/finish', { method: 'POST' });
       if (res.ok) {
         setResult({ ok: true, message: 'Kurulum tamamlandı. Panele yönlendiriliyorsunuz…' });
+        clearWizardProgress();
         setTimeout(() => router.push('/'), 800);
       } else {
         const data = (await res.json()) as { error?: string };
@@ -33,6 +35,11 @@ export function Step8Review({ onBack }: { onBack: () => void }) {
         <strong>kapalı</strong> olarak başlayacak — Panel'den bilinçli olarak açacaksınız (doc 10 §6, adım 8).
         Sistem bittiğinde ürünleri içe aktarıp gözlemlemeye başlayacak, fiyat göndermeyecektir.
       </p>
+      <StepStopNotice>
+        Bu adımda "Kurulumu Bitir"i tıklamadan çıkarsanız, önceki adımlarda kaydettikleriniz kalıcı olarak
+        durur, ancak kurulum tamamlanmış sayılmaz: Panel açılışta kurulumun bitmediğini göstermeye devam eder.
+        Sihirbaza döndüğünüzde kaldığınız adımdan devam edersiniz.
+      </StepStopNotice>
       <div>
         <Button type="button" onClick={() => void finish()} disabled={busy}>
           Kurulumu Bitir

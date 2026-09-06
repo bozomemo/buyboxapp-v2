@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Button, Field, StatusBanner, StepFooter, TextInput } from '@/components/ui';
+import { useEffect, useState } from 'react';
+import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
 
 interface Band {
   edge: string; // maxPrice for cargo, minPrice for expenditure — decimal string, "" = unbounded
@@ -25,6 +25,8 @@ interface FeeForm {
   expenditureVatRate: string;
   expenditureVatDeductible: boolean;
   saved?: boolean;
+  /** Set when `/api/settings/fees` already had a row for this marketplace on mount. */
+  savedByServer?: boolean;
 }
 
 function initialForm(code: 'trendyol' | 'hepsiburada', title: string): FeeForm {
@@ -66,43 +68,100 @@ function toPayload(form: FeeForm) {
   };
 }
 
+// --- Field-level validation (doc 15 §6, Phase 6) ---------------------------------------------
+//
+// Before this, every numeric field here was a bare `TextInput`: typing "abc" into a commission
+// rate produced `Number('abc') === NaN`, sent as-is to `/api/setup/fees/preview` and
+// `/api/setup/fees/save`, and surfaced only as an opaque failure from those routes. Catching it
+// here is prevention, not just reporting (doc 15 §5 review question 6).
+
+function percentError(value: string): string | undefined {
+  if (value.trim() === '') return 'Gerekli.';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'Sayı olmalı.';
+  if (n < 0 || n > 100) return '0 ile 100 arasında olmalı.';
+  return undefined;
+}
+
+function amountError(value: string, allowEmpty: boolean): string | undefined {
+  if (value.trim() === '') return allowEmpty ? undefined : 'Gerekli.';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'Geçerli bir tutar olmalı (örn. 11.00).';
+  if (n < 0) return 'Negatif olamaz.';
+  return undefined;
+}
+
 function BandEditor({
   label,
   edgeLabel,
   bands,
+  edgeAllowEmpty,
+  touchedPrefix,
+  touched,
+  onTouch,
   onChange,
 }: {
   label: string;
   edgeLabel: string;
   bands: Band[];
+  edgeAllowEmpty: boolean;
+  touchedPrefix: string;
+  touched: Set<string>;
+  onTouch: (key: string) => void;
   onChange: (bands: Band[]) => void;
 }) {
   return (
     <div className="flex flex-col gap-2">
       <span className="text-sm font-medium">{label}</span>
-      {bands.map((band, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <TextInput
-            placeholder={edgeLabel}
-            value={band.edge}
-            onChange={(e) => onChange(bands.map((b, j) => (i === j ? { ...b, edge: e.target.value } : b)))}
-            className="w-32"
-          />
-          <TextInput
-            placeholder="Tutar"
-            value={band.amount}
-            onChange={(e) => onChange(bands.map((b, j) => (i === j ? { ...b, amount: e.target.value } : b)))}
-            className="w-28"
-          />
-          <button
-            type="button"
-            className="text-xs text-(--color-danger)"
-            onClick={() => onChange(bands.filter((_, j) => j !== i))}
-          >
-            Kaldır
-          </button>
-        </div>
-      ))}
+      {bands.map((band, i) => {
+        const edgeKey = `${touchedPrefix}:edge:${i}`;
+        const amountKey = `${touchedPrefix}:amount:${i}`;
+        const edgeErr = touched.has(edgeKey) ? amountError(band.edge, edgeAllowEmpty) : undefined;
+        const amountErr = touched.has(amountKey) ? amountError(band.amount, false) : undefined;
+        return (
+          <div key={i} className="flex items-start gap-2">
+            <div className="flex flex-col">
+              <TextInput
+                placeholder={edgeLabel}
+                value={band.edge}
+                onChange={(e) =>
+                  onChange(bands.map((b, j) => (i === j ? { ...b, edge: e.target.value } : b)))
+                }
+                onBlur={() => onTouch(edgeKey)}
+                className="w-32"
+              />
+              {edgeErr && (
+                <span role="alert" className="mt-0.5 text-xs text-(--color-danger)">
+                  {edgeErr}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col">
+              <TextInput
+                placeholder="Tutar"
+                value={band.amount}
+                onChange={(e) =>
+                  onChange(bands.map((b, j) => (i === j ? { ...b, amount: e.target.value } : b)))
+                }
+                onBlur={() => onTouch(amountKey)}
+                className="w-28"
+              />
+              {amountErr && (
+                <span role="alert" className="mt-0.5 text-xs text-(--color-danger)">
+                  {amountErr}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              className="mt-1.5 text-xs text-(--color-danger)"
+              onClick={() => onChange(bands.filter((_, j) => j !== i))}
+            >
+              Kaldır
+            </button>
+          </div>
+        );
+      })}
       <button
         type="button"
         className="w-fit text-xs text-(--color-accent)"
@@ -133,12 +192,86 @@ export function Step4Fees({
   );
   const [preview, setPreview] = useState<Record<string, string>>({});
   const [busyCode, setBusyCode] = useState<string | undefined>();
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+
+  // Never re-ask what `/api/settings/fees` already has (doc 15 §6, Phase 6): a marketplace this
+  // wizard (or a prior run of it) already saved fee settings for is shown with those values, and
+  // does not force another "Kaydet" click just to satisfy `canProceed`.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const results = await Promise.all(
+        enabledMarketplaces.map(async (code) => {
+          try {
+            const res = await fetch(`/api/settings/fees?marketplaceCode=${code}`);
+            if (!res.ok) return null;
+            const data = (await res.json()) as { current: Omit<FeeForm, 'code' | 'title' | 'saved'> | null };
+            return data.current ? { code, current: data.current } : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setForms((prev) =>
+        prev.map((f) => {
+          const hit = results.find((r) => r?.code === f.code);
+          return hit ? { ...f, ...hit.current, savedByServer: true } : f;
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabledMarketplaces]);
 
   function update(code: FeeForm['code'], patch: Partial<FeeForm>) {
-    setForms((prev) => prev.map((f) => (f.code === code ? { ...f, ...patch } : f)));
+    // Any manual edit invalidates a server-sourced "already saved" badge — it must not survive a
+    // change nobody re-saved.
+    setForms((prev) => prev.map((f) => (f.code === code ? { ...f, ...patch, savedByServer: false } : f)));
+  }
+
+  function touch(code: string, key: string) {
+    setTouched((prev) => new Set(prev).add(`${code}:${key}`));
+  }
+
+  function formErrors(form: FeeForm): string[] {
+    const errs: string[] = [];
+    if (percentError(form.commissionVatRate)) errs.push('commissionVatRate');
+    if (percentError(form.defaultCommissionRate)) errs.push('defaultCommissionRate');
+    form.cargoBands.forEach((b, i) => {
+      if (amountError(b.edge, true)) errs.push(`cargo-edge-${i}`);
+      if (amountError(b.amount, false)) errs.push(`cargo-amount-${i}`);
+    });
+    form.expenditureBands.forEach((b, i) => {
+      if (amountError(b.edge, false)) errs.push(`exp-edge-${i}`);
+      if (amountError(b.amount, false)) errs.push(`exp-amount-${i}`);
+    });
+    return errs;
+  }
+
+  function touchAll(form: FeeForm) {
+    setTouched((prev) => {
+      const next = new Set(prev);
+      next.add(`${form.code}:commissionVatRate`);
+      next.add(`${form.code}:defaultCommissionRate`);
+      form.cargoBands.forEach((_, i) => {
+        next.add(`cargo:${form.code}:edge:${i}`);
+        next.add(`cargo:${form.code}:amount:${i}`);
+      });
+      form.expenditureBands.forEach((_, i) => {
+        next.add(`exp:${form.code}:edge:${i}`);
+        next.add(`exp:${form.code}:amount:${i}`);
+      });
+      return next;
+    });
   }
 
   async function runPreview(form: FeeForm) {
+    if (formErrors(form).length > 0) {
+      touchAll(form);
+      return;
+    }
     setBusyCode(form.code);
     try {
       const res = await fetch('/api/setup/fees/preview', {
@@ -159,6 +292,10 @@ export function Step4Fees({
   }
 
   async function save(form: FeeForm) {
+    if (formErrors(form).length > 0) {
+      touchAll(form);
+      return;
+    }
     setBusyCode(form.code);
     try {
       const res = await fetch('/api/setup/fees/save', {
@@ -172,7 +309,7 @@ export function Step4Fees({
     }
   }
 
-  const canProceed = forms.every((f) => f.saved);
+  const canProceed = forms.every((f) => f.saved || f.savedByServer);
 
   return (
     <div className="flex flex-col gap-6">
@@ -184,17 +321,39 @@ export function Step4Fees({
       {forms.map((form) => (
         <div key={form.code} className="rounded border border-(--color-border) p-4">
           <h3 className="mb-3 font-semibold">{form.title}</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Komisyon KDV Oranı (%)">
+          {form.savedByServer && (
+            <StatusBanner
+              ok
+              message="Bu pazaryeri için ücret ayarları zaten kayıtlı — aşağıda gösteriliyor. Değiştirip yeniden kaydedebilirsiniz."
+            />
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-4">
+            <Field
+              label="Komisyon KDV Oranı (%)"
+              error={
+                touched.has(`${form.code}:commissionVatRate`)
+                  ? percentError(form.commissionVatRate)
+                  : undefined
+              }
+            >
               <TextInput
                 value={form.commissionVatRate}
                 onChange={(e) => update(form.code, { commissionVatRate: e.target.value })}
+                onBlur={() => touch(form.code, 'commissionVatRate')}
               />
             </Field>
-            <Field label="Varsayılan Komisyon Oranı (%)">
+            <Field
+              label="Varsayılan Komisyon Oranı (%)"
+              error={
+                touched.has(`${form.code}:defaultCommissionRate`)
+                  ? percentError(form.defaultCommissionRate)
+                  : undefined
+              }
+            >
               <TextInput
                 value={form.defaultCommissionRate}
                 onChange={(e) => update(form.code, { defaultCommissionRate: e.target.value })}
+                onBlur={() => touch(form.code, 'defaultCommissionRate')}
               />
             </Field>
           </div>
@@ -213,7 +372,7 @@ export function Step4Fees({
                 checked={form.commissionVatDeductible}
                 onChange={(e) => update(form.code, { commissionVatDeductible: e.target.checked })}
               />
-              Komisyon KDV'si indirilebilir
+              Komisyon KDV&apos;si indirilebilir
             </label>
           </div>
 
@@ -222,12 +381,20 @@ export function Step4Fees({
               label="Kargo Bantları (üst fiyat sınırı, tutar)"
               edgeLabel="Üst sınır (boş = sınırsız)"
               bands={form.cargoBands}
+              edgeAllowEmpty
+              touchedPrefix={`cargo:${form.code}`}
+              touched={touched}
+              onTouch={(key) => setTouched((prev) => new Set(prev).add(key))}
               onChange={(bands) => update(form.code, { cargoBands: bands })}
             />
             <BandEditor
               label="Gider Bantları (alt fiyat sınırı, tutar)"
               edgeLabel="Alt sınır"
               bands={form.expenditureBands}
+              edgeAllowEmpty={false}
+              touchedPrefix={`exp:${form.code}`}
+              touched={touched}
+              onTouch={(key) => setTouched((prev) => new Set(prev).add(key))}
               onChange={(bands) => update(form.code, { expenditureBands: bands })}
             />
           </div>
@@ -239,16 +406,21 @@ export function Step4Fees({
               onClick={() => void runPreview(form)}
               disabled={busyCode === form.code}
             >
-              Dip Fiyat Önizle
+              {busyCode === form.code ? 'Hesaplanıyor…' : 'Dip Fiyat Önizle'}
             </Button>
             <Button type="button" onClick={() => void save(form)} disabled={busyCode === form.code}>
-              Kaydet
+              {busyCode === form.code ? 'Kaydediliyor…' : 'Kaydet'}
             </Button>
           </div>
           {preview[form.code] && <p className="mt-2 text-sm">{preview[form.code]}</p>}
           {form.saved && <StatusBanner ok message="Ücret ayarları kaydedildi." />}
         </div>
       ))}
+      <StepStopNotice>
+        Kaydetmeden çıkarsanız bu pazaryeri için ücret ayarı olmaz — dip fiyat hesaplanamaz ve o pazaryerinde
+        fiyatlandırma çalışmaz. Sihirbaza döndüğünüzde, kaydettiğiniz pazaryerleri burada yeniden gösterilir;
+        yalnızca kaydetmediğiniz kaldığı yerden devam eder.
+      </StepStopNotice>
       <StepFooter onBack={onBack} onNext={onDone} nextDisabled={!canProceed} />
     </div>
   );
