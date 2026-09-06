@@ -355,11 +355,25 @@ function renderCell(id: ColumnId, row: Row, onChanged: () => void): React.ReactN
 }
 
 export function ListingsClient() {
+  // Read before the state below so an arrived-by-link filter is the grid's *first* query rather
+  // than a second one after an unfiltered flash. See the brand filter's comment further down for
+  // why cross-navigation seeds the visible control instead of filtering behind its back.
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [filters, setFilters] = useState<Filters>({ marketplaceCode: '', phases: [], text: '' });
+  const [filters, setFilters] = useState<Filters>(() => ({
+    marketplaceCode: '',
+    // `?phases=BLOCKED` — the dashboard's phase tiles (doc 06 §2) link straight to the listings
+    // this count is about; without it "12 Bloke" was a number with no way to reach the twelve.
+    // Filtered against the known phases so a hand-typed or stale value cannot produce a filter
+    // the phase buttons below can never clear.
+    phases: (searchParams.get('phases') ?? '')
+      .split(',')
+      .filter((p) => (PHASES as readonly string[]).includes(p)),
+    text: '',
+  }));
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState<{ key: ColumnId; dir: 'asc' | 'desc' } | null>(null);
@@ -370,7 +384,6 @@ export function ListingsClient() {
   // to brand), which arrives as `?brandId=` and seeds the dropdown's initial value. Keeping
   // them on the same state is what stops an arrived-by-link filter and the visible control
   // from disagreeing about what the grid is showing.
-  const searchParams = useSearchParams();
   const [brandFilter, setBrandFilter] = useState<{ id: string; name: string } | null>(() => {
     const id = searchParams.get('brandId');
     const name = searchParams.get('brandName');

@@ -29,20 +29,66 @@ operator already knows the app by them; the interface language is Turkish.
 
 ## 2. Dashboard
 
-The first thing the operator sees. Answers "is it working, and is it safe?"
+The first thing the operator sees. Answers **"is it working, and is it safe?"** — and, when the
+answer is no, says what to do about it.
 
-- **Kill switches** — global and per marketplace, one click, immediate, with the current state
-  unmistakable.
-- **Update budget** per marketplace: consumed / allowance, remaining, reserve. A progress bar
-  that turns amber below the reserve and red at exhaustion.
-- **Phase distribution**: how many listings are in `SEEKING` / `CLIMBING` / `REFINING` /
-  `OPTIMUM` / `BLOCKED`. A healthy system is overwhelmingly `OPTIMUM`.
-- **Active alerts**, newest first, each linking to the affected listing.
-- **Marketplace health**: reachable, circuit-breaker state, last successful import, last
-  successful buybox observation, scrape failure rate.
-- **Recent decisions**: the last N price changes with reason and explanation.
+The list below used to be six equally-weighted bullets, and the screen was built the same way:
+kill switches, budgets, phase counts, an alert list and a log side by side, leaving the operator
+to combine them into a judgement. Rebuilt 2026-09-05 around the judgement itself. The content is
+the same; the ranking is the point.
 
----
+**Ordered by what the operator needs first:**
+
+1. **Verdict** — one sentence stating the conclusion (*Her şey yolunda* / *Çalışıyor — bakılması
+   gereken N konu var* / *Sistem düzgün çalışmıyor* / *Sistem duraklatıldı*), with the three
+   states that make it up as chips beside it: jobs running, price submission on/off, worker
+   alive. Never one of the three alone — each is misleading without the others. Carries the
+   last-refreshed time and a manual refresh, because the screen re-reads itself every 30s.
+2. **Attention list** — everything an operator could act on *today* that the system will not fix
+   by itself, each row with the single link that acts on it. Explicitly empty-stated
+   ("Şu an müdahale gerektiren bir şey yok") rather than absent. Admission rule: a deliberate
+   configuration (automation switched off, a budget at 70%) is not a fault and does not appear.
+   Sources include `/api/health`'s own warnings, passed through verbatim so this screen and
+   `/jobs` cannot disagree about what is wrong.
+3. **Safety switches** — the **price-submission** kill switch is operated here; it lives nowhere
+   else. The **system pause** is *read-only* here: it already sits in the header, one click from
+   every screen (R-UI-9), and a second copy of it was one setting with two buttons and two
+   confirmation wordings. Confirmation is asked only in the direction that lets real money move;
+   stopping is always one click.
+4. **Marketplaces** — per marketplace: kill-switch state (a badge) beside its action (a button),
+   never one control whose label is its state. Update budget as *remaining* first, with the
+   consumed/allowance ratio underneath and a bar that turns amber below the reserve and red at
+   exhaustion (`role="progressbar"` with a Turkish `aria-valuetext`). Health: last successful
+   import, last buybox observation, last successful competitor scrape — all as elapsed time, not
+   absolute clock time. Reachability and scrape failure rate are **not** shown: they live in the
+   worker's memory and the web process cannot read them, and a permanent "bilinmiyor" row
+   carries no information (see `/api/dashboard`'s header note).
+5. **Phase distribution** — how many listings are in `SEEKING` / `CLIMBING` / `REFINING` /
+   `OPTIMUM` / `BLOCKED`. A healthy system is overwhelmingly `OPTIMUM`. Each tile links to
+   `/listings?phases=<phase>` (§4.5 cross-navigation); `BLOCKED` carries warning weight, the rest
+   do not.
+6. **Recent decisions** — the last N price changes: old → new with a direction mark, the reason
+   in Turkish (from the `DecisionReason` enum, not the core's English `explanation`, which is
+   built for the log and stays as the tooltip), and the submission outcome as a badge. No pager:
+   the feed is bounded, and a control that can never page reads as a promise of more behind it.
+7. **Brand audit** (§12.4) — drawn only when a brand is watched. Three summary numbers open; the
+   per-brand table and the 30-day trend behind a `<details>`.
+8. **System log** — the last 20 `app_events` rows at `warn` and above, in a `<details>`, closed.
+   Named for what it is: it previously headed a section called *Aktif Uyarılar* while the real
+   open-alert count was a different number from a different table a few hundred pixels away.
+
+**Rules this screen holds to:**
+
+- A count is never shown without the freshness of the data behind it. Zero open alerts behind a
+  scraper that has not succeeded in a day is "we have not looked", and reads as "nothing is
+  wrong" unless something says otherwise first.
+- No English enum reaches the screen. `price_submissions.state`, `DecisionReason` and
+  `RepricingPhase` are translated in `apps/web/src/lib/labels.ts`, shared with the listing detail
+  (§5) so the two cannot spell one fact two ways.
+- Colour is never the only carrier of a state (WCAG 2.2 AA, 1.4.1): every badge, count and bar
+  carries the word too.
+- A failed refresh over a previously-loaded screen says so and stamps the data's age. Stale
+  numbers under a green verdict are worse than no numbers.
 
 ## 3. Stock items (`/stock`)
 

@@ -5,29 +5,11 @@ import { useEffect, useState } from 'react';
 import { PriceChart } from '@/components/price-chart';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
-
-const PHASE_LABELS: Record<string, string> = {
-  SEEKING: 'Arıyor',
-  CLIMBING: 'Tırmanıyor',
-  REFINING: 'İnceltiyor',
-  OPTIMUM: 'Optimum',
-  BLOCKED: 'Bloke',
-};
-
-const REASON_LABELS: Record<string, string> = {
-  manual: 'Elle değiştirildi',
-  SellingAtLoss: 'Zararına satış düzeltmesi',
-  Refining: 'İnceltme adımı',
-};
-
-const STATE_LABELS: Record<string, string> = {
-  queued: 'Kuyrukta',
-  submitted: 'Gönderildi',
-  confirmed: 'Onaylandı',
-  failed: 'Başarısız',
-  rejected: 'Reddedildi',
-  cancelled: 'İptal edildi',
-};
+import {
+  DECISION_REASON_LABELS as REASON_LABELS,
+  PHASE_LABELS,
+  SUBMISSION_STATE_LABELS as STATE_LABELS,
+} from '@/lib/labels';
 
 interface Detail {
   listing: {

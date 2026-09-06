@@ -43,6 +43,7 @@ Read the document that covers your task. Do not read all of them.
 | **Hepsiburada competitor data** | **`docs/api-references.md` §2.11 (mandatory — see below)** |
 | Database schema, migrations | `docs/05-data-model.md` |
 | UI, grids, columns | `docs/06-user-interface.md` |
+| **A screen's UX redesign** | **`docs/15-ui-redesign-plan.md` — read §1–§4 and your screen's brief only** |
 | Background jobs, scheduling | `docs/07-processes-and-jobs.md` |
 | Configuration, constants | `docs/08-configuration-and-constants.md` |
 | Legacy behaviour and its bugs | `docs/09-known-defects-and-risks.md` |
