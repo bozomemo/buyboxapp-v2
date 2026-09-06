@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, StatusBanner, StepFooter } from '../ui';
+import { Button, StatusBanner, StepFooter } from '@/components/ui';
 
 export function Step8Review({ onBack }: { onBack: () => void }) {
   const router = useRouter();

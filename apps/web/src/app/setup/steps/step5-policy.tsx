@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Field, StatusBanner, StepFooter, TextInput } from '../ui';
+import { Button, Field, StatusBanner, StepFooter, TextInput } from '@/components/ui';
 
 interface PolicyForm {
   code: 'trendyol' | 'hepsiburada';

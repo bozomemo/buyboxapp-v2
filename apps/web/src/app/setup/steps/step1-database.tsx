@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Field, StatusBanner, TextInput } from '../ui';
+import { Button, Field, StatusBanner, TextInput } from '@/components/ui';
 
 type Engine = 'sqlite' | 'postgres' | 'mysql';
 
@@ -130,15 +130,15 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
         />
         {engine === 'sqlite' && suggestionIsConfigured && connectionString === suggestedSqlite && (
           <p className="mt-1 text-xs text-(--color-success)">
-            Bu, kurulumun hâlihazırda kullandığı veritabanıdır. Değiştirmeniz gerekmiyor — başka bir
-            yol yazarsanız ikinci bir veritabanı oluşur ve servis yeniden başlatılana kadar worker
-            eskisini kullanmaya devam eder.
+            Bu, kurulumun hâlihazırda kullandığı veritabanıdır. Değiştirmeniz gerekmiyor — başka bir yol
+            yazarsanız ikinci bir veritabanı oluşur ve servis yeniden başlatılana kadar worker eskisini
+            kullanmaya devam eder.
           </p>
         )}
         {engine === 'sqlite' && (
           <p className="mt-1 text-xs text-(--color-muted)">
-            Mutlak bir yol olmalıdır. Göreli bir yol (örn. <code>file:./data/app.db</code>) uygulamanın
-            web ve worker parçalarının farklı dosyalar açmasına yol açar; sunucu bunu reddeder.
+            Mutlak bir yol olmalıdır. Göreli bir yol (örn. <code>file:./data/app.db</code>) uygulamanın web ve
+            worker parçalarının farklı dosyalar açmasına yol açar; sunucu bunu reddeder.
           </p>
         )}
       </Field>

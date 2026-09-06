@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Button, Field, StatusBanner, StepFooter, TextInput } from '../ui';
+import { Button, Field, StatusBanner, StepFooter, TextInput } from '@/components/ui';
 
 type SourceCode = 'manual' | 'excel' | 'marketplaceListing';
 

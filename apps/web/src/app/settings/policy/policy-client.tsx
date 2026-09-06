@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatMoney } from '@/lib/format';
-import { Button, Field, StatusBanner, TextInput } from '../../setup/ui';
+import { Button, Field, StatusBanner, TextInput } from '@/components/ui';
 
 interface Form {
   coarseStepMode: 'absolute' | 'percent';
@@ -223,26 +223,26 @@ export function PolicyClient() {
             )}
             {preview.sample.length > 0 && (
               <div className="mt-3 max-h-64 overflow-auto">
-              <table className="w-full text-xs">
-                <thead className="text-left text-(--color-muted)">
-                  <tr>
-                    <th className="py-1">Ürün</th>
-                    <th className="py-1">Eski</th>
-                    <th className="py-1">Yeni</th>
-                    <th className="py-1">Sebep</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.sample.map((s) => (
-                    <tr key={s.listingId} className="border-t border-(--color-border)">
-                      <td className="py-1">{s.productName}</td>
-                      <td className="py-1">{formatMoney(BigInt(s.oldPrice))}</td>
-                      <td className="py-1">{formatMoney(BigInt(s.newPrice))}</td>
-                      <td className="py-1">{s.reason}</td>
+                <table className="w-full text-xs">
+                  <thead className="text-left text-(--color-muted)">
+                    <tr>
+                      <th className="py-1">Ürün</th>
+                      <th className="py-1">Eski</th>
+                      <th className="py-1">Yeni</th>
+                      <th className="py-1">Sebep</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {preview.sample.map((s) => (
+                      <tr key={s.listingId} className="border-t border-(--color-border)">
+                        <td className="py-1">{s.productName}</td>
+                        <td className="py-1">{formatMoney(BigInt(s.oldPrice))}</td>
+                        <td className="py-1">{formatMoney(BigInt(s.newPrice))}</td>
+                        <td className="py-1">{s.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

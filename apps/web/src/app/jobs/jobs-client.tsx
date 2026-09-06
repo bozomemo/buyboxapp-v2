@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '@/lib/format';
+import { CIRCUIT_LABELS } from '@/lib/labels';
 
 /**
  * How often the Jobs screen re-reads the overview.
@@ -115,18 +116,15 @@ function SchedulerBanner({ status }: { status: SchedulerStatus | undefined }) {
 
   let message: string | undefined;
   if (status.systemPaused) {
-    message =
-      'Genel durdurma açık — hiçbir iş çalışmıyor. Panel ekranından devam ettirin.';
+    message = 'Genel durdurma açık — hiçbir iş çalışmıyor. Panel ekranından devam ettirin.';
   } else if (!status.running) {
-    message =
-      'Worker çalışmıyor — kuyruktaki işleri alacak kimse yok. Servis günlüğünü kontrol edin.';
+    message = 'Worker çalışmıyor — kuyruktaki işleri alacak kimse yok. Servis günlüğünü kontrol edin.';
   } else if (status.msSinceLastTick !== undefined && status.msSinceLastTick > 60_000) {
     message = `Worker ${Math.round(status.msSinceLastTick / 1000)} saniyedir tick atmadı — kuyruk ilerlemiyor olabilir.`;
   } else if (status.lastTickOutcome === 'unlicensed') {
     message = 'Lisans geçersiz veya süresi dolmuş — scheduler hiçbir iş çalıştırmıyor.';
   } else if (status.lastTickOutcome === 'no-lock') {
-    message =
-      'Scheduler kilidi başka bir instance’da — bu süreç hiçbir iş çalıştırmıyor.';
+    message = 'Scheduler kilidi başka bir instance’da — bu süreç hiçbir iş çalıştırmıyor.';
   }
 
   if (!message) return null;
@@ -198,12 +196,6 @@ function formatCadence(ms: number | null): string {
   return `${ms / 1000} saniyede bir`;
 }
 
-const CIRCUIT_LABELS: Record<string, string> = {
-  closed: 'Kapalı (normal)',
-  open: 'Açık (devre dışı)',
-  'half-open': 'Yarı açık (deneme)',
-};
-
 const EVENT_LEVEL_CLASS: Record<string, string> = {
   error: 'text-(--color-danger)',
   warn: 'text-(--color-warning)',
@@ -261,7 +253,11 @@ function RunDetailPanel({
 }) {
   if (error) return <p className="py-2 text-xs text-(--color-danger)">{error}</p>;
   if (!hasRun) {
-    return <p className="py-2 text-xs text-(--color-muted)">Bu iş hiç çalışmadı — henüz gösterilecek bir çalışma yok.</p>;
+    return (
+      <p className="py-2 text-xs text-(--color-muted)">
+        Bu iş hiç çalışmadı — henüz gösterilecek bir çalışma yok.
+      </p>
+    );
   }
   if (!detail) return <p className="py-2 text-xs text-(--color-muted)">Yükleniyor…</p>;
 
@@ -320,15 +316,16 @@ function RunDetailPanel({
       {run.error && <p className="text-xs text-(--color-danger)">{run.error}</p>}
 
       <div>
-        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-(--color-muted)">
-          Olaylar
-        </div>
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-(--color-muted)">Olaylar</div>
         {events.length === 0 ? (
           <p className="text-xs text-(--color-muted)">Bu çalışma için kayıt yok.</p>
         ) : (
           <ul className="max-h-64 overflow-y-auto rounded border border-(--color-border) bg-(--color-surface) font-mono text-xs">
             {events.map((e) => (
-              <li key={e.id} className="flex gap-2 border-b border-(--color-border) px-2 py-1 last:border-b-0">
+              <li
+                key={e.id}
+                className="flex gap-2 border-b border-(--color-border) px-2 py-1 last:border-b-0"
+              >
                 <span className="shrink-0 text-(--color-muted)">{formatTime(e.at)}</span>
                 <span className={`shrink-0 ${EVENT_LEVEL_CLASS[e.level] ?? ''}`}>{e.code}</span>
                 <span className="break-all">{e.message}</span>
@@ -354,9 +351,9 @@ export function JobsClient() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scrapeRates, setScrapeRates] = useState<ScrapeRateRow[]>([]);
-  const [scrapeRateDraft, setScrapeRateDraft] = useState<Record<string, { requestsPerMinute: string; burst: string }>>(
-    {},
-  );
+  const [scrapeRateDraft, setScrapeRateDraft] = useState<
+    Record<string, { requestsPerMinute: string; burst: string }>
+  >({});
   const [scrapeRateSaved, setScrapeRateSaved] = useState<string | null>(null);
   /** Draft cadence per job, in **seconds** (fine enough for both the 30s and 60min defaults). */
   const [cadenceDraft, setCadenceDraft] = useState<Record<string, string>>({});
@@ -683,7 +680,9 @@ export function JobsClient() {
     setCadenceSaved(null);
     setError(null);
     try {
-      const res = await fetch(`/api/jobs/cadence?jobName=${encodeURIComponent(jobName)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/jobs/cadence?jobName=${encodeURIComponent(jobName)}`, {
+        method: 'DELETE',
+      });
       const data = (await res.json()) as { ok?: boolean; error?: string; cadenceMs?: number };
       if (!res.ok || data.error) throw new Error(data.error ?? 'Bilinmeyen hata');
       // The next poll would re-seed this from the overview anyway, but dropping it now means the
@@ -789,175 +788,175 @@ export function JobsClient() {
             <tbody className="divide-y divide-(--color-border)">
               {overview.jobs.map((job) => (
                 <Fragment key={job.jobName}>
-                <tr className={expandedJob === job.jobName ? 'bg-(--color-surface)' : undefined}>
-                  <td className="px-3 py-2 font-medium">{job.label}</td>
-                  <td className="px-3 py-2">
-                    {job.activeRun ? (
-                      <span className="inline-flex items-center gap-1.5 text-(--color-accent)">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-(--color-accent)" />
-                        Çalışıyor
-                        {job.activeRun.itemsTotal > 0 && (
-                          <span className="text-xs text-(--color-muted)">
-                            {job.activeRun.itemsDone}/{job.activeRun.itemsTotal}
-                          </span>
-                        )}
-                      </span>
-                    ) : isJobBusy(job) ? (
-                      <span className="inline-flex items-center gap-1.5 text-(--color-warning)">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-(--color-warning)" />
-                        Kuyrukta
-                      </span>
-                    ) : (
-                      <span className="text-(--color-muted)">Boşta</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {job.cadenceMs === null ? (
-                      <span className="text-(--color-muted)">{formatCadence(job.cadenceMs)}</span>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min={10}
-                          step={1}
-                          className="w-16 rounded border border-(--color-border) px-1 py-0.5 text-xs"
-                          value={cadenceDraft[job.jobName] ?? String(Math.round(job.cadenceMs / 1000))}
-                          onChange={(e) =>
-                            setCadenceDraft((prev) => ({ ...prev, [job.jobName]: e.target.value }))
-                          }
-                        />
-                        <span className="text-xs text-(--color-muted)">sn</span>
-                        <button
-                          type="button"
-                          disabled={busy === `cadence-${job.jobName}`}
-                          onClick={() => saveCadence(job.jobName)}
-                          className="rounded bg-(--color-accent) px-1.5 py-0.5 text-xs text-(--color-accent-ink)"
-                        >
-                          Kaydet
-                        </button>
-                        {job.isCadenceOverride && (
+                  <tr className={expandedJob === job.jobName ? 'bg-(--color-surface)' : undefined}>
+                    <td className="px-3 py-2 font-medium">{job.label}</td>
+                    <td className="px-3 py-2">
+                      {job.activeRun ? (
+                        <span className="inline-flex items-center gap-1.5 text-(--color-accent)">
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-(--color-accent)" />
+                          Çalışıyor
+                          {job.activeRun.itemsTotal > 0 && (
+                            <span className="text-xs text-(--color-muted)">
+                              {job.activeRun.itemsDone}/{job.activeRun.itemsTotal}
+                            </span>
+                          )}
+                        </span>
+                      ) : isJobBusy(job) ? (
+                        <span className="inline-flex items-center gap-1.5 text-(--color-warning)">
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-(--color-warning)" />
+                          Kuyrukta
+                        </span>
+                      ) : (
+                        <span className="text-(--color-muted)">Boşta</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {job.cadenceMs === null ? (
+                        <span className="text-(--color-muted)">{formatCadence(job.cadenceMs)}</span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={10}
+                            step={1}
+                            className="w-16 rounded border border-(--color-border) px-1 py-0.5 text-xs"
+                            value={cadenceDraft[job.jobName] ?? String(Math.round(job.cadenceMs / 1000))}
+                            onChange={(e) =>
+                              setCadenceDraft((prev) => ({ ...prev, [job.jobName]: e.target.value }))
+                            }
+                          />
+                          <span className="text-xs text-(--color-muted)">sn</span>
                           <button
                             type="button"
                             disabled={busy === `cadence-${job.jobName}`}
-                            onClick={() => resetCadence(job.jobName)}
-                            className="rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)"
+                            onClick={() => saveCadence(job.jobName)}
+                            className="rounded bg-(--color-accent) px-1.5 py-0.5 text-xs text-(--color-accent-ink)"
                           >
-                            Varsayılana dön
+                            Kaydet
                           </button>
-                        )}
-                        {cadenceSaved === job.jobName && (
-                          <span className="text-xs text-(--color-success)">Kaydedildi</span>
-                        )}
-                        {/* Survives a page reload, unlike "Kaydedildi" above: the disagreement
+                          {job.isCadenceOverride && (
+                            <button
+                              type="button"
+                              disabled={busy === `cadence-${job.jobName}`}
+                              onClick={() => resetCadence(job.jobName)}
+                              className="rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)"
+                            >
+                              Varsayılana dön
+                            </button>
+                          )}
+                          {cadenceSaved === job.jobName && (
+                            <span className="text-xs text-(--color-success)">Kaydedildi</span>
+                          )}
+                          {/* Survives a page reload, unlike "Kaydedildi" above: the disagreement
                             is derived from the server's own comparison of the saved cadence
                             against the running worker's, so an operator who saves and comes back
                             tomorrow is still told the value is not in effect. */}
-                        {job.pendingRestart ? (
-                          <span className="text-xs text-(--color-warning)">
-                            ⚠ Kaydedildi, henüz geçerli değil — worker {formatCadence(job.liveCadenceMs)}{' '}
-                            çalışıyor. Yeniden başlatın.
-                          </span>
-                        ) : (
-                          <span className="text-xs text-(--color-muted)">
-                            (şu an: {formatCadence(job.cadenceMs)}
-                            {job.isCadenceOverride ? '' : ', varsayılan'})
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {job.lastRun ? (
-                      <span>
-                        {formatDateTime(job.lastRun.startedAt)} —{' '}
-                        <span
-                          className={
-                            job.lastRun.state === 'failed'
-                              ? 'text-(--color-danger)'
-                              : 'text-(--color-muted)'
-                          }
-                        >
-                          {job.lastRun.state}
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="text-(--color-muted)">Hiç çalışmadı</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-(--color-muted)">
-                    {job.nextRunAt ? formatDateTime(job.nextRunAt) : '—'}
-                  </td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      disabled={busy === job.jobName}
-                      onClick={() => toggleEnabled(job)}
-                      className={
-                        job.enabled
-                          ? 'rounded bg-(--color-success) px-2 py-1 text-xs text-(--color-success-ink)'
-                          : 'rounded bg-(--color-chip-bg) px-2 py-1 text-xs text-(--color-chip-text)'
-                      }
-                    >
-                      {job.enabled ? 'Etkin' : 'Devre dışı'}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      {job.perMarketplace && (
-                        <select
-                          className="rounded border border-(--color-border) px-1 py-0.5 text-xs"
-                          value={selectedMarketplace[job.jobName] ?? marketplaces[0]?.code ?? ''}
-                          onChange={(e) =>
-                            setSelectedMarketplace((prev) => ({ ...prev, [job.jobName]: e.target.value }))
-                          }
-                        >
-                          {marketplaces.map((m) => (
-                            <option key={m.code} value={m.code}>
-                              {m.displayName}
-                            </option>
-                          ))}
-                        </select>
+                          {job.pendingRestart ? (
+                            <span className="text-xs text-(--color-warning)">
+                              ⚠ Kaydedildi, henüz geçerli değil — worker {formatCadence(job.liveCadenceMs)}{' '}
+                              çalışıyor. Yeniden başlatın.
+                            </span>
+                          ) : (
+                            <span className="text-xs text-(--color-muted)">
+                              (şu an: {formatCadence(job.cadenceMs)}
+                              {job.isCadenceOverride ? '' : ', varsayılan'})
+                            </span>
+                          )}
+                        </div>
                       )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {job.lastRun ? (
+                        <span>
+                          {formatDateTime(job.lastRun.startedAt)} —{' '}
+                          <span
+                            className={
+                              job.lastRun.state === 'failed'
+                                ? 'text-(--color-danger)'
+                                : 'text-(--color-muted)'
+                            }
+                          >
+                            {job.lastRun.state}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-(--color-muted)">Hiç çalışmadı</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-(--color-muted)">
+                      {job.nextRunAt ? formatDateTime(job.nextRunAt) : '—'}
+                    </td>
+                    <td className="px-3 py-2">
                       <button
                         type="button"
-                        // Disabled while the job is queued or running, not merely while this
-                        // browser's POST is in flight: a second click would enqueue a second
-                        // row, and for `ScrapeCompetitors` that means two concurrent sweeps
-                        // hitting the same public pages — the pattern that risks a block
-                        // (api-references §1.6).
-                        disabled={
-                          busy === job.jobName ||
-                          isJobBusy(job) ||
-                          (job.perMarketplace && marketplaces.length === 0)
+                        disabled={busy === job.jobName}
+                        onClick={() => toggleEnabled(job)}
+                        className={
+                          job.enabled
+                            ? 'rounded bg-(--color-success) px-2 py-1 text-xs text-(--color-success-ink)'
+                            : 'rounded bg-(--color-chip-bg) px-2 py-1 text-xs text-(--color-chip-text)'
                         }
-                        onClick={() => runNow(job)}
-                        className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {job.activeRun ? 'Çalışıyor…' : isJobBusy(job) ? 'Kuyruğa alındı' : 'Çalıştır'}
+                        {job.enabled ? 'Etkin' : 'Devre dışı'}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleDetails(job)}
-                        aria-expanded={expandedJob === job.jobName}
-                        className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface)"
-                      >
-                        {expandedJob === job.jobName ? 'Detayları gizle' : 'Detaylar'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                {expandedJob === job.jobName && (
-                  <tr className="bg-(--color-surface)">
-                    <td colSpan={7} className="px-3 pb-4 pt-0">
-                      <RunDetailPanel
-                        detail={detail}
-                        error={detailError}
-                        hasRun={watchedRunId !== null}
-                        nowMs={nowMs}
-                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {job.perMarketplace && (
+                          <select
+                            className="rounded border border-(--color-border) px-1 py-0.5 text-xs"
+                            value={selectedMarketplace[job.jobName] ?? marketplaces[0]?.code ?? ''}
+                            onChange={(e) =>
+                              setSelectedMarketplace((prev) => ({ ...prev, [job.jobName]: e.target.value }))
+                            }
+                          >
+                            {marketplaces.map((m) => (
+                              <option key={m.code} value={m.code}>
+                                {m.displayName}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          type="button"
+                          // Disabled while the job is queued or running, not merely while this
+                          // browser's POST is in flight: a second click would enqueue a second
+                          // row, and for `ScrapeCompetitors` that means two concurrent sweeps
+                          // hitting the same public pages — the pattern that risks a block
+                          // (api-references §1.6).
+                          disabled={
+                            busy === job.jobName ||
+                            isJobBusy(job) ||
+                            (job.perMarketplace && marketplaces.length === 0)
+                          }
+                          onClick={() => runNow(job)}
+                          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {job.activeRun ? 'Çalışıyor…' : isJobBusy(job) ? 'Kuyruğa alındı' : 'Çalıştır'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleDetails(job)}
+                          aria-expanded={expandedJob === job.jobName}
+                          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface)"
+                        >
+                          {expandedJob === job.jobName ? 'Detayları gizle' : 'Detaylar'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                )}
+                  {expandedJob === job.jobName && (
+                    <tr className="bg-(--color-surface)">
+                      <td colSpan={7} className="px-3 pb-4 pt-0">
+                        <RunDetailPanel
+                          detail={detail}
+                          error={detailError}
+                          hasRun={watchedRunId !== null}
+                          nowMs={nowMs}
+                        />
+                      </td>
+                    </tr>
+                  )}
                 </Fragment>
               ))}
             </tbody>
@@ -1005,11 +1004,7 @@ export function JobsClient() {
               <li key={c.marketplaceCode} className="flex items-center justify-between px-3 py-2">
                 <div>
                   <span className="font-medium">{c.marketplaceCode}</span> —{' '}
-                  <span
-                    className={
-                      c.state === 'closed' ? 'text-(--color-muted)' : 'text-(--color-danger)'
-                    }
-                  >
+                  <span className={c.state === 'closed' ? 'text-(--color-muted)' : 'text-(--color-danger)'}>
                     {CIRCUIT_LABELS[c.state]}
                   </span>
                   {c.state !== 'closed' && (

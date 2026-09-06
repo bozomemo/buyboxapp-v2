@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime } from '@/lib/format';
+import { LEVEL_LABELS } from '@/lib/labels';
 
 interface EventRow {
   id: string;
@@ -23,8 +24,6 @@ interface ListingOption {
   productName: string;
   baseStockCode: string | null;
 }
-
-const LEVEL_LABELS: Record<string, string> = { debug: 'debug', info: 'bilgi', warn: 'uyarı', error: 'hata' };
 
 const LEVEL_CLASS: Record<string, string> = {
   debug: 'text-(--color-muted)',
@@ -211,9 +210,7 @@ export function EventsClient() {
           <tbody className="divide-y divide-(--color-border)">
             {paged.rows.map((e) => (
               <tr key={e.id}>
-                <td className="whitespace-nowrap px-3 py-2 text-(--color-muted)">
-                  {formatDateTime(e.at)}
-                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-(--color-muted)">{formatDateTime(e.at)}</td>
                 <td className={`px-3 py-2 font-medium ${LEVEL_CLASS[e.level]}`}>{LEVEL_LABELS[e.level]}</td>
                 <td className="px-3 py-2 text-(--color-muted)">{e.marketplaceCode ?? '—'}</td>
                 <td className="px-3 py-2 font-mono text-xs">{e.code}</td>

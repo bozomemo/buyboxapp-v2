@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { downloadCsv } from '@/lib/csv';
 import { formatNumber, formatPercent } from '@/lib/format';
+import { MARKETPLACE_LABELS } from '@/lib/labels';
 
 /**
  * Pazaryeri eşleşmesi (doc 06 §12.5, Faz 8).
@@ -42,11 +43,6 @@ interface Response {
   matches: Match[];
   truncated: boolean;
 }
-
-const MARKETPLACE_LABELS: Record<string, string> = {
-  trendyol: 'Trendyol',
-  hepsiburada: 'Hepsiburada',
-};
 
 function marketplaceLabel(code: string): string {
   return MARKETPLACE_LABELS[code] ?? code;
@@ -129,10 +125,10 @@ export function CrossMarketplaceClient() {
       <header>
         <h1 className="text-lg font-semibold">Pazaryeri Eşleşmesi</h1>
         <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-          Aynı ürünün iki pazaryerindeki karşılıkları. Eşleşme <strong>yalnızca barkodla</strong>{' '}
-          kurulur — ada, markaya veya gramaja bakan hiçbir tahmin yoktur, çünkü bu satırlara göre
-          ihtar yazılır ve yanlış bir satır eksik bir satırdan kötüdür. Barkodu bilinmeyen ürünler
-          burada görünmez; kaç tane oldukları aşağıda yazar.
+          Aynı ürünün iki pazaryerindeki karşılıkları. Eşleşme <strong>yalnızca barkodla</strong> kurulur —
+          ada, markaya veya gramaja bakan hiçbir tahmin yoktur, çünkü bu satırlara göre ihtar yazılır ve
+          yanlış bir satır eksik bir satırdan kötüdür. Barkodu bilinmeyen ürünler burada görünmez; kaç tane
+          oldukları aşağıda yazar.
         </p>
       </header>
 
@@ -151,9 +147,9 @@ export function CrossMarketplaceClient() {
 
           {data.left.coverage.pending + data.right.coverage.pending > 0 && (
             <p className="text-xs text-(--color-muted)">
-              {formatNumber(data.left.coverage.pending + data.right.coverage.pending)} ürünün barkodu
-              henüz sorulmadı. <strong>Barkod Tamamlama</strong> işi bunları saatte bir, azar azar
-              tamamlar — bir markanın tamamı günler sürer, çünkü ürün başına bir sayfa okunur.
+              {formatNumber(data.left.coverage.pending + data.right.coverage.pending)} ürünün barkodu henüz
+              sorulmadı. <strong>Barkod Tamamlama</strong> işi bunları saatte bir, azar azar tamamlar — bir
+              markanın tamamı günler sürer, çünkü ürün başına bir sayfa okunur.
             </p>
           )}
 

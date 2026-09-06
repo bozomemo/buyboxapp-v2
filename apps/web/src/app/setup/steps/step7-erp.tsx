@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, StepFooter } from '../ui';
+import { Button, StepFooter } from '@/components/ui';
 
 export function Step7Erp({ onSkip, onBack }: { onDone: () => void; onBack: () => void; onSkip: () => void }) {
   return (

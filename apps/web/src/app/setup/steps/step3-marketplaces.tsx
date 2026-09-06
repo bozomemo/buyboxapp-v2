@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Field, Select, StatusBanner, StepFooter, TextInput } from '../ui';
+import { Button, Field, Select, StatusBanner, StepFooter, TextInput } from '@/components/ui';
 
 interface MarketplaceForm {
   code: 'trendyol' | 'hepsiburada';

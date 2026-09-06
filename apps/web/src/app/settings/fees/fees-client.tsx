@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Pagination, usePagedRows } from '@/components/table';
 import { formatDate } from '@/lib/format';
-import { Button, Field, StatusBanner, TextInput } from '../../setup/ui';
+import { Button, Field, StatusBanner, TextInput } from '@/components/ui';
 
 interface Band {
   edge: string;
@@ -260,9 +260,7 @@ export function FeesClient() {
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
-          Geçmiş
-        </h3>
+        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">Geçmiş</h3>
         <ul className="table-frame max-h-[50vh] divide-y divide-(--color-border) rounded border border-(--color-border) text-sm">
           {pagedHistory.rows.map((h) => (
             <li key={h.id} className="flex justify-between px-3 py-2">

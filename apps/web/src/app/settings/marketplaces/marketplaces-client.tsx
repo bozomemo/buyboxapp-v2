@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatDateTime } from '@/lib/format';
-import { Button, Field, Select, StatusBanner, TextInput } from '../../setup/ui';
+import { Button, Field, Select, StatusBanner, TextInput } from '@/components/ui';
 
 interface MarketplaceRow {
   code: string;
@@ -153,10 +153,10 @@ export function MarketplacesClient() {
               </div>
             </Field>
             <p className="text-xs text-(--color-muted)">
-              Bu alan elle girilmez: kimlik bilgilerindeki satıcı kodundan (Trendyol{' '}
-              <code>sellerId</code>, Hepsiburada <code>merchantId</code>) otomatik belirlenir ve her
-              ürün içe aktarımında doğrulanır. Kendi teklifimizi rakiplerinkinden ayıran tek veri
-              budur; yanlış olduğunda hata vermez, sadece kendi mağazamızı rakip sayardık.
+              Bu alan elle girilmez: kimlik bilgilerindeki satıcı kodundan (Trendyol <code>sellerId</code>,
+              Hepsiburada <code>merchantId</code>) otomatik belirlenir ve her ürün içe aktarımında doğrulanır.
+              Kendi teklifimizi rakiplerinkinden ayıran tek veri budur; yanlış olduğunda hata vermez, sadece
+              kendi mağazamızı rakip sayardık.
             </p>
             <p className="text-xs text-(--color-muted)">
               Kimlik bilgileri güvenlik nedeniyle görüntülenmez — yalnızca doldurduğunuz alanlar kaydedilir,

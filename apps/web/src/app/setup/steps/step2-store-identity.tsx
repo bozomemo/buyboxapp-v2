@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Field, StatusBanner, StepFooter, TextInput } from '../ui';
+import { Button, Field, StatusBanner, StepFooter, TextInput } from '@/components/ui';
 
 export function Step2StoreIdentity({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
   const [displayName, setDisplayName] = useState('');

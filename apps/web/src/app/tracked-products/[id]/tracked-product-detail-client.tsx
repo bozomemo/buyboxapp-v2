@@ -6,6 +6,7 @@ import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { STATUS_LABELS } from '@/lib/labels';
 import { lookAnnotations } from '@/lib/price-chart-series';
 import { marketplaceProductUrl } from '@/lib/product-url';
 
@@ -50,15 +51,6 @@ interface Detail {
   looks: { observedAt: number; status: string; offers: number; buyboxPrice: string | null }[];
   sellers: Seller[];
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  ok: 'Başarılı',
-  // Bir başarısızlık değil: sayfa okundu ve bu ürünü satan kimse yoktu. Marka sahibi için
-  // kaybedilen raf, hata değil — bu yüzden ayrı bir etiketi var.
-  noOffers: 'Satıcı yok',
-  parseFailed: 'Sayfa okunamadı',
-  fetchFailed: 'Sayfaya ulaşılamadı',
-};
 
 /**
  * Buybox price across the window — the same chart component the listing detail draws, so the two

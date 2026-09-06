@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pagination, usePagedRows } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatMoney, parseMoneyToKurus } from '@/lib/format';
+import { PREDICATE_LABELS, SCOPE_LABELS, SUBJECT_LABELS, THRESHOLD_LABELS } from '@/lib/labels';
 
 interface AlertSeller {
   sellerRef: string | null;
@@ -86,31 +87,6 @@ interface Payload {
   staleAfterMs: number;
   options: Options;
 }
-
-const SCOPE_LABELS: Record<ScopeType, string> = {
-  all: 'Tüm ürünler',
-  marketplace: 'Bir pazaryerindeki tüm ürünler',
-  listing: 'Tek bir ilan',
-  baseStockCode: 'Bir stok kodundaki tüm ilanlar',
-};
-
-const SUBJECT_LABELS: Record<SubjectType, string> = {
-  any: 'Herhangi bir satıcı',
-  seller: 'Belirli bir satıcı',
-  sellerGroup: 'Bir satıcı grubu',
-};
-
-const PREDICATE_LABELS: Record<Predicate, string> = {
-  sellerPresent: 'ilanda görünürse',
-  priceBelow: 'şu eşiğin altında fiyat verirse',
-};
-
-const THRESHOLD_LABELS: Record<ThresholdType, string> = {
-  fixed: 'Sabit fiyat',
-  belowOurPrice: 'Bizim fiyatımız',
-  belowFloor: 'Taban fiyatımız',
-  pctBelowOurs: 'Bizim fiyatımızdan yüzde aşağısı',
-};
 
 const QUIET_PERIODS: ReadonlyArray<readonly [number, string]> = [
   [0, 'Yok — koşul her tekrarında yeni alarm'],
@@ -195,15 +171,9 @@ function describeRule(r: Rule): string {
 }
 
 /** Search-and-pick, because a listing id is not something an operator can type or verify. */
-function ListingPicker({
-  onPick,
-}: {
-  onPick: (listing: { id: string; productName: string }) => void;
-}) {
+function ListingPicker({ onPick }: { onPick: (listing: { id: string; productName: string }) => void }) {
   const [text, setText] = useState('');
-  const [results, setResults] = useState<{ id: string; productName: string; marketplaceCode: string }[]>(
-    [],
-  );
+  const [results, setResults] = useState<{ id: string; productName: string; marketplaceCode: string }[]>([]);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
@@ -249,8 +219,7 @@ function ListingPicker({
                   setResults([]);
                 }}
               >
-                {r.productName}{' '}
-                <span className="text-xs text-(--color-muted)">({r.marketplaceCode})</span>
+                {r.productName} <span className="text-xs text-(--color-muted)">({r.marketplaceCode})</span>
               </button>
             </li>
           ))}
@@ -277,8 +246,7 @@ function RuleEditor({
   saving: boolean;
   error: string | null;
 }) {
-  const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
-    onChange({ ...draft, [key]: value });
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => onChange({ ...draft, [key]: value });
 
   const thresholdKurus =
     draft.predicate === 'priceBelow' && draft.thresholdType === 'fixed'
@@ -291,9 +259,7 @@ function RuleEditor({
     thresholdKurus === null;
 
   const sellersForScope = options.sellers.filter((s) =>
-    draft.scopeType === 'marketplace' && draft.scopeValue
-      ? s.marketplaceCode === draft.scopeValue
-      : true,
+    draft.scopeType === 'marketplace' && draft.scopeValue ? s.marketplaceCode === draft.scopeValue : true,
   );
 
   return (
@@ -396,9 +362,7 @@ function RuleEditor({
                 </div>
               ) : (
                 <ListingPicker
-                  onPick={(l) =>
-                    onChange({ ...draft, scopeValue: l.id, scopeLabel: l.productName })
-                  }
+                  onPick={(l) => onChange({ ...draft, scopeValue: l.id, scopeLabel: l.productName })}
                 />
               )}
             </div>
@@ -545,8 +509,8 @@ function RuleEditor({
 
             {draft.thresholdType === 'belowFloor' && (
               <span className="mt-1 block text-xs text-(--color-muted)">
-                İlanın operatör tanımlı taban fiyatı kullanılır. Taban fiyatı olmayan ilanlarda
-                kural &ldquo;değerlendirilemedi&rdquo; sayılır; alarmı ne açar ne kapatır.
+                İlanın operatör tanımlı taban fiyatı kullanılır. Taban fiyatı olmayan ilanlarda kural
+                &ldquo;değerlendirilemedi&rdquo; sayılır; alarmı ne açar ne kapatır.
               </span>
             )}
           </div>
@@ -554,11 +518,7 @@ function RuleEditor({
       </div>
 
       <label className="mt-3 flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={draft.enabled}
-          onChange={(e) => set('enabled', e.target.checked)}
-        />
+        <input type="checkbox" checked={draft.enabled} onChange={(e) => set('enabled', e.target.checked)} />
         Etkin
       </label>
 
@@ -670,11 +630,7 @@ export function AlertsClient() {
 
   const remove = useCallback(
     async (rule: Rule) => {
-      if (
-        !window.confirm(
-          `"${rule.name}" kuralı silinsin mi? Bu kurala bağlı açık alarmlar da silinir.`,
-        )
-      ) {
+      if (!window.confirm(`"${rule.name}" kuralı silinsin mi? Bu kurala bağlı açık alarmlar da silinir.`)) {
         return;
       }
       const res = await fetch(`/api/alerts/rules?id=${encodeURIComponent(rule.id)}`, {
@@ -698,8 +654,8 @@ export function AlertsClient() {
       <div>
         <h1 className="text-2xl font-semibold">Rakip Alarmları</h1>
         <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-          Alarmlar <strong>raporlamadır</strong>: hiçbir fiyat kararını tetiklemez, hiçbir fiyatı
-          değiştirmez. Rakip tarama verisinden üretilir ve o veri kadar günceldir.
+          Alarmlar <strong>raporlamadır</strong>: hiçbir fiyat kararını tetiklemez, hiçbir fiyatı değiştirmez.
+          Rakip tarama verisinden üretilir ve o veri kadar günceldir.
         </p>
       </div>
 
@@ -726,8 +682,8 @@ export function AlertsClient() {
             ))}
           </ul>
           <p className="mt-2 text-sm text-(--color-danger)">
-            Aşağıda alarm görünmemesi &ldquo;sorun yok&rdquo; anlamına gelmez; &ldquo;bakmadık&rdquo;
-            anlamına gelir. İşler ekranından Rakip Verisi Toplama işini kontrol edin.
+            Aşağıda alarm görünmemesi &ldquo;sorun yok&rdquo; anlamına gelmez; &ldquo;bakmadık&rdquo; anlamına
+            gelir. İşler ekranından Rakip Verisi Toplama işini kontrol edin.
           </p>
         </div>
       )}
@@ -787,19 +743,23 @@ export function AlertsClient() {
         ) : (
           <div className="space-y-3">
             {pagedAlerts.rows.map((a) => (
-              <div key={a.id} className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-4">
+              <div
+                key={a.id}
+                className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-4"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <div className="font-medium">{a.ruleName}</div>
-                    <Link className="text-sm text-(--color-accent) hover:underline" href={`/listings/${a.listingId}`}>
+                    <Link
+                      className="text-sm text-(--color-accent) hover:underline"
+                      href={`/listings/${a.listingId}`}
+                    >
                       {a.productName}
                     </Link>
                     <div className="text-xs text-(--color-muted)">
                       {a.marketplaceCode} · bizim fiyatımız{' '}
                       {a.ourPrice ? formatMoney(BigInt(a.ourPrice)) : '—'}
-                      {a.thresholdApplied && (
-                        <> · eşik {formatMoney(BigInt(a.thresholdApplied))}</>
-                      )}
+                      {a.thresholdApplied && <> · eşik {formatMoney(BigInt(a.thresholdApplied))}</>}
                     </div>
                   </div>
                   <div className="text-right text-xs text-(--color-muted)">
@@ -809,52 +769,50 @@ export function AlertsClient() {
                 </div>
 
                 <div className="mt-3">
-                  <div className="text-sm font-medium">
-                    {a.sellers.length} satıcı eşiğin altında
-                  </div>
+                  <div className="text-sm font-medium">{a.sellers.length} satıcı eşiğin altında</div>
                   {/* Bounded: one alert can name dozens of sellers, and the card must not push
                       the alerts under it off the screen. */}
                   <div className="mt-1 max-h-56 overflow-auto">
-                  <table className="w-full text-xs">
-                    <thead className="text-left text-(--color-muted)">
-                      <tr>
-                        <th className="py-1">Satıcı</th>
-                        <th className="py-1 text-right">Fiyat</th>
-                        <th className="py-1 text-right">Sıra</th>
-                        <th className="py-1">Bu alarma katıldığı</th>
-                        <th className="py-1">Promosyon</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {a.sellers.map((s, i) => (
-                        <tr key={i} className="border-t border-(--color-warning-border)">
-                          <td className="py-1">
-                            {s.sellerRef ? (
-                              <Link
-                                className="text-(--color-accent) hover:underline"
-                                href={`/competitors/sellers/${a.marketplaceCode}/${encodeURIComponent(s.sellerRef)}`}
-                              >
-                                {s.sellerName || s.sellerRef}
-                              </Link>
-                            ) : (
-                              s.sellerName || '(kimliksiz)'
-                            )}
-                          </td>
-                          <td className="py-1 text-right">
-                            {s.observedPrice ? formatMoney(BigInt(s.observedPrice)) : '—'}
-                            {/* Which field the comparison used. On Hepsiburada the coupon price
-                                is never published, so this says "liste" there by design. */}
-                            <span className="ml-1 text-(--color-muted)">
-                              ({s.priceSource === 'finalPrice' ? 'kupon' : 'liste'})
-                            </span>
-                          </td>
-                          <td className="py-1 text-right">{s.rank}</td>
-                          <td className="py-1">{formatDateTime(s.joinedAt)}</td>
-                          <td className="py-1 text-(--color-muted)">{s.promotionText ?? '—'}</td>
+                    <table className="w-full text-xs">
+                      <thead className="text-left text-(--color-muted)">
+                        <tr>
+                          <th className="py-1">Satıcı</th>
+                          <th className="py-1 text-right">Fiyat</th>
+                          <th className="py-1 text-right">Sıra</th>
+                          <th className="py-1">Bu alarma katıldığı</th>
+                          <th className="py-1">Promosyon</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {a.sellers.map((s, i) => (
+                          <tr key={i} className="border-t border-(--color-warning-border)">
+                            <td className="py-1">
+                              {s.sellerRef ? (
+                                <Link
+                                  className="text-(--color-accent) hover:underline"
+                                  href={`/competitors/sellers/${a.marketplaceCode}/${encodeURIComponent(s.sellerRef)}`}
+                                >
+                                  {s.sellerName || s.sellerRef}
+                                </Link>
+                              ) : (
+                                s.sellerName || '(kimliksiz)'
+                              )}
+                            </td>
+                            <td className="py-1 text-right">
+                              {s.observedPrice ? formatMoney(BigInt(s.observedPrice)) : '—'}
+                              {/* Which field the comparison used. On Hepsiburada the coupon price
+                                is never published, so this says "liste" there by design. */}
+                              <span className="ml-1 text-(--color-muted)">
+                                ({s.priceSource === 'finalPrice' ? 'kupon' : 'liste'})
+                              </span>
+                            </td>
+                            <td className="py-1 text-right">{s.rank}</td>
+                            <td className="py-1">{formatDateTime(s.joinedAt)}</td>
+                            <td className="py-1 text-(--color-muted)">{s.promotionText ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                   {a.departedSellers > 0 && (
                     <p className="mt-1 text-xs text-(--color-muted)">
