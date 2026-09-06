@@ -240,14 +240,24 @@ enable/disable automation · enable/disable observation (independent of automati
 
 ## 5. Listing detail (`/listings/[id]`)
 
+Reworked 2026-09-06 (doc 15 §6, Phase 3.4) around R-UI-8 — **the current price must be
+explainable without reading logs.** The panel layout stays the four sections below; what changed
+is that loading/error now use the shared `LoadingState`/`ErrorState` kit (retry included), status
+flags are `Chip`s instead of ad-hoc spans, elapsed time uses `Ago` everywhere the exact instant is
+not itself the point, and the automation toggle follows the confirmation asymmetry (doc 15 §3.6):
+turning it back **on** confirms, turning it **off** is one click — force re-optimisation always
+confirms, since it is a one-off action with a real consequence, not a toggle direction.
+
 Four panels.
 
 **Now** — identity, cost breakdown (unit cost → cargo → commission → VAT → floor, shown as a
-waterfall so the operator can see exactly where the floor comes from), current price, margin,
-stock, status flags, campaign window, product image, link to the marketplace page.
+waterfall so the operator can see exactly where the floor comes from), current price, a stated
+margin over the floor (selling price − floor price, spelled out as a sentence rather than left for
+the operator to subtract), stock, status flags as `Chip`s (a clean listing shows an explicit "Sorun
+yok" chip rather than a bare dash), manual price override.
 
 **Competition** — current ranked offers with name, price, customer price, rating, dispatch
-time, stock where available; plus a price chart over time drawn from
+time, stock where available, an "Excel'e Aktar" export; plus a price chart over time drawn from
 `competitor_observations` (§6).
 
 The chart is **readable point by point**: hovering it (or arrowing along it from the keyboard)
@@ -262,12 +272,14 @@ hours.
 
 **Engine** — current phase, `lastGoodPrice`, `lastBadPrice`, `optimumPrice`, the invalidation
 context snapshot, and **why the last decision was what it was**, in words. Buttons: force
-re-optimisation, pause automation, set bounds.
+re-optimisation (confirms), pause/resume automation (only resuming confirms — doc 15 §3.6), set
+bounds (states "Kaydediliyor…" while the request is in flight).
 
 **History** — every `price_submission` for this listing: decided at, old → new price, reason,
 explanation, state, failure code and message if any, and the decision-time snapshot (cost,
-floor, buybox price, rank, commission, VAT). This is what makes a price explainable months
-later.
+floor, buybox price, rank, commission, VAT), an "Excel'e Aktar" export. This is what makes a
+price explainable months later — `decidedAt` is the one absolute (not relative) timestamp on this
+screen, deliberately: it is an audit record, where the exact instant is the point (doc 15 §3.3).
 
 ---
 

@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PriceChart } from '@/components/price-chart';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { Ago, Chip, ConfirmButton, ErrorState, LoadingState } from '@/components/ui';
+import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import {
   DECISION_REASON_LABELS as REASON_LABELS,
@@ -150,10 +152,14 @@ export function ListingDetailClient({ id }: { id: string }) {
   const [minInput, setMinInput] = useState('');
   const [maxInput, setMaxInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState('');
   const pagedOffers = usePagedRows(detail?.competition.offers ?? NO_ROWS, { pageSize: 25 });
   const pagedHistory = usePagedRows(detail?.history ?? NO_ROWS, { pageSize: 25 });
 
-  function load() {
+  // `useCallback` so the retry button in `ErrorState` and the effect below share one function
+  // identity, the same shape `seller-detail-client.tsx` uses.
+  const load = useCallback(() => {
+    setError(undefined);
     fetch(`/api/listings/${id}`)
       .then(async (r) => {
         if (!r.ok) {
@@ -167,15 +173,14 @@ export function ListingDetailClient({ id }: { id: string }) {
         setMaxInput(d.listing.maxPrice ? (Number(d.listing.maxPrice) / 100).toFixed(2) : '');
       })
       .catch(() => setError('İlan yüklenemedi.'));
-  }
+  }, [id]);
 
-  useEffect(load, [id]);
+  useEffect(load, [load]);
 
   async function submitManualPrice() {
     if (!priceInput) return;
-    if (!confirm(`Fiyat ${priceInput} olarak gönderilsin mi? Bu, otomasyonu geçici olarak duraklatır.`))
-      return;
     setBusy(true);
+    setBusyLabel('Gönderiliyor…');
     try {
       const res = await fetch(`/api/listings/${id}/manual-price`, {
         method: 'POST',
@@ -191,18 +196,16 @@ export function ListingDetailClient({ id }: { id: string }) {
       }
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   }
 
-  async function bulkOne(action: 'forceReoptimize' | 'disableAutomation' | 'enableAutomation') {
-    const label =
-      action === 'forceReoptimize'
-        ? 'Yeniden optimize edilsin mi?'
-        : action === 'disableAutomation'
-          ? 'Otomasyon duraklatılsın mı?'
-          : 'Otomasyon devam ettirilsin mi?';
-    if (!confirm(label)) return;
+  async function bulkOne(
+    action: 'forceReoptimize' | 'disableAutomation' | 'enableAutomation',
+    label: string,
+  ) {
     setBusy(true);
+    setBusyLabel(label);
     try {
       await fetch('/api/listings/bulk', {
         method: 'POST',
@@ -212,11 +215,13 @@ export function ListingDetailClient({ id }: { id: string }) {
       load();
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   }
 
   async function saveBounds() {
     setBusy(true);
+    setBusyLabel('Kaydediliyor…');
     try {
       await fetch('/api/listings/bulk', {
         method: 'POST',
@@ -231,11 +236,27 @@ export function ListingDetailClient({ id }: { id: string }) {
       load();
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   }
 
-  if (error) return <p className="text-(--color-danger)">{error}</p>;
-  if (!detail) return <p className="text-(--color-muted)">Yükleniyor…</p>;
+  // Loading and error never share a line (doc 15 §3.2): the operator needs "nothing has
+  // arrived yet" to read differently from "the request failed", and only the latter earns a
+  // "Tekrar dene" button.
+  if (error && !detail) {
+    return (
+      <div className="p-6">
+        <ErrorState message={error} onRetry={load} />
+      </div>
+    );
+  }
+  if (!detail) {
+    return (
+      <div className="p-6">
+        <LoadingState message="İlan yükleniyor…" skeletonRows={4} />
+      </div>
+    );
+  }
 
   const { listing, waterfall, competition, engine, lastDecisionExplanation, history } = detail;
 
@@ -251,9 +272,21 @@ export function ListingDetailClient({ id }: { id: string }) {
         </p>
       </div>
 
-      {/* Now */}
-      <section className="rounded border border-(--color-border) p-4">
-        <h2 className="mb-3 text-lg font-medium">Şu An</h2>
+      {/* A background reload (after a manual price, an automation toggle, a bounds save) can
+          fail without wiping the detail already on screen — that failure is reported here,
+          separately from the primary-load error state above (doc 15 §3.2 "Stale"). */}
+      {error && detail && (
+        <p className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-2 text-sm text-(--color-danger)">
+          {error}
+        </p>
+      )}
+
+      {/* Now — the panel R-UI-8 lives on: the price must be explainable here, without opening
+          the history table below. */}
+      <section className="rounded border border-(--color-border) p-4" aria-labelledby="now-heading">
+        <h2 id="now-heading" className="mb-3 text-lg font-medium">
+          Şu An
+        </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
             <div className="text-xs text-(--color-muted)">Satış Fiyatı</div>
@@ -269,16 +302,14 @@ export function ListingDetailClient({ id }: { id: string }) {
           </div>
           <div>
             <div className="text-xs text-(--color-muted)">Durum</div>
-            <div className="flex flex-wrap gap-1 text-xs">
-              {!listing.isSalable && <span className="row-danger rounded px-1">Satılamaz</span>}
-              {listing.isLocked && <span className="row-muted rounded px-1">Kilitli</span>}
-              {listing.isSuspended && <span className="row-muted rounded px-1">Askıda</span>}
-              {listing.isBlacklisted && <span className="row-danger rounded px-1">Kara Liste</span>}
-              {listing.isSalable &&
-                !listing.isLocked &&
-                !listing.isSuspended &&
-                !listing.isBlacklisted &&
-                '—'}
+            <div className="flex flex-wrap gap-1">
+              {!listing.isSalable && <Chip tone="danger">Satılamaz</Chip>}
+              {listing.isBlacklisted && <Chip tone="danger">Kara Liste</Chip>}
+              {listing.isLocked && <Chip tone="warn">Kilitli</Chip>}
+              {listing.isSuspended && <Chip tone="warn">Askıda</Chip>}
+              {listing.isSalable && !listing.isLocked && !listing.isSuspended && !listing.isBlacklisted && (
+                <Chip tone="ok">Sorun yok</Chip>
+              )}
             </div>
           </div>
         </div>
@@ -307,6 +338,16 @@ export function ListingDetailClient({ id }: { id: string }) {
                 Dip Fiyat {formatMoney(BigInt(waterfall.floorPrice))}
               </span>
             </div>
+            {/* The gap between the selling price and the floor it was decomposed from — the
+                number the "Motor" panel's reason (below) explains, without the operator having
+                to subtract the two figures above themselves. */}
+            <p className="mt-2 text-xs text-(--color-muted)">
+              Satış fiyatı dip fiyatın{' '}
+              <span className="font-medium text-(--color-text)">
+                {formatMoney(BigInt(listing.price) - BigInt(waterfall.floorPrice))}
+              </span>{' '}
+              üzerinde.
+            </p>
           </div>
         )}
 
@@ -320,25 +361,56 @@ export function ListingDetailClient({ id }: { id: string }) {
               className="w-28 rounded border border-(--color-border) px-2 py-1 text-sm"
             />
           </label>
-          <button
-            type="button"
+          <ConfirmButton
+            requireConfirm
+            confirmMessage={`Fiyat ${priceInput} olarak gönderilsin mi? Bu, otomasyonu geçici olarak duraklatır.`}
+            onConfirmed={() => void submitManualPrice()}
             disabled={busy || !priceInput}
-            onClick={() => void submitManualPrice()}
             className="rounded bg-(--color-accent) px-3 py-1 text-sm text-(--color-accent-ink) disabled:opacity-50"
           >
             Gönder
-          </button>
+          </ConfirmButton>
+          {busy && busyLabel === 'Gönderiliyor…' && (
+            <span aria-live="polite" className="text-sm text-(--color-muted)">
+              {busyLabel}
+            </span>
+          )}
         </div>
       </section>
 
       {/* Competition */}
-      <section className="rounded border border-(--color-border) p-4">
-        <h2 className="mb-3 text-lg font-medium">Rekabet</h2>
+      <section className="rounded border border-(--color-border) p-4" aria-labelledby="competition-heading">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="competition-heading" className="text-lg font-medium">
+            Rekabet
+          </h2>
+          <button
+            type="button"
+            disabled={competition.offers.length === 0}
+            onClick={() =>
+              downloadCsv(
+                `ilan-rekabet-${listing.marketplaceListingId}.csv`,
+                competition.offers.map((o) => ({
+                  Sıra: o.rank,
+                  Satıcı: o.sellerName,
+                  Fiyat: o.price ? (Number(o.price) / 100).toFixed(2) : '',
+                  'Müşteri Fiyatı': o.finalPrice ? (Number(o.finalPrice) / 100).toFixed(2) : '',
+                  Puan: o.rating ?? '',
+                  'Kargo Süresi': o.dispatchTime ?? '',
+                  Stok: o.offeredStock ?? '',
+                })),
+              )
+            }
+            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
+          >
+            Excel&apos;e Aktar
+          </button>
+        </div>
         {competition.buybox && (
           <p className="mb-2 text-sm">
             Sıra <b>{competition.buybox.rank ?? '—'}</b> · Buybox{' '}
             {formatMoney(competition.buybox.buyboxPrice ? BigInt(competition.buybox.buyboxPrice) : null)} ·{' '}
-            {formatDateTime(competition.buybox.observedAt)}
+            <Ago at={competition.buybox.observedAt} />
           </p>
         )}
         <PriceHistoryChart history={competition.priceHistory} ourPrice={listing.price} />
@@ -382,9 +454,11 @@ export function ListingDetailClient({ id }: { id: string }) {
         </div>
       </section>
 
-      {/* Engine */}
-      <section className="rounded border border-(--color-border) p-4">
-        <h2 className="mb-3 text-lg font-medium">Motor</h2>
+      {/* Engine — "why the last decision was what it was, in words" (doc 06 §5). */}
+      <section className="rounded border border-(--color-border) p-4" aria-labelledby="engine-heading">
+        <h2 id="engine-heading" className="mb-3 text-lg font-medium">
+          Motor
+        </h2>
         {engine ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
@@ -411,7 +485,9 @@ export function ListingDetailClient({ id }: { id: string }) {
             </div>
             <div>
               <div className="text-xs text-(--color-muted)">Duraklatma Bitişi</div>
-              <div className="text-sm">{engine.settleUntil ? formatDateTime(engine.settleUntil) : '—'}</div>
+              <div className="text-sm">
+                <Ago at={engine.settleUntil} never="—" />
+              </div>
             </div>
             <div>
               <div className="text-xs text-(--color-muted)">Ardışık Ret</div>
@@ -429,29 +505,49 @@ export function ListingDetailClient({ id }: { id: string }) {
             </span>{' '}
             {lastDecisionExplanation.explanation}
             <span className="ml-2 text-xs text-(--color-muted)">
-              {formatDateTime(lastDecisionExplanation.decidedAt)}
+              <Ago at={lastDecisionExplanation.decidedAt} />
             </span>
           </div>
         )}
 
         <div className="mt-4 flex flex-wrap items-end gap-4">
-          <div className="flex gap-2">
-            <button
-              type="button"
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Force re-optimize is a one-off action with a real consequence (resets the phase
+                to SEEKING), not a toggle direction — it always confirms (doc 15 §3.6). */}
+            <ConfirmButton
+              requireConfirm
+              confirmMessage="Yeniden optimize edilsin mi? Bu, fiyatlamayı baştan aramaya döndürür."
+              onConfirmed={() => void bulkOne('forceReoptimize', 'Yeniden optimize ediliyor…')}
               disabled={busy}
-              onClick={() => void bulkOne('forceReoptimize')}
               className="rounded border px-3 py-1 text-sm"
             >
               Yeniden Optimize Et
-            </button>
-            <button
-              type="button"
+            </ConfirmButton>
+            {/* §3.6 confirmation asymmetry: turning automation back ON creates risk (the bot
+                resumes changing this listing's price) and confirms; turning it OFF removes risk
+                and is one click — mirroring the dashboard's price-submission switch. */}
+            <ConfirmButton
+              requireConfirm={!listing.repriceEnabled}
+              confirmMessage="Otomasyon devam ettirilsin mi? Fiyat, motor tarafından tekrar otomatik değiştirilir."
+              onConfirmed={() =>
+                void bulkOne(
+                  listing.repriceEnabled ? 'disableAutomation' : 'enableAutomation',
+                  listing.repriceEnabled ? 'Duraklatılıyor…' : 'Sürdürülüyor…',
+                )
+              }
               disabled={busy}
-              onClick={() => void bulkOne(listing.repriceEnabled ? 'disableAutomation' : 'enableAutomation')}
               className="rounded border px-3 py-1 text-sm"
             >
               {listing.repriceEnabled ? 'Otomasyonu Duraklat' : 'Otomasyonu Sürdür'}
-            </button>
+            </ConfirmButton>
+            {busy &&
+              (busyLabel === 'Yeniden optimize ediliyor…' ||
+                busyLabel === 'Duraklatılıyor…' ||
+                busyLabel === 'Sürdürülüyor…') && (
+                <span aria-live="polite" className="text-sm text-(--color-muted)">
+                  {busyLabel}
+                </span>
+              )}
           </div>
           <div className="flex items-end gap-2">
             <label className="flex flex-col text-xs">
@@ -478,13 +574,47 @@ export function ListingDetailClient({ id }: { id: string }) {
             >
               Sınırları Kaydet
             </button>
+            {busy && busyLabel === 'Kaydediliyor…' && (
+              <span aria-live="polite" className="text-sm text-(--color-muted)">
+                {busyLabel}
+              </span>
+            )}
           </div>
         </div>
       </section>
 
-      {/* History */}
-      <section className="rounded border border-(--color-border) p-4">
-        <h2 className="mb-3 text-lg font-medium">Fiyat Geçmişi</h2>
+      {/* History — an audit log, so `decidedAt` stays an absolute timestamp on purpose (doc 15
+          §3.3: "Absolute time is correct only where the exact instant is the point — an audit
+          record"). This is what makes a price explainable months later (doc 06 §5). */}
+      <section className="rounded border border-(--color-border) p-4" aria-labelledby="history-heading">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="history-heading" className="text-lg font-medium">
+            Fiyat Geçmişi
+          </h2>
+          <button
+            type="button"
+            disabled={history.length === 0}
+            onClick={() =>
+              downloadCsv(
+                `ilan-fiyat-gecmisi-${listing.marketplaceListingId}.csv`,
+                history.map((h) => ({
+                  'Karar Zamanı': formatDateTime(h.decidedAt),
+                  'Eski Fiyat': (Number(h.oldPrice) / 100).toFixed(2),
+                  'Yeni Fiyat': (Number(h.newPrice) / 100).toFixed(2),
+                  Sebep: REASON_LABELS[h.reason] ?? h.reason,
+                  Durum: STATE_LABELS[h.state] ?? h.state,
+                  'Dip Fiyat': h.floorPrice ? (Number(h.floorPrice) / 100).toFixed(2) : '',
+                  Buybox: h.buyboxPrice ? (Number(h.buyboxPrice) / 100).toFixed(2) : '',
+                  Sıra: h.rank ?? '',
+                  Hata: h.failureCode ? `${h.failureCode}: ${h.failureMessage ?? ''}` : '',
+                })),
+              )
+            }
+            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
+          >
+            Excel&apos;e Aktar
+          </button>
+        </div>
         <TableFrame maxHeight="50vh">
           <table className="w-full text-xs">
             <thead className={`${STICKY_HEAD} text-left uppercase text-(--color-muted)`}>
