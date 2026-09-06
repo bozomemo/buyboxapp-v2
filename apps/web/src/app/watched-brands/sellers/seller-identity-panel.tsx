@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { formatDateTime, formatNumber } from '@/lib/format';
+import { Ago, ConfirmButton, TONE_BOX, TONE_TEXT } from '@/components/ui';
+import { formatNumber } from '@/lib/format';
 
 interface IdentityListing {
   listingRef: string | null;
@@ -159,9 +160,9 @@ export function SellerIdentityPanel({
         <div>
           <h2 className="font-semibold">{sellerName || sellerRef} — satıcı kimliği</h2>
           <p className="mt-1 max-w-2xl text-sm text-(--color-muted)">
-            Firmanın pazaryerinde bildirdiği tescil bilgileri. Bir ihtar yazacaksanız gereken
-            alanlar bunlardır; sıralama, buybox veya fiyat <em>bu istekten okunmaz</em> — satıcı
-            adına sorulan sayfa kendisini her satırda kazanan gösterir.
+            Firmanın pazaryerinde bildirdiği tescil bilgileri. Bir ihtar yazacaksanız gereken alanlar
+            bunlardır; sıralama, buybox veya fiyat <em>bu istekten okunmaz</em> — satıcı adına sorulan sayfa
+            kendisini her satırda kazanan gösterir.
           </p>
         </div>
         <div className="flex gap-2">
@@ -174,13 +175,18 @@ export function SellerIdentityPanel({
             {pending ? 'Çözülüyor…' : identity ? 'Yeniden çöz' : 'Kimliği çöz'}
           </button>
           {identity && (
-            <button
-              type="button"
-              onClick={() => void forget()}
+            // Deleting a resolved identity is the risky direction of this control (§3.6): it
+            // throws away a real page read, and re-reading it costs another request to the
+            // marketplace. The confirm names the firm being forgotten, not a generic "emin
+            // misiniz?".
+            <ConfirmButton
+              requireConfirm
+              confirmMessage={`${sellerName || sellerRef} için okunan kimlik silinsin mi? Yeniden çözmek pazaryerine yeni bir istek gerektirir.`}
+              onConfirmed={() => void forget()}
               className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
             >
               Kimliği unut
-            </button>
+            </ConfirmButton>
           )}
           <button
             type="button"
@@ -193,25 +199,36 @@ export function SellerIdentityPanel({
       </div>
 
       {error && (
-        <div className="mt-3 rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-2 text-sm">
+        <div className={`mt-3 rounded border p-2 text-sm ${TONE_BOX.danger} ${TONE_TEXT.danger}`}>
           {error}
+          {/* The panel's own primary load (reading the stored identity) can fail same as any
+              screen's (§3.2) — a retry here re-runs that GET, distinct from "Kimliği çöz", which
+              queues a new marketplace resolution. */}
+          {!data && (
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="mt-2 block rounded border border-(--color-border) bg-(--color-surface) px-2 py-1 text-xs font-semibold text-(--color-fg) hover:bg-(--color-hover)"
+            >
+              Tekrar dene
+            </button>
+          )}
         </div>
       )}
 
       {data?.taxNumberDisagrees && (
         <div className="mt-3 rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-2 text-sm">
           Satıcı kaydındaki vergi numarası (<strong>{data.seller.taxNumber}</strong>) pazaryerinin
-          bildirdiğinden (<strong>{identity?.taxNumber}</strong>) farklı. Kayıttaki numara elle
-          girilmiştir ve <em>değiştirilmedi</em> — yetkili satıcı listesi onunla eşleşir, ve hangi
-          numaranın doğru olduğuna yazılım karar veremez.
+          bildirdiğinden (<strong>{identity?.taxNumber}</strong>) farklı. Kayıttaki numara elle girilmiştir ve{' '}
+          <em>değiştirilmedi</em> — yetkili satıcı listesi onunla eşleşir, ve hangi numaranın doğru olduğuna
+          yazılım karar veremez.
         </div>
       )}
 
       {!identity && !pending && (
         <p className="mt-3 text-sm text-(--color-muted)">
-          Bu satıcı için henüz kimlik çözülmedi. Çözüm, satıcının görüldüğü bir ürün sayfasını o
-          satıcı adına okur — satıcı o üründen ayrılmışsa sayfa başka bir firmayı anlatır ve
-          hiçbir şey kaydedilmez.
+          Bu satıcı için henüz kimlik çözülmedi. Çözüm, satıcının görüldüğü bir ürün sayfasını o satıcı adına
+          okur — satıcı o üründen ayrılmışsa sayfa başka bir firmayı anlatır ve hiçbir şey kaydedilmez.
         </p>
       )}
 
@@ -225,9 +242,7 @@ export function SellerIdentityPanel({
                   <dt className="text-xs text-(--color-muted)" title={hint}>
                     {label}
                   </dt>
-                  <dd className="text-sm">
-                    {typeof value === 'string' && value !== '' ? value : '—'}
-                  </dd>
+                  <dd className="text-sm">{typeof value === 'string' && value !== '' ? value : '—'}</dd>
                 </div>
               );
             })}
@@ -246,7 +261,10 @@ export function SellerIdentityPanel({
                 </thead>
                 <tbody>
                   {identity.listings.map((l, index) => (
-                    <tr key={l.listingRef ?? `${l.itemRef ?? 'x'}-${index}`} className="border-t border-(--color-border)">
+                    <tr
+                      key={l.listingRef ?? `${l.itemRef ?? 'x'}-${index}`}
+                      className="border-t border-(--color-border)"
+                    >
                       <td className="px-2 py-1 tabular-nums">{l.barcode ?? '—'}</td>
                       <td className="px-2 py-1 tabular-nums">{l.itemRef ?? '—'}</td>
                       <td className="px-2 py-1 tabular-nums">
@@ -260,13 +278,8 @@ export function SellerIdentityPanel({
           )}
 
           <p className="mt-3 text-xs text-(--color-muted)">
-            {formatDateTime(identity.resolvedAt)} tarihinde okundu ·{' '}
-            <a
-              className="underline"
-              href={identity.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <Ago at={identity.resolvedAt} /> okundu ·{' '}
+            <a className="underline" href={identity.sourceUrl} target="_blank" rel="noopener noreferrer">
               okunduğu sayfa
             </a>
             . Kimlik bilgisi bir zaman serisi değildir: her çözüm bir öncekinin yerine geçer.

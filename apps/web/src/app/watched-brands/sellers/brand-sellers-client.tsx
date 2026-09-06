@@ -13,8 +13,10 @@ import {
   useColumnPrefs,
   usePagedRows,
 } from '@/components/table';
+import { Ago, Chip, ErrorState, LoadingState, Section, StatusBanner, type Tone } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { POLICY_VERDICT_LABELS } from '@/lib/labels';
 import { SellerIdentityPanel } from './seller-identity-panel';
 
 interface Seller {
@@ -73,17 +75,12 @@ const NO_SELLERS: never[] = [];
  */
 const DEVIATION_ALERT_PCT = -15;
 
-const VERDICT_LABEL = {
-  authorised: 'Yetkili',
-  blocked: 'Yasaklı',
-  undefined: 'Tanımsız',
-} as const;
-
-const VERDICT_CLASS = {
-  authorised: 'bg-(--color-success-bg) text-(--color-success)',
-  blocked: 'bg-(--color-danger-bg) text-(--color-danger)',
-  undefined: 'text-(--color-muted)',
-} as const;
+/** Same vocabulary as `/watched-brands/policy` (`lib/labels.ts` `POLICY_VERDICT_LABELS`) — one word, one meaning, everywhere a verdict is shown. */
+const VERDICT_TONE: Record<'authorised' | 'blocked' | 'undefined', Tone> = {
+  authorised: 'ok',
+  blocked: 'danger',
+  undefined: 'neutral',
+};
 
 type ColumnId =
   | 'sellerName'
@@ -168,11 +165,7 @@ function renderSellerCell(
           </span>
         );
       }
-      return (
-        <span className={`rounded px-1.5 py-0.5 text-xs ${VERDICT_CLASS[s.verdict]}`}>
-          {VERDICT_LABEL[s.verdict]}
-        </span>
-      );
+      return <Chip tone={VERDICT_TONE[s.verdict]}>{POLICY_VERDICT_LABELS[s.verdict]}</Chip>;
     case 'marketplace':
       return s.marketplaceCode;
     case 'productCount':
@@ -226,9 +219,13 @@ function renderSellerCell(
     case 'firstSeenAt':
       // `≥`: the archive starts where it starts. A seller "first seen" on the window's opening
       // day may well have been there for a year before we looked.
-      return <>≥ {formatDateTime(s.firstSeenAt)}</>;
+      return (
+        <>
+          ≥ <Ago at={s.firstSeenAt} />
+        </>
+      );
     case 'lastSeenAt':
-      return formatDateTime(s.lastSeenAt);
+      return <Ago at={s.lastSeenAt} />;
     case 'identity':
       // Per row rather than a bulk action, deliberately: each resolution is a real page request
       // to the marketplace, and the sellers worth identifying are the ones somebody intends to
@@ -372,184 +369,200 @@ export function BrandSellersClient() {
         </div>
       </div>
 
-      {error && (
-        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
-          {error}
-        </div>
-      )}
-      {loading && <div className="text-sm text-(--color-muted)">Yükleniyor…</div>}
+      {/* Loading and error never share a line (§3.2): the first request has nothing to fall back
+          to, so it replaces the body outright and a failure carries the "Tekrar dene" retry every
+          other screen in the baseline was missing. Once a report has arrived once, a later
+          failure or refetch is shown *beside* the still-visible data instead (below). */}
+      {!report && error && <ErrorState message={error} onRetry={load} />}
+      {!report && !error && <LoadingState message="Rapor yükleniyor…" skeletonRows={4} />}
 
       {report && (
         <>
-          {report.sellers.length === 0 && !loading && (
-            <div className="rounded border border-(--color-border) p-4 text-sm text-(--color-muted)">
-              Bu dönemde hiç teklif kaydı yok. Marka taraması ürünleri bulur ama fiyatları getirmez — satıcı
-              ve fiyat verisi için ürün başına derin tarama (<code>ScrapeCompetitors</code>) çalışmalıdır.{' '}
-              <Link className="underline" href="/jobs">
-                İşler
-              </Link>{' '}
-              ekranından durumunu görebilirsiniz.
-            </div>
+          {error && <StatusBanner ok={false} message={error} />}
+          {loading && (
+            <p aria-live="polite" className="text-sm text-(--color-muted)">
+              Yenileniyor…
+            </p>
           )}
 
-          {blockedAndCheap.length > 0 && (
-            <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
-              <strong>
-                {formatNumber(blockedAndCheap.length)} yasaklı satıcı piyasanın belirgin altında satıyor.
-              </strong>{' '}
-              {blockedAndCheap
-                .slice(0, 5)
-                .map((s) => `${s.sellerName || s.sellerRef} (${formatPercent(s.avgDeviationPct!)})`)
-                .join(' · ')}
-              {blockedAndCheap.length > 5 && ' …'}
-              {/* İki sütunu gözle çaprazlamak 80 satırda kaçırılır; ekran eşleşmeyi kendisi
+          {/* One landmark for the whole results region (§3.7) — the summary banners and the table
+              answer the same question ("bu markayı kim satıyor, ve dikkat gerektiren var mı"),
+              so they share one `<section>` rather than each inventing its own heading. */}
+          <Section id="sellers-heading" title="Satıcılar">
+            <div className="space-y-4">
+              {report.sellers.length === 0 && !loading && (
+                <div className="rounded border border-(--color-border) p-4 text-sm text-(--color-muted)">
+                  Bu dönemde hiç teklif kaydı yok. Marka taraması ürünleri bulur ama fiyatları getirmez —
+                  satıcı ve fiyat verisi için ürün başına derin tarama (<code>ScrapeCompetitors</code>)
+                  çalışmalıdır.{' '}
+                  <Link className="underline" href="/jobs">
+                    İşler
+                  </Link>{' '}
+                  ekranından durumunu görebilirsiniz.
+                </div>
+              )}
+
+              {blockedAndCheap.length > 0 && (
+                <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
+                  <strong>
+                    {formatNumber(blockedAndCheap.length)} yasaklı satıcı piyasanın belirgin altında satıyor.
+                  </strong>{' '}
+                  {blockedAndCheap
+                    .slice(0, 5)
+                    .map((s) => `${s.sellerName || s.sellerRef} (${formatPercent(s.avgDeviationPct!)})`)
+                    .join(' · ')}
+                  {blockedAndCheap.length > 5 && ' …'}
+                  {/* İki sütunu gözle çaprazlamak 80 satırda kaçırılır; ekran eşleşmeyi kendisi
                   söylüyor. Yeni bir olgu değil, aranan olgu. */}
-            </div>
-          )}
+                </div>
+              )}
 
-          {/*
+              {/*
             Markanın buybox'ı ne kadar tek elde toplanmış — bir marka sorumlusunun ilk sorduğu
             sayı. Payın neyin payı olduğu ve kimliksiz dilim burada açıkça yazılıyor: yoksa
             sütunlar %100'e tamamlanmıyor ve sayfada bunun bir açıklaması olmuyor.
           */}
-          {report.buybox && report.buybox.totalLooks > 0 && (
-            <div className="rounded border border-(--color-border) p-3 text-sm">
-              Bu dönemde markanın <strong>{formatNumber(report.buybox.totalLooks)}</strong> kayıtlı buybox anı
-              var
-              {topShare && (
-                <>
-                  {' '}
-                  ve bunun <strong>{formatPercent(topShare.buyboxSharePct)}</strong> kadarı tek bir satıcıda:{' '}
-                  <strong>{topShare.sellerName || topShare.sellerRef}</strong>
-                </>
+              {report.buybox && report.buybox.totalLooks > 0 && (
+                <div className="rounded border border-(--color-border) p-3 text-sm">
+                  Bu dönemde markanın <strong>{formatNumber(report.buybox.totalLooks)}</strong> kayıtlı buybox
+                  anı var
+                  {topShare && (
+                    <>
+                      {' '}
+                      ve bunun <strong>{formatPercent(topShare.buyboxSharePct)}</strong> kadarı tek bir
+                      satıcıda: <strong>{topShare.sellerName || topShare.sellerRef}</strong>
+                    </>
+                  )}
+                  .
+                  {report.buybox.unidentifiedLooks > 0 && (
+                    <>
+                      {' '}
+                      {formatNumber(report.buybox.unidentifiedLooks)} anın buybox sahibi
+                      <em> kimliksizdi</em> ve hiçbir satırın payına yazılmadı.
+                    </>
+                  )}
+                  <div className="mt-1 text-xs text-(--color-muted)">
+                    Pay, <em>kayıtlı bakışlar</em> üzerindendir — süre değil. Teklif seti değişmedikçe yeni
+                    bakış saklanmadığı için, fiyatı sık oynayan ürünler bu sayıda daha ağır basar. Süreye göre
+                    ağırlıklı pay tek ürün ekranında hesaplanır.
+                  </div>
+                </div>
               )}
-              .
-              {report.buybox.unidentifiedLooks > 0 && (
-                <>
-                  {' '}
-                  {formatNumber(report.buybox.unidentifiedLooks)} anın buybox sahibi
-                  <em> kimliksizdi</em> ve hiçbir satırın payına yazılmadı.
-                </>
-              )}
-              <div className="mt-1 text-xs text-(--color-muted)">
-                Pay, <em>kayıtlı bakışlar</em> üzerindendir — süre değil. Teklif seti değişmedikçe yeni bakış
-                saklanmadığı için, fiyatı sık oynayan ürünler bu sayıda daha ağır basar. Süreye göre ağırlıklı
-                pay tek ürün ekranında hesaplanır.
-              </div>
-            </div>
-          )}
 
-          {belowMarket.length > 0 && (
-            <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
-              <strong>{formatNumber(belowMarket.length)}</strong> satıcı bulunduğu listelemelerde ortalama
-              olarak piyasanın %{Math.abs(DEVIATION_ALERT_PCT)} veya daha altında fiyat veriyor:{' '}
-              {belowMarket
-                .slice(0, 5)
-                .map((s) => `${s.sellerName || s.sellerRef} (${formatPercent(s.avgDeviationPct!)})`)
-                .join(' · ')}
-              {belowMarket.length > 5 && ' …'}
-              {/* Bir tespit değil, bakılacak yer. Bir satıcının piyasanın altında olması tek
+              {belowMarket.length > 0 && (
+                <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
+                  <strong>{formatNumber(belowMarket.length)}</strong> satıcı bulunduğu listelemelerde ortalama
+                  olarak piyasanın %{Math.abs(DEVIATION_ALERT_PCT)} veya daha altında fiyat veriyor:{' '}
+                  {belowMarket
+                    .slice(0, 5)
+                    .map((s) => `${s.sellerName || s.sellerRef} (${formatPercent(s.avgDeviationPct!)})`)
+                    .join(' · ')}
+                  {belowMarket.length > 5 && ' …'}
+                  {/* Bir tespit değil, bakılacak yer. Bir satıcının piyasanın altında olması tek
                   başına bir ihlal değildir; yetkili olup olmadığı bilgisi Faz 5'te gelir. */}
-              <div className="mt-1 text-xs text-(--color-muted)">
-                Bu tek başına bir ihlal değildir — yalnızca bakılacak yeri gösterir.
+                  <div className="mt-1 text-xs text-(--color-muted)">
+                    Bu tek başına bir ihlal değildir — yalnızca bakılacak yeri gösterir.
+                  </div>
+                </div>
+              )}
+
+              {report.unidentifiedCount > 0 && (
+                <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
+                  Bu dönemde <strong>{formatNumber(report.unidentifiedCount)}</strong> teklif, pazaryeri
+                  satıcı kimliği vermediği için aşağıdaki listede yer almıyor. Bu teklifler isme göre
+                  eşleştirilmez — aynı isim aynı firma anlamına gelmediği için yanlış satıcıya atfetmektense
+                  hiç atfetmemek tercih edilir.
+                </div>
+              )}
+
+              {identitySeller && (
+                <SellerIdentityPanel
+                  key={`${identitySeller.marketplaceCode}::${identitySeller.sellerRef}`}
+                  marketplaceCode={identitySeller.marketplaceCode}
+                  sellerRef={identitySeller.sellerRef}
+                  sellerName={identitySeller.sellerName}
+                  onClose={() => setIdentitySeller(null)}
+                />
+              )}
+
+              <div className="flex items-center justify-end gap-2">
+                <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadCsv(
+                      'marka-saticilari.csv',
+                      report.sellers.map((s) => ({
+                        Satıcı: s.sellerName,
+                        'Satıcı Kodu': s.sellerRef,
+                        Pazaryeri: s.marketplaceCode,
+                        Grup: s.groupName ?? '',
+                        Ürün: s.productCount,
+                        Teklif: s.observationCount,
+                        Buybox: s.buyboxCount,
+                        'Buybox %': (s.buyboxRate * 100).toFixed(1),
+                        'Buybox Payı %': s.buyboxSharePct.toFixed(1),
+                        'En Ucuz': s.cheapestCount,
+                        'En Ucuz %': (s.cheapestRate * 100).toFixed(1),
+                        'Piyasa Sapması %': s.avgDeviationPct?.toFixed(2) ?? '',
+                        'Min Fiyat': s.minPrice ? (Number(s.minPrice) / 100).toFixed(2) : '',
+                        'Max Fiyat': s.maxPrice ? (Number(s.maxPrice) / 100).toFixed(2) : '',
+                        'İlk Görülme': formatDateTime(s.firstSeenAt),
+                        'Son Görülme': formatDateTime(s.lastSeenAt),
+                      })),
+                    )
+                  }
+                  className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+                >
+                  Excel&apos;e Aktar
+                </button>
               </div>
-            </div>
-          )}
 
-          {report.unidentifiedCount > 0 && (
-            <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
-              Bu dönemde <strong>{formatNumber(report.unidentifiedCount)}</strong> teklif, pazaryeri satıcı
-              kimliği vermediği için aşağıdaki listede yer almıyor. Bu teklifler isme göre eşleştirilmez —
-              aynı isim aynı firma anlamına gelmediği için yanlış satıcıya atfetmektense hiç atfetmemek tercih
-              edilir.
-            </div>
-          )}
-
-          {identitySeller && (
-            <SellerIdentityPanel
-              key={`${identitySeller.marketplaceCode}::${identitySeller.sellerRef}`}
-              marketplaceCode={identitySeller.marketplaceCode}
-              sellerRef={identitySeller.sellerRef}
-              sellerName={identitySeller.sellerName}
-              onClose={() => setIdentitySeller(null)}
-            />
-          )}
-
-          <div className="flex items-center justify-end gap-2">
-            <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
-            <button
-              type="button"
-              onClick={() =>
-                downloadCsv(
-                  'marka-saticilari.csv',
-                  report.sellers.map((s) => ({
-                    Satıcı: s.sellerName,
-                    'Satıcı Kodu': s.sellerRef,
-                    Pazaryeri: s.marketplaceCode,
-                    Grup: s.groupName ?? '',
-                    Ürün: s.productCount,
-                    Teklif: s.observationCount,
-                    Buybox: s.buyboxCount,
-                    'Buybox %': (s.buyboxRate * 100).toFixed(1),
-                    'Buybox Payı %': s.buyboxSharePct.toFixed(1),
-                    'En Ucuz': s.cheapestCount,
-                    'En Ucuz %': (s.cheapestRate * 100).toFixed(1),
-                    'Piyasa Sapması %': s.avgDeviationPct?.toFixed(2) ?? '',
-                    'Min Fiyat': s.minPrice ? (Number(s.minPrice) / 100).toFixed(2) : '',
-                    'Max Fiyat': s.maxPrice ? (Number(s.maxPrice) / 100).toFixed(2) : '',
-                    'İlk Görülme': formatDateTime(s.firstSeenAt),
-                    'Son Görülme': formatDateTime(s.lastSeenAt),
-                  })),
-                )
-              }
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-            >
-              Excel&apos;e Aktar
-            </button>
-          </div>
-
-          <TableFrame>
-            <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
-              <thead className={`${STICKY_HEAD} text-left`}>
-                <tr>
-                  {visibleColumns.map((id) => (
-                    <ResizableTh key={id} id={id} prefs={columns}>
-                      {COLUMN_DEFS.find((c) => c.id === id)!.label}
-                    </ResizableTh>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {paged.rows.map((s) => (
-                  <tr
-                    key={`${s.marketplaceCode}::${s.sellerRef}`}
-                    className="border-t border-(--color-border)"
-                  >
-                    {visibleColumns.map((id) => (
-                      <td key={id} className="px-2 py-1">
-                        {renderSellerCell(
-                          id,
-                          s,
-                          setIdentitySeller,
-                          sinceMs,
-                          scope.startsWith('brand:') ? scope.slice('brand:'.length) : null,
-                        )}
-                      </td>
+              <TableFrame>
+                <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
+                  <thead className={`${STICKY_HEAD} text-left`}>
+                    <tr>
+                      {visibleColumns.map((id) => (
+                        <ResizableTh key={id} id={id} prefs={columns}>
+                          {COLUMN_DEFS.find((c) => c.id === id)!.label}
+                        </ResizableTh>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paged.rows.map((s) => (
+                      <tr
+                        key={`${s.marketplaceCode}::${s.sellerRef}`}
+                        className="border-t border-(--color-border)"
+                      >
+                        {visibleColumns.map((id) => (
+                          <td key={id} className="px-2 py-1">
+                            {renderSellerCell(
+                              id,
+                              s,
+                              setIdentitySeller,
+                              sinceMs,
+                              scope.startsWith('brand:') ? scope.slice('brand:'.length) : null,
+                            )}
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableFrame>
+                  </tbody>
+                </table>
+              </TableFrame>
 
-          <Pagination state={paged} label="satıcı" />
+              <Pagination state={paged} label="satıcı" />
 
-          <p className="text-xs text-(--color-muted)">
-            &ldquo;İlk görülme&rdquo; bir <em>gözlem</em> tarihidir, satışa başlama tarihi değil: satıcı ondan
-            önce de orada olabilir, taramalar arasındaki boşlukta fark edilmemiş olabilir. Bu yüzden ≥ ile
-            gösterilir. &ldquo;Piyasa sapması&rdquo; satıcının bulunduğu her listelemedeki <em>ortalama</em>{' '}
-            fiyata göre farkıdır; medyana göre değil — nedeni <code>brand-reports.ts</code> içinde yazılı.
-          </p>
+              <p className="text-xs text-(--color-muted)">
+                &ldquo;İlk görülme&rdquo; bir <em>gözlem</em> tarihidir, satışa başlama tarihi değil: satıcı
+                ondan önce de orada olabilir, taramalar arasındaki boşlukta fark edilmemiş olabilir. Bu yüzden
+                ≥ ile gösterilir. &ldquo;Piyasa sapması&rdquo; satıcının bulunduğu her listelemedeki{' '}
+                <em>ortalama</em> fiyata göre farkıdır; medyana göre değil — nedeni{' '}
+                <code>brand-reports.ts</code> içinde yazılı.
+              </p>
+            </div>
+          </Section>
         </>
       )}
     </div>
