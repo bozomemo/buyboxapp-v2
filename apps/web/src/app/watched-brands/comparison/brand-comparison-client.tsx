@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { Ago, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { alignBrandSeries, COMPARISON_COLORS } from '@/lib/brand-comparison';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 /**
  * Marka Karşılaştırması (2026-09-03).
@@ -76,17 +78,19 @@ export function BrandComparisonClient() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Marka Karşılaştırması</h1>
-        <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-          İzlenen markaların dönem içindeki ortalama piyasa fiyatı. Bir markayı{' '}
-          <Link className="underline" href="/watched-brands">
-            İzlenen Markalar
-          </Link>{' '}
-          ekranından <em>rakip marka</em> olarak işaretlediğinizde denetim dışında kalır ve burada
-          karşılaştırma tabanı olur.
-        </p>
-      </div>
+      <PageHeader
+        title="Marka Karşılaştırması"
+        description={
+          <>
+            İzlenen markaların dönem içindeki ortalama piyasa fiyatı. Bir markayı{' '}
+            <Link className="underline" href="/watched-brands">
+              İzlenen Markalar
+            </Link>{' '}
+            ekranından <em>rakip marka</em> olarak işaretlediğinizde denetim dışında kalır ve burada
+            karşılaştırma tabanı olur.
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-end gap-3 rounded border border-(--color-border) p-3 text-sm">
         <label className="flex flex-col text-xs">
@@ -138,8 +142,8 @@ export function BrandComparisonClient() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-(--color-danger)">{error}</p>}
-      {loading && <p className="text-sm text-(--color-muted)">Yükleniyor…</p>}
+      {error && <ErrorState message={error} onRetry={load} />}
+      {loading && !error && <LoadingState message="Karşılaştırma yükleniyor…" />}
 
       {report && !report.hasCompetitorBrand && (
         <div className="rounded border border-(--color-border) p-3 text-sm text-(--color-muted)">
@@ -202,7 +206,7 @@ export function BrandComparisonClient() {
                 'marka-karsilastirmasi.csv',
                 (report?.series ?? []).map((s) => ({
                   Marka: s.label,
-                  Pazaryeri: s.marketplaceCode,
+                  Pazaryeri: labelOf(MARKETPLACE_LABELS, s.marketplaceCode),
                   Tür: s.isOwnBrand ? 'bizim' : 'rakip',
                   'Ortalama Fiyat': s.windowAvgPrice ? (Number(s.windowAvgPrice) / 100).toFixed(2) : '',
                   Endeks: indexByBrand.get(s.id)?.toFixed(1) ?? '',
@@ -252,14 +256,15 @@ export function BrandComparisonClient() {
                     {/* Kaç günün verisi var — ortalamanın ne kadar üstüne bastığını söyler.
                         İki günlük veriden çıkan bir endeks, otuz günlükle aynı görünmemeli. */}
                     <td className="px-2 py-1 tabular-nums">{formatNumber(s.points.length)}</td>
-                    <td className="px-2 py-1">{last ? formatDateTime(last.dayMs) : '—'}</td>
+                    <td className="px-2 py-1">{last ? <Ago at={last.dayMs} /> : '—'}</td>
                   </tr>
                 );
               })}
-              {(report?.series ?? []).length === 0 && !loading && (
+              {(report?.series ?? []).length === 0 && !loading && !error && (
                 <tr>
                   <td colSpan={6} className="px-2 py-6 text-center text-(--color-muted)">
-                    Bu dönemde hiçbir marka için kayıtlı bakış yok.
+                    Bu dönemde hiçbir marka için kayıtlı bakış yok. Daha geniş bir dönem seçmeyi veya farklı
+                    bir marka işaretlemeyi deneyin.
                   </td>
                 </tr>
               )}
