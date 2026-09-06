@@ -159,6 +159,33 @@ export const MARKETPLACE_LABELS: Record<string, string> = {
  * those two spots is `/jobs`' own Phase 2 rework (doc 15 §6, 2.1), not done here — Phase 1 moves
  * vocabulary, it does not change what a screen renders.
  */
+/**
+ * `packages/core` `AuditFindingKind` — `/watched-brands/findings`' finding types. Was a local
+ * `KIND_LABEL` in `findings-client.tsx` (doc 15 §6, Phase 2.4); moved here per §2 rule 10 (no
+ * local `*_LABELS` map).
+ */
+export const FINDING_KIND_LABELS: Record<string, string> = {
+  blockedSellerPresent: 'Yasaklı satıcı satışta',
+  belowReferencePrice: 'Tavsiye fiyatın altında',
+  notOnAuthorisedList: 'Yetkili listesinde yok',
+  deepDiscountOnOneProduct: 'Tek üründe derin indirim',
+  persistentUndercut: 'Sistematik fiyat kırma',
+  belowMarketAverage: 'Piyasa altı ortalama',
+  newSeller: 'Yeni görülen satıcı',
+  unrelatedCategory: 'Alakasız kategori',
+  brandRefDisagreement: 'Marka eşleşmesi uyuşmuyor',
+};
+
+/**
+ * `AuditFindingBasis` — whether a finding rests on a record the operator wrote themselves
+ * (`stated`) or is inferred from observed prices (`measured`). Was a local `BASIS_LABEL` in
+ * `findings-client.tsx`; moved here per §2 rule 10.
+ */
+export const FINDING_BASIS_LABELS: Record<string, string> = {
+  stated: 'Kesin bilgi',
+  measured: 'Yorum',
+};
+
 export const JOB_LABELS: Record<string, string> = {
   ImportListings: 'İlan İçe Aktarma',
   ObserveBuybox: 'Buybox Gözlemi',

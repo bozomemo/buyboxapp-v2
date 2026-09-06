@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Ago, EmptyState, ErrorState, LoadingState, PageHeader, Section, TONE_BOX } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { FINDING_BASIS_LABELS, FINDING_KIND_LABELS, labelOf } from '@/lib/labels';
 import { marketplaceProductUrl } from '@/lib/product-url';
 
 /**
- * Denetim bulguları (doc 06 §12.4, Faz 6).
+ * Denetim bulguları (doc 06 §12.4, Faz 6; IA reworked doc 15 §6, Phase 2.4).
  *
  * Faz 4 markayı kimin sattığını, Faz 5 kimin satması gerektiğini söyler. Bu ekran **bakılmaya
  * değer olanı** söyler ve bunu iki farklı güvenle söyler:
@@ -17,9 +19,12 @@ import { marketplaceProductUrl } from '@/lib/product-url';
  * - **Yorum** — gözlenen fiyatlardan çıkarılır. "Piyasanın %22 altında" bir örneklem yorumudur;
  *   döneme, o an sayfada kimin bulunduğuna ve birinin seçtiği bir eşiğe göre değişir.
  *
- * Sıralama bu ayrımdan çıkar, önem tablosundan değil: kesin bilgi, sayısı ne kadar çarpıcı
- * olursa olsun yorumun üstündedir. Karar mantığının tamamı `packages/core` içinde saf ve
- * tablo-testlidir; bu dosya yalnızca gösterir.
+ * Sıralama bu ayrımdan çıkar, önem tablosundan değil (`packages/core/src/brand/audit-findings.ts`
+ * `KIND_ORDER`): kesin bilgi, sayısı ne kadar çarpıcı olursa olsun yorumun üstündedir. Karar
+ * mantığının tamamı `packages/core` içinde saf ve tablo-testlidir; bu dosya yalnızca gösterir.
+ * 2026-09-06'daki geçişten önce bu ayrım listede yalnızca küçük bir rozetle taşınıyordu — sıra
+ * doğruydu ama görsel olarak gizliydi. Liste artık zaten var olan bu sırayı iki başlıklı gruba
+ * (`FindingGroup`) çevirerek görünür kılıyor; sunucudaki sıralamayı değiştirmiyor.
  *
  * ⚠️ Hiçbir satır bir ihlal iddiası değildir. Bulgu "şuraya bak" der; ihtarı insan gönderir.
  */
@@ -35,6 +40,8 @@ type FindingKind =
   | 'unrelatedCategory'
   | 'brandRefDisagreement';
 
+type FindingBasis = 'stated' | 'measured';
+
 type Subject =
   | { kind: 'seller'; marketplaceCode: string; sellerRef: string; name: string }
   | { kind: 'product'; trackedProductId: string; label: string };
@@ -42,7 +49,7 @@ type Subject =
 interface Finding {
   id: string;
   kind: FindingKind;
-  basis: 'stated' | 'measured';
+  basis: FindingBasis;
   subject: Subject;
   thresholdKey: string | null;
   magnitude: number;
@@ -137,18 +144,6 @@ interface EvidenceLook {
   offers: EvidenceOffer[];
 }
 
-const KIND_LABEL: Record<FindingKind, string> = {
-  blockedSellerPresent: 'Yasaklı satıcı satışta',
-  belowReferencePrice: 'Tavsiye fiyatın altında',
-  notOnAuthorisedList: 'Yetkili listesinde yok',
-  deepDiscountOnOneProduct: 'Tek üründe derin indirim',
-  persistentUndercut: 'Sistematik fiyat kırma',
-  belowMarketAverage: 'Piyasa altı ortalama',
-  newSeller: 'Yeni görülen satıcı',
-  unrelatedCategory: 'Alakasız kategori',
-  brandRefDisagreement: 'Marka eşleşmesi uyuşmuyor',
-};
-
 /** Her eşik için ekranda görünen ad ve birimi. Sıra, ekrandaki panelin sırasıdır. */
 const THRESHOLD_FIELDS: { key: keyof Thresholds; label: string; unit: string; help: string }[] = [
   {
@@ -224,7 +219,7 @@ function describe(f: Finding): React.ReactNode {
       return (
         <>
           Bu satıcı bu marka için <strong>yasaklı</strong> olarak işaretli ve dönem içinde{' '}
-          {formatNumber(f.productCount ?? 0)} üründe görüldü. Son görülme {formatDateTime(f.lastSeenAt)}.
+          {formatNumber(f.productCount ?? 0)} üründe görüldü. Son görülme <Ago at={f.lastSeenAt} />.
           {f.note && <div className="mt-1 text-xs italic text-(--color-muted)">“{f.note}”</div>}
         </>
       );
@@ -235,7 +230,7 @@ function describe(f: Finding): React.ReactNode {
           <strong>{formatMoney(f.referencePrice ? BigInt(f.referencePrice) : null)}</strong> tavsiye fiyatın{' '}
           <strong>%{(f.shortfallPct ?? 0).toFixed(1)}</strong> altında —{' '}
           {formatMoney(f.lowestPrice ? BigInt(f.lowestPrice) : null)} — {formatNumber(f.looksBelow ?? 0)}{' '}
-          bakışta. Son {formatDateTime(f.lastBelowAt)}.
+          bakışta. Son <Ago at={f.lastBelowAt} />.
           <div className="mt-1 text-xs text-(--color-muted)">
             Gösterilen, dönem içindeki <em>en düşük</em> teklifidir; ortalaması değil.
           </div>
@@ -245,7 +240,7 @@ function describe(f: Finding): React.ReactNode {
       return (
         <>
           Yetkili satıcı listesi tanımlı, bu satıcı listede yok ve {formatNumber(f.productCount ?? 0)} üründe
-          görüldü. Son görülme {formatDateTime(f.lastSeenAt)}.
+          görüldü. Son görülme <Ago at={f.lastSeenAt} />.
         </>
       );
     case 'belowMarketAverage':
@@ -274,7 +269,7 @@ function describe(f: Finding): React.ReactNode {
     case 'newSeller':
       return (
         <>
-          İlk kez {formatDateTime(f.firstSeenAt)} tarihinde görüldü ({(f.daysAgo ?? 0).toFixed(1)} gün önce),{' '}
+          İlk kez <Ago at={f.firstSeenAt} /> görüldü ({(f.daysAgo ?? 0).toFixed(1)} gün önce),{' '}
           {formatNumber(f.productCount ?? 0)} üründe. İlk <em>görülme</em>dir, satışa başlama tarihi değil.
         </>
       );
@@ -296,18 +291,222 @@ function describe(f: Finding): React.ReactNode {
   }
 }
 
-const BASIS_LABEL = { stated: 'Kesin bilgi', measured: 'Yorum' } as const;
-
 /**
  * Kesin bilgi vurgulu, yorum sakin.
  *
  * Yorum bulgularının hepsi aynı nötr rozeti taşır — aralarında renkle bir önem sırası kurmak,
  * kaynağı aynı olan iki tahminden birini diğerinden emin gösterirdi.
  */
-const BASIS_CLASS = {
+const BASIS_CLASS: Record<FindingBasis, string> = {
   stated: 'bg-(--color-danger-bg) text-(--color-danger)',
   measured: 'bg-(--color-chip-bg) text-(--color-chip-text)',
-} as const;
+};
+
+/** Bir bulgu satırı — kartın kendisi, dayanağı ne olursa olsun aynı biçimde. */
+function FindingRow({
+  finding,
+  sinceMs,
+  brandId,
+  isOpen,
+  onToggleEvidence,
+  evidence,
+  evidenceLoading,
+}: {
+  finding: Finding;
+  sinceMs: number;
+  brandId: string;
+  isOpen: boolean;
+  onToggleEvidence: (f: Finding) => void;
+  evidence: EvidenceLook[] | null;
+  evidenceLoading: boolean;
+}) {
+  const f = finding;
+  return (
+    <div className="rounded border border-(--color-border)">
+      <div className="flex flex-wrap items-start gap-3 p-3">
+        <span className={`rounded px-2 py-0.5 text-xs ${BASIS_CLASS[f.basis]}`}>
+          {labelOf(FINDING_BASIS_LABELS, f.basis)}
+        </span>
+        <div className="min-w-64 flex-1">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="font-medium">{labelOf(FINDING_KIND_LABELS, f.kind)}</span>
+            {f.subject.kind === 'seller' ? (
+              <Link
+                className="text-(--color-accent) hover:underline"
+                /* Carries the finding's own scope — the window and the brand it was raised
+                   under. The seller page shows both archives; without the scope the operator
+                   arrived at that firm's whole footprint and had to rebuild the filter that
+                   produced the alert they had just clicked. */
+                href={`/competitors/sellers/${f.subject.marketplaceCode}/${encodeURIComponent(f.subject.sellerRef)}?sinceMs=${sinceMs}${brandId ? `&watchedBrandId=${encodeURIComponent(brandId)}` : ''}`}
+              >
+                {f.subject.name || f.subject.sellerRef}
+              </Link>
+            ) : (
+              <Link
+                className="text-(--color-accent) hover:underline"
+                href={`/tracked-products/${f.subject.trackedProductId}`}
+              >
+                {f.subject.label}
+              </Link>
+            )}
+            {/*
+              "Ne zamandır burada?" — bir denetçinin listeyi tararken sorduğu ikinci soru.
+              Türetilmiş bulgu bunu bilemez; saklanan durum bilir. Değerlendirme henüz bu
+              bulguyu görmediyse tarih yok, bugünün tarihi gösterilmez.
+            */}
+            {f.openedAt != null && (
+              <span className="rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)">
+                <Ago at={f.openedAt} />
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-sm text-(--color-muted)">{describe(f)}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onToggleEvidence(f)}
+          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+        >
+          {isOpen ? 'Kanıtı kapat' : 'Kanıt'}
+        </button>
+      </div>
+
+      {isOpen && (
+        <div className="border-t border-(--color-border) bg-(--color-hover) p-3">
+          {evidenceLoading && (
+            <p aria-live="polite" className="text-sm text-(--color-muted)">
+              Kanıt yükleniyor…
+            </p>
+          )}
+          {!evidenceLoading && evidence?.length === 0 && (
+            <div className="text-sm text-(--color-muted)">Bu dönemde kayıtlı ham gözlem bulunamadı.</div>
+          )}
+          {!evidenceLoading &&
+            evidence?.map((look) => (
+              <div key={`${look.trackedProductId}-${look.observedAt}`} className="mb-3">
+                <div className="mb-1 text-xs text-(--color-muted)">
+                  <Ago at={look.observedAt} /> · {look.productLabel}
+                </div>
+                {/* Bulgunun kendi satırı değil, **bakışın tamamı**: “piyasanın altında” diğer
+                    satırlar hakkında bir cümledir, yanında karşılaştıracak bir şey olmayan tek
+                    bir fiyat ne doğrular ne yalanlar. */}
+                <table className="w-full text-xs">
+                  <thead className="text-left text-(--color-muted)">
+                    <tr>
+                      <th className="py-1 pr-2">Sıra</th>
+                      <th className="py-1 pr-2">Satıcı</th>
+                      <th className="py-1 pr-2">Fiyat</th>
+                      <th className="py-1 pr-2">Kupon sonrası</th>
+                      <th className="py-1 pr-2">Stok</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {look.offers.map((offer, index) => {
+                      const isSubject =
+                        f.subject.kind === 'seller'
+                          ? offer.sellerRef === f.subject.sellerRef
+                          : offer.sellerRef !== null && offer.sellerRef === f.sellerRef;
+                      return (
+                        <tr
+                          key={`${offer.sellerRef ?? 'anon'}-${index}`}
+                          className={`border-t border-(--color-border) ${isSubject ? 'font-medium' : ''}`}
+                        >
+                          <td className="py-1 pr-2">{offer.rank ?? '—'}</td>
+                          <td className="py-1 pr-2">
+                            {offer.sellerName ?? (
+                              <span className="text-(--color-muted)">kimliksiz teklif</span>
+                            )}
+                          </td>
+                          <td className="py-1 pr-2 tabular-nums">
+                            {formatMoney(offer.price === null ? null : BigInt(offer.price))}
+                          </td>
+                          <td className="py-1 pr-2 tabular-nums">
+                            {formatMoney(offer.finalPrice === null ? null : BigInt(offer.finalPrice))}
+                          </td>
+                          <td className="py-1 pr-2 tabular-nums">{offer.offeredStock ?? '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {(() => {
+                  const pageUrl = marketplaceProductUrl(look.marketplaceCode, look.productUrl);
+                  return pageUrl ? (
+                    <a
+                      className="text-xs text-(--color-accent) hover:underline"
+                      href={pageUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    >
+                      Pazaryerindeki sayfa ↗
+                    </a>
+                  ) : null;
+                })()}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bir dayanak grubu ("Kesin Bilgi" ya da "Yorum") başlığıyla birlikte.
+ *
+ * Sunucudaki sıralama (`KIND_ORDER`) zaten kesin bilgiyi yoruma önde tutuyordu; bu bileşen o sırayı
+ * değiştirmez, yalnızca görünür kılar — operatör artık her rozeti tek tek okumadan hangi grupta
+ * olduğunu başlıktan bilir.
+ */
+function FindingGroup({
+  id,
+  title,
+  hint,
+  findings,
+  sinceMs,
+  brandId,
+  openId,
+  onToggleEvidence,
+  evidence,
+  evidenceLoading,
+}: {
+  id: string;
+  title: string;
+  hint: string;
+  findings: Finding[];
+  sinceMs: number;
+  brandId: string;
+  openId: string | null;
+  onToggleEvidence: (f: Finding) => void;
+  evidence: EvidenceLook[] | null;
+  evidenceLoading: boolean;
+}) {
+  if (findings.length === 0) return null;
+  const headingId = id;
+  return (
+    <section aria-labelledby={headingId} className="space-y-2">
+      <div>
+        <h3 id={headingId} className="text-sm font-semibold">
+          {title} <span className="font-normal text-(--color-muted)">· {formatNumber(findings.length)}</span>
+        </h3>
+        <p className="text-xs text-(--color-muted)">{hint}</p>
+      </div>
+      <div className="space-y-2">
+        {findings.map((f) => (
+          <FindingRow
+            key={f.id}
+            finding={f}
+            sinceMs={sinceMs}
+            brandId={brandId}
+            isOpen={openId === f.id}
+            onToggleEvidence={onToggleEvidence}
+            evidence={openId === f.id ? evidence : null}
+            evidenceLoading={openId === f.id && evidenceLoading}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export function FindingsClient() {
   const [sinceMs, setSinceMs] = useState(daysAgo(30));
@@ -399,6 +598,8 @@ export function FindingsClient() {
 
   const findings = report?.findings ?? [];
   const visible = useMemo(() => findings.filter((f) => !hidden.has(f.kind)), [findings, hidden]);
+  const visibleStated = useMemo(() => visible.filter((f) => f.basis === 'stated'), [visible]);
+  const visibleMeasured = useMemo(() => visible.filter((f) => f.basis === 'measured'), [visible]);
 
   const counts = useMemo(() => {
     const map = new Map<FindingKind, number>();
@@ -408,411 +609,367 @@ export function FindingsClient() {
 
   const statedCount = findings.filter((f) => f.basis === 'stated').length;
 
-  return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Denetim Bulguları</h1>
-          <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-            Marka arşivinden çıkan, bakılmaya değer noktalar. Hiçbiri bir ihlal iddiası değildir — her bulgu
-            dayandığı ham gözleme kadar açılır ve kararı okuyan verir.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="mb-1 block text-(--color-muted)">Marka</span>
-            <select
-              className="rounded border border-(--color-border) px-2 py-1"
-              value={brandId}
-              onChange={(e) => setBrandId(e.target.value)}
-            >
-              <option value="">Marka seçin…</option>
-              {(report?.groups ?? []).map((g) => (
-                <optgroup key={g.id} label={g.name}>
-                  {(report?.brands ?? [])
-                    .filter((b) => b.groupId === g.id)
-                    .map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.label}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-(--color-muted)">Dönem</span>
-            <select
-              className="rounded border border-(--color-border) px-2 py-1"
-              value={String(sinceMs)}
-              onChange={(e) => setSinceMs(Number(e.target.value))}
-            >
-              <option value={String(daysAgo(7))}>Son 7 gün</option>
-              <option value={String(daysAgo(30))}>Son 30 gün</option>
-              <option value={String(daysAgo(90))}>Son 90 gün</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => setShowThresholds((v) => !v)}
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-          >
-            Eşikler
-          </button>
-        </div>
+  // First load never resolved — nothing but the shell of the screen can be shown honestly.
+  if (error && !report) {
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title="Denetim Bulguları"
+          description="Marka arşivinden çıkan, bakılmaya değer noktalar."
+        />
+        <ErrorState message={error} onRetry={load} />
       </div>
+    );
+  }
+  if (!report) {
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title="Denetim Bulguları"
+          description="Marka arşivinden çıkan, bakılmaya değer noktalar."
+        />
+        <LoadingState message="Bulgular yükleniyor…" skeletonRows={3} />
+      </div>
+    );
+  }
 
+  const hasCoverageNotes =
+    report.notificationsConfigured === false ||
+    !report.context?.hasAuthorisedList ||
+    Boolean(report.context?.referencePrice) ||
+    Boolean(report.context?.referencePrice?.truncated) ||
+    Boolean(report.context?.truncatedDeviations);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Denetim Bulguları"
+        description="Hiçbiri bir ihlal iddiası değildir — her bulgu dayandığı ham gözleme kadar açılır ve kararı okuyan verir."
+        action={
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              <span className="mb-1 block text-(--color-muted)">Marka</span>
+              <select
+                className="rounded border border-(--color-border) px-2 py-1"
+                value={brandId}
+                onChange={(e) => setBrandId(e.target.value)}
+              >
+                <option value="">Marka seçin…</option>
+                {report.groups.map((g) => (
+                  <optgroup key={g.id} label={g.name}>
+                    {report.brands
+                      .filter((b) => b.groupId === g.id)
+                      .map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.label}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-(--color-muted)">Dönem</span>
+              <select
+                className="rounded border border-(--color-border) px-2 py-1"
+                value={String(sinceMs)}
+                onChange={(e) => setSinceMs(Number(e.target.value))}
+              >
+                <option value={String(daysAgo(7))}>Son 7 gün</option>
+                <option value={String(daysAgo(30))}>Son 30 gün</option>
+                <option value={String(daysAgo(90))}>Son 90 gün</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowThresholds((v) => !v)}
+              aria-expanded={showThresholds}
+              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+            >
+              Eşikler
+            </button>
+          </div>
+        }
+      />
+
+      {/* A refresh triggered by changing the brand or period failed while the previous read is
+          still on screen — the numbers below are real but for the old selection, and saying so
+          costs a line (doc 15 §3.2 "Stale"). */}
       {error && (
-        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
-          {error}
-        </div>
+        <p role="alert" className={`rounded border p-3 text-sm ${TONE_BOX.warn}`}>
+          Yenileme başarısız oldu: {error}
+        </p>
       )}
-      {loading && <div className="text-sm text-(--color-muted)">Yükleniyor…</div>}
+      {loading && (
+        <p aria-live="polite" className="text-sm text-(--color-muted)">
+          Yenileniyor…
+        </p>
+      )}
 
       {showThresholds && draft && (
-        <div className="space-y-3 rounded border border-(--color-border) p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-medium">Eşikler</h2>
+        <Section
+          id="thresholds-heading"
+          title="Eşikler"
+          action={
             <span className="text-xs text-(--color-muted)">
-              {report?.thresholdsAreDefault
+              {report.thresholdsAreDefault
                 ? 'Varsayılan değerler kullanılıyor'
                 : 'Bu kurulum için değiştirilmiş'}
             </span>
-          </div>
-          {/* Her bulgu bir eşikten çıkar ve hiçbiri koda gömülü değil: burada değiştirilen sayı
-              tüm geçmişi yeniden yanıtlar, yalnızca bundan sonrasını değil. */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {THRESHOLD_FIELDS.map((field) => (
-              <label key={field.key} className="text-sm">
-                <span className="mb-1 block">{field.label}</span>
-                <span className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    className="w-24 rounded border border-(--color-border) px-2 py-1"
-                    value={draft[field.key]}
-                    onChange={(e) => setDraft({ ...draft, [field.key]: Number(e.target.value) })}
-                  />
-                  <span className="text-xs text-(--color-muted)">{field.unit}</span>
-                </span>
-                <span className="mt-1 block text-xs text-(--color-muted)">{field.help}</span>
-              </label>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={saving}
-              onClick={saveThresholds}
-              className="rounded bg-(--color-accent) px-3 py-1 text-sm text-(--color-accent-ink) disabled:opacity-50"
-            >
-              Kaydet ve yeniden hesapla
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={resetThresholds}
-              className="rounded border border-(--color-border) px-3 py-1 text-sm hover:bg-(--color-hover)"
-            >
-              Varsayılanlara dön
-            </button>
-          </div>
-          <p className="text-xs text-(--color-muted)">
-            Eşik değişiklikleri kim değiştirdiyse onunla birlikte kaydedilir (<code>settings_audit</code>).
-            Bir satıcının denetim listesine girip girmeyeceğini belirleyen sayı, izsiz değişmemeli.
-          </p>
-        </div>
-      )}
-
-      {report?.needsBrand && !loading && (
-        <div className="rounded border border-(--color-border) p-4 text-sm">
-          Bulgular için bir <strong>marka</strong> seçin. Politika markaya özeldir — aynı firma çoğu zaman bir
-          markanın yetkili distribütörü, diğerininse hiç tanımlanmamış satıcısıdır; grup genelinde tek bir
-          yanıt vermek ikisinden biri hakkında yanlış olurdu.
-        </div>
-      )}
-
-      {report && report.brand && (
-        <>
-          <div className="flex flex-wrap items-center gap-4 text-sm">
-            <span>
-              <strong>{formatNumber(findings.length)}</strong> bulgu
-            </span>
-            <span className="text-(--color-muted)">
-              {formatNumber(statedCount)} kesin bilgi · {formatNumber(findings.length - statedCount)} yorum
-            </span>
-            <span className="text-(--color-muted)">
-              {formatNumber(report.context?.sellerCount ?? 0)} satıcı,{' '}
-              {formatNumber(report.context?.productCount ?? 0)} ürün üzerinden
-            </span>
-          </div>
-
-          {/*
-            İtme kanalı yoksa bunu söylemek gerekir: kimseye haber verilmeyen bir denetim
-            listesi, kimsenin haber almasına gerek olmayan bir listeye benziyor.
-          */}
-          {report.notificationsConfigured === false && (
-            <div className="rounded border border-(--color-border) p-3 text-sm text-(--color-muted)">
-              Yeni bulgular için <strong>bildirim yapılandırılmamış</strong> — bulgular hesaplanıyor ve
-              saklanıyor, ama kimseye iletilmiyor. Bir webhook adresi
-              <code className="mx-1">FINDINGS_WEBHOOK_URL</code>
-              ortam değişkeninden okunur (adres bir anahtar sayıldığı için veritabanında tutulmaz).
+          }
+        >
+          <div className="space-y-3 rounded border border-(--color-border) p-4">
+            {/* Her bulgu bir eşikten çıkar ve hiçbiri koda gömülü değil: burada değiştirilen
+                sayı tüm geçmişi yeniden yanıtlar, yalnızca bundan sonrasını değil. */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {THRESHOLD_FIELDS.map((field) => (
+                <label key={field.key} className="text-sm">
+                  <span className="mb-1 block">{field.label}</span>
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      className="w-24 rounded border border-(--color-border) px-2 py-1"
+                      value={draft[field.key]}
+                      onChange={(e) => setDraft({ ...draft, [field.key]: Number(e.target.value) })}
+                    />
+                    <span className="text-xs text-(--color-muted)">{field.unit}</span>
+                  </span>
+                  <span className="mt-1 block text-xs text-(--color-muted)">{field.help}</span>
+                </label>
+              ))}
             </div>
-          )}
-
-          {!report.context?.hasAuthorisedList && (
-            <div className="rounded border border-(--color-border) p-3 text-sm text-(--color-muted)">
-              Bu marka için <strong>yetkili satıcı listesi tanımlı değil</strong>, bu yüzden “yetkili
-              listesinde yok” sinyali hiç üretilmiyor. Liste girilmemiş olması diğer herkesin yetkisiz olduğu
-              anlamına gelmez — hiçbir şey söylenmemiş demektir.{' '}
-              <Link className="underline" href="/watched-brands/policy">
-                Satıcı Politikası
-              </Link>{' '}
-              ekranından girebilirsiniz.
-            </div>
-          )}
-
-          {/*
-            Kapsam, bulgunun kendisi kadar önemli: "tavsiye fiyatın altında kimse yok" cümlesi,
-            887 üründen yalnızca 12'sinin liste fiyatı varsa hiçbir şey söylemiyordur. Bu yüzden
-            bulgu çıksa da çıkmasa da gösterilir — en çok liste boşken anlamlıdır.
-          */}
-          {report.context?.referencePrice && (
-            <div className="rounded border border-(--color-border) p-3 text-sm text-(--color-muted)">
-              {report.context.referencePrice.productsWithPrice === 0 ? (
-                <>
-                  Bu marka için <strong>tavsiye edilen satış fiyatı girilmemiş</strong>, bu yüzden “tavsiye
-                  fiyatın altında” sinyali hiç üretilmiyor. Fiyat listenizi{' '}
-                  <Link className="underline" href="/tracked-products">
-                    Takip Edilen Ürünler
-                  </Link>{' '}
-                  ekranından Excel olarak yükleyebilirsiniz.
-                </>
-              ) : (
-                <>
-                  Tavsiye fiyat kapsamı:{' '}
-                  <strong>
-                    {formatNumber(report.context.referencePrice.productsWithPrice)} /{' '}
-                    {formatNumber(report.context.referencePrice.productsTotal)}
-                  </strong>{' '}
-                  ürün. Fiyat listesi olmayan ürünler bu sinyalin dışındadır — “altında değil” değil,
-                  “bilinmiyor”.
-                </>
-              )}
-            </div>
-          )}
-
-          {report.context?.referencePrice?.truncated && (
-            <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
-              Tavsiye fiyatın altındaki eşleşmeler sınıra dayandı ve liste kesildi. Gösterilenler en derin
-              sapanlar; toleransı yükseltmek listeyi daraltır.
-            </div>
-          )}
-
-          {report.context?.truncatedDeviations && (
-            <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
-              Derin indirim eşiği çok geniş: sınırın üstünde eşleşme var ve liste kesildi. Eşiği yükseltmek
-              listeyi daraltır.
-            </div>
-          )}
-
-          {findings.length === 0 && !loading && (
-            <div className="rounded border border-(--color-border) p-4 text-sm text-(--color-muted)">
-              Bu dönemde ve bu eşiklerle bulgu yok. Eşikler bir keşif aracıdır — hiçbir şey çıkmıyorsa{' '}
-              <em>Eşikler</em> panelinden daraltmayı deneyin.
-            </div>
-          )}
-
-          {findings.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              {([...counts.keys()] as FindingKind[])
-                .sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))
-                .map((kind) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    onClick={() =>
-                      setHidden((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(kind)) next.delete(kind);
-                        else next.add(kind);
-                        return next;
-                      })
-                    }
-                    className={`rounded-full border px-3 py-1 text-xs ${
-                      hidden.has(kind)
-                        ? 'border-(--color-border) text-(--color-muted) line-through'
-                        : 'border-(--color-accent) text-(--color-accent)'
-                    }`}
-                  >
-                    {KIND_LABEL[kind]} · {formatNumber(counts.get(kind) ?? 0)}
-                  </button>
-                ))}
+            <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  downloadCsv(
-                    `denetim-bulgulari-${report.brand!.label}.csv`,
-                    visible.map((f) => ({
-                      Bulgu: KIND_LABEL[f.kind],
-                      Dayanak: BASIS_LABEL[f.basis],
-                      Konu:
-                        f.subject.kind === 'seller' ? f.subject.name || f.subject.sellerRef : f.subject.label,
-                      'Konu Türü': f.subject.kind === 'seller' ? 'Satıcı' : 'Ürün',
-                      'Satıcı Kodu': f.subject.kind === 'seller' ? f.subject.sellerRef : '',
-                      Ürün: f.productLabel ?? '',
-                      'Sapma %': f.deviationPct?.toFixed(2) ?? '',
-                      'Diğer Ürünler %': f.otherDeviationPct?.toFixed(2) ?? '',
-                      'En Ucuz %': f.sharePct?.toFixed(1) ?? '',
-                      'Ürün Sayısı': f.productCount ?? '',
-                      Kategori: f.categoryName ?? '',
-                      Not: f.note ?? '',
-                      'İlk Görülme': f.firstSeenAt ? formatDateTime(f.firstSeenAt) : '',
-                      'Son Görülme': f.lastSeenAt ? formatDateTime(f.lastSeenAt) : '',
-                      Eşik: f.thresholdKey ?? '',
-                    })),
-                  )
-                }
-                className="ml-auto rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+                disabled={saving}
+                onClick={saveThresholds}
+                className="rounded bg-(--color-accent) px-3 py-1 text-sm text-(--color-accent-ink) disabled:opacity-50"
               >
-                Excel&apos;e Aktar
+                {saving ? 'Kaydediliyor…' : 'Kaydet ve yeniden hesapla'}
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={resetThresholds}
+                className="rounded border border-(--color-border) px-3 py-1 text-sm hover:bg-(--color-hover) disabled:opacity-50"
+              >
+                Varsayılanlara dön
               </button>
             </div>
-          )}
+            <p className="text-xs text-(--color-muted)">
+              Eşik değişiklikleri kim değiştirdiyse onunla birlikte kaydedilir (<code>settings_audit</code>).
+              Bir satıcının denetim listesine girip girmeyeceğini belirleyen sayı, izsiz değişmemeli.
+            </p>
+          </div>
+        </Section>
+      )}
 
-          <div className="space-y-2">
-            {visible.map((f) => (
-              <div key={f.id} className="rounded border border-(--color-border)">
-                <div className="flex flex-wrap items-start gap-3 p-3">
-                  <span className={`rounded px-2 py-0.5 text-xs ${BASIS_CLASS[f.basis]}`}>
-                    {BASIS_LABEL[f.basis]}
-                  </span>
-                  <div className="min-w-64 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <span className="font-medium">{KIND_LABEL[f.kind]}</span>
-                      {f.subject.kind === 'seller' ? (
-                        <Link
-                          className="text-(--color-accent) hover:underline"
-                          /* Carries the finding's own scope — the window and the brand it was
-                             raised under. The seller page shows both archives; without the scope
-                             the operator arrived at that firm's whole footprint and had to
-                             rebuild the filter that produced the alert they had just clicked. */
-                          href={`/competitors/sellers/${f.subject.marketplaceCode}/${encodeURIComponent(f.subject.sellerRef)}?sinceMs=${sinceMs}${brandId ? `&watchedBrandId=${encodeURIComponent(brandId)}` : ''}`}
-                        >
-                          {f.subject.name || f.subject.sellerRef}
-                        </Link>
+      {report.needsBrand && !loading && (
+        <EmptyState
+          message="Bulgular için bir marka seçin."
+          reason="Politika markaya özeldir — aynı firma çoğu zaman bir markanın yetkili distribütörü, diğerininse hiç tanımlanmamış satıcısıdır; grup genelinde tek bir yanıt vermek ikisinden biri hakkında yanlış olurdu."
+        />
+      )}
+
+      {report.brand && (
+        <>
+          <Section id="summary-heading" title="Özet">
+            <div aria-live="polite" className="flex flex-wrap items-center gap-4 text-sm">
+              <span>
+                <strong>{formatNumber(findings.length)}</strong> bulgu
+              </span>
+              <span className="text-(--color-muted)">
+                {formatNumber(statedCount)} kesin bilgi · {formatNumber(findings.length - statedCount)} yorum
+              </span>
+              <span className="text-(--color-muted)">
+                {formatNumber(report.context?.sellerCount ?? 0)} satıcı,{' '}
+                {formatNumber(report.context?.productCount ?? 0)} ürün üzerinden
+              </span>
+            </div>
+
+            {/* Kapsam ve bildirim notları tek bir açılır grup altında: dördü de ayrı ayrı kutu
+                olarak dizildiğinde birincil bilgiyi (bulgu listesini) sayfanın dışına itiyordu.
+                Varsayılan olarak açık — bunlar "olmasa da olur" değil, bulgu yokluğunun ne anlama
+                geldiğini belirleyen notlar (§4 adım 3, "Current UX Problems" #5). */}
+            {hasCoverageNotes && (
+              <details open className="mt-3 rounded border border-(--color-border) bg-(--color-surface)">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-semibold">
+                  Kapsam ve bildirim notları
+                </summary>
+                <div className="space-y-2 border-t border-(--color-border) p-3 text-sm text-(--color-muted)">
+                  {report.notificationsConfigured === false && (
+                    <p>
+                      Yeni bulgular için <strong>bildirim yapılandırılmamış</strong> — bulgular hesaplanıyor
+                      ve saklanıyor, ama kimseye iletilmiyor. Bir webhook adresi
+                      <code className="mx-1">FINDINGS_WEBHOOK_URL</code>
+                      ortam değişkeninden okunur (adres bir anahtar sayıldığı için veritabanında tutulmaz).
+                    </p>
+                  )}
+                  {!report.context?.hasAuthorisedList && (
+                    <p>
+                      Bu marka için <strong>yetkili satıcı listesi tanımlı değil</strong>, bu yüzden “yetkili
+                      listesinde yok” sinyali hiç üretilmiyor. Liste girilmemiş olması diğer herkesin yetkisiz
+                      olduğu anlamına gelmez — hiçbir şey söylenmemiş demektir.{' '}
+                      <Link className="underline" href="/watched-brands/policy">
+                        Satıcı Politikası
+                      </Link>{' '}
+                      ekranından girebilirsiniz.
+                    </p>
+                  )}
+                  {report.context?.referencePrice && (
+                    <p>
+                      {report.context.referencePrice.productsWithPrice === 0 ? (
+                        <>
+                          Bu marka için <strong>tavsiye edilen satış fiyatı girilmemiş</strong>, bu yüzden
+                          “tavsiye fiyatın altında” sinyali hiç üretilmiyor. Fiyat listenizi{' '}
+                          <Link className="underline" href="/tracked-products">
+                            Takip Edilen Ürünler
+                          </Link>{' '}
+                          ekranından Excel olarak yükleyebilirsiniz.
+                        </>
                       ) : (
-                        <Link
-                          className="text-(--color-accent) hover:underline"
-                          href={`/tracked-products/${f.subject.trackedProductId}`}
-                        >
-                          {f.subject.label}
-                        </Link>
+                        <>
+                          Tavsiye fiyat kapsamı:{' '}
+                          <strong>
+                            {formatNumber(report.context.referencePrice.productsWithPrice)} /{' '}
+                            {formatNumber(report.context.referencePrice.productsTotal)}
+                          </strong>{' '}
+                          ürün. Fiyat listesi olmayan ürünler bu sinyalin dışındadır — “altında değil” değil,
+                          “bilinmiyor”.
+                        </>
                       )}
-                      {/*
-                        "Ne zamandır burada?" — bir denetçinin listeyi tararken sorduğu ikinci
-                        soru. Türetilmiş bulgu bunu bilemez; saklanan durum bilir. Değerlendirme
-                        henüz bu bulguyu görmediyse tarih yok, bugünün tarihi değil.
-                      */}
-                      {f.openedAt != null && (
-                        <span
-                          className="rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)"
-                          title={`Bu bulgu ilk kez ${formatDateTime(f.openedAt)} tarihinde açıldı`}
-                        >
-                          {f.openedAt >= daysAgo(1) ? 'yeni' : formatDateTime(f.openedAt)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 text-sm text-(--color-muted)">{describe(f)}</div>
-                  </div>
+                    </p>
+                  )}
+                  {report.context?.referencePrice?.truncated && (
+                    <p className={`rounded border p-2 ${TONE_BOX.warn}`}>
+                      Tavsiye fiyatın altındaki eşleşmeler sınıra dayandı ve liste kesildi. Gösterilenler en
+                      derin sapanlar; toleransı yükseltmek listeyi daraltır.
+                    </p>
+                  )}
+                  {report.context?.truncatedDeviations && (
+                    <p className={`rounded border p-2 ${TONE_BOX.warn}`}>
+                      Derin indirim eşiği çok geniş: sınırın üstünde eşleşme var ve liste kesildi. Eşiği
+                      yükseltmek listeyi daraltır.
+                    </p>
+                  )}
+                </div>
+              </details>
+            )}
+          </Section>
+
+          <Section id="findings-heading" title={`Bulgular · ${formatNumber(visible.length)}`}>
+            {findings.length === 0 ? (
+              <EmptyState
+                message="Bu dönemde ve bu eşiklerle bulgu yok."
+                reason="Eşikler bir keşif aracıdır — hiçbir şey çıkmıyorsa daraltmayı deneyin."
+                action={
                   <button
                     type="button"
-                    onClick={() => openEvidence(f)}
-                    className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+                    onClick={() => setShowThresholds(true)}
+                    className="rounded border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm font-semibold hover:bg-(--color-hover)"
                   >
-                    {openId === f.id ? 'Kanıtı kapat' : 'Kanıt'}
+                    Eşikleri aç
+                  </button>
+                }
+              />
+            ) : (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  {([...counts.keys()] as FindingKind[])
+                    .sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))
+                    .map((kind) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        aria-pressed={!hidden.has(kind)}
+                        onClick={() =>
+                          setHidden((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(kind)) next.delete(kind);
+                            else next.add(kind);
+                            return next;
+                          })
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs ${
+                          hidden.has(kind)
+                            ? 'border-(--color-border) text-(--color-muted) line-through'
+                            : 'border-(--color-accent) text-(--color-accent)'
+                        }`}
+                      >
+                        {labelOf(FINDING_KIND_LABELS, kind)} · {formatNumber(counts.get(kind) ?? 0)}
+                      </button>
+                    ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadCsv(
+                        `denetim-bulgulari-${report.brand!.label}.csv`,
+                        visible.map((f) => ({
+                          Bulgu: labelOf(FINDING_KIND_LABELS, f.kind),
+                          Dayanak: labelOf(FINDING_BASIS_LABELS, f.basis),
+                          Konu:
+                            f.subject.kind === 'seller'
+                              ? f.subject.name || f.subject.sellerRef
+                              : f.subject.label,
+                          'Konu Türü': f.subject.kind === 'seller' ? 'Satıcı' : 'Ürün',
+                          'Satıcı Kodu': f.subject.kind === 'seller' ? f.subject.sellerRef : '',
+                          Ürün: f.productLabel ?? '',
+                          'Sapma %': f.deviationPct?.toFixed(2) ?? '',
+                          'Diğer Ürünler %': f.otherDeviationPct?.toFixed(2) ?? '',
+                          'En Ucuz %': f.sharePct?.toFixed(1) ?? '',
+                          'Ürün Sayısı': f.productCount ?? '',
+                          Kategori: f.categoryName ?? '',
+                          Not: f.note ?? '',
+                          'İlk Görülme': f.firstSeenAt ? formatDateTime(f.firstSeenAt) : '',
+                          'Son Görülme': f.lastSeenAt ? formatDateTime(f.lastSeenAt) : '',
+                          Eşik: f.thresholdKey ?? '',
+                        })),
+                      )
+                    }
+                    className="ml-auto rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+                  >
+                    Excel&apos;e Aktar
                   </button>
                 </div>
 
-                {openId === f.id && (
-                  <div className="border-t border-(--color-border) bg-(--color-hover) p-3">
-                    {evidenceLoading && <div className="text-sm text-(--color-muted)">Yükleniyor…</div>}
-                    {!evidenceLoading && evidence?.length === 0 && (
-                      <div className="text-sm text-(--color-muted)">
-                        Bu dönemde kayıtlı ham gözlem bulunamadı.
-                      </div>
-                    )}
-                    {!evidenceLoading &&
-                      evidence?.map((look) => (
-                        <div key={`${look.trackedProductId}-${look.observedAt}`} className="mb-3">
-                          <div className="mb-1 text-xs text-(--color-muted)">
-                            {formatDateTime(look.observedAt)} · {look.productLabel}
-                          </div>
-                          {/* Bulgunun kendi satırı değil, **bakışın tamamı**: “piyasanın altında”
-                              diğer satırlar hakkında bir cümledir, yanında karşılaştıracak bir şey
-                              olmayan tek bir fiyat ne doğrular ne yalanlar. */}
-                          <table className="w-full text-xs">
-                            <thead className="text-left text-(--color-muted)">
-                              <tr>
-                                <th className="py-1 pr-2">Sıra</th>
-                                <th className="py-1 pr-2">Satıcı</th>
-                                <th className="py-1 pr-2">Fiyat</th>
-                                <th className="py-1 pr-2">Kupon sonrası</th>
-                                <th className="py-1 pr-2">Stok</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {look.offers.map((offer, index) => {
-                                const isSubject =
-                                  f.subject.kind === 'seller'
-                                    ? offer.sellerRef === f.subject.sellerRef
-                                    : offer.sellerRef !== null && offer.sellerRef === f.sellerRef;
-                                return (
-                                  <tr
-                                    key={`${offer.sellerRef ?? 'anon'}-${index}`}
-                                    className={`border-t border-(--color-border) ${isSubject ? 'font-medium' : ''}`}
-                                  >
-                                    <td className="py-1 pr-2">{offer.rank ?? '—'}</td>
-                                    <td className="py-1 pr-2">
-                                      {offer.sellerName ?? (
-                                        <span className="text-(--color-muted)">kimliksiz teklif</span>
-                                      )}
-                                    </td>
-                                    <td className="py-1 pr-2 tabular-nums">
-                                      {formatMoney(offer.price === null ? null : BigInt(offer.price))}
-                                    </td>
-                                    <td className="py-1 pr-2 tabular-nums">
-                                      {formatMoney(
-                                        offer.finalPrice === null ? null : BigInt(offer.finalPrice),
-                                      )}
-                                    </td>
-                                    <td className="py-1 pr-2 tabular-nums">{offer.offeredStock ?? '—'}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                          {(() => {
-                            const pageUrl = marketplaceProductUrl(look.marketplaceCode, look.productUrl);
-                            return pageUrl ? (
-                              <a
-                                className="text-xs text-(--color-accent) hover:underline"
-                                href={pageUrl}
-                                target="_blank"
-                                rel="noreferrer noopener"
-                              >
-                                Pazaryerindeki sayfa ↗
-                              </a>
-                            ) : null;
-                          })()}
-                        </div>
-                      ))}
-                  </div>
+                {visible.length === 0 ? (
+                  <EmptyState
+                    message="Seçili türler gizlendi."
+                    reason="Yukarıdaki türlerden birine tekrar tıklayarak geri getirebilirsiniz."
+                  />
+                ) : (
+                  <>
+                    <FindingGroup
+                      id="findings-group-stated"
+                      title={labelOf(FINDING_BASIS_LABELS, 'stated')}
+                      hint="Operatörün kendi yazdığı bir kayda dayanır — bir yorum değildir."
+                      findings={visibleStated}
+                      sinceMs={sinceMs}
+                      brandId={brandId}
+                      openId={openId}
+                      onToggleEvidence={openEvidence}
+                      evidence={evidence}
+                      evidenceLoading={evidenceLoading}
+                    />
+                    <FindingGroup
+                      id="findings-group-measured"
+                      title={labelOf(FINDING_BASIS_LABELS, 'measured')}
+                      hint="Gözlenen fiyatlardan çıkarılır; döneme ve seçilen eşiğe göre değişir."
+                      findings={visibleMeasured}
+                      sinceMs={sinceMs}
+                      brandId={brandId}
+                      openId={openId}
+                      onToggleEvidence={openEvidence}
+                      evidence={evidence}
+                      evidenceLoading={evidenceLoading}
+                    />
+                  </>
                 )}
               </div>
-            ))}
-          </div>
+            )}
+          </Section>
 
           <p className="text-xs text-(--color-muted)">
             Sayılar <strong>tekliflerden</strong> gelir: bir satıcının ürünü kaç kez <em>listelediğini</em>{' '}

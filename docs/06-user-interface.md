@@ -1085,6 +1085,19 @@ different answers — except where there is nothing to ask, an install watching 
 one quiet chip: colouring one estimate more alarming than another of the same kind would imply a
 certainty neither has.
 
+**IA pass (doc 15 §6, Phase 2.4, 2026-09-06).** The stated/measured split above was already the
+sort key the server returned (`packages/core` `KIND_ORDER`), but the screen carried it only as a
+small badge on an otherwise flat list — an auditor had to read every row's badge to tell which
+tier they were in. The list is now two headed groups, **Kesin Bilgi** then **Yorum**, each with a
+one-line reminder of what the tier means; the server's order inside each group is unchanged. The
+four context/caveat notices (notification wiring, missing authorised list, reference-price
+coverage, truncated lists) moved from four stacked boxes above the list into one
+`<details open>` "Kapsam ve bildirim notları" — they still say the same things and are still open
+by default, but no longer push the findings themselves below the fold. The screen now also has the
+retry affordance, relative timestamps (`Ago`) and `aria-labelledby` sections common to the other
+Phase 2 screens; the evidence panel's own loading line was renamed "Kanıt yükleniyor…" so it no
+longer collides with the page-level loading message of the same wording.
+
 #### Pazaryeri Eşleşmesi — the same product on two marketplaces (Faz 8)
 
 `/watched-brands/cross-marketplace`. Each row is one product carried on both marketplaces, joined
