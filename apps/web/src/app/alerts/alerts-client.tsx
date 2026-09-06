@@ -3,6 +3,16 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Pagination, usePagedRows } from '@/components/table';
+import {
+  Ago,
+  Chip,
+  ConfirmButton,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  Section,
+} from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatMoney, parseMoneyToKurus } from '@/lib/format';
 import { PREDICATE_LABELS, SCOPE_LABELS, SUBJECT_LABELS, THRESHOLD_LABELS } from '@/lib/labels';
@@ -628,11 +638,10 @@ export function AlertsClient() {
     [load],
   );
 
+  // Confirmation itself now lives in the shared ConfirmButton (doc 15 §1a/§3.6) — this only does
+  // the deletion once the operator has confirmed.
   const remove = useCallback(
     async (rule: Rule) => {
-      if (!window.confirm(`"${rule.name}" kuralı silinsin mi? Bu kurala bağlı açık alarmlar da silinir.`)) {
-        return;
-      }
       const res = await fetch(`/api/alerts/rules?id=${encodeURIComponent(rule.id)}`, {
         method: 'DELETE',
       });
@@ -645,22 +654,43 @@ export function AlertsClient() {
     [load],
   );
 
-  if (!data) return <div className="p-6 text-sm text-(--color-muted)">{error ?? 'Yükleniyor…'}</div>;
+  // Six-states contract (doc 15 §3.2): loading and error must never share a line, and a failed
+  // primary load must offer a retry. Before this fix both fell into one `{error ?? 'Yükleniyor…'}`
+  // line with no way back short of reloading the page.
+  if (!data && error) {
+    return (
+      <div className="p-6">
+        <ErrorState message={error} onRetry={load} />
+      </div>
+    );
+  }
+  if (!data) {
+    return (
+      <div className="p-6">
+        <LoadingState message="Alarmlar yükleniyor…" skeletonRows={3} />
+      </div>
+    );
+  }
 
   const staleMarketplaces = data.staleness.filter((s) => s.stale);
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Rakip Alarmları</h1>
-        <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
-          Alarmlar <strong>raporlamadır</strong>: hiçbir fiyat kararını tetiklemez, hiçbir fiyatı değiştirmez.
-          Rakip tarama verisinden üretilir ve o veri kadar günceldir.
-        </p>
-      </div>
+      <PageHeader
+        title="Rakip Alarmları"
+        description={
+          <>
+            Alarmlar <strong>raporlamadır</strong>: hiçbir fiyat kararını tetiklemez, hiçbir fiyatı
+            değiştirmez. Rakip tarama verisinden üretilir ve o veri kadar günceldir.
+          </>
+        }
+      />
 
       {error && (
-        <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
+        <div
+          role="alert"
+          className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm"
+        >
           {error}
         </div>
       )}
@@ -674,9 +704,13 @@ export function AlertsClient() {
             {staleMarketplaces.map((s) => (
               <li key={s.marketplaceCode}>
                 <strong>{s.displayName}</strong>:{' '}
-                {s.lastOkAt === null
-                  ? 'son 7 günde hiç başarılı tarama yok'
-                  : `son başarılı tarama ${formatDateTime(s.lastOkAt)} (${formatDuration(s.ageMs ?? 0)} önce)`}
+                {s.lastOkAt === null ? (
+                  'son 7 günde hiç başarılı tarama yok'
+                ) : (
+                  <>
+                    son başarılı tarama <Ago at={s.lastOkAt} />
+                  </>
+                )}
                 {s.failed > 0 && ` · ${s.failed} başarısız deneme`}
               </li>
             ))}
@@ -693,21 +727,23 @@ export function AlertsClient() {
           <div key={s.marketplaceCode} className="rounded border border-(--color-border) px-3 py-2 text-sm">
             <div className="text-xs text-(--color-muted)">{s.displayName}</div>
             <div className={s.stale ? 'text-(--color-danger)' : 'text-(--color-text)'}>
-              {s.lastOkAt === null ? 'tarama yok' : `son tarama ${formatDateTime(s.lastOkAt)}`}
+              {s.lastOkAt === null ? (
+                'tarama yok'
+              ) : (
+                <>
+                  son tarama <Ago at={s.lastOkAt} />
+                </>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-medium">
-            Açık alarmlar{' '}
-            <span className="rounded bg-(--color-strong-bg) px-2 py-0.5 text-sm text-(--color-strong-ink)">
-              {data.alerts.length}
-            </span>
-          </h2>
-          {data.alerts.length > 0 && (
+      <Section
+        id="open-alerts-heading"
+        title={`Açık alarmlar (${data.alerts.length})`}
+        action={
+          data.alerts.length > 0 && (
             <button
               type="button"
               onClick={() =>
@@ -719,6 +755,9 @@ export function AlertsClient() {
                     Pazaryeri: a.marketplaceCode ?? '',
                     'Bizim Fiyat': a.ourPrice ? (Number(a.ourPrice) / 100).toFixed(2) : '',
                     Durum: a.state,
+                    // Absolute, deliberately: an exported CSV is read later, when "5 dakika önce"
+                    // would already be wrong — doc 15 §3.3's own carve-out for a record whose exact
+                    // instant is the point.
                     'İlk Görülme': formatDateTime(a.firstSeenAt),
                     'Son Görülme': formatDateTime(a.lastSeenAt),
                     'Satıcı Sayısı': a.sellers.length,
@@ -729,17 +768,20 @@ export function AlertsClient() {
             >
               Excel&apos;e Aktar
             </button>
-          )}
-        </div>
-
+          )
+        }
+      >
         {data.alerts.length === 0 ? (
-          <div className="rounded border border-(--color-border) p-6 text-center text-sm text-(--color-muted)">
-            {data.rules.length === 0
-              ? 'Henüz alarm kuralı tanımlanmamış.'
-              : staleMarketplaces.length > 0
-                ? 'Açık alarm yok — ancak yukarıdaki uyarıya göre veri güncel değil.'
-                : 'Açık alarm yok.'}
-          </div>
+          <EmptyState
+            message={data.rules.length === 0 ? 'Henüz alarm kuralı tanımlanmamış.' : 'Açık alarm yok.'}
+            reason={
+              data.rules.length === 0
+                ? 'Bir kural tanımlanmadan hiçbir koşul izlenmez. Aşağıdan yeni bir kural oluşturabilirsiniz.'
+                : staleMarketplaces.length > 0
+                  ? 'Yukarıdaki uyarıya göre veri güncel değil — bu "sorun yok" anlamına gelmez.'
+                  : 'İzlenen kurallardan hiçbiri şu an bir koşulu karşılamıyor.'
+            }
+          />
         ) : (
           <div className="space-y-3">
             {pagedAlerts.rows.map((a) => (
@@ -763,8 +805,12 @@ export function AlertsClient() {
                     </div>
                   </div>
                   <div className="text-right text-xs text-(--color-muted)">
-                    <div>başlangıç {formatDateTime(a.firstSeenAt)}</div>
-                    <div>son görülme {formatDateTime(a.lastSeenAt)}</div>
+                    <div>
+                      başlangıç <Ago at={a.firstSeenAt} />
+                    </div>
+                    <div>
+                      son görülme <Ago at={a.lastSeenAt} />
+                    </div>
                   </div>
                 </div>
 
@@ -774,6 +820,8 @@ export function AlertsClient() {
                       the alerts under it off the screen. */}
                   <div className="mt-1 max-h-56 overflow-auto">
                     <table className="w-full text-xs">
+                      {/* Not STICKY_HEAD: that class paints `--color-bg` behind the header, which
+                          would show as a mismatched patch on this card's warning background. */}
                       <thead className="text-left text-(--color-muted)">
                         <tr>
                           <th className="py-1">Satıcı</th>
@@ -807,7 +855,9 @@ export function AlertsClient() {
                               </span>
                             </td>
                             <td className="py-1 text-right">{s.rank}</td>
-                            <td className="py-1">{formatDateTime(s.joinedAt)}</td>
+                            <td className="py-1">
+                              <Ago at={s.joinedAt} />
+                            </td>
                             <td className="py-1 text-(--color-muted)">{s.promotionText ?? '—'}</td>
                           </tr>
                         ))}
@@ -825,34 +875,37 @@ export function AlertsClient() {
             <Pagination state={pagedAlerts} label="alarm" />
           </div>
         )}
-      </section>
+      </Section>
 
-      <section>
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-medium">Kurallar ({data.rules.length})</h2>
-          <button
-            type="button"
-            className="rounded bg-(--color-accent) px-3 py-1.5 text-sm text-(--color-accent-ink) disabled:opacity-50"
-            disabled={draft !== null}
-            onClick={() => {
-              setFormError(null);
-              setDraft(emptyDraft(data.options.defaultQuietPeriodMs));
-              setShowRules(true);
-            }}
-          >
-            + Yeni kural
-          </button>
-          {data.rules.length > 0 && (
+      <Section
+        id="rules-heading"
+        title={`Kurallar (${data.rules.length})`}
+        action={
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              className="text-sm text-(--color-accent) hover:underline"
-              onClick={() => setShowRules((v) => !v)}
+              className="rounded bg-(--color-accent) px-3 py-1.5 text-sm text-(--color-accent-ink) disabled:opacity-50"
+              disabled={draft !== null}
+              onClick={() => {
+                setFormError(null);
+                setDraft(emptyDraft(data.options.defaultQuietPeriodMs));
+                setShowRules(true);
+              }}
             >
-              {showRules ? 'Listeyi gizle' : 'Listeyi göster'}
+              + Yeni kural
             </button>
-          )}
-        </div>
-
+            {data.rules.length > 0 && (
+              <button
+                type="button"
+                className="text-sm text-(--color-accent) hover:underline"
+                onClick={() => setShowRules((v) => !v)}
+              >
+                {showRules ? 'Listeyi gizle' : 'Listeyi göster'}
+              </button>
+            )}
+          </div>
+        }
+      >
         {draft && (
           <div className="mb-3">
             <RuleEditor
@@ -881,8 +934,8 @@ export function AlertsClient() {
                   <div className="font-medium">
                     {r.name}
                     {!r.enabled && (
-                      <span className="ml-2 rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)">
-                        pasif
+                      <span className="ml-2">
+                        <Chip tone="neutral">pasif</Chip>
                       </span>
                     )}
                   </div>
@@ -914,13 +967,14 @@ export function AlertsClient() {
                   >
                     {r.enabled ? 'pasifleştir' : 'etkinleştir'}
                   </button>
-                  <button
-                    type="button"
+                  <ConfirmButton
+                    requireConfirm
+                    confirmMessage={`"${r.name}" kuralı silinsin mi? Bu kurala bağlı açık alarmlar da silinir.`}
+                    onConfirmed={() => void remove(r)}
                     className="text-(--color-danger) hover:underline"
-                    onClick={() => void remove(r)}
                   >
                     sil
-                  </button>
+                  </ConfirmButton>
                 </div>
               </div>
             ))}
@@ -931,7 +985,7 @@ export function AlertsClient() {
             )}
           </div>
         )}
-      </section>
+      </Section>
     </div>
   );
 }

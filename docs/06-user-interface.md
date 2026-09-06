@@ -324,6 +324,19 @@ bound: at the 2,000-listing target one seller's 30-day profile is ~29,000 offer 
 Competitor alerts are **reporting**. A rule never triggers a price change, and a failure in the
 alert path never reaches a pricing decision (doc 07 §1.1's isolation, unchanged).
 
+**Redesign pass, 2026-09-06 (doc 15 §6, Phase 2.3).** The information architecture below was
+already right — staleness first, open conditions second, rules last — so this pass did not
+re-rank sections. It replaced hand-rolled primitives with the shared kit (`PageHeader`, `Section`,
+`EmptyState`, `ErrorState`, `LoadingState`, `Chip`, `ConfirmButton`) and closed three gaps the
+baseline recorded: the initial load could show "Yükleniyor…" and a fetch failure on the same
+line with no retry; five of the screen's timestamps (the two staleness banners, an alert's
+first/last-seen, a seller's join time) were absolute instead of the relative "X önce" form doc 15
+§3.3 requires elsewhere; and rule deletion used a raw `window.confirm` instead of the shared
+`ConfirmButton`. The alert-rule label vocabulary (scope/subject/predicate/threshold) already lived
+in `apps/web/src/lib/labels.ts` before this pass (moved there in Phase 1b). The CSV export still
+prints absolute timestamps deliberately — a saved file is read later, when a relative time would
+already be wrong.
+
 An alert is a **state**, not a log line. "Seller X appeared" is an event; "seller X is still
 below your floor" is a condition with a beginning, a duration and an end, and the second is what
 an operator acts on. So the screen shows open conditions, each with when it started, when it was
