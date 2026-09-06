@@ -13,8 +13,23 @@ import {
   STICKY_HEAD,
   TableFrame,
   useColumnPrefs,
+  useFilterPresets,
 } from '@/components/table';
-import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import {
+  Ago,
+  Button,
+  Chip,
+  ConfirmButton,
+  EmptyState,
+  ErrorState,
+  Field,
+  LoadingState,
+  PageHeader,
+  Select,
+  TextInput,
+} from '@/components/ui';
+import { formatMoney, formatNumber } from '@/lib/format';
+import { labelOf, PHASE_LABELS } from '@/lib/labels';
 
 interface Row {
   id: string;
@@ -114,11 +129,26 @@ interface Filters {
   isLocked?: boolean;
   repriceEnabled?: boolean;
   observationEnabled?: boolean;
+  isBlacklisted?: boolean;
 }
 
-/** Row highlighting (doc 06 §4.2). */
+const EMPTY_FILTERS: Filters = {
+  marketplaceCode: '',
+  phases: [],
+  text: '',
+  isSalable: undefined,
+  isLocked: undefined,
+  repriceEnabled: undefined,
+  observationEnabled: undefined,
+  isBlacklisted: undefined,
+};
+
+/** Row highlighting (doc 06 §4.2). Cost-unknown reuses `row-danger` — it never overlaps with the
+ * selling-at-loss case above it (that needs a floor price to compare against in the first place)
+ * — rather than inventing a fourth colour for "this row also has a problem". */
 function rowClass(row: Row): string {
   if (row.floorPrice && BigInt(row.price) < BigInt(row.floorPrice)) return 'row-danger'; // selling at a loss
+  if (row.baseStockCode && !row.floorPrice) return 'row-danger'; // cost unknown — floor could not be computed
   if (row.isLocked || row.isSuspended) return 'row-muted';
   if (row.phase === 'BLOCKED') return 'row-warning';
   if (
@@ -209,17 +239,23 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Yeni fiyat"
+          disabled={busy}
           className="w-20 rounded border border-(--color-border) px-1 py-0.5 text-xs"
         />
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          disabled={!value}
+          disabled={!value || busy}
           className="text-xs text-(--color-accent)"
         >
           Gönder
         </button>
-        <button type="button" onClick={() => setEditing(false)} className="text-xs text-(--color-muted)">
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          disabled={busy}
+          className="text-xs text-(--color-muted)"
+        >
           İptal
         </button>
       </div>
@@ -236,9 +272,14 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
               onClick={() => void submit()}
               className="rounded bg-(--color-accent) px-2 py-0.5 text-(--color-accent-ink)"
             >
-              Onayla
+              {busy ? 'Gönderiliyor…' : 'Onayla'}
             </button>
-            <button type="button" onClick={() => setConfirming(false)} className="rounded border px-2 py-0.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+              className="rounded border px-2 py-0.5"
+            >
               Vazgeç
             </button>
           </div>
@@ -252,39 +293,116 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
 function MinMaxCell({ row, onChanged }: { row: Row; onChanged: () => void }) {
   const [min, setMin] = useState(row.minPrice ? (Number(row.minPrice) / 100).toFixed(2) : '');
   const [max, setMax] = useState(row.maxPrice ? (Number(row.maxPrice) / 100).toFixed(2) : '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | undefined>();
 
   async function save() {
-    await fetch('/api/listings/bulk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'setMinMax',
-        ids: [row.id],
-        minPrice: min || null,
-        maxPrice: max || null,
-      }),
-    });
-    onChanged();
+    setSaving(true);
+    setError(undefined);
+    try {
+      const res = await fetch('/api/listings/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'setMinMax',
+          ids: [row.id],
+          minPrice: min || null,
+          maxPrice: max || null,
+        }),
+      });
+      if (res.ok) {
+        onChanged();
+      } else {
+        setError('Kaydedilemedi.');
+      }
+    } catch {
+      setError('Kaydedilemedi.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <div className="flex items-center gap-1">
-      <input
-        value={min}
-        onChange={(e) => setMin(e.target.value)}
-        onBlur={() => void save()}
-        placeholder="min"
-        className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
-      />
-      <input
-        value={max}
-        onChange={(e) => setMax(e.target.value)}
-        onBlur={() => void save()}
-        placeholder="max"
-        className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
-      />
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1">
+        <input
+          value={min}
+          onChange={(e) => setMin(e.target.value)}
+          onBlur={() => void save()}
+          placeholder="min"
+          disabled={saving}
+          className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
+        />
+        <input
+          value={max}
+          onChange={(e) => setMax(e.target.value)}
+          onBlur={() => void save()}
+          placeholder="max"
+          disabled={saving}
+          className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
+        />
+      </div>
+      {saving && <span className="text-(--color-muted)">Kaydediliyor…</span>}
+      {error && <span className="text-(--color-danger)">{error}</span>}
     </div>
   );
+}
+
+/**
+ * Per-row automation/observation switch. Was a bare `<input type="checkbox">` firing a request
+ * and forgetting it (`.then(onChanged)`, no `.catch`) — a request that fails left the checkbox
+ * showing a state the server never accepted, with nothing said about it (§3.2 "Busy": never
+ * fire-and-forget). Disabled for the round trip and reports a failure inline instead.
+ */
+function ToggleCell({
+  checked,
+  label,
+  onToggle,
+}: {
+  checked: boolean;
+  label: string;
+  onToggle: (next: boolean) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  async function handleChange(next: boolean) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await onToggle(next);
+    } catch {
+      setError('Değişmedi.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={busy}
+        aria-label={label}
+        onChange={(e) => void handleChange(e.target.checked)}
+      />
+      {error && (
+        <span className="text-(--color-danger)" title={error}>
+          !
+        </span>
+      )}
+    </div>
+  );
+}
+
+async function postBulk(action: string, ids: string[]): Promise<void> {
+  const res = await fetch('/api/listings/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ids }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
 /** One cell per column id — kept in one place so `COLUMN_DEFS` stays the single source of
@@ -302,7 +420,17 @@ function renderCell(id: ColumnId, row: Row, onChanged: () => void): React.ReactN
     case 'stockCode':
       return row.baseStockCode ?? '—';
     case 'floorPrice':
-      return row.floorPrice ? formatMoney(BigInt(row.floorPrice)) : '—';
+      if (row.floorPrice) return formatMoney(BigInt(row.floorPrice));
+      if (row.baseStockCode) {
+        // A stock code is linked but the floor still could not be computed — the operator needs
+        // to know this is a data gap, not "there is simply no floor to show" (doc 06 §4.2).
+        return (
+          <Chip tone="danger" title="Maliyet ya da ücret ayarları eksik — dip fiyat hesaplanamadı.">
+            Maliyet yok
+          </Chip>
+        );
+      }
+      return '—';
     case 'price':
       return <ManualPriceCell row={row} onChanged={onChanged} />;
     case 'rank':
@@ -312,43 +440,29 @@ function renderCell(id: ColumnId, row: Row, onChanged: () => void): React.ReactN
     case 'buyboxSeller':
       return row.buyboxSellerName ?? '—';
     case 'phase':
-      return row.phase ?? '—';
+      return labelOf(PHASE_LABELS, row.phase);
     case 'offeredStock':
       return formatNumber(row.offeredStock);
     case 'minMax':
       return <MinMaxCell row={row} onChanged={onChanged} />;
     case 'autoBB':
       return (
-        <input
-          type="checkbox"
+        <ToggleCell
           checked={row.repriceEnabled}
-          onChange={(e) => {
-            void fetch('/api/listings/bulk', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: e.target.checked ? 'enableAutomation' : 'disableAutomation',
-                ids: [row.id],
-              }),
-            }).then(onChanged);
-          }}
+          label={`${row.productName} için otomasyon`}
+          onToggle={(next) =>
+            postBulk(next ? 'enableAutomation' : 'disableAutomation', [row.id]).then(onChanged)
+          }
         />
       );
     case 'observation':
       return (
-        <input
-          type="checkbox"
+        <ToggleCell
           checked={row.observationEnabled}
-          onChange={(e) => {
-            void fetch('/api/listings/bulk', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: e.target.checked ? 'enableObservation' : 'disableObservation',
-                ids: [row.id],
-              }),
-            }).then(onChanged);
-          }}
+          label={`${row.productName} için gözlem`}
+          onToggle={(next) =>
+            postBulk(next ? 'enableObservation' : 'disableObservation', [row.id]).then(onChanged)
+          }
         />
       );
   }
@@ -359,12 +473,15 @@ export function ListingsClient() {
   // than a second one after an unfiltered flash. See the brand filter's comment further down for
   // why cross-navigation seeds the visible control instead of filtering behind its back.
   const searchParams = useSearchParams();
-  const [rows, setRows] = useState<Row[]>([]);
+  /** `null` until the first successful load — distinct from "loaded, zero rows" (doc 15 §3.2's
+   * six-state contract). An empty array here would make a failed first load indistinguishable
+   * from a filter that genuinely matches nothing. */
+  const [rows, setRows] = useState<Row[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [filters, setFilters] = useState<Filters>(() => ({
-    marketplaceCode: '',
+  const [filters, setFiltersState] = useState<Filters>(() => ({
+    ...EMPTY_FILTERS,
     // `?phases=BLOCKED` — the dashboard's phase tiles (doc 06 §2) link straight to the listings
     // this count is about; without it "12 Bloke" was a number with no way to reach the twelve.
     // Filtered against the known phases so a hand-typed or stale value cannot produce a filter
@@ -372,18 +489,26 @@ export function ListingsClient() {
     phases: (searchParams.get('phases') ?? '')
       .split(',')
       .filter((p) => (PHASES as readonly string[]).includes(p)),
-    text: '',
   }));
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  /** `/api/listings` itself failing, kept apart from `bulkError` below (mirrors
+   * `tracked-products-client`'s `loadError`/`error` split — doc 15 §3.2). */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: ColumnId; dir: 'asc' | 'desc' } | null>(null);
   const columns = useColumnPrefs('listings-columns-v1', COLUMN_DEFS);
+  const presets = useFilterPresets<Filters>('listings-filter-presets-v1');
+  const [presetName, setPresetName] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   // The brand filter is one piece of state with two ways in: the dropdown in the filter bar
   // below, and cross-navigation from /brands (doc 06 §12.1, §4.5's stock-code pattern applied
   // to brand), which arrives as `?brandId=` and seeds the dropdown's initial value. Keeping
   // them on the same state is what stops an arrived-by-link filter and the visible control
-  // from disagreeing about what the grid is showing.
+  // from disagreeing about what the grid is showing. It is kept out of the saved-filter-preset
+  // shape below for the same reason it is kept out of `Filters`: a preset naming a brand by id
+  // would silently break the moment that brand is renamed or removed.
   const [brandFilter, setBrandFilter] = useState<{ id: string; name: string } | null>(() => {
     const id = searchParams.get('brandId');
     const name = searchParams.get('brandName');
@@ -411,6 +536,17 @@ export function ListingsClient() {
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name, 'tr'));
 
+  /** Any filter change goes back to page 1 — page 7 of the previous result set means nothing. */
+  function setFilters(next: Filters) {
+    setPage(0);
+    setFiltersState(next);
+  }
+
+  function clearFilters() {
+    setFilters(EMPTY_FILTERS);
+    setBrandFilter(null);
+  }
+
   /** Shared with the CSV export link below, so a filtered export matches the filtered grid. */
   function filterParams(): URLSearchParams {
     const params = new URLSearchParams();
@@ -423,6 +559,7 @@ export function ListingsClient() {
     if (filters.observationEnabled !== undefined) {
       params.set('observationEnabled', String(filters.observationEnabled));
     }
+    if (filters.isBlacklisted !== undefined) params.set('isBlacklisted', String(filters.isBlacklisted));
     if (brandFilter) params.set('brandId', brandFilter.id);
     if (sort) {
       params.set('sort', SORTABLE[sort.key]!);
@@ -437,11 +574,13 @@ export function ListingsClient() {
     params.set('limit', String(pageSize));
     params.set('offset', String(page * pageSize));
     fetch(`/api/listings?${params.toString()}`)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: { rows: Row[]; total: number }) => {
         setRows(d.rows);
         setTotal(d.total);
+        setLoadError(null);
       })
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }
 
@@ -459,11 +598,12 @@ export function ListingsClient() {
   }
 
   function togglePhase(phase: string) {
-    setPage(0);
-    setFilters((f) => ({
-      ...f,
-      phases: f.phases.includes(phase) ? f.phases.filter((p) => p !== phase) : [...f.phases, phase],
-    }));
+    setFilters({
+      ...filters,
+      phases: filters.phases.includes(phase)
+        ? filters.phases.filter((p) => p !== phase)
+        : [...filters.phases, phase],
+    });
   }
 
   function toggleSelected(id: string) {
@@ -484,250 +624,364 @@ export function ListingsClient() {
       | 'forceReoptimize',
   ) {
     if (selected.size === 0) return;
-    if (!confirm(`${selected.size} ilan için bu işlem uygulanacak. Onaylıyor musunuz?`)) return;
-    await fetch('/api/listings/bulk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ids: [...selected] }),
-    });
-    setSelected(new Set());
-    load();
+    setBulkBusy(true);
+    setBulkError(null);
+    try {
+      await postBulk(action, [...selected]);
+      setSelected(new Set());
+      load();
+    } catch {
+      setBulkError('İşlem uygulanamadı. Tekrar deneyin.');
+    } finally {
+      setBulkBusy(false);
+    }
   }
+
+  const hasActiveFilters =
+    filters.marketplaceCode !== '' ||
+    filters.phases.length > 0 ||
+    filters.text !== '' ||
+    filters.isSalable !== undefined ||
+    filters.isLocked !== undefined ||
+    filters.repriceEnabled !== undefined ||
+    filters.observationEnabled !== undefined ||
+    filters.isBlacklisted !== undefined ||
+    brandFilter !== null;
+
+  // The primary load's own six-state handling (doc 15 §3.2): a failed first load is retryable, a
+  // first load in flight says so. After this point `rows` is never `null` — every reference below
+  // assumes a real array, loaded or genuinely empty.
+  if (!rows && loadError) {
+    return <ErrorState message={loadError} onRetry={load} />;
+  }
+  if (!rows) {
+    return <LoadingState message="İlanlar yükleniyor…" skeletonRows={4} />;
+  }
+
+  const visibleColumns = COLUMN_DEFS.filter((d) => columns.isVisible(d.id));
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">İlanlar</h1>
-        <div className="flex items-center gap-2">
-          <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
-          <a
-            href={`/api/listings?${(() => {
-              const p = filterParams();
-              p.set('format', 'csv');
-              return p.toString();
-            })()}`}
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-            title={`Geçerli filtreyle eşleşen ilk ${CSV_EXPORT_ROW_CAP.toLocaleString('tr-TR')} ilanı indirir`}
-          >
-            Excel&apos;e Aktar
-          </a>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3 rounded border border-(--color-border) p-3">
-        <label className="flex flex-col text-xs">
-          Pazaryeri
-          <select
-            value={filters.marketplaceCode}
-            onChange={(e) => {
-              const code = e.target.value;
-              setPage(0);
-              setFilters((f) => ({ ...f, marketplaceCode: code }));
-              // A brand belongs to one marketplace; keeping it selected under another would
-              // filter the grid to nothing with no visible reason why.
-              setBrandFilter((b) =>
-                b && code && !brands.some((x) => x.id === b.id && x.marketplaceCode === code) ? null : b,
-              );
-            }}
-            className="rounded border border-(--color-border) px-2 py-1 text-sm"
-          >
-            <option value="">Tümü</option>
-            <option value="trendyol">Trendyol</option>
-            <option value="hepsiburada">Hepsiburada</option>
-          </select>
-        </label>
-        <label className="flex flex-col text-xs">
-          Marka
-          <select
-            value={brandFilter?.id ?? ''}
-            onChange={(e) => {
-              const id = e.target.value;
-              setPage(0);
-              const picked = brands.find((b) => b.id === id);
-              setBrandFilter(id ? { id, name: picked?.name ?? id } : null);
-            }}
-            className="w-48 rounded border border-(--color-border) px-2 py-1 text-sm"
-          >
-            <option value="">Tümü</option>
-            {/* A brand arriving by link is listed even if the fetch has not landed yet, so the
-                control never shows "Tümü" while the grid is in fact filtered. */}
-            {brandFilter && !brandOptions.some((b) => b.id === brandFilter.id) && (
-              <option value={brandFilter.id}>{brandFilter.name}</option>
-            )}
-            {brandOptions.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name} ({b.listingCount})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col text-xs">
-          Ara (ürün adı / stok kodu / SKU)
-          <input
-            value={filters.text}
-            onChange={(e) => {
-              setPage(0);
-              setFilters((f) => ({ ...f, text: e.target.value }));
-            }}
-            className="w-56 rounded border border-(--color-border) px-2 py-1 text-sm"
-          />
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {PHASES.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => togglePhase(p)}
-              className={`rounded px-2 py-1 text-xs ${
-                filters.phases.includes(p)
-                  ? 'bg-(--color-accent) text-(--color-accent-ink)'
-                  : 'border border-(--color-border)'
-              }`}
+      <PageHeader
+        title="İlanlar"
+        description="Fiyatı ve otomasyonu takip ettiğiniz her ilan burada. Kırmızı satır zararına satışı ya da bilinmeyen maliyeti, sarı satır bloke bir fazı, yeşil satır alınabilecek bir buybox'ı işaret eder."
+        action={
+          <div className="flex items-center gap-2">
+            <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+            <a
+              href={`/api/listings?${(() => {
+                const p = filterParams();
+                p.set('format', 'csv');
+                return p.toString();
+              })()}`}
+              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+              title={`Geçerli filtreyle eşleşen ilk ${CSV_EXPORT_ROW_CAP.toLocaleString('tr-TR')} ilanı indirir`}
             >
-              {p}
-            </button>
-          ))}
+              Excel&apos;e Aktar
+            </a>
+          </div>
+        }
+      />
+
+      {/* Bir yenileme (filtre/sayfa değişikliği) başarısız oldu ama önceki liste hâlâ ekranda —
+          sessizce eskimesine izin vermek yerine söylüyoruz (§3.2 "Stale"). */}
+      {loadError && (
+        <p
+          role="alert"
+          className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) px-3 py-2 text-sm"
+        >
+          Son yenileme başarısız oldu ({loadError}). Aşağıdaki liste artık güncel olmayabilir.
+        </p>
+      )}
+
+      <div className="space-y-2 rounded border border-(--color-border) p-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Pazaryeri">
+            <Select
+              value={filters.marketplaceCode}
+              onChange={(e) => {
+                const code = e.target.value;
+                // A brand belongs to one marketplace; keeping it selected under another would
+                // filter the grid to nothing with no visible reason why.
+                setBrandFilter((b) =>
+                  b && code && !brands.some((x) => x.id === b.id && x.marketplaceCode === code) ? null : b,
+                );
+                setFilters({ ...filters, marketplaceCode: code });
+              }}
+              className="w-36"
+              options={[
+                { value: '', label: 'Tümü' },
+                { value: 'trendyol', label: 'Trendyol' },
+                { value: 'hepsiburada', label: 'Hepsiburada' },
+              ]}
+            />
+          </Field>
+          <Field label="Marka">
+            <Select
+              value={brandFilter?.id ?? ''}
+              onChange={(e) => {
+                const id = e.target.value;
+                setPage(0);
+                const picked = brands.find((b) => b.id === id);
+                setBrandFilter(id ? { id, name: picked?.name ?? id } : null);
+              }}
+              className="w-48"
+              options={[
+                { value: '', label: 'Tümü' },
+                // A brand arriving by link is listed even if the fetch has not landed yet, so
+                // the control never shows "Tümü" while the grid is in fact filtered.
+                ...(brandFilter && !brandOptions.some((b) => b.id === brandFilter.id)
+                  ? [{ value: brandFilter.id, label: brandFilter.name }]
+                  : []),
+                ...brandOptions.map((b) => ({ value: b.id, label: `${b.name} (${b.listingCount})` })),
+              ]}
+            />
+          </Field>
+          <Field label="Ara (ürün adı / stok kodu / SKU)">
+            <TextInput
+              value={filters.text}
+              onChange={(e) => setFilters({ ...filters, text: e.target.value })}
+              className="w-56"
+            />
+          </Field>
+          <div className="flex flex-wrap gap-2">
+            {PHASES.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => togglePhase(p)}
+                className={`rounded px-2 py-1 text-xs ${
+                  filters.phases.includes(p)
+                    ? 'bg-(--color-accent) text-(--color-accent-ink)'
+                    : 'border border-(--color-border)'
+                }`}
+              >
+                {PHASE_LABELS[p] ?? p}
+              </button>
+            ))}
+          </div>
+          <TriState
+            label="Satılabilir"
+            value={filters.isSalable}
+            onChange={(v) => setFilters({ ...filters, isSalable: v })}
+          />
+          <TriState
+            label="Kilitli"
+            value={filters.isLocked}
+            onChange={(v) => setFilters({ ...filters, isLocked: v })}
+          />
+          <TriState
+            label="Otomasyon"
+            value={filters.repriceEnabled}
+            onChange={(v) => setFilters({ ...filters, repriceEnabled: v })}
+          />
+          <TriState
+            label="Gözlem"
+            value={filters.observationEnabled}
+            onChange={(v) => setFilters({ ...filters, observationEnabled: v })}
+          />
+          <TriState
+            label="Kara Liste"
+            value={filters.isBlacklisted}
+            onChange={(v) => setFilters({ ...filters, isBlacklisted: v })}
+          />
+          {hasActiveFilters && (
+            <Button variant="secondary" type="button" onClick={clearFilters} className="px-2! py-1! text-xs">
+              Temizle
+            </Button>
+          )}
         </div>
-        <TriState
-          label="Satılabilir"
-          value={filters.isSalable}
-          onChange={(v) => {
-            setPage(0);
-            setFilters((f) => ({ ...f, isSalable: v }));
-          }}
-        />
-        <TriState
-          label="Kilitli"
-          value={filters.isLocked}
-          onChange={(v) => {
-            setPage(0);
-            setFilters((f) => ({ ...f, isLocked: v }));
-          }}
-        />
-        <TriState
-          label="Otomasyon"
-          value={filters.repriceEnabled}
-          onChange={(v) => {
-            setPage(0);
-            setFilters((f) => ({ ...f, repriceEnabled: v }));
-          }}
-        />
-        <TriState
-          label="Gözlem"
-          value={filters.observationEnabled}
-          onChange={(v) => {
-            setPage(0);
-            setFilters((f) => ({ ...f, observationEnabled: v }));
-          }}
-        />
+
+        {/* ---- kayıtlı filtreler (doc 06 §4.4) ---- */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-2 text-xs">
+          <span className="text-(--color-muted)">Kayıtlı filtreler:</span>
+          {presets.presets.length === 0 && <span className="text-(--color-muted)">yok</span>}
+          {presets.presets.map((preset) => (
+            <span key={preset.name} className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setFilters({ ...EMPTY_FILTERS, ...preset.value })}
+                className="rounded border border-(--color-border) px-2 py-0.5 hover:bg-(--color-hover)"
+              >
+                {preset.name}
+              </button>
+              <button
+                type="button"
+                title="Bu kaydı sil"
+                onClick={() => presets.remove(preset.name)}
+                className="text-(--color-muted) hover:text-(--color-danger)"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <input
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            placeholder="Yeni kayıt adı"
+            className="ml-auto w-40 rounded border border-(--color-border) px-2 py-0.5"
+          />
+          <button
+            type="button"
+            disabled={!presetName.trim()}
+            onClick={() => {
+              presets.save(presetName, filters);
+              setPresetName('');
+            }}
+            className="rounded border border-(--color-border) px-2 py-0.5 hover:bg-(--color-hover) disabled:opacity-40"
+          >
+            Filtreyi kaydet
+          </button>
+        </div>
       </div>
 
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 rounded border border-(--color-accent) bg-(--color-accent-bg) px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 rounded border border-(--color-accent) bg-(--color-accent-bg) px-3 py-2 text-sm">
           <span>{selected.size} ilan seçildi</span>
-          <button
-            type="button"
-            onClick={() => void bulkAction('enableAutomation')}
-            className="rounded border px-2 py-1"
+          {/* Asymmetric confirmation (§3.6): the direction that starts the bot moving prices
+              (enable automation) and the one that resets a listing's pricing phase are confirmed;
+              turning things off is one click, same as the dashboard's submission switch. */}
+          <ConfirmButton
+            requireConfirm
+            confirmMessage={`${selected.size} ilan için otomasyon açılacak. Onaylıyor musunuz?`}
+            onConfirmed={() => void bulkAction('enableAutomation')}
+            disabled={bulkBusy}
+            className="rounded border px-2 py-1 disabled:opacity-40"
           >
             Otomasyonu Aç
-          </button>
-          <button
-            type="button"
-            onClick={() => void bulkAction('disableAutomation')}
-            className="rounded border px-2 py-1"
+          </ConfirmButton>
+          <ConfirmButton
+            requireConfirm={false}
+            confirmMessage=""
+            onConfirmed={() => void bulkAction('disableAutomation')}
+            disabled={bulkBusy}
+            className="rounded border px-2 py-1 disabled:opacity-40"
           >
             Otomasyonu Kapat / Hariç Tut
-          </button>
-          <button
-            type="button"
-            onClick={() => void bulkAction('enableObservation')}
-            className="rounded border px-2 py-1"
+          </ConfirmButton>
+          <ConfirmButton
+            requireConfirm={false}
+            confirmMessage=""
+            onConfirmed={() => void bulkAction('enableObservation')}
+            disabled={bulkBusy}
+            className="rounded border px-2 py-1 disabled:opacity-40"
           >
             Gözlemi Aç
-          </button>
-          <button
-            type="button"
-            onClick={() => void bulkAction('disableObservation')}
-            className="rounded border px-2 py-1"
+          </ConfirmButton>
+          <ConfirmButton
+            requireConfirm={false}
+            confirmMessage=""
+            onConfirmed={() => void bulkAction('disableObservation')}
+            disabled={bulkBusy}
+            className="rounded border px-2 py-1 disabled:opacity-40"
           >
             Gözlemi Kapat
-          </button>
-          <button
-            type="button"
-            onClick={() => void bulkAction('forceReoptimize')}
-            className="rounded border px-2 py-1"
+          </ConfirmButton>
+          <ConfirmButton
+            requireConfirm
+            confirmMessage={`${selected.size} ilan için fiyatlama sıfırdan başlatılacak (faz: Arıyor). Onaylıyor musunuz?`}
+            onConfirmed={() => void bulkAction('forceReoptimize')}
+            disabled={bulkBusy}
+            className="rounded border px-2 py-1 disabled:opacity-40"
           >
             Yeniden Optimize Et
-          </button>
+          </ConfirmButton>
+          {bulkBusy && (
+            <span aria-live="polite" className="text-(--color-muted)">
+              İşleniyor…
+            </span>
+          )}
         </div>
       )}
+      {bulkError && (
+        <p role="alert" className="text-sm text-(--color-danger)">
+          {bulkError}
+        </p>
+      )}
 
-      <TableFrame>
-        <table className="text-xs" style={resizableTableStyle(COLUMN_DEFS, columns, SELECT_COLUMN_PX)}>
-          <thead className={`${STICKY_HEAD} bg-(--color-hover) text-left uppercase text-(--color-muted)`}>
-            <tr>
-              <th className="px-2 py-2" style={{ width: SELECT_COLUMN_PX }}>
-                <input
-                  type="checkbox"
-                  checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
-                  onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())}
-                />
-              </th>
-              {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
-                <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-2 py-2">
-                  {SORTABLE[d.id] ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleSort(d.id)}
-                      className="flex items-center gap-1 hover:text-(--color-text)"
-                    >
-                      {d.label}
-                      {sort?.key === d.id && <span>{sort.dir === 'asc' ? '▲' : '▼'}</span>}
-                    </button>
-                  ) : (
-                    d.label
-                  )}
-                </ResizableTh>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-(--color-border)">
-            {rows.map((row) => (
-              <tr key={row.id} className={rowClass(row)} style={{ contentVisibility: 'auto' }}>
-                <td className="px-2 py-1">
+      {rows.length === 0 ? (
+        <EmptyState
+          message={
+            hasActiveFilters
+              ? 'Bu filtrelerle eşleşen ilan yok.'
+              : 'Henüz ilan yok. Stok içe aktarıldıktan sonra burası dolar.'
+          }
+          reason={hasActiveFilters ? 'Farklı bir filtre deneyin ya da filtreleri temizleyin.' : undefined}
+          action={
+            hasActiveFilters ? (
+              <Button variant="secondary" type="button" onClick={clearFilters}>
+                Filtreleri Temizle
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <TableFrame>
+          <table className="text-xs" style={resizableTableStyle(COLUMN_DEFS, columns, SELECT_COLUMN_PX)}>
+            <thead className={`${STICKY_HEAD} bg-(--color-hover) text-left uppercase text-(--color-muted)`}>
+              <tr>
+                <th className="px-2 py-2" style={{ width: SELECT_COLUMN_PX }}>
                   <input
                     type="checkbox"
-                    checked={selected.has(row.id)}
-                    onChange={() => toggleSelected(row.id)}
+                    aria-label="Bu sayfadaki ilanları seç"
+                    checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
+                    onChange={(e) =>
+                      setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())
+                    }
                   />
-                </td>
-                {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
-                  <td
-                    key={d.id}
-                    className={`px-2 py-1 ${d.id === 'rank' && row.rank === 1 ? 'row-success' : ''}`}
-                  >
-                    {renderCell(d.id, row, load)}
-                  </td>
+                </th>
+                {visibleColumns.map((d) => (
+                  <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-2 py-2">
+                    {SORTABLE[d.id] ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(d.id)}
+                        className="flex items-center gap-1 hover:text-(--color-text)"
+                      >
+                        {d.label}
+                        {sort?.key === d.id && <span>{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+                      </button>
+                    ) : (
+                      d.label
+                    )}
+                  </ResizableTh>
                 ))}
               </tr>
-            ))}
-            {rows.length === 0 && !loading && (
-              <tr>
-                <td
-                  colSpan={1 + COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).length}
-                  className="px-2 py-6 text-center text-(--color-muted)"
-                >
-                  Filtreyle eşleşen ilan yok.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </TableFrame>
+            </thead>
+            <tbody className="divide-y divide-(--color-border)">
+              {rows.map((row) => (
+                <tr key={row.id} className={rowClass(row)} style={{ contentVisibility: 'auto' }}>
+                  <td className="px-2 py-1">
+                    <input
+                      type="checkbox"
+                      aria-label={`${row.productName} seç`}
+                      checked={selected.has(row.id)}
+                      onChange={() => toggleSelected(row.id)}
+                    />
+                  </td>
+                  {visibleColumns.map((d) => (
+                    <td
+                      key={d.id}
+                      className={`px-2 py-1 ${d.id === 'rank' && row.rank === 1 ? 'row-success' : ''}`}
+                    >
+                      {renderCell(d.id, row, load)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableFrame>
+      )}
 
       <Pagination state={{ page, pageSize, total, setPage, setPageSize }} label="ilan">
-        {rows.length > 0 && <> — son görülme: {formatDateTime(rows[0]?.lastSeenAt)}</>}
+        {rows.length > 0 && rows[0] && (
+          <>
+            {' '}
+            — son görülme: <Ago at={rows[0].lastSeenAt} />
+          </>
+        )}
+        {loading && <span aria-live="polite"> · yükleniyor…</span>}
       </Pagination>
     </div>
   );
