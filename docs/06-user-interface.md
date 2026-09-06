@@ -9,21 +9,21 @@ operator already knows the app by them; the interface language is Turkish.
 
 ## 1. Navigation
 
-| Route | Screen | Purpose |
-|-------|--------|---------|
-| `/` | Dashboard | Health, budget, alerts, job status, what the bot is doing right now |
-| `/stock` | Stock items | Physical products, costs, per-marketplace preferences |
-| `/listings` | Listings | The main working grid, filterable by marketplace |
-| `/listings/[id]` | Listing detail | Everything about one listing, including its decision history |
-| `/brands` | Brands | Marka bazlı gezinme — click a brand, see its listings (§12.1) |
-| `/competitors` | Competitor history | Time-series reporting over the retained scrape data |
+| Route                  | Screen             | Purpose                                                                  |
+| ---------------------- | ------------------ | ------------------------------------------------------------------------ |
+| `/`                    | Dashboard          | Health, budget, alerts, job status, what the bot is doing right now      |
+| `/stock`               | Stock items        | Physical products, costs, per-marketplace preferences                    |
+| `/listings`            | Listings           | The main working grid, filterable by marketplace                         |
+| `/listings/[id]`       | Listing detail     | Everything about one listing, including its decision history             |
+| `/brands`              | Brands             | Marka bazlı gezinme — click a brand, see its listings (§12.1)            |
+| `/competitors`         | Competitor history | Time-series reporting over the retained scrape data                      |
 | `/competitors/sellers` | Competitor sellers | The same archive by seller: overlap, pricing behaviour, identity linking |
-| `/tracked-products` | Tracked products | Products we do not sell, watched for price/rank by link (§12.2) |
-| `/alerts` | Alerts | Open competitor conditions and the rules that raise them |
-| `/jobs` | Jobs | Run history, manual triggers, schedules |
-| `/events` | Event log | Persisted, filterable operation log |
-| `/settings/*` | Settings | Marketplaces, fees, policies, product sources, retention |
-| `/setup` | Setup wizard | First run and re-configuration (doc 10 §6) |
+| `/tracked-products`    | Tracked products   | Products we do not sell, watched for price/rank by link (§12.2)          |
+| `/alerts`              | Alerts             | Open competitor conditions and the rules that raise them                 |
+| `/jobs`                | Jobs               | Run history, manual triggers, schedules                                  |
+| `/events`              | Event log          | Persisted, filterable operation log                                      |
+| `/settings/*`          | Settings           | Marketplaces, fees, policies, product sources, retention                 |
+| `/setup`               | Setup wizard       | First run and re-configuration (doc 10 §6)                               |
 
 ---
 
@@ -39,24 +39,24 @@ the same; the ranking is the point.
 
 **Ordered by what the operator needs first:**
 
-1. **Verdict** — one sentence stating the conclusion (*Her şey yolunda* / *Çalışıyor — bakılması
-   gereken N konu var* / *Sistem düzgün çalışmıyor* / *Sistem duraklatıldı*), with the three
+1. **Verdict** — one sentence stating the conclusion (_Her şey yolunda_ / _Çalışıyor — bakılması
+   gereken N konu var_ / _Sistem düzgün çalışmıyor_ / _Sistem duraklatıldı_), with the three
    states that make it up as chips beside it: jobs running, price submission on/off, worker
    alive. Never one of the three alone — each is misleading without the others. Carries the
    last-refreshed time and a manual refresh, because the screen re-reads itself every 30s.
-2. **Attention list** — everything an operator could act on *today* that the system will not fix
+2. **Attention list** — everything an operator could act on _today_ that the system will not fix
    by itself, each row with the single link that acts on it. Explicitly empty-stated
    ("Şu an müdahale gerektiren bir şey yok") rather than absent. Admission rule: a deliberate
    configuration (automation switched off, a budget at 70%) is not a fault and does not appear.
    Sources include `/api/health`'s own warnings, passed through verbatim so this screen and
    `/jobs` cannot disagree about what is wrong.
 3. **Safety switches** — the **price-submission** kill switch is operated here; it lives nowhere
-   else. The **system pause** is *read-only* here: it already sits in the header, one click from
+   else. The **system pause** is _read-only_ here: it already sits in the header, one click from
    every screen (R-UI-9), and a second copy of it was one setting with two buttons and two
    confirmation wordings. Confirmation is asked only in the direction that lets real money move;
    stopping is always one click.
 4. **Marketplaces** — per marketplace: kill-switch state (a badge) beside its action (a button),
-   never one control whose label is its state. Update budget as *remaining* first, with the
+   never one control whose label is its state. Update budget as _remaining_ first, with the
    consumed/allowance ratio underneath and a bar that turns amber below the reserve and red at
    exhaustion (`role="progressbar"` with a Turkish `aria-valuetext`). Health: last successful
    import, last buybox observation, last successful competitor scrape — all as elapsed time, not
@@ -74,7 +74,7 @@ the same; the ranking is the point.
 7. **Brand audit** (§12.4) — drawn only when a brand is watched. Three summary numbers open; the
    per-brand table and the 30-day trend behind a `<details>`.
 8. **System log** — the last 20 `app_events` rows at `warn` and above, in a `<details>`, closed.
-   Named for what it is: it previously headed a section called *Aktif Uyarılar* while the real
+   Named for what it is: it previously headed a section called _Aktif Uyarılar_ while the real
    open-alert count was a different number from a different table a few hundred pixels away.
 
 **Rules this screen holds to:**
@@ -92,34 +92,67 @@ the same; the ranking is the point.
 
 ## 3. Stock items (`/stock`)
 
-| Column | Field | Editable |
-|--------|-------|----------|
-| Stok Kodu | `baseStockCode` | no |
-| Ürün İsmi | `name` | manual source only |
-| Birim Fiyat | `unitCost` | manual source only |
-| Stok Miktarı | `unitStock` | manual source only |
-| TY Satış Stok | derived | no |
-| HB Satış Stok | derived | no |
-| TY Çarpan | `priceMultiplier` (TY) | **yes** |
-| HB Çarpan | `priceMultiplier` (HB) | **yes** |
-| TY Oto BB | `autoRepriceEnabled` (TY) | **yes** |
-| HB Oto BB | `autoRepriceEnabled` (HB) | **yes** |
-| Kaynak | `sourceCode` | no |
+Reworked 2026-09-06 (doc 15 §6, Phase 2.6) around this screen's stated task — **"Maliyetler doğru
+mu?"** ("are the costs correct?"). Every listing's floor price (doc 02) is computed from a stock
+item's `unitCost`; a zero or missing cost does not just look wrong here, it silently drops that
+item out of automation (§below). The screen used to be one flat table with no way to find those
+rows and no column preferences at all (R-UI-12 gap) — rebuilt around finding and fixing them.
 
-**Row highlighting** (semantics preserved from the legacy app):
+**Ordered by what the operator needs first:**
 
-| Condition | Effect |
-|-----------|--------|
-| Total offered across marketplaces > physical stock | stock cell amber — over-listed |
-| `unitCost == 0` while anything is on sale | cost cell violet — missing cost |
-| Offered stock 0 on a marketplace while physical stock > 0 | that cell highlighted — listing opportunity |
-| Cost unknown / unresolvable | row red — excluded from automation |
+1. **Stok Kalemleri** — the grid, with a search box (stock code / product name) and two problem
+   filters ("Yalnızca maliyeti bilinmeyenler", "Yalnızca aşırı listelenenler") directly above it,
+   since scanning for those two problems _is_ the primary task. Column preferences
+   (`useColumnPrefs`, the same mechanism `/listings` uses) let the operator hide/reorder/resize
+   columns and remember the result per browser.
+2. **İçe Aktarma** and **Paket Düzenleyici** — both collapsed behind a closed `<details>` below the
+   grid. Neither is part of the everyday cost-triage pass: import happens once per refresh cycle
+   from the configured source, and bundle editing is occasional. Collapsing them stops two setup
+   panels from competing with the grid for the first look at the screen.
 
-**Actions:** add a stock item manually · import from the configured source (with a preview of
-the first 20 rows before committing) · edit column mapping for the Excel source · open the
-bundle editor.
+**Grid columns** — Stok Kodu, Ürün İsmi, Birim Fiyat and Stok Miktarı are always visible; per
+marketplace, Çarpan and Oto BB are visible by default (the two levers an operator actually edits)
+and Satış Stok is hidden by default (supporting detail already surfaced by the row/cell
+highlighting below); Kaynak is hidden by default (secondary — read occasionally, not scanned).
+Çarpan and Oto BB are two independent columns, each saving through its own request, so hiding one
+via the column menu never hides editing for the other.
+
+| Column                   | Field                | Editable           | Default |
+| ------------------------ | -------------------- | ------------------ | ------- |
+| Stok Kodu                | `baseStockCode`      | no                 | visible |
+| Ürün İsmi                | `name`               | manual source only | visible |
+| Birim Fiyat              | `unitCost`           | manual source only | visible |
+| Stok Miktarı             | `unitStock`          | manual source only | visible |
+| `<Pazaryeri>` Çarpan     | `priceMultiplier`    | **yes**            | visible |
+| `<Pazaryeri>` Oto BB     | `autoRepriceEnabled` | **yes**            | visible |
+| `<Pazaryeri>` Satış Stok | derived              | no                 | hidden  |
+| Kaynak                   | `sourceCode`         | no                 | hidden  |
+
+**Row highlighting** (semantics preserved from the legacy app; colour is never the only carrier —
+each also shows a labelled `Chip` in the relevant cell, not just a coloured row, per §10):
+
+| Condition                                                 | Effect                                                                          |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `unitCost == 0`                                           | row red, Birim Fiyat cell shows a "Maliyet yok" chip — excluded from automation |
+| Total offered across marketplaces > physical stock        | row amber, Stok Miktarı cell shows an "Aşırı listelenmiş" chip                  |
+| Offered stock 0 on a marketplace while physical stock > 0 | that marketplace's Satış Stok cell shows a "Fırsat" chip                        |
+
+**Actions:** add a stock item manually (the screen's one accent-styled primary action, in the
+header) · import from the configured source, behind the İçe Aktarma section (with a preview of
+the first 20 rows before committing) · edit column mapping for the Excel source · open the bundle
+editor, behind the Paket Düzenleyici section · export the full catalogue to CSV regardless of the
+current search/filter (the filters narrow what is _looked at_, not what leaves the app).
 
 **Bundle editor:** add and remove members with quantity. No five-member cap.
+
+**Six states:** a failed first load renders the shared `ErrorState` with **Tekrar dene**; a load
+in flight says "Stok yükleniyor…"; a refresh that fails after the grid already has data (a pref
+save, an import, a bundle save all trigger the same reload) leaves the existing rows on screen
+behind a "may be stale" banner rather than going silent; the empty state names why nothing is
+showing (no stock at all vs. no filter match) and, for the filtered case, offers **Filtreleri
+Temizle**; each Çarpan/Oto BB edit disables itself and says "Kaydediliyor…" for its own round trip
+and reports inline on failure — the Oto BB switch specifically reverts to its prior value on a
+rejected save rather than showing a state the server never accepted.
 
 ---
 
@@ -130,16 +163,16 @@ the legacy app loaded the whole catalogue into memory.
 
 ### 4.1 Columns
 
-| Group | Columns |
-|-------|---------|
-| Identity | Pazaryeri · Marketplace SKU · Stok Kodu · Ürün Adı |
-| Cost | Orj. Birim Fiyat · Birim Fiyat · **Dip Fiyat** · Komisyon · KDV |
-| Price | Satış Fiyatı · Müşteri Fiyatı · PSF · Marj % |
-| Stock | Satış Stok · Fiziksel Stok |
+| Group       | Columns                                                               |
+| ----------- | --------------------------------------------------------------------- |
+| Identity    | Pazaryeri · Marketplace SKU · Stok Kodu · Ürün Adı                    |
+| Cost        | Orj. Birim Fiyat · Birim Fiyat · **Dip Fiyat** · Komisyon · KDV       |
+| Price       | Satış Fiyatı · Müşteri Fiyatı · PSF · Marj %                          |
+| Stock       | Satış Stok · Fiziksel Stok                                            |
 | Competition | Sıra · Buybox Fiyatı · **Buybox Mağaza** · 2. Fiyat · 3. Fiyat · Fark |
-| Engine | **Faz** · Optimum Fiyat · Son Karar · Son Gönderim Durumu |
-| Controls | Oto BB · Fiyat Artır · Fiyat Düşür · Min Fiyat · Max Fiyat |
-| Status | Satılabilir · Kilitli · Askıda · Kampanyalı |
+| Engine      | **Faz** · Optimum Fiyat · Son Karar · Son Gönderim Durumu             |
+| Controls    | Oto BB · Fiyat Artır · Fiyat Düşür · Min Fiyat · Max Fiyat            |
+| Status      | Satılabilir · Kilitli · Askıda · Kampanyalı                           |
 
 **Competitor price, rating, name and dispatch time are separate typed columns.** The legacy
 system packed them into strings like `"9.2 / SellerName"` and `"149.90 / 129.90"` and then
@@ -154,25 +187,25 @@ decision.
 
 ### 4.2 Row highlighting
 
-| Condition | Effect |
-|-----------|--------|
-| `price < floorPrice` | red — selling at a loss |
-| Locked / suspended | grey, struck through |
-| `phase == BLOCKED` | amber — cannot compete profitably |
-| `canWinBuybox` | green — floor is below the buybox price and we are not in it |
-| `rank == 1` | rank cell green |
-| `phase == OPTIMUM` | subtle, no emphasis — this is the healthy state |
-| Cost unknown | red outline, automation disabled |
+| Condition            | Effect                                                       |
+| -------------------- | ------------------------------------------------------------ |
+| `price < floorPrice` | red — selling at a loss                                      |
+| Locked / suspended   | grey, struck through                                         |
+| `phase == BLOCKED`   | amber — cannot compete profitably                            |
+| `canWinBuybox`       | green — floor is below the buybox price and we are not in it |
+| `rank == 1`          | rank cell green                                              |
+| `phase == OPTIMUM`   | subtle, no emphasis — this is the healthy state              |
+| Cost unknown         | red outline, automation disabled                             |
 
 ### 4.3 Editable cells
 
-| Column | Effect |
-|--------|--------|
-| Satış Fiyatı | **Confirmation dialog**, then a manual submission through the normal outbox — pending / confirmed / failed shown inline |
-| Satış Stok | Same |
-| PSF | Same. Decimals preserved (the legacy truncated to integer, doc 09 §15) |
-| Min Fiyat / Max Fiyat | Local; enforced by the engine on the next decision |
-| Oto BB / Fiyat Artır / Fiyat Düşür | Local switches |
+| Column                             | Effect                                                                                                                  |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Satış Fiyatı                       | **Confirmation dialog**, then a manual submission through the normal outbox — pending / confirmed / failed shown inline |
+| Satış Stok                         | Same                                                                                                                    |
+| PSF                                | Same. Decimals preserved (the legacy truncated to integer, doc 09 §15)                                                  |
+| Min Fiyat / Max Fiyat              | Local; enforced by the engine on the next decision                                                                      |
+| Oto BB / Fiyat Artır / Fiyat Düşür | Local switches                                                                                                          |
 
 A manual price edit **pauses automation for that listing** for a configurable period so the bot
 does not immediately overwrite the operator, and says so in the UI.
@@ -260,7 +293,7 @@ would outweigh a quiet day that represents the same hour. Across many listings t
 an occurrence count and says so on screen.
 
 Every figure carries a **coverage badge**: attempts, successes, failure rate, average interval
-and the last *successful* scrape. This is not decoration. The live archive ran at a 52% scrape
+and the last _successful_ scrape. This is not decoration. The live archive ran at a 52% scrape
 failure rate before Playwright landed, with one hour at 128 failures and zero successes; the
 seller counts from that window are not wrong so much as describing far less than they appear to.
 Freshness is measured from successful looks only — a job failing every hour is not fresh data —
@@ -288,7 +321,7 @@ The same archive along its other axis. §6 above answers "who is on this product
 Two identities have to line up for that last report, and **only one is automatic**: the product
 across marketplaces is our own `base_stock_code`, but the seller across marketplaces is an
 operator-defined group (doc 05 §5). An ungrouped seller therefore never appears in it, however
-many marketplaces it trades on. Sellers whose *names* coincide across marketplaces are offered
+many marketplaces it trades on. Sellers whose _names_ coincide across marketplaces are offered
 as suggestions to review and are never counted as matches.
 
 Offers the marketplace did not attach a merchant id to belong to no seller here. They are
@@ -296,7 +329,7 @@ reported as a count beside the list rather than omitted, so the list is not read
 
 **Our own store is not a competitor.** We are one of the offers on our own listings, and the
 archive records that on purpose — a rank means nothing without the offers it is a rank among.
-But every seller-*centric* report has to take us back out again, or we top it on 100% of our own
+But every seller-_centric_ report has to take us back out again, or we top it on 100% of our own
 listings by construction, which is arithmetic rather than information. Our own figures are shown
 as a separate line beside the list ("on N products, held the buybox M times"), because removing
 us from "who are we up against" is right and losing "how are we doing" is not.
@@ -345,12 +378,12 @@ last confirmed, and the offers that prove it.
 **Rule shape** — one sentence with four blanks, so a new alert kind is an enum value rather than
 a migration:
 
-| Blank | Values |
-|---|---|
-| Scope | one listing / one stock code / one marketplace / everything |
-| Subject | one seller / a seller group / anyone |
-| Condition | is present / is priced below |
-| Threshold | a fixed amount / our price / our floor / a % below ours |
+| Blank     | Values                                                      |
+| --------- | ----------------------------------------------------------- |
+| Scope     | one listing / one stock code / one marketplace / everything |
+| Subject   | one seller / a seller group / anyone                        |
+| Condition | is present / is priced below                                |
+| Threshold | a fixed amount / our price / our floor / a % below ours     |
 
 Thresholds are `bigint` kuruş; a fixed threshold is money like any other. Fixed thresholds are
 supported because some products have a floor the market itself enforces and someone breaking it
@@ -358,11 +391,11 @@ is the signal — but they go stale and nobody revisits them, so a fixed rule is
 standing reminder that the market may have moved away from it.
 
 **The rule editor refuses rules that cannot fire.** An alert rule does not fail loudly; it fails
-*silently*. A rule naming a mistyped stock code, an archived listing or a seller never seen
+_silently_. A rule naming a mistyped stock code, an archived listing or a seller never seen
 saves cleanly, lists cleanly and simply never matches, and the operator then reads an empty
 alerts screen as "nothing is wrong". Every reference is therefore resolved against the database
 before the rule is stored, and one that does not resolve is rejected with the reason. For the
-same reason the rules list names the *target* — the product, the marketplace, the seller — and
+same reason the rules list names the _target_ — the product, the marketplace, the seller — and
 shows `(bulunamadı)` where a reference has since gone away.
 
 Targets are picked, not typed: listings by product search, sellers and groups from what the
@@ -372,7 +405,7 @@ against `stock_items` on save.
 A **seller** subject is matched by marketplace seller ref alone, and the same digits can be two
 unrelated companies on two marketplaces. Where a ref is recorded on more than one marketplace
 the editor requires the scope to bound it to one (or to a single listing, which is on one).
-Asserting that two refs *are* one company is what a seller group is for, and that stays a
+Asserting that two refs _are_ one company is what a seller group is for, and that stays a
 deliberate operator act (§6.1).
 
 **Money is typed in lira and echoed back before saving.** The input takes Turkish notation with
@@ -380,7 +413,7 @@ a comma for kuruş; a dot is only accepted as a thousands group, so `400.50` is 
 than read as ₺400.500. The parsed amount is shown under the field as the operator types, because
 a threshold wrong by 1000× saves without complaint and then never fires.
 
-**One breach, one row.** A rule about *anyone* keys per listing and carries its offenders as
+**One breach, one row.** A rule about _anyone_ keys per listing and carries its offenders as
 children, each with its own joined/left timestamps. A market-wide collapse is one dashboard row
 that opens to show six sellers, not six rows to reassemble. A seller joining an already-open
 breach updates that alert rather than opening another — but the join is timestamped, so it can
@@ -391,7 +424,7 @@ interval. Without it a competitor oscillating around the threshold reopens an al
 until the operator stops reading the screen.
 
 **Evidence.** Each alert stores the offers, prices, ranks and threshold as they stood when it
-fired, including *which price field* the comparison used (`finalPrice` where published, `price`
+fired, including _which price field_ the comparison used (`finalPrice` where published, `price`
 otherwise). It is held on the alert rather than looked up later because
 `competitor_observations` is pruned at 90 days and the offers behind an old alert would
 otherwise simply vanish.
@@ -419,17 +452,17 @@ The worker and the web app are separate processes (doc 10 §2), so **a run is on
 through the rows the worker writes.** The screen polls: fast (~1.5s) while anything is queued,
 running or expanded, slow (~15s) otherwise, and not at all while the tab is hidden.
 
-- **Run-now acknowledges immediately.** Pressing *Çalıştır* enqueues a `job_queue` row; the
+- **Run-now acknowledges immediately.** Pressing _Çalıştır_ enqueues a `job_queue` row; the
   worker's scheduler needs up to one tick (doc 07 §8) to claim it. The button reports
-  *Kuyruğa alındı* for that gap rather than snapping back, and gives up after ~20s — a click
+  _Kuyruğa alındı_ for that gap rather than snapping back, and gives up after ~20s — a click
   the worker never acknowledges means the worker is down, and the screen must say so.
 - **Run-now is disabled while the job is queued or running**, derived from `job_queue` and
   `job_runs`, not from local UI state. So it survives a page reload and covers a run this
   browser did not start. A second concurrent `ScrapeCompetitors` in particular is exactly the
   aggressive pattern api-references §1.6 warns about.
-- **Durum** column: *Çalışıyor* (with `items_done`/`items_total`), *Kuyrukta*, or *Boşta*.
+- **Durum** column: _Çalışıyor_ (with `items_done`/`items_total`), _Kuyrukta_, or _Boşta_.
 
-### 7.2 Run detail (*Detaylar*)
+### 7.2 Run detail (_Detaylar_)
 
 Expands in place under the job's row, showing that run's progress and the events it logged.
 Shows the live run when there is one, otherwise the last finished one — "what did the last run
@@ -443,9 +476,9 @@ actually do?" is the same question.
 - `items_ok`/`items_failed` only once the run has settled: `finish` writes them at the end, so
   showing them mid-run would read as "everything failed".
 - A stall warning when a `running` row's `progress_at` has gone quiet for ~45s. A
-  rate-limited scrape is *meant* to be slow; a silent one usually means the worker died.
+  rate-limited scrape is _meant_ to be slow; a silent one usually means the worker died.
 - The run's `app_events`, at `debug` and above, newest last. doc 07 §7's "per-failure silence"
-  governs *alerting*, not the diagnosis this panel exists for.
+  governs _alerting_, not the diagnosis this panel exists for.
 
 Progress is **reporting only**: a handler that never reports one is fully supported (its panel
 shows counters without a bar), a failed progress write never fails the run, and no decision
@@ -459,22 +492,22 @@ immediate effect it cannot deliver.
 
 ### 7.3 Cadence editing (doc 07 §8.1, R-JOB-2)
 
-The catalogue table's *Sıklık* column is a numeric field (seconds), one per cadence-driven job
+The catalogue table's _Sıklık_ column is a numeric field (seconds), one per cadence-driven job
 (every job in doc 07 §1 except `ImportBundles`, which has no cadence at all and shows "Yalnızca
 manuel" instead). Next to it: the currently effective value in human units (`formatCadence`,
-e.g. "30 dakikada bir"), a *Kaydet* button, and a *Varsayılana dön* button that only appears once
+e.g. "30 dakikada bir"), a _Kaydet_ button, and a _Varsayılana dön_ button that only appears once
 an override is stored — clearing it is a distinct action from typing the default value back in,
 since only the former lets the operator later tell "no override" from "override that happens to
 match default". A note above the table repeats the same restart-to-apply honesty §7.2 already
 gives the scrape rate limit: a saved cadence takes effect on the worker's next restart, not live.
 
-*Sonraki Çalışma* is computed from the cadence the **running worker** booted with, never from the
+_Sonraki Çalışma_ is computed from the cadence the **running worker** booted with, never from the
 stored setting. Saving an override used to move that column immediately while the worker kept
 firing on its old interval — the screen predicting runs at times nothing would run at, one column
 away from the note saying the change needed a restart.
 
-Where the two disagree the row carries a persistent warning — *"Kaydedildi, henüz geçerli değil —
-worker <x> çalışıyor. Yeniden başlatın."* Persistent is the point: the transient "Kaydedildi"
+Where the two disagree the row carries a persistent warning — _"Kaydedildi, henüz geçerli değil —
+worker <x> çalışıyor. Yeniden başlatın."_ Persistent is the point: the transient "Kaydedildi"
 confirmation vanishes on the next reload, so an operator who saved yesterday had nothing left
 telling them the value was not in effect. The state is derived server-side (`pendingRestart` on
 `GET /api/jobs`) from the same comparison, so it cannot drift from the badge.
@@ -503,7 +536,7 @@ the order its endpoints happen to answer in:
 4. **Çalışma Geçmişi** stays last — history, not triage.
 
 The primary load (`GET /api/jobs`) now follows doc 15 §3.2 in full: a failed first load renders
-the shared `ErrorState` with **Tekrar dene**, and a poll that fails *after* the screen already has
+the shared `ErrorState` with **Tekrar dene**, and a poll that fails _after_ the screen already has
 data leaves that data on screen behind a "may be stale" banner rather than going silent. Before
 this fix the loading check ran ahead of the error render, so a failed first load left the operator
 on a permanent "Yükleniyor…" with no error visible and no way to retry short of reloading the
@@ -520,14 +553,14 @@ marketplace, listing, job run, date range, code. Each row links to its listing o
 
 ## 9. Settings (`/settings/*`)
 
-| Page | Contents |
-|------|----------|
-| Marketplaces | Enable/disable, merchant ref, credentials (write-only, with a Test button), capabilities |
-| Fees | Per marketplace, effective-dated. Commission VAT rate and treatment, cargo bands, expenditure bands. **Live floor-price preview** for a sample cost and VAT rate |
-| Policy | Per marketplace: steps, tolerance, seek strategy, sole-seller margin, stock mode, low-stock guard, settle duration, poll interval, concurrency, daily budget and reserve |
-| Product sources | Choose and configure; column mapping for Excel; Test; ERP options shown disabled as "yakında" |
-| Retention | Per-table windows (doc 05 §10) |
-| Database | Engine, connection, schema version, migration status |
+| Page            | Contents                                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Marketplaces    | Enable/disable, merchant ref, credentials (write-only, with a Test button), capabilities                                                                                 |
+| Fees            | Per marketplace, effective-dated. Commission VAT rate and treatment, cargo bands, expenditure bands. **Live floor-price preview** for a sample cost and VAT rate         |
+| Policy          | Per marketplace: steps, tolerance, seek strategy, sole-seller margin, stock mode, low-stock guard, settle duration, poll interval, concurrency, daily budget and reserve |
+| Product sources | Choose and configure; column mapping for Excel; Test; ERP options shown disabled as "yakında"                                                                            |
+| Retention       | Per-table windows (doc 05 §10)                                                                                                                                           |
+| Database        | Engine, connection, schema version, migration status                                                                                                                     |
 
 Every change is audited and shows who changed it, when, and from what.
 
@@ -555,22 +588,22 @@ catalogue and report how many listings would change price and by how much, befor
 
 ## 10. Cross-cutting requirements
 
-| ID | Requirement |
-|----|-------------|
-| R-UI-1 | Money is `bigint` kuruş internally; formatted in Turkish locale only at display |
-| R-UI-2 | Competitor attributes are separate typed fields, never composite strings |
-| R-UI-3 | Marketplace-pushing edits confirm, show pending/succeeded/failed, and never truncate decimals |
-| R-UI-4 | Filters are built structurally and executed server-side |
-| R-UI-5 | Grids are server-paged and virtualised |
-| R-UI-6 | The operation log is persisted and filterable |
-| R-UI-7 | Long operations report coherent progress and are cancellable |
-| R-UI-8 | Every listing's current price is explainable from the UI without reading logs |
-| R-UI-9 | Kill switches are reachable within one click from any screen |
-| R-UI-10 | The UI works against all three database engines with no behavioural difference |
-| R-UI-11 | Interface language Turkish; number and date formatting Turkish locale |
+| ID      | Requirement                                                                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R-UI-1  | Money is `bigint` kuruş internally; formatted in Turkish locale only at display                                                                                          |
+| R-UI-2  | Competitor attributes are separate typed fields, never composite strings                                                                                                 |
+| R-UI-3  | Marketplace-pushing edits confirm, show pending/succeeded/failed, and never truncate decimals                                                                            |
+| R-UI-4  | Filters are built structurally and executed server-side                                                                                                                  |
+| R-UI-5  | Grids are server-paged and virtualised                                                                                                                                   |
+| R-UI-6  | The operation log is persisted and filterable                                                                                                                            |
+| R-UI-7  | Long operations report coherent progress and are cancellable                                                                                                             |
+| R-UI-8  | Every listing's current price is explainable from the UI without reading logs                                                                                            |
+| R-UI-9  | Kill switches are reachable within one click from any screen                                                                                                             |
+| R-UI-10 | The UI works against all three database engines with no behavioural difference                                                                                           |
+| R-UI-11 | Interface language Turkish; number and date formatting Turkish locale                                                                                                    |
 | R-UI-12 | Every table screen's columns can be shown/hidden, reordered and resized, remembered per browser via `localStorage`; server-sortable columns are sortable from the header |
-| R-UI-13 | Every table screen offers a CSV ("Excel'e Aktar") export of what the grid currently shows, honouring the active filters |
-| R-UI-14 | A product is named `Marka - Ürün Adı` wherever it is shown, on screen and in exports |
+| R-UI-13 | Every table screen offers a CSV ("Excel'e Aktar") export of what the grid currently shows, honouring the active filters                                                  |
+| R-UI-14 | A product is named `Marka - Ürün Adı` wherever it is shown, on screen and in exports                                                                                     |
 
 Column customisation (R-UI-12) lives in `useColumnPrefs`/`ColumnMenu`/`ResizableTh`
 (`components/table.tsx`) and is wired up on `/listings` as the reference implementation
@@ -617,18 +650,18 @@ contrast (WCAG AA) before shipping.
 
 Token values captured from the chosen mockup, to seed `globals.css`'s dark palette:
 
-| Token | Value | Notes |
-|---|---|---|
-| `--color-bg` (dark) | `#05070a` | page background |
-| `--color-surface` (dark) | `#0a0e15` | cards, sidebar, table |
-| surface-2 (dark) | `#0d1220` | sticky table header, sidebar-adjacent panels |
-| `--color-border` (dark) | `#1c2430` | |
-| `--color-text` (dark) | `#f4f6f9` | |
-| `--color-muted` (dark) | `#7c8798` | |
-| `--color-accent` (dark) | `#22d3ee` | replaces `#2563eb` in dark mode; accent-on-text `#04141a` |
-| `--color-danger` (dark) | `#ff3b47` | tint bg `rgba(255,59,71,0.16)` |
-| `--color-warning` (dark) | `#ffb020` | tint bg `rgba(255,176,32,0.14)` |
-| `--color-success` (dark) | `#16e37e` | tint bg `rgba(22,227,126,0.14)` |
+| Token                    | Value     | Notes                                                     |
+| ------------------------ | --------- | --------------------------------------------------------- |
+| `--color-bg` (dark)      | `#05070a` | page background                                           |
+| `--color-surface` (dark) | `#0a0e15` | cards, sidebar, table                                     |
+| surface-2 (dark)         | `#0d1220` | sticky table header, sidebar-adjacent panels              |
+| `--color-border` (dark)  | `#1c2430` |                                                           |
+| `--color-text` (dark)    | `#f4f6f9` |                                                           |
+| `--color-muted` (dark)   | `#7c8798` |                                                           |
+| `--color-accent` (dark)  | `#22d3ee` | replaces `#2563eb` in dark mode; accent-on-text `#04141a` |
+| `--color-danger` (dark)  | `#ff3b47` | tint bg `rgba(255,59,71,0.16)`                            |
+| `--color-warning` (dark) | `#ffb020` | tint bg `rgba(255,176,32,0.14)`                           |
+| `--color-success` (dark) | `#16e37e` | tint bg `rgba(22,227,126,0.14)`                           |
 
 Numeric table columns (prices) use a monospace/tabular-nums treatment
 (`ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace`) rather than the
@@ -641,7 +674,7 @@ in `theme-init-script.ts`, with the `prefers-color-scheme` media query covering 
 palette lives in `globals.css` and is applied twice, once per mechanism. And the sweep of the
 `apps/web` screens for hardcoded (non-token) colours was carried out on 2026-08-26 — see §11.1.
 
-**One token is still unimplemented:** the table above lists a *surface-2* (`#0d1220`) for the
+**One token is still unimplemented:** the table above lists a _surface-2_ (`#0d1220`) for the
 sticky table header and sidebar-adjacent panels. `globals.css` has no such token, and
 `.table-sticky-head th` paints `--color-bg` instead. That is correct today because the grids sit
 directly on the page background rather than inside a surface card, so a header painted
@@ -697,8 +730,8 @@ background of its own leaves the browser to pick, and it picked the platform def
 directly — once, globally, since every filter on every screen is a bare `<select>` carrying only
 border and spacing classes, and repeated on `option`/`optgroup` because Windows needs the rows
 painted explicitly rather than inheriting from the control. The lesson generalises: for a
-browser-rendered control, `color-scheme` sets the *theme* but only an explicit
-background/colour on the element sets the *palette*.
+browser-rendered control, `color-scheme` sets the _theme_ but only an explicit
+background/colour on the element sets the _palette_.
 
 ---
 
@@ -710,8 +743,8 @@ picked a direction for each (2026-08-25, recorded via the options below) and bot
 
 ### 12.1 Brand/category browsing — built
 
-*"Pazaryerlerindeki marka ve kategori bilgileri gelmeli. Marka/kategori üzerine basınca o
-markaya ait ürünler görünmeli."*
+_"Pazaryerlerindeki marka ve kategori bilgileri gelmeli. Marka/kategori üzerine basınca o
+markaya ait ürünler görünmeli."_
 
 Decided: **normalised `brands`/`categories` reference tables** (doc 05 §4), not a denormalised
 column on `listings`, and **a dedicated `/brands` screen** (§1 above) rather than a filter-only
@@ -734,15 +767,15 @@ no browse UI yet. Copy the `/brands` pattern if that screen is wanted later.
 
 ### 12.2 Competitor tracking for products we don't sell — built (v1: add-by-link)
 
-*"Satılmayan / ürün kartına girilmemiş ürünlerde de rakip takibi yapılabilmeli... sadece ürün
-linki ile ekleme yapılabilmeli."*
+_"Satılmayan / ürün kartına girilmemiş ürünlerde de rakip takibi yapılabilmeli... sadece ürün
+linki ile ekleme yapılabilmeli."_
 
 Decided: **a new `tracked_products` table** (recommended option), refined during implementation
 into **its own parallel `tracked_product_observations` table** rather than the originally
 sketched "nullable `listings.competitor_observations.listing_id` + parallel
 `tracked_product_id`" — see doc 05 §5's `tracked_products` entry for why: it keeps
 `competitor_observations` and every query built against it (`observationsAsOf`, the §6/§6.1
-reports) completely untouched, and makes the pricing-path isolation *structural* rather than a
+reports) completely untouched, and makes the pricing-path isolation _structural_ rather than a
 guard someone has to remember to write — `Reprice`/`ObserveBuybox` (doc 07 §2.1/§2.2) query
 `listings` alone, and a tracked product has no row there at all, in any shape.
 
@@ -759,9 +792,9 @@ brand's full catalogue rather than pasting a link) needs the public brand-page s
 (trendyol-merchants-scraping-guide.md), not the authenticated Product Integration API — that API
 only sees our own catalogue. Revisit as a follow-up if link-only proves too manual in practice.
 
-**Detail screen `/tracked-products/[id]`** (customer feedback 2026-08-25, follow-up: *"onların da
+**Detail screen `/tracked-products/[id]`** (customer feedback 2026-08-25, follow-up: _"onların da
 aynı şekilde `/listings/[id]` tarzı bir ekranı olsun ve bütün satıcılarının fiyatlarını ve
-stoklarını görmek istiyorum"*). Every seller was already being recorded — `scrapeTrackedProducts`
+stoklarını görmek istiyorum"_). Every seller was already being recorded — `scrapeTrackedProducts`
 writes one `tracked_product_observations` row per offer per look — and the list screen was showing
 only the rank-1 row, so this screen surfaces what was already there rather than collecting
 anything new.
@@ -771,7 +804,7 @@ waterfall, the engine panel, the manual-price form and the min/max bounds. We do
 product, so there is no cost, no engine state and nothing to submit — the screen is
 reporting-only, in the same sense as §6.
 
-What it shows: a *Şu An* summary (buybox seller and price, cheapest offer, seller count, total
+What it shows: a _Şu An_ summary (buybox seller and price, cheapest offer, seller count, total
 visible stock, last look and its status), a **sellers table** — rank, seller, price, price move
 since the previous look, customer price, stock, last seen — and a buybox price history drawn
 with the same dependency-free chart component §5 uses, hover readout included: buybox and
@@ -782,7 +815,7 @@ that seller's own series across the window.
 
 Two decisions inside it:
 
-- **A seller that leaves the page keeps its row**, greyed and marked *teklifte değil*, ordered
+- **A seller that leaves the page keeps its row**, greyed and marked _teklifte değil_, ordered
   after the current offers. A competitor withdrawing is information; dropping the row would
   render it as an absence the operator cannot see.
 - **Seller identity is `seller_ref`**, with a fallback to the folded display name **only** when
@@ -794,14 +827,14 @@ Fed by `trackedProductsRepo.trackedProductObservationsSince`, which reads the wh
 in one query: a seller that vanishes has no row in the newer looks, so there is no way to notice
 its absence except to hold the older ones.
 
-*(Closed:* `tracked_product_observations` had no retention window and no change detection when
+_(Closed:_ `tracked_product_observations` had no retention window and no change detection when
 this screen was built. It got a 90-day window on 2026-08-26 and the change-detection hash in
 Faz 4 on 2026-08-28 — see doc 05 §5. One consequence reaches this screen: the newest observation
-is now the last look that *changed*, not the last look, so anything reporting freshness reads
+is now the last look that _changed_, not the last look, so anything reporting freshness reads
 `tracked_products.last_scraped_at` instead.)
 
-**Manual re-scan (2026-08-29)** — *"seçilen ürünleri tekli/çoklu tekrar tarama ekleyelim.
-ürünlerden gözüne takılanları tekrar güncel veri gelmesini isteyebilir."*
+**Manual re-scan (2026-08-29)** — _"seçilen ürünleri tekli/çoklu tekrar tarama ekleyelim.
+ürünlerden gözüne takılanları tekrar güncel veri gelmesini isteyebilir."_
 
 The grid has a leading tick column, a per-row **Tara** and a **Seçilenleri Tekrar Tara** button.
 Both post to `/api/tracked-products/rescan`, which enqueues `RescanTrackedProducts` (doc 07 §7.1)
@@ -841,10 +874,10 @@ Whiskas in Turkey wants every Whiskas listing on the marketplace, whoever sells 
 different question from "what do my competitors charge for the things I sell", and it drives
 three screens.
 
-**`/watched-brands`** — the registry. A *group* is the organisation (Mars); a *brand* is one
+**`/watched-brands`** — the registry. A _group_ is the organisation (Mars); a _brand_ is one
 brand on one marketplace (Whiskas on Trendyol, Royal Canin on Trendyol). Adding a brand needs
 only a search term; the marketplace's brand id is optional, and after the first sweep the screen
-*offers* the id most of that brand's products carry (≥60% share) rather than making the operator
+_offers_ the id most of that brand's products carry (≥60% share) rather than making the operator
 look it up. "Şimdi tara" enqueues `SweepBrandCatalogue`; progress shows on `/jobs`, because a
 full sweep is a minute for a small brand and five for a large one.
 
@@ -856,13 +889,13 @@ before this they had to leave for `/tracked-products` and re-pick the brand from
 
 **`/tracked-products`** — now serves both hand-added products and swept ones, server-paged,
 filtered and sorted. Filters: text, brand, category, status, minimum rating count, and two
-switches that exist for the audit specifically — *sadece aramada çıkanlar* and *değerlendirmesi
-olmayanlar*.
+switches that exist for the audit specifically — _sadece aramada çıkanlar_ and _değerlendirmesi
+olmayanlar_.
 
-The first is the brand-misuse shortlist. A brand is swept by its marketplace brand id *and* by
+The first is the brand-misuse shortlist. A brand is swept by its marketplace brand id _and_ by
 its search term; a product the search finds while the marketplace attributes it elsewhere is
 carrying the brand's name without the brand behind it. Eight of Whiskas' 887 products were
-exactly that, in categories including *Halı* and *Ahşap Boya & Vernik*. Such rows also carry a
+exactly that, in categories including _Halı_ and _Ahşap Boya & Vernik_. Such rows also carry a
 badge in the Ürün column, so the signal is visible without applying the filter.
 
 The shortlist is only meaningful when both passes are **complete**, and until 2026-08-29 they
@@ -875,11 +908,11 @@ pass ending short of the marketplace's own count records a `BrandSweepIncomplete
 must be re-swept before its shortlist is trusted.**
 
 **Dead-product suggestion** — on `/watched-brands`, per brand, with the scan time it would
-actually save: *"887 üründen 574'ünün (%65) hiç değerlendirmesi yok · derin tarama 30 dk → 11
-dk"*. The saving is computed, never assumed, because it is wildly brand-specific — 65% for
+actually save: _"887 üründen 574'ünün (%65) hiç değerlendirmesi yok · derin tarama 30 dk → 11
+dk"_. The saving is computed, never assumed, because it is wildly brand-specific — 65% for
 Whiskas against 5% for Royal Canin. Applying it **deactivates**, never deletes: "the marketplace
 has never recorded a rating" is a proxy for "nobody buys this", not proof of it, so the decision
-has to be reversible, and the grid's *Sürdür* button reverses it.
+has to be reversible, and the grid's _Sürdür_ button reverses it.
 
 Throughout, `rating_count = 0` (genuinely unrated) and `rating_count = null` (we could not read
 it) are kept apart. Only the first is ever offered for removal; offering the second would ask
@@ -887,7 +920,7 @@ the operator to act on our own parse failure.
 
 #### Seller analysis and price ranges (Faz 4)
 
-A sweep answers *which products exist*. It cannot answer *who sells them at what price* — a
+A sweep answers _which products exist_. It cannot answer _who sells them at what price_ — a
 catalogue card names only the buybox holder, and treating that as the competition would
 understate every product to one seller. That comes from the per-product deep scrape
 (`ScrapeTrackedProducts`), and Faz 4 is what reads it.
@@ -895,10 +928,10 @@ understate every product to one seller. That comes from the per-product deep scr
 **On `/tracked-products`, two families of price column**, which answer different questions and
 are labelled so:
 
-| Family | Columns | Source |
-|---|---|---|
-| The market right now | Satıcı, Medyan, **Makas**, Buybox Fiyat, Buybox Satıcı | the latest look, reduced in `lib/market-stats.ts` |
-| The market over the window | Dönem En Düşük, Dönem En Yüksek, Dönem Satıcı | one `GROUP BY` in `brandReportsRepo.trackedProductPeriodStats` |
+| Family                     | Columns                                                | Source                                                         |
+| -------------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
+| The market right now       | Satıcı, Medyan, **Makas**, Buybox Fiyat, Buybox Satıcı | the latest look, reduced in `lib/market-stats.ts`              |
+| The market over the window | Dönem En Düşük, Dönem En Yüksek, Dönem Satıcı          | one `GROUP BY` in `brandReportsRepo.trackedProductPeriodStats` |
 
 Makas (max ÷ min − 1 on the latest look) is the visible one of the current family: it is the
 figure worth scanning a page for, and ≥30% is highlighted. It is `—`, never `0`, for a
@@ -913,7 +946,7 @@ computed that way and is aggregated in the database.
 
 Only the **period** family survives an Excel export. The line is cost, not importance: a column
 is exportable when it comes from the row itself or from one aggregate query over the whole set,
-and not exportable when it needs the latest look *per row* — that is one query per row, fine for
+and not exportable when it needs the latest look _per row_ — that is one query per row, fine for
 a 50-row page and unbounded across a 5,000-row export.
 
 **`/watched-brands/sellers` — markalarımı kimler satıyor.** The brand-side counterpart of
@@ -935,7 +968,7 @@ Three decisions in it:
   a market that does not exist. It is a **mean**, not a median, and that is a deliberate
   narrowing of what Faz 4 promised — the reasoning is recorded on `BrandSellerAggregateRow` in
   `brand-reports.ts`. Below −15% on average is highlighted, with the screen saying in as many
-  words that this is not a violation, only somewhere to look. Whether a seller is *entitled* to
+  words that this is not a violation, only somewhere to look. Whether a seller is _entitled_ to
   be there is Faz 5.
 - **Seller identity is shared with the competitor screens.** `ScrapeTrackedProducts` registers
   every identified seller in `competitor_sellers`, so one company is one record whether we met
@@ -946,7 +979,7 @@ Three decisions in it:
 
 ##### The seller page carries both reports (2026-08-29)
 
-Sharing the identity was right; sharing only *half* the report was not. Until this date
+Sharing the identity was right; sharing only _half_ the report was not. Until this date
 `/competitors/sellers/[marketplace]/[ref]` read one archive — `competitor_observations` ⋈
 `listings`, "what does this seller do on the products **we sell**". A brand-audit finding
 ("Periko Petshop 5 üründe hep buybox") linked a seller there, and on a brand-owner install that
@@ -956,15 +989,15 @@ It was not lost. The five products were in the other archive the whole time —
 `tracked_product_observations` ⋈ `tracked_products`. The page now shows **both halves, each
 labelled with what it covers**:
 
-| Half | Reads | Answers |
-|---|---|---|
-| Sattığımız ürünlerde | `competitor_observations` ⋈ `listings` | ürün, bizim fiyatımız, onun aralığı, teklif, buybox, ort. sıra |
+| Half                      | Reads                                                                                                  | Answers                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Sattığımız ürünlerde      | `competitor_observations` ⋈ `listings`                                                                 | ürün, bizim fiyatımız, onun aralığı, teklif, buybox, ort. sıra  |
 | İzlenen marka ürünlerinde | `tracked_product_observations` ⋈ `tracked_products` (`brandReportsRepo.sellerTrackedProductBreakdown`) | ürün, onun aralığı, **piyasa sapması**, teklif, buybox, en ucuz |
 
 Decisions:
 
 - **No "bizim fiyatımız" column on the brand half, and there never will be.** We may not sell
-  the product at all. What takes its place is *piyasa sapması* — measured exactly as
+  the product at all. What takes its place is _piyasa sapması_ — measured exactly as
   `/watched-brands/sellers` measures it, against the mean of the seller's own look including
   sellers a report excludes, and highlighted below −15% on the same threshold. One figure, one
   meaning, on every screen that shows it.
@@ -986,22 +1019,22 @@ Decisions:
 
 #### Seller policy: authorised, blocked, undefined (Faz 5)
 
-**`/watched-brands/policy`.** Faz 4 says who sells the brand; this says who is *supposed* to.
+**`/watched-brands/policy`.** Faz 4 says who sells the brand; this says who is _supposed_ to.
 
 **Three states, and the third is real.** `Yetkili`, `Yasaklı` and **`Tanımsız`** — the last is
 the state almost every seller is in, and it means "nobody has looked at this seller yet", not
 "unauthorised". It is styled neutral rather than as a warning for exactly that reason: colouring
 the common state as a problem trains the operator to ignore the colour that matters. Clearing a
-verdict back to *Tanımsız* deletes the rule, because the third state is the absence of a rule.
+verdict back to _Tanımsız_ deletes the rule, because the third state is the absence of a rule.
 
-**Identity is account-level, policy is brand-level.** A rule is about one seller *and one brand*.
+**Identity is account-level, policy is brand-level.** A rule is about one seller _and one brand_.
 The same firm is routinely Whiskas' authorised distributor and unknown for Royal Canin — 21% of
 Royal Canin's sellers also sell Whiskas — so a group-wide report cannot show a single verdict
-chip, and the column on `/watched-brands/sellers` reads *marka seçin* until the scope narrows to
+chip, and the column on `/watched-brands/sellers` reads _marka seçin_ until the scope narrows to
 one brand rather than averaging two different answers into one.
 
 A rule written against the whole **group** is the default for every brand that does not override
-it: *"Mars authorises this distributor for everything, except Royal Canin"* is two rows, not one
+it: _"Mars authorises this distributor for everything, except Royal Canin"_ is two rows, not one
 per brand. When a verdict comes from the group default the row says so, and a brand rule that
 overrode one says that too — "why did this come out this way" is the first question an operator
 asks when a verdict surprises them.
@@ -1009,7 +1042,7 @@ asks when a verdict surprises them.
 **Matching is by marketplace seller code or tax number. Never by name.** This is the rule the
 whole feature rests on (doc 05 §5). A spreadsheet with only a company-name column is rejected
 outright, by name, with the reason; a row missing both identities is rejected with its line
-number and the company's name so the operator can find it. The name column *is* read, but only
+number and the company's name so the operator can find it. The name column _is_ read, but only
 as a label to show back.
 
 **Excel import**, because that is how a distributor list exists in the world; the alternative is
@@ -1024,12 +1057,12 @@ once. A half-applied policy list is worse than none: the operator believes the l
 and the rows that failed are exactly the ones nobody looks at again.
 
 A rule can be stored and be affecting nobody — a tax number not yet linked to any storefront, or
-a seller who has not appeared in the window. Those are counted as *etkisiz* beside the totals
+a seller who has not appeared in the window. Those are counted as _etkisiz_ beside the totals
 rather than left to look like they are in force.
 
 Faz 5 also puts the firm behind a storefront on the seller record (`competitor_sellers.tax_number`,
 operator-owned, edited from the same endpoint as the group and the note), and pairs the two
-findings on `/watched-brands/sellers`: **blocked *and* below the market** gets its own line,
+findings on `/watched-brands/sellers`: **blocked _and_ below the market** gets its own line,
 because both halves were already on the row and asking an auditor to cross-reference two columns
 by eye across eighty rows is how the pairing gets missed.
 
@@ -1052,10 +1085,10 @@ software does not, and the wording never implies otherwise.
   with a threshold someone chose.
 
 A stated finding therefore outranks every measured one, however dramatic the measured one's
-number — the plan's *"kara liste eşleşmesi fiyat sapmasından önce gelir, çünkü kesin bilgidir,
-istatistik değil"*. That ordering is a property of the two bases, not a weight anyone tunes.
+number — the plan's _"kara liste eşleşmesi fiyat sapmasından önce gelir, çünkü kesin bilgidir,
+istatistik değil"_. That ordering is a property of the two bases, not a weight anyone tunes.
 Within the measured tier the order is by how much a person can conclude from the finding alone,
-which is why *yeni görülen satıcı* sits last: a new seller is usually just a new seller.
+which is why _yeni görülen satıcı_ sits last: a new seller is usually just a new seller.
 
 **Every finding opens to its raw observation** — and to the whole **look**, not the subject's own
 row. "Below the market" is a statement about the other rows; a lone price with nothing beside it
@@ -1135,7 +1168,7 @@ a compliance action into a crawl and is deliberately not offered.
 strips `merchantId` from every URL because a merchant-scoped page reports that merchant as the
 winner on every row regardless of the real order. This adds it, because that is what makes the
 page carry the merchant's registration (api-references §1.6a). The same finding, used twice: such
-a response is authoritative about *who* and worthless about *where they rank*. Nothing on this
+a response is authoritative about _who_ and worthless about _where they rank_. Nothing on this
 path can leak an ordering — the port has no rank, price or winner field, so the phase's
 definition of done is a property of the types rather than a rule to remember.
 
@@ -1187,7 +1220,7 @@ o rakam hakkında bir olgudur — bir örneklem yorumu değil.
   ise normaldir ve **sayısı söylenir**. "300 satır yüklendi" demek, 258'i hiçbir şeye eşleşmişken
   operatöre dokunulmamış ürünler üzerinde fiyat yürürlükte sanısı verirdi.
 - Bulgu `stated`'dır ve sıralamada `blockedSellerPresent` ile `notOnAuthorisedList` arasına
-  girer. Gerekçe iddianın *belirginliğidir*, ciddiyeti değil: kara liste eşleşmesi operatörün
+  girer. Gerekçe iddianın _belirginliğidir_, ciddiyeti değil: kara liste eşleşmesi operatörün
   şahsen karar verdiği tek satıcıyı adlandırır; tavsiye fiyat ihlali bir satıcı, bir ürün ve iki
   fiyat adlandırır — kontrol edilebilirliğin sınırı; "listede yok" ise sayfadaki satıcıların
   çoğunu birden kapsayabilir ve spesifik bulguyu altına gömerdi.
@@ -1211,8 +1244,8 @@ devam ediyordu. Arşivin ifade edemediği tek şey buydu.
   (değişsin ya da değişmesin) ve **başarısız bakışta hiç dokunulmaz**: okunamayan sayfa,
   kimsenin satmadığının kanıtı değildir. `null` üçüncü bir durumdur — "henüz başarılı bakış yok"
   — ve `false` ile aynı şey değildir.
-- `/watched-brands`'te *Satıcısız* sütunu (yanında "+N bakılmadı"), `/tracked-products`'ta
-  *satıcısı olmayanlar* filtresi ve panoda toplam.
+- `/watched-brands`'te _Satıcısız_ sütunu (yanında "+N bakılmadı"), `/tracked-products`'ta
+  _satıcısı olmayanlar_ filtresi ve panoda toplam.
 
 ##### Buybox payı ve teklif satırının tamamı
 
@@ -1265,11 +1298,11 @@ duranlardı.
   tavsiye fiyat kapsamı, marka başına satır ve 30 günlük seyir (ortalama piyasa fiyatı, satıcı
   sayısı, satıcısı olan/olmayan ürün). İzlenen marka yoksa bölüm hiç çizilmez.
 - Seyirde **boş gün doldurulmaz**: hiçbir şeyin saklanmadığı gün, Faz 4'ten beri hiçbir şeyin
-  *değişmediği* gündür — satıcı olmayan gün değil. Boşluktan çizgi geçirmek, yazma tasarrufu
+  _değişmediği_ gündür — satıcı olmayan gün değil. Boşluktan çizgi geçirmek, yazma tasarrufu
   için var olan değişiklik tespitinden bir trend uydururdu.
 - Kenar çubuğu üç gruba ayrıldı — **Satış**, **Marka Denetimi**, **Sistem**. On altı düz link,
-  sekizde sorun değildi; marka modülü altı tane daha ekleyince *Marka Satıcıları* ile *Rakip
-  Satıcılar* iki satır arayla, farklı kişilere farklı soruları cevaplar hâlde duruyordu.
+  sekizde sorun değildi; marka modülü altı tane daha ekleyince _Marka Satıcıları_ ile _Rakip
+  Satıcılar_ iki satır arayla, farklı kişilere farklı soruları cevaplar hâlde duruyordu.
 
 ##### Ürün puanı derin taramadan da beslenir
 
@@ -1279,8 +1312,8 @@ zaten okuyor ve `product.ratingScore`'u yere düşürüyordu (guide §25, api-re
 Artık okunuyor: `CompetitorPageSnapshot.product` üzerinden gelir, `recordTrackedProductMetrics`
 değişiklik tespitiyle yazar ve `tracked_products.rating_count/average` tazelenir.
 
-- Puan sütunları için **iki yazıcı** vardır ve bu bilinçlidir: ikisi de *pazaryerinin ürün
-  hakkındaki kendi ifadesini* yazar, aynı kaynaktan. `label`, `is_active` ve tavsiye fiyat
+- Puan sütunları için **iki yazıcı** vardır ve bu bilinçlidir: ikisi de _pazaryerinin ürün
+  hakkındaki kendi ifadesini_ yazar, aynı kaynaktan. `label`, `is_active` ve tavsiye fiyat
   operatörün malıdır ve hiçbir tarama onlara dokunmaz — ayrım bu.
 - `null` asla yazılmaz: okunamayan puan bizim başarısızlığımızdır, ürünün hayatında bir olay
   değil, ve bilinen bir sayının üzerine bilinmeyen yazmak seriyi bozardı.
@@ -1329,7 +1362,7 @@ yapılmadan yazılacak şey tahmin olurdu.
 
 ### 12.3 Brand first in every product name — built (R-UI-14)
 
-*"Bütün ürün gösterimlerinde Marka başta olsun."* — `Sığır Etli Kısırlaştırılmış Kedi Maması
+_"Bütün ürün gösterimlerinde Marka başta olsun."_ — `Sığır Etli Kısırlaştırılmış Kedi Maması
 1,4 Kg` should read `Whiskas - Sığır Etli Kısırlaştırılmış Kedi Maması 1,4 Kg`.
 
 Composed at display time by `lib/product-name.ts`'s `withBrand`, from `brands.name` joined
@@ -1338,7 +1371,7 @@ that column stays exactly what the marketplace returned, so an import never has 
 label with theirs and a brand rename shows up everywhere at once.
 
 Composed **server-side in each API route** rather than in each screen: ten screens name a
-product and only one shape of name is wanted. Routes covered: `/api/listings` (grid *and* its
+product and only one shape of name is wanted. Routes covered: `/api/listings` (grid _and_ its
 CSV export), `/api/listings/[id]`, `/api/alerts` (alert rows and listing-scoped rule labels),
 `/api/dashboard`, `/api/competitors`, `/api/competitors/listings`,
 `/api/competitors/sellers/[marketplace]/[ref]`, `/api/competitors/overlap` and
@@ -1352,7 +1385,7 @@ dialect-triplicated report queries. `/api/competitors/overlap` is the one except
 Two behaviours worth keeping: a title that already opens with its own brand is **normalised**,
 not prefixed twice (`Whiskas Sığır Etli Mama` → `Whiskas - Sığır Etli Mama`), and a listing with
 no brand — every Hepsiburada row today (§12.1) — shows the bare product name, unchanged. Brand
-matching folds case both Turkish-locale *and* invariant: Turkish folding maps `I`→`ı`, so on its
+matching folds case both Turkish-locale _and_ invariant: Turkish folding maps `I`→`ı`, so on its
 own it fails to recognise the very common all-caps title `WHISKAS …` as already carrying the
 brand `Whiskas`. `withBrand`'s doc comment and its table-driven test carry the detail.
 
