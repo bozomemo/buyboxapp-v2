@@ -286,7 +286,16 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
 }
 
 function ImportPanel({ onImported }: { onImported: () => void }) {
-  const [config, setConfig] = useState<{ configured: boolean; sourceCode?: string } | undefined>();
+  // A poll, not a bare `.catch(() => setConfig({ configured: false }))`: that used to fold a
+  // genuine network failure into the same state as "no product source configured yet", which on
+  // a live install could send an operator into the wrong flow after a transient error (sweep
+  // report §2.6). Same shape as `nav-shell.tsx`'s `usePoll`.
+  const [configPoll, setConfigPoll] = useState<
+    | { status: 'loading' }
+    | { status: 'error'; message: string }
+    | { status: 'ready'; data: { configured: boolean; sourceCode?: string } }
+  >({ status: 'loading' });
+  const [configAttempt, setConfigAttempt] = useState(0);
   const [status, setStatus] = useState<string | undefined>();
   const [preview, setPreview] =
     useState<{ baseStockCode: string; name: string; unitCost: string; unitStock: number }[]>();
@@ -294,11 +303,24 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    setConfigPoll({ status: 'loading' });
     fetch('/api/product-source/config')
-      .then((r) => r.json())
-      .then(setConfig)
-      .catch(() => setConfig({ configured: false }));
-  }, []);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as { configured: boolean; sourceCode?: string };
+      })
+      .then((data) => {
+        if (!cancelled) setConfigPoll({ status: 'ready', data });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled)
+          setConfigPoll({ status: 'error', message: e instanceof Error ? e.message : String(e) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [configAttempt]);
 
   async function fileToBase64(file: File): Promise<string> {
     const buffer = await file.arrayBuffer();
@@ -378,7 +400,24 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
     }
   }
 
-  if (!config) return null;
+  if (configPoll.status === 'loading') return null;
+
+  if (configPoll.status === 'error') {
+    return (
+      <p className="text-sm text-(--color-danger)">
+        Ürün kaynağı yapılandırması alınamadı ({configPoll.message}).{' '}
+        <button
+          type="button"
+          onClick={() => setConfigAttempt((n) => n + 1)}
+          className="font-semibold underline"
+        >
+          Tekrar dene
+        </button>
+      </p>
+    );
+  }
+
+  const config = configPoll.data;
 
   return (
     <div className="text-sm">
