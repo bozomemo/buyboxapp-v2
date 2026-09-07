@@ -6,6 +6,45 @@ import { useEffect, useState } from 'react';
 import { ThemeToggle } from './theme-toggle';
 
 /**
+ * One GET, three outcomes, for the two small polls this shell owns (doc 15 §6, Phase 7). Both
+ * used to fold "the request failed" into the same `undefined` bucket as "nothing to show yet" —
+ * `.catch(() => undefined)` — which was fine the day these routes could 500 before the setup
+ * wizard had run, and stopped being fine once `NavShell` returns bare `children` for `/setup`
+ * (below): by the time this chrome renders at all, the app is bootstrapped, so a failure here is
+ * a real one (the API route threw, the network dropped), not "not configured yet". Swallowing it
+ * left the operator looking at a header that quietly had no system-pause button and no licence
+ * warning, with nothing said about why (doc 15 §3.2 Error: "never a silent `.catch(() => …)`").
+ */
+type Poll<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T };
+
+function usePoll<T>(url: string): [Poll<T>, () => void] {
+  const [attempt, setAttempt] = useState(0);
+  const [poll, setPoll] = useState<Poll<T>>({ status: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    setPoll({ status: 'loading' });
+    fetch(url)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return (await res.json()) as T;
+      })
+      .then((data) => {
+        if (!cancelled) setPoll({ status: 'ready', data });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setPoll({ status: 'error', message: e instanceof Error ? e.message : String(e) });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `attempt` has no other purpose than to force this effect to rerun on retry.
+  }, [url, attempt]);
+
+  return [poll, () => setAttempt((n) => n + 1)];
+}
+
+/**
  * The sidebar, in three groups (2026-09-03).
  *
  * It was one flat list of sixteen links, which was fine at eight and stopped being fine when the
@@ -72,23 +111,34 @@ const NAV_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
  * coloured the other way around, because *that* one's "on" state is the one worth alarming on.
  */
 function SystemPauseButton() {
-  const [engaged, setEngaged] = useState<boolean | undefined>(undefined);
+  const [poll, retry] = usePoll<{ engaged: boolean }>('/api/system-pause');
   const [busy, setBusy] = useState(false);
+  const [toggleError, setToggleError] = useState<string | undefined>();
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/system-pause')
-      .then((res) => (res.ok ? res.json() : undefined))
-      .then((data: { engaged: boolean } | undefined) => {
-        if (!cancelled && data) setEngaged(data.engaged);
-      })
-      .catch(() => undefined); // not configured yet (setup wizard not run) — stay hidden
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  if (poll.status === 'loading') {
+    // A brief, unlabelled gap rather than a header that jumps as soon as the poll answers — this
+    // is chrome that renders on every screen, not a primary load with its own dedicated space.
+    return (
+      <span aria-live="polite" className="text-sm text-(--color-muted)">
+        Sistem durumu yükleniyor…
+      </span>
+    );
+  }
 
-  if (engaged === undefined) return null;
+  if (poll.status === 'error') {
+    return (
+      <button
+        type="button"
+        onClick={retry}
+        title={poll.message}
+        className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) px-3 py-1.5 text-sm font-semibold text-(--color-danger) hover:opacity-90"
+      >
+        Sistem durumu alınamadı — Tekrar dene
+      </button>
+    );
+  }
+
+  const engaged = poll.data.engaged;
 
   async function toggle() {
     if (engaged) {
@@ -99,6 +149,7 @@ function SystemPauseButton() {
       }
     }
     setBusy(true);
+    setToggleError(undefined);
     try {
       const next = !engaged;
       const res = await fetch('/api/system-pause', {
@@ -106,53 +157,69 @@ function SystemPauseButton() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ engaged: next }),
       });
-      if (res.ok) setEngaged(next);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      retry();
+    } catch (e) {
+      setToggleError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => void toggle()}
-      disabled={busy}
-      title="Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur."
-      className={`rounded px-3 py-1.5 text-sm font-semibold transition ${
-        engaged
-          ? 'border border-(--color-border) bg-(--color-surface) text-(--color-text) hover:bg-(--color-hover)'
-          : 'bg-(--color-success) text-(--color-success-ink) hover:opacity-90'
-      }`}
-    >
-      {engaged ? 'Genel Durdurma: Duraklatıldı' : 'Sistem Çalışıyor'}
-    </button>
+    <span className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => void toggle()}
+        disabled={busy}
+        title="Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur."
+        className={`rounded px-3 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
+          engaged
+            ? 'border border-(--color-border) bg-(--color-surface) text-(--color-text) hover:bg-(--color-hover)'
+            : 'bg-(--color-success) text-(--color-success-ink) hover:opacity-90'
+        }`}
+      >
+        {busy ? 'Uygulanıyor…' : engaged ? 'Genel Durdurma: Duraklatıldı' : 'Sistem Çalışıyor'}
+      </button>
+      {toggleError && (
+        <span role="alert" className="text-xs text-(--color-danger)">
+          Değiştirilemedi: {toggleError}
+        </span>
+      )}
+    </span>
   );
 }
 
 /**
  * doc 13 §4.1: a lapsed licence inside its 7-day grace window still runs, but must say so
  * everywhere, not just on the `/license` screen — an operator working the dashboard should not
- * discover the system is about to stop only when it actually does. Silent otherwise: a `valid`
- * licence and the pre-bootstrap/setup state (where `/api/license` 404s or isn't configured yet)
- * both render nothing.
+ * discover the system is about to stop only when it actually does. Silent on a `valid` licence,
+ * because that is the common case and has nothing to say.
+ *
+ * `/api/license` GET never 404s — it answers before bootstrap too (doc 13 §6) — so the only
+ * reason this poll can fail here, past the setup wizard, is a real one: the route threw, or the
+ * request never reached it. That used to be folded into the same `undefined` as "licence is
+ * fine, say nothing" via `.catch(() => undefined)`; an operator running past the grace window on
+ * a broken poll got no warning at all. It now says so, with a retry, same as the system-pause
+ * button above.
  */
 function LicenseGraceBanner() {
-  const [daysRemaining, setDaysRemaining] = useState<number | undefined>(undefined);
+  const [poll, retry] = usePoll<{ status: { state: string; graceDaysRemaining?: number } }>('/api/license');
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/license')
-      .then((res) => (res.ok ? res.json() : undefined))
-      .then((data: { status: { state: string; graceDaysRemaining?: number } } | undefined) => {
-        if (cancelled || !data) return;
-        setDaysRemaining(data.status.state === 'grace' ? data.status.graceDaysRemaining : undefined);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  if (poll.status === 'loading') return null; // sub-second in practice; nothing worth saying yet
 
+  if (poll.status === 'error') {
+    return (
+      <div className="border-b border-(--color-danger-border) bg-(--color-danger-bg) px-6 py-2 text-center text-sm text-(--color-danger)">
+        Lisans durumu okunamadı: {poll.message}{' '}
+        <button type="button" onClick={retry} className="font-semibold underline">
+          Tekrar dene
+        </button>
+      </div>
+    );
+  }
+
+  const daysRemaining = poll.data.status.state === 'grace' ? poll.data.status.graceDaysRemaining : undefined;
   if (daysRemaining === undefined) return null;
 
   return (

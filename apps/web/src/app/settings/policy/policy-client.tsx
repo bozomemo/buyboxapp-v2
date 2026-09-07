@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatMoney } from '@/lib/format';
+import { DECISION_REASON_LABELS, labelOf } from '@/lib/labels';
 import {
   Button,
   ConfirmButton,
@@ -438,7 +439,7 @@ export function PolicyClient() {
                         <td className="py-1">{s.productName}</td>
                         <td className="py-1">{formatMoney(BigInt(s.oldPrice))}</td>
                         <td className="py-1">{formatMoney(BigInt(s.newPrice))}</td>
-                        <td className="py-1">{s.reason}</td>
+                        <td className="py-1">{labelOf(DECISION_REASON_LABELS, s.reason)}</td>
                       </tr>
                     ))}
                   </tbody>
