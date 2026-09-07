@@ -60,6 +60,13 @@ function daysAgo(n: number): number {
 /** Stable identity for "the report has not arrived yet", shared by every table on the screen. */
 const NO_ROWS: never[] = [];
 
+/**
+ * No `useColumnPrefs` on this screen's tables (sweep report §2.4, considered deliberately, not an
+ * oversight): it carries six small analytics tables (price timeline, seller presence, buybox
+ * share plain and time-weighted, a seller profile, scrape coverage), each three to five columns,
+ * each already scoped to one listing or seller by the filters above it. None is a wide operator
+ * grid an operator scans and re-shapes; each is closer to a report figure than a table.
+ */
 export function CompetitorsClient() {
   const [sinceMs, setSinceMs] = useState(daysAgo(30));
   const [untilMs, setUntilMs] = useState(Date.now());

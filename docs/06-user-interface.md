@@ -640,22 +640,36 @@ action, so §3.6 does not apply there — checked deliberately, not an oversight
 
 Column customisation (R-UI-12) lives in `useColumnPrefs`/`ColumnMenu`/`ResizableTh`
 (`components/table.tsx`) and is wired up on `/listings` as the reference implementation
-(customer feedback 2026-08-25). CSV export (R-UI-13) is `lib/csv.ts`'s `downloadCsv`, wired up
-so far on `/stock`, `/alerts`, `/competitors`, `/competitors/sellers`, `/events` and
-`/watched-brands` (client-side, from data already loaded in the browser), and **server-side**
-on `/listings` and `/tracked-products` (capped at 5,000 rows — see the comment on
-`CSV_EXPORT_LIMIT` in either route for why the per-row enrichment is skipped in the export).
+(customer feedback 2026-08-25), and also on `/stock`, `/tracked-products`, `/competitors/sellers`
+and its seller-detail sub-page (`/competitors/sellers/[marketplace]/[ref]`), `/watched-brands`,
+`/watched-brands/sellers`, `/events`, and `/jobs`'s run-history table (added 2026-09-07; the same
+screen's job catalogue and circuit-breaker tables are deliberately exempt — see the doc comment
+above `RUN_HISTORY_COLUMNS` in `jobs-client.tsx` for why). Deliberately **not** wired up
+elsewhere, each for a stated reason recorded in that screen's own file rather than left silent:
+`/brands` (three columns, each the reason the row exists), `/competitors` (six small
+listing/seller-scoped analytics tables, not an operator grid), `/watched-brands/comparison` (one
+row per brand the operator picked to compare — never a browsable catalogue) and
+`/watched-brands/policy` (its last column is the verdict action itself, and "Satıcı" already
+carries the row's identity). List current as of the Phase 7 sweep (`docs/15-ui-redesign-sweep-
+report.md` §2.4) — re-check with `grep -rn "useColumnPrefs[<(]" apps/web/src/app` before trusting
+this paragraph on a much later date.
+
+CSV export (R-UI-13) is `lib/csv.ts`'s `downloadCsv`, wired up **client-side** (from data already
+loaded in the browser) on `/stock`, `/alerts`, `/competitors`, `/competitors/sellers` and its
+seller-detail sub-page, `/events`, `/watched-brands`, `/watched-brands/comparison`,
+`/watched-brands/cross-marketplace`, `/watched-brands/policy`, `/watched-brands/sellers`,
+`/watched-brands/findings`, `/brands`, and `/jobs`'s run-history table (the currently filtered
+page, not the unbounded log — see that export's own comment), and **server-side** on `/listings`,
+`/listings/[id]`, `/tracked-products` and `/tracked-products/[id]` (the two list screens capped at
+5,000 rows — see the comment on `CSV_EXPORT_LIMIT` in either route for why the per-row enrichment
+is skipped in the export). Re-check with `grep -rln "downloadCsv" apps/web/src/app` before
+trusting this list on a much later date — it drifted stale once already (Phase 7 sweep, above).
 
 The distinction matters: a client-side export can only offer what is on screen, so it is right
 only for a screen whose endpoint already returns the whole bounded result. `/listings` and
 `/tracked-products` are server-paged, so their exports run the **same filters** against the
 database and return the whole filtered set — the grid's 50 rows and the export's 5,000 come
 from one `filterParams()` in the client, precisely so the two cannot disagree.
-
-Column customisation and export are both wired up on `/listings`, `/tracked-products`,
-`/competitors/sellers` and the seller-detail sub-page
-`/competitors/sellers/[marketplace]/[ref]`. Not yet rolled out: `/jobs` (run history) — copy the
-pattern from one of the screens above rather than inventing a new column-prefs or export shape.
 
 **Saved filter presets** (§4.4) are `useFilterPresets` in the same module, added 2026-08-28 and
 first used on `/tracked-products`. Same storage contract as column preferences and for the same

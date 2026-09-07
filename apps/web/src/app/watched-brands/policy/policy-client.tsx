@@ -85,6 +85,12 @@ function VerdictChip({ verdict }: { verdict: Verdict }) {
  * Canin satıcılarının %21'i aynı zamanda Whiskas da satıyor, yani bu istisna değil kural.
  *
  * Eşleştirme <strong>asla isimle</strong> yapılmaz: pazaryeri satıcı kodu ya da vergi numarası.
+ *
+ * No `useColumnPrefs` on the sellers grid below (sweep report §2.4, considered deliberately, not
+ * an oversight): its last column is the verdict-setting action itself — hiding it would remove
+ * the reason the row exists — and "Satıcı" already bundles the name, marketplace and code an
+ * operator identifies the row by. There is no column here an operator scans past, only ones they
+ * read or act on.
  */
 export function PolicyClient() {
   const [watchedBrandId, setWatchedBrandId] = useState('');

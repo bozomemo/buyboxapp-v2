@@ -1,8 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  type ColumnDef,
+  ColumnMenu,
+  Pagination,
+  resizableTableStyle,
+  ResizableTh,
+  STICKY_HEAD,
+  TableFrame,
+  usePagedRows,
+  useColumnPrefs,
+} from '@/components/table';
 import {
   EmptyState,
   ErrorState,
@@ -51,6 +61,17 @@ const LEVEL_TONE: Record<EventRow['level'], Tone> = {
   error: 'danger',
 };
 
+type EventColumnId = 'at' | 'level' | 'marketplaceCode' | 'code' | 'message' | 'links';
+
+const EVENT_COLUMNS: ColumnDef<EventColumnId>[] = [
+  { id: 'at', label: 'Zaman', defaultWidth: 150 },
+  { id: 'level', label: 'Seviye', defaultWidth: 90 },
+  { id: 'marketplaceCode', label: 'Pazaryeri', defaultWidth: 110 },
+  { id: 'code', label: 'Kod', defaultWidth: 220 },
+  { id: 'message', label: 'Mesaj', defaultWidth: 320 },
+  { id: 'links', label: 'Bağlantılar', defaultWidth: 90 },
+];
+
 export function EventsClient() {
   const [events, setEvents] = useState<EventRow[] | null>(null);
   const [minLevel, setMinLevel] = useState('');
@@ -67,6 +88,13 @@ export function EventsClient() {
   const paged = usePagedRows(events ?? EMPTY_EVENTS, {
     resetKey: [minLevel, marketplaceCode, code, sinceMs, untilMs, selectedListing?.id].join('|'),
   });
+  // Called unconditionally, ahead of the loading/error early returns below — same reason as
+  // `paged` above.
+  const eventColumns = useColumnPrefs('events-columns-v1', EVENT_COLUMNS);
+  const visibleEventColumns = useMemo(
+    () => EVENT_COLUMNS.filter((d) => eventColumns.isVisible(d.id)),
+    [eventColumns],
+  );
 
   const filtersActive = Boolean(minLevel || marketplaceCode || code || sinceMs || untilMs || selectedListing);
 
@@ -233,24 +261,27 @@ export function EventsClient() {
         title={`Olaylar (${events.length})`}
         action={
           events.length > 0 && (
-            <button
-              type="button"
-              onClick={() =>
-                downloadCsv(
-                  'olay-gunlugu.csv',
-                  events.map((e) => ({
-                    Zaman: formatDateTime(e.at),
-                    Seviye: LEVEL_LABELS[e.level] ?? e.level,
-                    Pazaryeri: e.marketplaceCode ?? '',
-                    Kod: e.code,
-                    Mesaj: e.message,
-                  })),
-                )
-              }
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
-            >
-              Excel&apos;e Aktar
-            </button>
+            <div className="flex items-center gap-2">
+              <ColumnMenu defs={EVENT_COLUMNS} prefs={eventColumns} />
+              <button
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    'olay-gunlugu.csv',
+                    events.map((e) => ({
+                      Zaman: formatDateTime(e.at),
+                      Seviye: LEVEL_LABELS[e.level] ?? e.level,
+                      Pazaryeri: e.marketplaceCode ?? '',
+                      Kod: e.code,
+                      Mesaj: e.message,
+                    })),
+                  )
+                }
+                className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
+              >
+                Excel&apos;e Aktar
+              </button>
+            </div>
           )
         }
       >
@@ -266,38 +297,73 @@ export function EventsClient() {
         ) : (
           <>
             <TableFrame>
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" style={resizableTableStyle(EVENT_COLUMNS, eventColumns)}>
                 <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
                   <tr>
-                    <th className="px-3 py-2">Zaman</th>
-                    <th className="px-3 py-2">Seviye</th>
-                    <th className="px-3 py-2">Pazaryeri</th>
-                    <th className="px-3 py-2">Kod</th>
-                    <th className="px-3 py-2">Mesaj</th>
-                    <th className="px-3 py-2">Bağlantılar</th>
+                    {visibleEventColumns.map((d) => (
+                      <ResizableTh key={d.id} id={d.id} prefs={eventColumns} className="px-3 py-2">
+                        {d.label}
+                      </ResizableTh>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-(--color-border)">
                   {paged.rows.map((e) => (
                     <tr key={e.id}>
-                      {/* Absolute, deliberately (doc 15 §3.3's own carve-out): a log line's own
-                          timestamp is the point, not how long ago it was. */}
-                      <td className="whitespace-nowrap px-3 py-2 text-(--color-muted)">
-                        {formatDateTime(e.at)}
-                      </td>
-                      <td className={`px-3 py-2 font-medium ${TONE_TEXT[LEVEL_TONE[e.level]]}`}>
-                        {LEVEL_LABELS[e.level] ?? e.level}
-                      </td>
-                      <td className="px-3 py-2 text-(--color-muted)">{e.marketplaceCode ?? '—'}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{e.code}</td>
-                      <td className="px-3 py-2">{e.message}</td>
-                      <td className="px-3 py-2 text-xs">
-                        {e.listingId && (
-                          <Link href={`/listings/${e.listingId}`} className="text-(--color-accent) underline">
-                            İlan
-                          </Link>
-                        )}
-                      </td>
+                      {visibleEventColumns.map((d) => {
+                        if (d.id === 'at') {
+                          // Absolute, deliberately (doc 15 §3.3's own carve-out): a log line's
+                          // own timestamp is the point, not how long ago it was.
+                          return (
+                            <td key={d.id} className="whitespace-nowrap px-3 py-2 text-(--color-muted)">
+                              {formatDateTime(e.at)}
+                            </td>
+                          );
+                        }
+                        if (d.id === 'level') {
+                          return (
+                            <td
+                              key={d.id}
+                              className={`px-3 py-2 font-medium ${TONE_TEXT[LEVEL_TONE[e.level]]}`}
+                            >
+                              {LEVEL_LABELS[e.level] ?? e.level}
+                            </td>
+                          );
+                        }
+                        if (d.id === 'marketplaceCode') {
+                          return (
+                            <td key={d.id} className="px-3 py-2 text-(--color-muted)">
+                              {e.marketplaceCode ?? '—'}
+                            </td>
+                          );
+                        }
+                        if (d.id === 'code') {
+                          return (
+                            <td key={d.id} className="px-3 py-2 font-mono text-xs">
+                              {e.code}
+                            </td>
+                          );
+                        }
+                        if (d.id === 'message') {
+                          return (
+                            <td key={d.id} className="px-3 py-2">
+                              {e.message}
+                            </td>
+                          );
+                        }
+                        return (
+                          <td key={d.id} className="px-3 py-2 text-xs">
+                            {e.listingId && (
+                              <Link
+                                href={`/listings/${e.listingId}`}
+                                className="text-(--color-accent) underline"
+                              >
+                                İlan
+                              </Link>
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>

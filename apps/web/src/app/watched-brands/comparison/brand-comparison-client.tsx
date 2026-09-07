@@ -22,6 +22,11 @@ import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
  * ürünün iki sürümü değildir: gramajlar farklı, ürün kırılımı farklıdır, ve daha çok üst segment
  * hattı olan bir marka karşılaştırılabilir her üründe daha ucuzken endekste yüksek çıkar. Rakamın
  * dürüstçe izlediği şey **hareket**tir — makas açılıyor mu, kapanıyor mu.
+ *
+ * No `useColumnPrefs` on the summary table below (sweep report §2.4, considered deliberately, not
+ * an oversight): one row per brand the operator picked to compare, so its row count is bounded by
+ * how many brands fit meaningfully on the chart above it — a handful, never a browsable catalogue
+ * — and there is nothing on the row an operator would want to hide to compare the rest.
  */
 
 interface BrandOption {

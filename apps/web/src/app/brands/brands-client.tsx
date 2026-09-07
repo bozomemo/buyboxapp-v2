@@ -21,6 +21,10 @@ interface Brand {
  * cross-navigation `/stock` already does for a base stock code (doc 06 §4.5).
  *
  * Consistency pass (doc 15 §6, Phase 5): shared kit, six states, translated marketplace label.
+ *
+ * No `useColumnPrefs` (sweep report §2.4, considered deliberately, not an oversight): the grid is
+ * three columns — Marka, Pazaryeri, Ürün — and every one of them is the reason a row exists to
+ * click through in the first place. There is nothing to hide that would leave a usable row.
  */
 export function BrandsClient() {
   const [brands, setBrands] = useState<Brand[]>([]);

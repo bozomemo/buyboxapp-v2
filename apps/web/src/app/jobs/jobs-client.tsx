@@ -1,8 +1,19 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
-import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  type ColumnDef,
+  ColumnMenu,
+  Pagination,
+  resizableTableStyle,
+  ResizableTh,
+  STICKY_HEAD,
+  TableFrame,
+  useColumnPrefs,
+  usePagedRows,
+} from '@/components/table';
 import { EmptyState, ErrorState, LoadingState, Section } from '@/components/ui';
+import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '@/lib/format';
 import { CIRCUIT_LABELS, JOB_LABELS, JOB_RUN_STATE_LABELS, labelOf } from '@/lib/labels';
 
@@ -191,6 +202,26 @@ interface ScrapeRateRow {
   isOverride: boolean;
   default: { requestsPerMinute: number; burst: number };
 }
+
+/**
+ * Column preferences and CSV export (R-UI-12/13) apply here, and deliberately nowhere else on
+ * this screen (sweep report §2.2). The job catalogue and the circuit-breaker list are one row
+ * per job or per marketplace — a fixed handful of control rows, not data an operator slices or
+ * exports — and the scrape-rate table is the same shape again, behind its own `<details>`. Run
+ * history is the one genuine grid here: unbounded, growing, and the thing doc 15 §6 2.1 names as
+ * this screen's own "iş takılmış mı" question turning into "ne zaman ve ne sıklıkla başarısız
+ * oluyor" once an operator wants to look across more than the visible page.
+ */
+type RunHistoryColumnId = 'jobName' | 'startedAt' | 'duration' | 'state' | 'items' | 'error';
+
+const RUN_HISTORY_COLUMNS: ColumnDef<RunHistoryColumnId>[] = [
+  { id: 'jobName', label: 'İş', defaultWidth: 160 },
+  { id: 'startedAt', label: 'Başlangıç', defaultWidth: 140 },
+  { id: 'duration', label: 'Süre', defaultWidth: 80 },
+  { id: 'state', label: 'Durum', defaultWidth: 100 },
+  { id: 'items', label: 'Öğeler', defaultWidth: 140 },
+  { id: 'error', label: 'Hata', defaultWidth: 220 },
+];
 
 function formatCadence(ms: number | null): string {
   if (ms === null) return 'Yalnızca manuel';
@@ -390,6 +421,11 @@ export function JobsClient() {
     pageSize: 25,
     resetKey: `${historyFilter.jobName}|${historyFilter.state}`,
   });
+  const runHistoryColumns = useColumnPrefs('jobs-run-history-columns-v1', RUN_HISTORY_COLUMNS);
+  const visibleRunHistoryColumns = useMemo(
+    () => RUN_HISTORY_COLUMNS.filter((d) => runHistoryColumns.isVisible(d.id)),
+    [runHistoryColumns],
+  );
 
   const loadScrapeRates = () => {
     fetch('/api/jobs/scrape-rate')
@@ -733,6 +769,28 @@ export function JobsClient() {
     } finally {
       setBusy(null);
     }
+  }
+
+  /**
+   * The currently loaded page of run history — the same rows `historyFilter` already narrowed
+   * server-side, not the full unbounded table (there is no "full table" to have: `/api/jobs/run-
+   * history` itself is capped at `historyLimit`, per doc 07). An operator exporting after
+   * filtering to one job's failures wants that filtered set, not everything else mixed back in.
+   */
+  function exportRunHistoryCsv() {
+    downloadCsv(
+      'is-gecmisi.csv',
+      runHistory.map((r) => ({
+        İş: labelOf(JOB_LABELS, r.jobName),
+        Başlangıç: formatDateTime(r.startedAt),
+        'Süre (sn)': r.finishedAt ? ((r.finishedAt - r.startedAt) / 1000).toFixed(1) : '',
+        Durum: labelOf(JOB_RUN_STATE_LABELS, r.state),
+        Başarılı: r.itemsOk,
+        Toplam: r.itemsTotal,
+        Başarısız: r.itemsFailed,
+        Hata: r.error ?? '',
+      })),
+    );
   }
 
   // Primary load failed and nothing has ever been shown — the six-states contract (doc 15 §3.2)
@@ -1159,7 +1217,24 @@ export function JobsClient() {
         </div>
       </details>
 
-      <Section id="run-history" title="Çalışma Geçmişi">
+      <Section
+        id="run-history"
+        title="Çalışma Geçmişi"
+        action={
+          runHistory.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <ColumnMenu defs={RUN_HISTORY_COLUMNS} prefs={runHistoryColumns} />
+              <button
+                type="button"
+                onClick={exportRunHistoryCsv}
+                className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+              >
+                Excel&apos;e Aktar
+              </button>
+            </div>
+          ) : undefined
+        }
+      >
         <div className="mb-2 flex gap-2">
           <select
             className="rounded border border-(--color-border) px-2 py-1 text-sm"
@@ -1191,35 +1266,72 @@ export function JobsClient() {
         ) : (
           <>
             <TableFrame>
-              <table className="w-full text-sm">
+              <table
+                className="w-full text-sm"
+                style={resizableTableStyle(RUN_HISTORY_COLUMNS, runHistoryColumns)}
+              >
                 <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
                   <tr>
-                    <th className="px-3 py-2">İş</th>
-                    <th className="px-3 py-2">Başlangıç</th>
-                    <th className="px-3 py-2">Süre</th>
-                    <th className="px-3 py-2">Durum</th>
-                    <th className="px-3 py-2">Öğeler</th>
-                    <th className="px-3 py-2">Hata</th>
+                    {visibleRunHistoryColumns.map((d) => (
+                      <ResizableTh key={d.id} id={d.id} prefs={runHistoryColumns} className="px-3 py-2">
+                        {d.label}
+                      </ResizableTh>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-(--color-border)">
                   {pagedHistory.rows.map((r) => (
                     <tr key={r.id}>
-                      <td className="px-3 py-2">{labelOf(JOB_LABELS, r.jobName)}</td>
-                      {/* Absolute, deliberately: this row is a log entry — the exact instant is
-                          the point (doc 15 §3.3's own carve-out), not staleness at a glance. */}
-                      <td className="px-3 py-2 text-(--color-muted)">{formatDateTime(r.startedAt)}</td>
-                      <td className="px-3 py-2 text-(--color-muted)">
-                        {r.finishedAt ? `${((r.finishedAt - r.startedAt) / 1000).toFixed(1)} sn` : '—'}
-                      </td>
-                      <td className={r.state === 'failed' ? 'px-3 py-2 text-(--color-danger)' : 'px-3 py-2'}>
-                        {labelOf(JOB_RUN_STATE_LABELS, r.state)}
-                      </td>
-                      <td className="px-3 py-2 text-(--color-muted)">
-                        {r.itemsOk}/{r.itemsTotal} başarılı
-                        {r.itemsFailed > 0 ? `, ${r.itemsFailed} başarısız` : ''}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-(--color-danger)">{r.error ?? ''}</td>
+                      {visibleRunHistoryColumns.map((d) => {
+                        if (d.id === 'jobName') {
+                          return (
+                            <td key={d.id} className="px-3 py-2">
+                              {labelOf(JOB_LABELS, r.jobName)}
+                            </td>
+                          );
+                        }
+                        if (d.id === 'startedAt') {
+                          // Absolute, deliberately: this row is a log entry — the exact instant
+                          // is the point (doc 15 §3.3's own carve-out), not staleness at a glance.
+                          return (
+                            <td key={d.id} className="px-3 py-2 text-(--color-muted)">
+                              {formatDateTime(r.startedAt)}
+                            </td>
+                          );
+                        }
+                        if (d.id === 'duration') {
+                          return (
+                            <td key={d.id} className="px-3 py-2 text-(--color-muted)">
+                              {r.finishedAt ? `${((r.finishedAt - r.startedAt) / 1000).toFixed(1)} sn` : '—'}
+                            </td>
+                          );
+                        }
+                        if (d.id === 'state') {
+                          return (
+                            <td
+                              key={d.id}
+                              className={
+                                r.state === 'failed' ? 'px-3 py-2 text-(--color-danger)' : 'px-3 py-2'
+                              }
+                            >
+                              {labelOf(JOB_RUN_STATE_LABELS, r.state)}
+                            </td>
+                          );
+                        }
+                        if (d.id === 'items') {
+                          return (
+                            <td key={d.id} className="px-3 py-2 text-(--color-muted)">
+                              {r.itemsOk}/{r.itemsTotal} başarılı
+                              {r.itemsFailed > 0 ? `, ${r.itemsFailed} başarısız` : ''}
+                            </td>
+                          );
+                        }
+                        return (
+                          <td key={d.id} className="px-3 py-2 text-xs text-(--color-danger)">
+                            {r.error ?? ''}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
