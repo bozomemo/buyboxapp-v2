@@ -122,6 +122,9 @@ export function MarketplacesClient() {
 
   // §3.6: turning a marketplace on lets the background jobs start submitting real prices to it —
   // the risk direction, so it is confirmed. Turning it off is one click, the safe direction.
+  // Raw `window.confirm` rather than the kit's `ConfirmButton` (sweep report §2.5): the control
+  // here is a checkbox, and `ConfirmButton` only wraps a `<button>` — routing this through it
+  // would mean replacing the checkbox with a button-styled toggle, a UI change beyond this nit.
   function setEnabled(form: Form, next: boolean) {
     if (next && !form.enabled) {
       const confirmed = window.confirm(

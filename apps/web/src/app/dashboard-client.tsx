@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Ago, Chip, Section, Tone, TONE_BOX, TONE_TEXT } from '@/components/ui';
+import { Ago, Chip, ConfirmButton, Section, Tone, TONE_BOX, TONE_TEXT } from '@/components/ui';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber, formatTime } from '@/lib/format';
@@ -487,18 +487,6 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
     }
   }
 
-  function toggle() {
-    if (
-      engaged &&
-      !window.confirm(
-        'Fiyat gönderimini açmak üzeresiniz. Bundan sonra uygun ilanlar için gerçek fiyat güncellemeleri pazaryerlerine gönderilebilir. Emin misiniz?',
-      )
-    ) {
-      return;
-    }
-    void setEngaged(!engaged);
-  }
-
   return (
     <div className={`rounded border p-4 ${engaged ? TONE_BOX.neutral : TONE_BOX.warn}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -512,9 +500,10 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
               : 'Uygun ilanlar için gerçek fiyat güncellemeleri pazaryerlerine gidiyor.'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={toggle}
+        <ConfirmButton
+          requireConfirm={engaged}
+          confirmMessage="Fiyat gönderimini açmak üzeresiniz. Bundan sonra uygun ilanlar için gerçek fiyat güncellemeleri pazaryerlerine gönderilebilir. Emin misiniz?"
+          onConfirmed={() => void setEngaged(!engaged)}
           disabled={busy}
           className={`flex-none rounded px-3 py-2 text-sm font-semibold disabled:opacity-50 ${
             engaged
@@ -523,7 +512,7 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
           }`}
         >
           {busy ? 'Uygulanıyor…' : engaged ? 'Fiyat gönderimini aç' : 'Fiyat gönderimini durdur'}
-        </button>
+        </ConfirmButton>
       </div>
       {error && <p className="mt-2 text-sm text-(--color-danger)">Değiştirilemedi: {error}</p>}
     </div>
@@ -585,17 +574,6 @@ function MarketplaceCard({
   const m = marketplace;
 
   async function toggleKillSwitch() {
-    // Confirmation only in the direction that lets real prices move again. Stopping stays a
-    // single click — an operator reaching for it usually has a reason to hurry, and a confirm on
-    // the safe direction trains people to click through the one that matters.
-    if (
-      m.killSwitchEngaged &&
-      !window.confirm(
-        `${m.displayName} için fiyat gönderimini açmak üzeresiniz. Bu pazaryerine gerçek fiyat güncellemeleri gönderilebilir. Emin misiniz?`,
-      )
-    ) {
-      return;
-    }
     setBusy(true);
     try {
       await fetch('/api/kill-switch/marketplace', {
@@ -623,9 +601,13 @@ function MarketplaceCard({
           <Chip tone={m.killSwitchEngaged ? 'neutral' : 'ok'}>
             {m.killSwitchEngaged ? 'Gönderim durduruldu' : 'Gönderim açık'}
           </Chip>
-          <button
-            type="button"
-            onClick={() => void toggleKillSwitch()}
+          {/* Confirmation only in the direction that lets real prices move again. Stopping stays
+              a single click — an operator reaching for it usually has a reason to hurry, and a
+              confirm on the safe direction trains people to click through the one that matters. */}
+          <ConfirmButton
+            requireConfirm={m.killSwitchEngaged}
+            confirmMessage={`${m.displayName} için fiyat gönderimini açmak üzeresiniz. Bu pazaryerine gerçek fiyat güncellemeleri gönderilebilir. Emin misiniz?`}
+            onConfirmed={() => void toggleKillSwitch()}
             disabled={busy}
             aria-label={
               m.killSwitchEngaged
@@ -635,7 +617,7 @@ function MarketplaceCard({
             className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
           >
             {busy ? '…' : m.killSwitchEngaged ? 'Aç' : 'Durdur'}
-          </button>
+          </ConfirmButton>
         </div>
       </div>
 

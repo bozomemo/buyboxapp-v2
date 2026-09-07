@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { ConfirmButton } from '@/components/ui';
 import { ThemeToggle } from './theme-toggle';
 
 /**
@@ -141,13 +142,6 @@ function SystemPauseButton() {
   const engaged = poll.data.engaged;
 
   async function toggle() {
-    if (engaged) {
-      // Resuming starts every job again — imports, buybox observation, decisions, and
-      // (subject to its own separate switch) submissions.
-      if (!window.confirm('Sistemi devam ettirmek üzeresiniz. Tüm işler yeniden başlayacak. Emin misiniz?')) {
-        return;
-      }
-    }
     setBusy(true);
     setToggleError(undefined);
     try {
@@ -168,9 +162,12 @@ function SystemPauseButton() {
 
   return (
     <span className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => void toggle()}
+      {/* Resuming starts every job again — imports, buybox observation, decisions, and (subject
+          to its own separate switch) submissions — so only that direction confirms. */}
+      <ConfirmButton
+        requireConfirm={engaged}
+        confirmMessage="Sistemi devam ettirmek üzeresiniz. Tüm işler yeniden başlayacak. Emin misiniz?"
+        onConfirmed={() => void toggle()}
         disabled={busy}
         title="Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur."
         className={`rounded px-3 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
@@ -180,7 +177,7 @@ function SystemPauseButton() {
         }`}
       >
         {busy ? 'Uygulanıyor…' : engaged ? 'Genel Durdurma: Duraklatıldı' : 'Sistem Çalışıyor'}
-      </button>
+      </ConfirmButton>
       {toggleError && (
         <span role="alert" className="text-xs text-(--color-danger)">
           Değiştirilemedi: {toggleError}
