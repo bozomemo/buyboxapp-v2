@@ -98,6 +98,14 @@ const COLUMN_LABEL = new Map(COLUMN_DEFS.map((d) => [d.id, d.label]));
  * ilerleme İşler ekranında görünür. Büyük bir markanın taraması dakikalar sürer; bir HTTP
  * isteğinde beklemek anlamsız olurdu.
  *
+ * **"Şimdi tara" iki iştir** (operatör talebi, 2026-09-08): önce marka kataloğu gezilir
+ * (`SweepBrandCatalogue` — hangi ürünler var), sonra bulunan **her ürünün satıcıları** tek tek
+ * okunur (`ScrapeBrandSellers`, doc 07 §7.3). Yalnız katalog taraması satıcı/buybox verisi
+ * getirmez; o veri normalde `ScrapeCompetitors`'ın saatlik rotasyonundan gelir ve yeni eklenen
+ * bir markanın tüm ürünlerine ulaşması yarım günü bulur. İkinci yarı ürün başına bir sayfa
+ * okuduğu için 5.000 ürünlük bir markada saatler sürer — bu yüzden onay istenir ve yalnızca
+ * katalog isteyenler için ayrı bir düğme bırakılır.
+ *
  * IA (doc 15 §6, Phase 2.7): bu ekranın görevi çoğunlukla izleme/kayıt — "hangi markaları
  * izliyorum, taramalar sağlıklı mı?" — ekleme değil. O yüzden marka/grup ekleme formu
  * varsayılan olarak kapalı tutulur (ilk ziyarette hiç grup yoksa otomatik açılır) ve asıl
@@ -193,10 +201,14 @@ export function WatchedBrandsClient() {
     }
   }
 
-  async function sweepNow(brand: WatchedBrand) {
-    if (await post(`/api/watched-brands/${brand.id}/sweep`, {})) {
+  async function sweepNow(brand: WatchedBrand, withSellers: boolean) {
+    if (await post(`/api/watched-brands/${brand.id}/sweep`, { withSellers })) {
       setError(null);
-      alert(`${brand.label} taraması kuyruğa alındı. İlerlemeyi İşler ekranından izleyebilirsiniz.`);
+      alert(
+        withSellers
+          ? `${brand.label} taraması kuyruğa alındı: önce katalog, ardından bulunan her ürünün satıcıları taranacak. Ürün başına bir sayfa okunduğu için bu iş saatler sürebilir; ilerlemeyi İşler ekranından izleyebilirsiniz.`
+          : `${brand.label} katalog taraması kuyruğa alındı (satıcı verisi toplanmayacak). İlerlemeyi İşler ekranından izleyebilirsiniz.`,
+      );
     }
   }
 
@@ -636,13 +648,31 @@ export function WatchedBrandsClient() {
                       </td>
                     ))}
                     <td className="px-2 py-1 text-right whitespace-nowrap">
-                      <button
-                        type="button"
+                      {/* §3.6: onay, geri alınamadığı için değil — pazaryerine binlerce istek
+                          gönderdiği için. Mesaj kaç ürünün okunacağını adıyla söyler. */}
+                      <ConfirmButton
+                        requireConfirm
+                        confirmMessage={`${brand.label}: önce katalog taranacak, ardından bulunan her ürünün satıcıları tek tek okunacak.
+
+Şu an ${formatNumber(brand.productCount)} ürün kayıtlı; ürün başına bir sayfa okunur, bu yüzden iş saatler sürebilir ve arka planda çalışır.
+
+Başlatılsın mı?`}
+                        onConfirmed={() => void sweepNow(brand, true)}
                         disabled={busy}
-                        onClick={() => void sweepNow(brand)}
                         className="mr-2 rounded border border-(--color-border) px-2 py-0.5 text-xs hover:bg-(--color-hover) disabled:opacity-40"
                       >
                         Şimdi tara
+                      </ConfirmButton>
+                      {/* Ucuz yarı, tek tıkla: katalog taraması 24 üründe bir sayfa okur ve
+                          hiçbir satıcı isteği göndermez. */}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void sweepNow(brand, false)}
+                        title="Yalnızca katalog: hangi ürünler var? Satıcı/buybox verisi toplanmaz."
+                        className="mr-2 rounded border border-(--color-border) px-2 py-0.5 text-xs text-(--color-muted) hover:bg-(--color-hover) disabled:opacity-40"
+                      >
+                        Sadece katalog
                       </button>
                       <ConfirmButton
                         requireConfirm

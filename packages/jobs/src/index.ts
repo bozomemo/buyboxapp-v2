@@ -95,6 +95,12 @@ export {
   type RescanTrackedProductsPayload,
 } from './pipeline/rescan-tracked-products.js';
 export {
+  SCRAPE_BRAND_SELLERS_JOB,
+  ScrapeBrandSellersPayloadSchema,
+  scrapeBrandSellers,
+  type ScrapeBrandSellersPayload,
+} from './pipeline/scrape-brand-sellers.js';
+export {
   SWEEP_BRAND_CATALOGUE_JOB,
   SWEEP_MAX_PAGES_PER_SELECTOR,
   SweepBrandCataloguePayloadSchema,
@@ -127,6 +133,8 @@ export {
   SCRAPE_COLD_EVERY_N_CYCLES,
   ALERT_DEFAULT_QUIET_PERIOD_MS,
   ALERT_STALE_AFTER_MS,
+  SCRAPE_BRAND_SELLERS_CHUNK,
+  SCRAPE_BRAND_SELLERS_MAX_PRODUCTS,
   SCRAPE_CYCLE_MS,
   SCRAPE_FAILURE_RATE_ALERT_THRESHOLD,
   SCRAPE_FAILURE_RATE_MIN_SAMPLE,

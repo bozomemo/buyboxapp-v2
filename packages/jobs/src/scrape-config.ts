@@ -103,3 +103,27 @@ export const SCRAPE_MAX_TRACKED_PER_RUN = 300;
  * therefore first in the next run's ordering, which is exactly where they belong.
  */
 export const SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT = 25;
+
+/**
+ * How many products one `ScrapeBrandSellers` chunk reads before the job asks the database for
+ * the next page (doc 07 §7.3).
+ *
+ * The job is a loop over `scrapeTrackedProducts`, and the chunk size is the granularity at
+ * which two things happen: the candidate query is re-run (so products the sweep added, or an
+ * operator paused, mid-run are honoured), and `SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT` is
+ * evaluated. Fifty at the conservative rate is a couple of minutes' work — small enough that a
+ * dead source is noticed quickly, large enough that a five-thousand-product brand costs a
+ * hundred queries rather than five thousand.
+ */
+export const SCRAPE_BRAND_SELLERS_CHUNK = 50;
+
+/**
+ * Runaway guard on one whole-brand seller scrape — **not** a rotation cap.
+ *
+ * Unlike `SCRAPE_MAX_TRACKED_PER_RUN`, nothing comes back for the remainder here: the operator
+ * pressed a button that means "read this entire brand", and Royal Canin alone is 5,204 rows. So
+ * the ceiling sits far above any brand measured (20,000) and exists only so that a bug which
+ * stopped `last_scraped_at` advancing costs one long run rather than an endless one. Hitting it
+ * is recorded as a truncated run, never silently accepted.
+ */
+export const SCRAPE_BRAND_SELLERS_MAX_PRODUCTS = 20_000;

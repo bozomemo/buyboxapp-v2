@@ -21,6 +21,7 @@ per job from the Jobs screen (§8 "Operator-configurable cadence").
 | `ObserveBuybox` | per marketplace, tiered (§4) | Official buybox API → `buybox_observations` |
 | `ScrapeCompetitors` | per marketplace, hourly, tiered (§4) — **disabled by default** | Full seller detail → `scrape_runs` + `competitor_observations` (reporting only, §7) |
 | `RescanTrackedProducts` | on demand only, never scheduled | Re-read the tracked products an operator selected (reporting only, §7.1) |
+| `ScrapeBrandSellers` | on demand only, never scheduled | Read **every** product of one watched brand for sellers/buybox, with no rotation ceiling (reporting only, §7.3) |
 | `Reprice` | per marketplace, policy interval | Decide; enqueue `price_submissions` |
 | `SubmitPriceChanges` | continuous | Drain the outbox in marketplace-sized batches |
 | `ConfirmSubmissions` | continuous | Poll batch status to a terminal state |
@@ -568,6 +569,66 @@ The transport is a webhook whose URL comes from `FINDINGS_WEBHOOK_URL` (doc 08 �
 address is a bearer token and must not live in a settings row (CLAUDE.md). Absent is normal and
 disables pushing entirely: findings are still derived, stored and on the screen, and the screen
 says in as many words that nobody is being told.
+
+### 7.3 `ScrapeBrandSellers` — the whole-brand seller scrape
+
+Added 2026-09-08, from an operator watching a newly added brand come back with products and no
+sellers. `SweepBrandCatalogue` answers *"what products exist under this brand?"* and writes them
+to `tracked_products`; it collects **no seller, price or buybox data at all**. That data comes
+from `ScrapeCompetitors`' tracked half, which rotates the whole catalogue at
+`SCRAPE_MAX_TRACKED_PER_RUN` (300) products a cycle. So a brand added at noon read as complete on
+every brand screen while all 305 of its products still said "hiç bakılmadı", and stayed that way
+until the rotation reached them — most of a day on the live install, with no way to ask for
+sooner other than ticking fifty rows at a time (§7.1).
+
+```
+loop:
+    page = this brand's active products not looked at since this run's watermark   (50 at a time)
+    if page is empty: done
+    scrapeTrackedProducts(onlyIds = page)      ← the same read the cadence does
+```
+
+- **It is a loop over `scrapeTrackedProducts`**, not a second implementation, for the same reason
+  §7.1 is: change detection, seller registration, rating capture, the failure rows and
+  `last_scraped_at` must behave exactly as on the cadence path, or an operator's button puts a
+  differently-shaped row in the archive.
+- **The cursor is a timestamp, not an offset.** `recordTrackedProductLook` advances
+  `last_scraped_at` on every look, success *or* failure, so "not looked at since this run
+  started" shrinks by exactly the page just read. That is what makes the walk **terminate** (a
+  brand of dead pages ends the run rather than cycling on it) and what makes it **resume**: the
+  watermark lives in the payload, so a retry after a worker restart continues instead of
+  re-reading the brand. Hence the default three attempts rather than the rescan's single one.
+- **No per-run product ceiling worth the name.** `SCRAPE_BRAND_SELLERS_MAX_PRODUCTS` is 20,000 —
+  far above the largest brand measured (Royal Canin, 5,204) — and exists only so a bug that
+  stopped `last_scraped_at` advancing costs one long run rather than an endless one. Hitting it
+  is recorded as `BrandSellerScrapeTruncated`, never silently accepted. This is deliberate and it
+  is the one scrape path shaped this way: the operator pressed a button meaning "read this entire
+  brand", and a run of several hours is the cost of that answer, not a fault.
+- **A whole chunk failing ends the run** (`BrandSellerScrapeHalted`). `scrapeTrackedProducts`
+  already stops its own chunk at `SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT`; without this the
+  same guard would simply be re-entered fifty products at a time for the whole remaining
+  catalogue — the exact failure that constant was written for, just paced differently. The
+  products not reached keep their old `last_scraped_at`, so they are first in the rotation and
+  first in a re-press.
+- **`is_active` is honoured**, unlike §7.1's named-id path: this is the catalogue walking itself,
+  and a product an operator paused is one the catalogue should skip.
+- **Chained from inside `SweepBrandCatalogue`**, not queued beside it. The sweep's payload carries
+  `scrapeSellersAfter`, set only by `/api/watched-brands/[id]/sweep` (doc 06 §12.1's "Şimdi
+  tara"), never by the cadence: the sweep is the cheap tier (a page per 24 products) and this is
+  the expensive one (a page per product), and folding the second into the first unconditionally
+  would turn a nightly catalogue pass into a nightly crawl. Chaining happens in the handler
+  because the scheduler claims several jobs per tick and does not order them — a seller scrape
+  queued alongside the sweep could win the race and read the brand as it was before it.
+- **One per brand at a time** (`countActiveJobsForPayloadField` on `watchedBrandId`), the same
+  guard and reason as the sweep's own.
+- **Not in `JOB_CATALOG`**, on the same grounds as §7.1: no cadence, no runnable empty payload. It
+  is still *registered* with the scheduler, or `claimNextJob` would leave its rows `ready` for
+  ever.
+
+⚠️ **Reporting only**, on the terms of §7 throughout: it reads `tracked_products`, never
+`listings`, so nothing it writes can reach a pricing decision.
+
+---
 
 ## 8. Scheduling and concurrency
 

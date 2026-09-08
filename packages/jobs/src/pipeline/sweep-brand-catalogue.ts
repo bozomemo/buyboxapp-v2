@@ -45,10 +45,11 @@
 import type { BrandCatalogueProduct, BrandCatalogueQuery, IBrandCatalogueSource } from '@buybox/adapters';
 import { BrandCatalogueError } from '@buybox/adapters';
 import type { MarketplaceCode } from '@buybox/core';
-import { eventsRepo, newId, trackedProductsRepo, watchedBrandsRepo } from '@buybox/db';
+import { eventsRepo, jobsRepo, newId, trackedProductsRepo, watchedBrandsRepo } from '@buybox/db';
 import { z } from 'zod';
 import { getBrandCatalogueSource } from '../brand-catalogue-source-registry.js';
-import type { JobContext, JobResult } from '../job.js';
+import { DEFAULT_MAX_ATTEMPTS, type JobContext, type JobResult } from '../job.js';
+import { SCRAPE_BRAND_SELLERS_JOB } from './scrape-brand-sellers.js';
 
 export const SWEEP_BRAND_CATALOGUE_JOB = 'SweepBrandCatalogue';
 
@@ -78,6 +79,17 @@ export const SweepBrandCataloguePayloadSchema = z.object({
   marketplaceCode: z.enum(['trendyol', 'hepsiburada']),
   /** Restrict the run to one brand — what the "Şimdi tara" button on a brand sends. */
   watchedBrandId: z.string().optional(),
+  /**
+   * Follow each brand this run sweeps with a whole-brand seller scrape (`ScrapeBrandSellers`,
+   * doc 07 §7.3) — the second half of the brand screen's "Şimdi tara".
+   *
+   * Off by default, and the cadence path never sets it. The sweep is the cheap tier (a page per
+   * 24 products) and the seller scrape is the expensive one (a page per product); folding the
+   * second into the first unconditionally would turn a nightly catalogue pass over three brands
+   * into a nightly crawl of 6,400 product pages. It is set only when an operator has asked for
+   * that brand *now*, which is the explicit decision api-references §1.6 wants.
+   */
+  scrapeSellersAfter: z.boolean().default(false),
   maxPagesPerSelector: z.number().int().min(1).default(SWEEP_MAX_PAGES_PER_SELECTOR),
 });
 
@@ -127,7 +139,11 @@ export async function sweepSelector(
 export function mergeSelectorResults(
   fromBrandRef: readonly BrandCatalogueProduct[],
   fromSearchTerm: readonly BrandCatalogueProduct[],
-): { readonly product: BrandCatalogueProduct; readonly viaBrandRef: boolean; readonly viaSearchTerm: boolean }[] {
+): {
+  readonly product: BrandCatalogueProduct;
+  readonly viaBrandRef: boolean;
+  readonly viaSearchTerm: boolean;
+}[] {
   const merged = new Map<
     string,
     { product: BrandCatalogueProduct; viaBrandRef: boolean; viaSearchTerm: boolean }
@@ -174,7 +190,11 @@ async function sweepOneBrand(
 ): Promise<{
   readonly productCount: number;
   readonly truncated: boolean;
-  readonly incomplete: readonly { readonly selector: string; readonly seen: number; readonly claimed: number }[];
+  readonly incomplete: readonly {
+    readonly selector: string;
+    readonly seen: number;
+    readonly claimed: number;
+  }[];
 }> {
   const nowMs = ctx.clock.nowMs();
 
@@ -315,6 +335,73 @@ async function noteSweepEvent(
   }
 }
 
+/**
+ * Enqueues the whole-brand seller scrape that follows a sweep, and never lets its failure fail
+ * the sweep.
+ *
+ * Chained from inside the handler rather than enqueued alongside the sweep by the API, because
+ * the seller scrape must see the products this sweep just wrote: the scheduler claims several
+ * jobs per tick and does not order them, so two rows queued together would race, and a seller
+ * scrape that won the race would read the brand as it was before the sweep.
+ *
+ * `notScrapedSinceMs` is stamped **here**, at the moment the brand's catalogue was written, so
+ * every product of the brand — including ones the cadence rotation happened to read an hour ago
+ * — is in scope. The operator asked for this brand's sellers now; "we looked recently" is the
+ * cadence's standard, not theirs.
+ *
+ * Single-flight per brand, the same guard and the same reason as the sweep's own: a second
+ * whole-brand scrape of one brand rewrites the same rows and halves the source's rate limit for
+ * no gain. A press that lands while one is already running is dropped here rather than queued —
+ * the sweep it followed still ran, and its products are still in the rotation.
+ */
+async function enqueueBrandSellerScrape(
+  ctx: JobContext,
+  brand: watchedBrandsRepo.WatchedBrandRow,
+): Promise<void> {
+  try {
+    const active = await jobsRepo.countActiveJobsForPayloadField(
+      ctx.appDb,
+      SCRAPE_BRAND_SELLERS_JOB,
+      'watchedBrandId',
+      brand.id,
+    );
+    if (active > 0) return;
+
+    const nowMs = ctx.clock.nowMs();
+    await jobsRepo.enqueueJob(ctx.appDb, {
+      id: newId(),
+      jobName: SCRAPE_BRAND_SELLERS_JOB,
+      payload: JSON.stringify({
+        marketplaceCode: brand.marketplaceCode,
+        watchedBrandId: brand.id,
+        notScrapedSinceMs: nowMs,
+      }),
+      priority: 0,
+      state: 'ready',
+      runAfter: nowMs,
+      lockedBy: null,
+      lockedUntil: null,
+      attempts: 0,
+      // The default three, not the rescan's one: the run is measured in hours and its watermark
+      // makes a retry resume rather than restart, so a worker restart mid-brand costs the
+      // products in flight rather than the brand.
+      maxAttempts: DEFAULT_MAX_ATTEMPTS,
+      lastError: null,
+      createdAt: nowMs,
+      updatedAt: nowMs,
+    });
+  } catch (error) {
+    // The catalogue is the work; the follow-up is a convenience. A queue write that fails must
+    // not lose a completed sweep — it is recorded and the rotation still reaches the products.
+    await noteSweepEvent(
+      ctx,
+      brand.marketplaceCode as MarketplaceCode,
+      'BrandSellerScrapeNotQueued',
+      `${brand.label} swept, but its seller scrape could not be queued: ${error instanceof Error ? error.message : String(error)} — the products are still in the ScrapeCompetitors rotation`,
+    );
+  }
+}
+
 export async function sweepBrandCatalogue(ctx: JobContext): Promise<JobResult> {
   const payload = SweepBrandCataloguePayloadSchema.parse(JSON.parse(ctx.payload));
   const marketplaceCode = payload.marketplaceCode as MarketplaceCode;
@@ -347,6 +434,7 @@ export async function sweepBrandCatalogue(ctx: JobContext): Promise<JobResult> {
         (currentItem) => ctx.reportProgress({ done, total: due.length, currentItem }),
       );
       itemsOk += 1;
+      if (payload.scrapeSellersAfter) await enqueueBrandSellerScrape(ctx, brand);
       if (truncated) {
         // Recorded, never swallowed: a truncated sweep and a shrinking brand look identical in
         // the resulting data, and only this event distinguishes them.

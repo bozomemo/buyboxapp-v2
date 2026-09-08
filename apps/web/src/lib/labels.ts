@@ -212,6 +212,8 @@ export const JOB_LABELS: Record<string, string> = {
   ImportBundles: 'Paket İçe Aktarma',
   ScrapeCompetitors: 'Rakip Verisi Toplama (raporlama)',
   SweepBrandCatalogue: 'Marka Kataloğu Taraması (raporlama)',
+  ScrapeBrandSellers: 'Marka Satıcı Taraması (raporlama)',
+  RescanTrackedProducts: 'Seçili Ürün Taraması (raporlama)',
   ResolveProductBarcodes: 'Barkod Tamamlama (raporlama)',
   EvaluateBrandFindings: 'Denetim Bulguları (raporlama)',
 };

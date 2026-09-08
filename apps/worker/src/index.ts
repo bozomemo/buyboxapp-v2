@@ -93,6 +93,8 @@ import {
   reprice,
   RESCAN_TRACKED_PRODUCTS_JOB,
   rescanTrackedProducts,
+  SCRAPE_BRAND_SELLERS_JOB,
+  scrapeBrandSellers,
   RESET_BUDGET_JOB,
   resetBudget,
   SCRAPE_COMPETITORS_JOB,
@@ -614,6 +616,10 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   // Likewise on demand only: a rescan names the rows an operator ticked, so it is enqueued from
   // `/api/tracked-products/rescan` and has no runnable empty payload to put in the catalogue.
   scheduler.register({ jobName: RESCAN_TRACKED_PRODUCTS_JOB, handler: rescanTrackedProducts });
+  // On demand only, and the one job with no meaningful per-run product ceiling: it reads a whole
+  // brand — 5,204 products for Royal Canin — because that is what the operator pressed. Its
+  // lock is renewed by the runner's heartbeat, so a run measured in hours is not a stuck one.
+  scheduler.register({ jobName: SCRAPE_BRAND_SELLERS_JOB, handler: scrapeBrandSellers });
   scheduler.register({ jobName: RESOLVE_PRODUCT_BARCODES_JOB, handler: resolveProductBarcodes });
 
   scheduler.startLoop();

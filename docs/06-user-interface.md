@@ -925,8 +925,23 @@ three screens.
 brand on one marketplace (Whiskas on Trendyol, Royal Canin on Trendyol). Adding a brand needs
 only a search term; the marketplace's brand id is optional, and after the first sweep the screen
 _offers_ the id most of that brand's products carry (≥60% share) rather than making the operator
-look it up. "Şimdi tara" enqueues `SweepBrandCatalogue`; progress shows on `/jobs`, because a
-full sweep is a minute for a small brand and five for a large one.
+look it up.
+
+**"Şimdi tara" is two jobs (2026-09-08).** It enqueues `SweepBrandCatalogue` with
+`scrapeSellersAfter`, which chains a `ScrapeBrandSellers` run (doc 07 §7.3) per brand it swept:
+first the catalogue — *which products exist under this brand?* — then **every one of those
+products read for its sellers and buybox**, with no rotation ceiling. The two halves are asked
+for together because separately they misled: a sweep alone leaves a brand looking complete on
+every brand screen while all of its products still read "hiç bakılmadı" until
+`ScrapeCompetitors`' 300-a-cycle rotation reaches them, which on the live install is most of a
+day for a brand added at noon.
+
+The second half costs a page per product — 305 for Acana, 5,204 for Royal Canin — so it is hours
+of fetching at the configured rate, and it is confirmed (§3.6) with the brand's current product
+count named in the dialog: the risk is not that it cannot be undone but that it is thousands of
+requests to a marketplace. **"Sadece katalog"** beside it is the cheap half on its own, one
+click and no confirmation, for the operator who only wants to know what is listed. Both run in
+the background and both report progress on `/jobs`.
 
 The brand name, its product count and its unrated count are **links** into
 `/tracked-products?watchedBrandId=…` (the last adding `&unratedOnly=true`), so the counts this

@@ -126,19 +126,36 @@ describe('completenessShortfall', () => {
   });
 
   it('tolerates a small drift, because `total` is a claim and brands change mid-sweep', () => {
-    const near = sweep(Array.from({ length: 99 }, (_, i) => String(i)), 100);
+    const near = sweep(
+      Array.from({ length: 99 }, (_, i) => String(i)),
+      100,
+    );
     expect(completenessShortfall('arama', near)).toBeNull();
   });
 
   it('reports a pass that ended well short — the case that wrote false misuse flags', () => {
-    const short = sweep(Array.from({ length: 90 }, (_, i) => String(i)), 100);
-    expect(completenessShortfall('marka id', short)).toEqual({ selector: 'marka id', seen: 90, claimed: 100 });
+    const short = sweep(
+      Array.from({ length: 90 }, (_, i) => String(i)),
+      100,
+    );
+    expect(completenessShortfall('marka id', short)).toEqual({
+      selector: 'marka id',
+      seen: 90,
+      claimed: 100,
+    });
   });
 
   it('counts distinct products, not cards — a lossy pass repeats what it already served', () => {
     // 100 cards, 60 products: exactly what unpinned relevance ordering produced before `sst`.
-    const repeated = sweep(Array.from({ length: 100 }, (_, i) => String(i % 60)), 100);
-    expect(completenessShortfall('marka id', repeated)).toEqual({ selector: 'marka id', seen: 60, claimed: 100 });
+    const repeated = sweep(
+      Array.from({ length: 100 }, (_, i) => String(i % 60)),
+      100,
+    );
+    expect(completenessShortfall('marka id', repeated)).toEqual({
+      selector: 'marka id',
+      seen: 60,
+      claimed: 100,
+    });
   });
 
   it('makes no claim when the marketplace made none', () => {
@@ -412,6 +429,59 @@ describe('the job', () => {
     expect(series.map((m) => m.ratingCount)).toEqual([0]);
   });
 
+  /**
+   * The second half of the brand screen's "Şimdi tara" (doc 07 §7.3). Chained here rather than
+   * queued beside the sweep by the API, because the scheduler claims several jobs per tick and
+   * does not order them — a seller scrape that won that race would read the brand as it was
+   * before the sweep wrote its products.
+   */
+  describe('scrapeSellersAfter', () => {
+    it('queues a whole-brand seller scrape per swept brand, watermarked at the sweep', async () => {
+      const brandId = await seedBrand();
+      const source = fakeSource({ byBrandRef: [[product('1')]] });
+
+      await sweepBrandCatalogue(
+        ctxFor(source, { marketplaceCode: 'trendyol', watchedBrandId: brandId, scrapeSellersAfter: true }),
+      );
+
+      const queued = (await jobsRepo.listActiveJobs(db.appDb)).filter(
+        (j) => j.jobName === 'ScrapeBrandSellers',
+      );
+      expect(queued).toHaveLength(1);
+      expect(JSON.parse(queued[0]!.payload)).toEqual({
+        marketplaceCode: 'trendyol',
+        watchedBrandId: brandId,
+        notScrapedSinceMs: NOW,
+      });
+    });
+
+    it('queues nothing without the flag — the cadence sweep must not become a crawl', async () => {
+      await seedBrand();
+      const source = fakeSource({ byBrandRef: [[product('1')]] });
+
+      await sweepBrandCatalogue(ctxFor(source, { marketplaceCode: 'trendyol' }));
+
+      const queued = (await jobsRepo.listActiveJobs(db.appDb)).filter(
+        (j) => j.jobName === 'ScrapeBrandSellers',
+      );
+      expect(queued).toHaveLength(0);
+    });
+
+    it('queues one per brand at a time', async () => {
+      const brandId = await seedBrand();
+      const source = fakeSource({ byBrandRef: [[product('1')]] });
+      const payload = { marketplaceCode: 'trendyol', watchedBrandId: brandId, scrapeSellersAfter: true };
+
+      await sweepBrandCatalogue(ctxFor(source, payload));
+      await sweepBrandCatalogue(ctxFor(fakeSource({ byBrandRef: [[product('1')]] }), payload));
+
+      const queued = (await jobsRepo.listActiveJobs(db.appDb)).filter(
+        (j) => j.jobName === 'ScrapeBrandSellers',
+      );
+      expect(queued).toHaveLength(1);
+    });
+  });
+
   it('sweeps only the requested brand when one is named', async () => {
     const brandId = await seedBrand();
     const other = await watchedBrandsRepo.listWatchedBrands(db.appDb);
@@ -476,9 +546,7 @@ describe('the job', () => {
   it('records a truncated sweep as an event', async () => {
     await seedBrand({ searchTerm: null });
     const endless = fakeSource({ byBrandRef: Array.from({ length: 20 }, (_, i) => [product(String(i))]) });
-    await sweepBrandCatalogue(
-      ctxFor(endless, { marketplaceCode: 'trendyol', maxPagesPerSelector: 3 }),
-    );
+    await sweepBrandCatalogue(ctxFor(endless, { marketplaceCode: 'trendyol', maxPagesPerSelector: 3 }));
     const events = await eventsRepo.listRecentEvents(db.appDb, 10);
     expect(events.some((e) => e.code === 'BrandSweepTruncated')).toBe(true);
   });

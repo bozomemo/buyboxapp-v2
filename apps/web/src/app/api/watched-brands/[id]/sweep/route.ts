@@ -24,15 +24,39 @@
  * `countActiveJobsForPayloadField`. Two *different* brands remain free to run concurrently; that
  * is safe now the shared Playwright page serialises its fetches (`playwright-fetch.ts`), and it
  * is how an operator gets through several brands without waiting on each.
+ *
+ * ## `withSellers` — the catalogue, then every seller on it
+ *
+ * The default, and what the screen's "Şimdi tara" sends (operator request 2026-09-08). A sweep
+ * alone answers "what products exist under this brand?" and collects no seller, price or buybox
+ * data whatsoever — that is `ScrapeCompetitors`' tracked half, which rotates the whole catalogue
+ * at 300 products a cycle, so a newly watched brand read as complete on every brand screen while
+ * its products still said "hiç bakılmadı" for the better part of a day.
+ *
+ * With the flag set, the sweep chains a `ScrapeBrandSellers` run per brand it swept (doc 07
+ * §7.3), which walks that brand's whole catalogue a page at a time — 305 products for Acana,
+ * 5,204 for Royal Canin — with no rotation ceiling. That is hours of fetching at the configured
+ * rate, which is the point rather than a side effect, so it is a flag an operator sets and never
+ * something the cadence does.
+ *
+ * The chaining happens *inside* the sweep handler rather than here: the scheduler claims several
+ * jobs per tick and does not order them, so a seller scrape queued alongside the sweep could win
+ * the race and read the brand as it was before it.
  */
 import { NextResponse } from 'next/server';
-import { DEFAULT_MAX_ATTEMPTS, SWEEP_BRAND_CATALOGUE_JOB } from '@buybox/jobs';
+import { DEFAULT_MAX_ATTEMPTS, SCRAPE_BRAND_SELLERS_JOB, SWEEP_BRAND_CATALOGUE_JOB } from '@buybox/jobs';
 import { jobsRepo, newId, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const appDb = getAppDb();
+
+  // Defaults to `true`: an empty body is the screen's "Şimdi tara", and a catalogue with no
+  // sellers on it is the state this endpoint exists to get an operator out of. `false` is the
+  // deliberate "sadece katalog" press.
+  const body = (await request.json().catch(() => ({}))) as { withSellers?: unknown };
+  const withSellers = body.withSellers !== false;
 
   const brand = await watchedBrandsRepo.getWatchedBrand(appDb, id);
   if (!brand) return NextResponse.json({ error: 'Marka bulunamadı.' }, { status: 404 });
@@ -50,12 +74,33 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     );
   }
 
+  if (withSellers) {
+    const activeSellerScrape = await jobsRepo.countActiveJobsForPayloadField(
+      appDb,
+      SCRAPE_BRAND_SELLERS_JOB,
+      'watchedBrandId',
+      brand.id,
+    );
+    if (activeSellerScrape > 0) {
+      return NextResponse.json(
+        {
+          error: `${brand.label} için bir satıcı taraması zaten kuyrukta veya çalışıyor. İlerlemesi İşler ekranında.`,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const nowMs = Date.now();
   const jobId = newId();
   await jobsRepo.enqueueJob(appDb, {
     id: jobId,
     jobName: SWEEP_BRAND_CATALOGUE_JOB,
-    payload: JSON.stringify({ marketplaceCode: brand.marketplaceCode, watchedBrandId: brand.id }),
+    payload: JSON.stringify({
+      marketplaceCode: brand.marketplaceCode,
+      watchedBrandId: brand.id,
+      scrapeSellersAfter: withSellers,
+    }),
     priority: 0,
     state: 'ready',
     runAfter: nowMs,
@@ -67,5 +112,5 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     createdAt: nowMs,
     updatedAt: nowMs,
   });
-  return NextResponse.json({ ok: true, jobId });
+  return NextResponse.json({ ok: true, jobId, withSellers });
 }

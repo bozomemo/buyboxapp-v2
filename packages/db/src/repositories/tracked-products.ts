@@ -13,6 +13,8 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
+  lt,
   like,
   lte,
   or,
@@ -1390,5 +1392,116 @@ export async function setTrackedProductRating(
       db.update(postgresSchema.trackedProducts).set(set).where(eq(postgresSchema.trackedProducts.id, id)),
     mysql: (db) =>
       db.update(mysqlSchema.trackedProducts).set(set).where(eq(mysqlSchema.trackedProducts.id, id)),
+  });
+}
+
+/**
+ * The products of one brand a whole-brand seller scrape has **not yet reached in this run** —
+ * the resumable cursor `ScrapeBrandSellers` walks (doc 07 §7.3).
+ *
+ * `notScrapedSinceMs` is the run's own start, not a freshness policy: `recordTrackedProductLook`
+ * advances `last_scraped_at` on every look, success **or** failure, so a product this run has
+ * already touched drops out of the next page by construction. That is what makes the job a
+ * loop that terminates rather than one that re-reads the same page for ever, and what makes a
+ * retry after a worker restart resume where it stopped instead of starting the brand again.
+ *
+ * `is_active` is honoured here, unlike `RescanTrackedProducts`' named-id path: this is the
+ * catalogue walking itself, and a product an operator paused is one the catalogue should skip.
+ *
+ * Ordered never-looked first, then oldest look first — the same rotation ordering
+ * `scrapeTrackedProducts` uses — so an interrupted run resumes at the front of what is left.
+ */
+export interface BrandProductsToScrapeQuery {
+  readonly marketplaceCode: string;
+  readonly watchedBrandId: string;
+  readonly notScrapedSinceMs: number;
+  readonly limit: number;
+}
+
+function brandToScrapeWhere(t: TrackedSchema, query: BrandProductsToScrapeQuery) {
+  return and(
+    eq(t.marketplaceCode, query.marketplaceCode),
+    eq(t.watchedBrandId, query.watchedBrandId),
+    eq(t.isActive, true),
+    or(isNull(t.lastScrapedAt), lt(t.lastScrapedAt, query.notScrapedSinceMs)),
+  );
+}
+
+export async function listBrandProductsToScrape(
+  appDb: AppDatabase,
+  query: BrandProductsToScrapeQuery,
+): Promise<TrackedProductRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.trackedProducts)
+        .where(brandToScrapeWhere(sqliteSchema.trackedProducts, query))
+        .orderBy(
+          desc(sql`${sqliteSchema.trackedProducts.lastScrapedAt} is null`),
+          asc(sqliteSchema.trackedProducts.lastScrapedAt),
+        )
+        .limit(query.limit),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.trackedProducts)
+        .where(brandToScrapeWhere(postgresSchema.trackedProducts, query))
+        .orderBy(
+          desc(sql`${postgresSchema.trackedProducts.lastScrapedAt} is null`),
+          asc(postgresSchema.trackedProducts.lastScrapedAt),
+        )
+        .limit(query.limit),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.trackedProducts)
+        .where(brandToScrapeWhere(mysqlSchema.trackedProducts, query))
+        .orderBy(
+          desc(sql`${mysqlSchema.trackedProducts.lastScrapedAt} is null`),
+          asc(mysqlSchema.trackedProducts.lastScrapedAt),
+        )
+        .limit(query.limit),
+  }) as Promise<TrackedProductRow[]>;
+}
+
+/**
+ * How many products the query above still has to reach. Read once at the start of a run so the
+ * Jobs screen's progress bar has a total, and never re-read: a total that shrank as the run
+ * consumed it would make the bar run backwards.
+ */
+export async function countBrandProductsToScrape(
+  appDb: AppDatabase,
+  query: Omit<BrandProductsToScrapeQuery, 'limit'>,
+): Promise<number> {
+  const full = { ...query, limit: 0 };
+  return withDialect(appDb, {
+    sqlite: async (db) =>
+      Number(
+        (
+          await db
+            .select({ n: count() })
+            .from(sqliteSchema.trackedProducts)
+            .where(brandToScrapeWhere(sqliteSchema.trackedProducts, full))
+        )[0]?.n ?? 0,
+      ),
+    postgres: async (db) =>
+      Number(
+        (
+          await db
+            .select({ n: count() })
+            .from(postgresSchema.trackedProducts)
+            .where(brandToScrapeWhere(postgresSchema.trackedProducts, full))
+        )[0]?.n ?? 0,
+      ),
+    mysql: async (db) =>
+      Number(
+        (
+          await db
+            .select({ n: count() })
+            .from(mysqlSchema.trackedProducts)
+            .where(brandToScrapeWhere(mysqlSchema.trackedProducts, full))
+        )[0]?.n ?? 0,
+      ),
   });
 }
