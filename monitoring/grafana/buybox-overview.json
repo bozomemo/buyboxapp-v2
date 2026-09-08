@@ -1,0 +1,421 @@
+{
+  "__comment": "BuyBox overview dashboard (doc 16 §6). Import into Grafana Cloud via Dashboards > New > Import > Upload JSON. Two datasource variables are prompted for on import: a Prometheus and a Loki datasource. Panels are ordered top-down as an incident is actually read: is it alive, is it working, what went wrong, is the machine to blame.",
+  "title": "BuyBox — Genel Bakış",
+  "uid": "buybox-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "timezone": "browser",
+  "tags": ["buybox"],
+  "templating": {
+    "list": [
+      {
+        "name": "prom",
+        "label": "Metrics",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "loki",
+        "label": "Logs",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "label": "Makine",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${prom}" },
+        "query": "label_values(buybox_up, instance)",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Durum",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Servis",
+      "description": "buybox_up is written by the endpoint itself, so this is 'the app answered', not 'the port is open'. No data means the scrape failed — the app is down, or Alloy is.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "buybox_up{instance=\"$instance\"}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "Çalışıyor", "color": "green", "index": 0 } } }
+          ],
+          "noValue": "Cevap yok",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Veritabanı",
+      "description": "Deliberately separate from the service panel: a database outage and a dead service need different responses, and collapsing them into one light hides which one it is.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "buybox_database_up{instance=\"$instance\"}", "instant": true }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "Erişilebilir", "color": "green", "index": 0 }, "0": { "text": "Erişilemiyor", "color": "red", "index": 1 } } }
+          ],
+          "noValue": "Bilinmiyor",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Worker tick",
+      "description": "Seconds since the worker loop last ticked. Ticks are ~2s apart, so anything above a minute means the loop has stopped even though the process is alive — the failure that otherwise looks like nothing at all.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "buybox_worker_last_tick_seconds{instance=\"$instance\"}", "instant": true }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Worker yok",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 30 }, { "color": "red", "value": 60 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Kuyrukta en eski iş",
+      "description": "Age of the oldest queue item that is already due. Queue depth alone cannot tell a busy queue from a stalled one; this can.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "buybox_job_queue_oldest_due_seconds{instance=\"$instance\"}", "instant": true }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 900 }, { "color": "red", "value": 3600 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Son hata",
+      "description": "Seconds since the most recent warn/error in app_events. Absent — not zero — when the window is clean.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "buybox_app_events_last_problem_seconds{instance=\"$instance\"}", "instant": true }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Temiz",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 900 }, { "color": "green", "value": 3600 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Çalışma süresi",
+      "description": "A drop back to near zero is a restart. Worth seeing next to everything else: many puzzling gaps are just the service having restarted.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "buybox_process_uptime_seconds{instance=\"$instance\"}", "instant": true }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "none",
+        "graphMode": "area"
+      },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "İşler",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "İş çalışmaları (duruma göre)",
+      "description": "Runs started in the last hour, by final state. A gauge over a moving window, so it is read directly rather than with rate().",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (state) (buybox_job_runs_total{instance=\"$instance\"})",
+          "legendFormat": "{{state}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "failed" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "succeeded" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "İş süresi (p95)",
+      "description": "95th percentile run duration per job. Reads the histogram the endpoint exports; the bucket edges were chosen against this app's real job shapes.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (job, le) (buybox_job_run_duration_seconds_bucket{instance=\"$instance\"}))",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0 } }, "overrides": [] }
+    },
+    {
+      "type": "table",
+      "title": "İş başına başarı / hata",
+      "description": "Which job is failing, not just that something is. Items, not runs — a run that 'succeeded' having failed 400 of 500 items is the case this catches.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (job) (buybox_job_items_total{instance=\"$instance\", outcome=\"ok\"})", "format": "table", "instant": true, "legendFormat": "ok" },
+        { "refId": "B", "expr": "sum by (job) (buybox_job_items_total{instance=\"$instance\", outcome=\"failed\"})", "format": "table", "instant": true, "legendFormat": "failed" }
+      ],
+      "transformations": [
+        { "id": "joinByField", "options": { "byField": "job", "mode": "outer" } },
+        { "id": "organize", "options": { "renameByName": { "Value #A": "Başarılı", "Value #B": "Hatalı", "job": "İş" }, "excludeByName": { "Time": true, "Time 1": true, "Time 2": true } } }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Hatalı" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }] }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Kuyruk derinliği",
+      "description": "job_queue rows by state. A rising 'ready' with a flat 'done' is the scheduler having stopped.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (state) (buybox_job_queue_depth{instance=\"$instance\"})", "legendFormat": "{{state}}" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "Pazaryerleri",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "state-timeline",
+      "title": "Devre kesici durumu",
+      "description": "Per-marketplace circuit breaker. Exported as one 0/1 series per state so 'was it open at 3am' is a query, not an integer decode.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 23 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (marketplace) (buybox_circuit_breaker_state{instance=\"$instance\", state=\"open\"})",
+          "legendFormat": "{{marketplace}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "Kapalı (sağlıklı)", "color": "green", "index": 0 }, "1": { "text": "Açık (durduruldu)", "color": "red", "index": 1 } } }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Günlük fiyat güncelleme bütçesi",
+      "description": "Consumed against allowance, per marketplace. Two series rather than a percentage: 'we used more' and 'the allowance changed' need different responses.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 23 },
+      "targets": [
+        { "refId": "A", "expr": "buybox_update_budget_consumed{instance=\"$instance\"}", "legendFormat": "{{marketplace}} kullanılan" },
+        { "refId": "B", "expr": "buybox_update_budget_allowance{instance=\"$instance\"}", "legendFormat": "{{marketplace}} limit" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "Kayıtlar",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Log satırı hızı (seviyeye göre)",
+      "description": "Log-derived metric — costs no application code. A step change in error rate is usually visible here before anything else moves.",
+      "datasource": { "type": "loki", "uid": "${loki}" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 30 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (level) (count_over_time({job=\"buybox\", instance=\"$instance\"} [$__auto]))",
+          "legendFormat": "{{level}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "warn" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] }
+        ]
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Hatalar ve uyarılar",
+      "description": "stderr only, which by the logger's own split is exactly warn and error. Usually the whole investigation.",
+      "datasource": { "type": "loki", "uid": "${loki}" },
+      "gridPos": { "h": 12, "w": 16, "x": 8, "y": 30 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"buybox\", instance=\"$instance\", stream=\"stderr\"}"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "app_events (seviyeye göre)",
+      "description": "The database's own event record, alongside the file log. The two are written by different paths and disagreeing is itself informative.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 36 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (level) (buybox_app_events_total{instance=\"$instance\"})", "legendFormat": "{{level}}" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "Makine",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 42 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU kullanımı",
+      "description": "Derived from the Windows exporter's per-core idle counter: 100% minus idle.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 43 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 - (avg without (core) (rate(windows_cpu_time_total{instance=\"$instance\", mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "CPU"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Boş disk alanı",
+      "description": "A full disk stops the log rotation and the SQLite writes both, and presents to the operator as 'the app is broken'.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 43 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "windows_logical_disk_free_bytes{instance=\"$instance\"}",
+          "legendFormat": "{{volume}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 5000000000 }, { "color": "green", "value": 20000000000 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Windows servisi",
+      "description": "Whether the BuyBoxApp service itself is running, as Windows sees it — the one signal that survives the app being unable to answer for itself.",
+      "datasource": { "type": "prometheus", "uid": "${prom}" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 43 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "windows_service_state{instance=\"$instance\", name=\"buyboxapp\", state=\"running\"}",
+          "legendFormat": "BuyBoxApp"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "Çalışıyor", "color": "green", "index": 0 }, "0": { "text": "Durdu", "color": "red", "index": 1 } } }
+          ]
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

@@ -61,6 +61,14 @@ Measured on the first real build, 2026-08-24: **265 MB installer**, from a ~890 
 (Chromium ~700 MB of it, Node 91 MB, the app 82 MB, WinSW 17 MB). LZMA2/max does the rest, at the
 cost of a ~5-minute compile.
 
+Since 2026-09-08 the Grafana Alloy installer is bundled too, by the same argument — ~109 MB of
+staging and **+101 MB** compressed, measured on the 0.1.10 build: 279 MB → **385 MB** (doc 16
+§5.1). LZMA2 buys almost nothing on it, because Alloy's installer is already compressed. It is the one bundled component
+whose absence is a build *warning* rather than an error: without WinSW the package cannot run at
+all, while without Alloy it installs a completely working product that simply has no remote
+monitoring. Making every developer build depend on a 109 MB binary unrelated to pricing would buy
+nothing.
+
 Chromium is that large because `playwright install chromium` fetches Chrome for Testing *and* the
 headless shell *and* ffmpeg. Whether the headless shell alone would serve `playwright-fetch.ts` is
 worth asking if the download size ever becomes a problem — but it is a size question, not a
@@ -309,6 +317,24 @@ elevation (it writes to `Program Files` and registers a service).
    nothing. "Fails the install" is spelled out there too: the operator is shown the failing
    script's own output and the finish page's launch button is withheld, but the installed files
    are deliberately **not** rolled back.
+8b. **Remote monitoring (optional).** Install and configure Grafana Alloy so logs and metrics
+   reach Grafana Cloud without a remote desktop session — `install-monitoring.ps1`, specified in
+   `docs/16-remote-observability.md` §5.
+
+   **This step is the one exception to step 8's rule, and deliberately so: it cannot fail the
+   install.** Every other step is required for a working product; this one is not. An operator who
+   leaves the Grafana fields blank, or a machine with no internet during setup, must still finish
+   with a working BuyBox — so the script exits 0 on every path it can reach and reports what it
+   did in its own output, and `buybox.iss` calls it with `Exec` rather than `RunStep`. This is not
+   a relapse into the 2026-09-02 defect where an ignored exit code hid a real failure (§5.6):
+   there, a failure meant the product was broken; here, there is no failure to hide.
+
+   It runs **last**, after step 8's verification, so that by the time it executes the product is
+   already installed, started and proven healthy. Nothing it does can take that away.
+
+   Alloy is installed into **its own directory**, not `{app}`. Step 3 empties `{app}` wholesale on
+   an upgrade, and an agent outside that tree keeps shipping straight through the upgrade — which
+   is exactly when watching it remotely is most useful.
 9. **Shortcuts and launch.** Desktop and Start Menu shortcuts to `http://127.0.0.1:<port>`. On
    finish, open the default browser there. The licence gate (`proxy.ts`) redirects to `/license`;
    after a valid key is pasted the operator lands in `/setup`. The installer explains neither —
@@ -591,10 +617,12 @@ Files under `installer\`:
 | `configure-env.ps1` | §5 step 4, including the upgrade-preservation rule |
 | `install-service.ps1` | §5 step 7; renders `BuyBoxApp.xml.template` |
 | `verify-health.ps1` | §5 step 8 |
-| `uninstall-service.ps1` | §10 D-6 |
+| `install-monitoring.ps1` | §5 step 8b; renders `monitoring\alloy\config.alloy.template` and silently installs Alloy. Doc 16 §5. The only install script that never fails the installation |
+| `uninstall-service.ps1` | §10 D-6 — the BuyBox service, the Alloy agent, and the Defender exclusion |
 | `BuyBoxApp.xml.template` | WinSW definition, with the install paths and port as tokens |
 | `boot.mjs` | §4.1's launcher |
 | `vendor\WinSW.exe` | Vendored, not downloaded during a build: the binary that runs as a service on a customer machine should be one we chose and hashed once |
+| `vendor\alloy-installer-windows-amd64.exe` | Vendored for the same reason, plus its size. **Optional**: a build without it warns and produces a working package with no remote monitoring |
 | `README-build.md` | How to produce a package locally, and what to test on a clean VM |
 
 `.github/workflows/release-windows.yml` runs the same script on a `windows-latest` runner.

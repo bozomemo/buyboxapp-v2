@@ -54,3 +54,4 @@ Hâlâ açık:
 - Dark mode dropdown renk uyumu
 - apps/web/src/lib/csv.ts:10 — doc yorumunun içinde gerçek bir BOM karakteri var, eslint
   no-irregular-whitespace hatası veriyor (bu çalışmadan önce de vardı)
+

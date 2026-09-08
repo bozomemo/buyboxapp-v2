@@ -1,0 +1,226 @@
+// Grafana Alloy - ships BuyBox's logs and metrics to Grafana Cloud (doc 16).
+//
+// THIS IS A TEMPLATE. `installer\install-monitoring.ps1` replaces the placeholders and writes the
+// result to `ProgramData\BuyBox\monitoring\config.alloy`, exactly as `BuyBoxApp.xml.template` is
+// rendered for WinSW. Editing the rendered copy directly works until the next upgrade overwrites
+// it; edit this file instead.
+//
+// Alloy runs as its own Windows service beside BuyBoxApp and pushes OUTBOUND over HTTPS. Nothing
+// here opens a port, and the application itself stays bound to 127.0.0.1 with no authentication
+// (doc 14 4.4) exactly as before. That is the whole reason for an agent rather than exposing the
+// app: remote visibility without remote access.
+//
+// Alloy is deliberately a separate process from BuyBoxApp, installed into its own directory:
+//
+//   - It keeps shipping while the app is restarting or crash-looping, which is when the logs
+//     matter most. An in-process HTTP log transport loses precisely the lines written during the
+//     crash it is supposed to explain.
+//   - Living outside `Program Files\BuyBox` means a BuyBox upgrade - which empties that tree
+//     wholesale (doc 14 5 step 3) - does not stop it. You can watch an upgrade happen from the
+//     dashboard, which is exactly when you would want to.
+//   - It cannot slow the app down or fail it. A network stall in here is a network stall in here;
+//     the repricing path never waits on Grafana Cloud, and never learns whether a line was sent.
+//   - It requires no change to the application at all for logs. `packages/shared/src/logger.ts`
+//     already writes one JSON object per line to stdout/stderr and WinSW already captures those
+//     to files; this file just reads them.
+//
+// THE ACCESS TOKEN IS NOT IN THIS FILE and must never be rendered into it. It is read at runtime
+// from a file whose ACL admits only SYSTEM and Administrators - the same protection `.env.local`
+// gets, and for the same reason. A token passed to Alloy's `/ENVIRONMENT=` install flag lands in
+// `HKLM\Software\GrafanaLabs\Alloy`, and a machine-scope environment variable is readable by
+// every process on the box; neither is an acceptable home for a credential (CLAUDE.md).
+
+// The Grafana Cloud access token. `is_secret` keeps it out of Alloy's own UI and its logs, and
+// the component watches the file - so rotating the token is a single file write, with no service
+// restart and no gap in shipping.
+local.file "grafana_token" {
+  filename  = "{{TOKEN_FILE}}"
+  is_secret = true
+}
+
+// ---------------------------------------------------------------------------------------------
+// Logs
+// ---------------------------------------------------------------------------------------------
+
+// WinSW writes two files and rolls them (`BuyBoxApp.out.log`, `BuyBoxApp.err.log`, plus dated
+// roll-overs). The glob matches the rolled files too, so a roll at midnight or at 10 MB does not
+// lose the tail: Alloy tracks read positions per file, and a file it has already finished is
+// simply not re-read.
+//
+// Matching `*.log` rather than naming the two files is deliberate — WinSW's `roll-by-size-time`
+// pattern (installer/BuyBoxApp.xml.template) produces names like `BuyBoxApp.out.20260908.log`,
+// and a config that only knew the two base names would silently stop shipping at the first roll.
+local.file_match "buybox_logs" {
+  path_targets = [
+    {
+      __path__ = "{{DATA_DIR}}\\logs\\BuyBoxApp.out*.log",
+      // `stream` mirrors the split the logger already makes: debug/info to stdout, warn/error to
+      // stderr (packages/shared/src/logger.ts). It is a label rather than a parsed field so that
+      // `{stream="stderr"}` is a cheap index lookup in Loki — the "just show me what went wrong"
+      // query, which is most of them.
+      stream   = "stdout",
+    },
+    {
+      __path__ = "{{DATA_DIR}}\\logs\\BuyBoxApp.err*.log",
+      stream   = "stderr",
+    },
+  ]
+  sync_period = "30s"
+}
+
+loki.source.file "buybox_logs" {
+  targets    = local.file_match.buybox_logs.targets
+  forward_to = [loki.process.buybox_logs.receiver]
+
+  // Read existing files from the beginning on first start, so the install does not begin with an
+  // artificial gap. Alloy's positions file makes this a one-time cost: after the first pass it
+  // resumes where it left off, including across its own restarts.
+  tail_from_end = false
+}
+
+loki.process "buybox_logs" {
+  forward_to = [loki.write.grafana_cloud.receiver]
+
+  // The line is already a JSON object; this reads fields out of it for labelling. The line
+  // itself is forwarded **unchanged** — there is no `stage.output` here on purpose. Every field
+  // the logger writes (correlationId, marketplace, listing ids, the expanded error with its
+  // stack and cause chain) stays in the stored line and is searchable with Loki's `| json`
+  // filter at query time. Promoting a field to a label is a decision about *indexing*, not about
+  // what is kept.
+  stage.json {
+    expressions = {
+      time    = "time",
+      level   = "level",
+      name    = "name",
+    }
+  }
+
+  // Use the application's own timestamp rather than the moment Alloy read the line. Without
+  // this, a batch of lines written during a crash all arrive with the same read time and the
+  // sequence that explains the crash is lost.
+  stage.timestamp {
+    source = "time"
+    format = "RFC3339"
+    // A line whose timestamp cannot be parsed is still shipped, stamped with the read time,
+    // rather than dropped. A malformed timestamp is a bad clock or a truncated line; neither is
+    // a reason to throw away the content.
+    action_on_failure = "fudge"
+  }
+
+  // ONLY these become labels. Loki builds an index entry per unique label combination, so every
+  // label multiplies series count and cost — this is the single most expensive mistake available
+  // in a Loki config. `level` and `name` are both closed, small sets (four levels; one logger
+  // name per module). A correlation id or a stock code here would create a stream per job run or
+  // per product and would exhaust the free tier in days. They remain searchable as *fields*.
+  stage.labels {
+    values = {
+      level = "level",
+      name  = "name",
+    }
+  }
+
+  stage.static_labels {
+    values = {
+      job      = "buybox",
+      instance = "{{INSTANCE}}",
+    }
+  }
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = "{{LOKI_URL}}"
+    basic_auth {
+      username = "{{LOKI_USER}}"
+      password = local.file.grafana_token.content
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Application metrics
+// ---------------------------------------------------------------------------------------------
+
+// Scrapes the app's own Prometheus endpoint (apps/web/src/app/api/metrics/route.ts) over
+// loopback. That route is exempt from the licence gate (apps/web/src/proxy.ts) precisely so this
+// keeps working when the licence lapses — the moment the dashboards are most needed.
+prometheus.scrape "buybox_app" {
+  targets = [
+    {
+      __address__ = "127.0.0.1:{{PORT}}",
+      instance    = "{{INSTANCE}}",
+    },
+  ]
+  metrics_path = "/api/metrics"
+
+  // 60s, matched to the endpoint's own one-hour aggregation window (WINDOW_MS in that route).
+  // Scraping faster does not produce more information — the windowed gauges only move as runs
+  // start and finish — it just costs series churn and query volume on the free tier.
+  scrape_interval = "60s"
+
+  // Generous relative to the interval: the endpoint issues eight independent database reads, and
+  // on a machine that is already struggling — exactly when the scrape matters — a tight timeout
+  // turns a slow answer into no answer.
+  scrape_timeout = "30s"
+
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+// ---------------------------------------------------------------------------------------------
+// Host metrics
+// ---------------------------------------------------------------------------------------------
+
+// Answers the question the application cannot answer about itself: is the *machine* the problem?
+// A full disk, exhausted memory, or a service that is simply not running all present to the
+// operator as "the app is broken", and none of them are visible from inside the app.
+prometheus.exporter.windows "host" {
+  // A deliberately small set. The Windows exporter's default collector list pulls in a great
+  // deal that is irrelevant here and each collector is series volume against the free tier's
+  // limit. These five answer: is it busy, is it full, is it out of memory, is it up, is the
+  // service running.
+  enabled_collectors = ["cpu", "logical_disk", "memory", "system", "service"]
+
+  service {
+    // Just this service. Without the filter, the collector emits a time series per Windows
+    // service on the machine — hundreds of them, none of which anyone will ever look at.
+    include = "^(BuyBoxApp|Alloy)$"
+  }
+}
+
+// The exporter's targets carry their own `instance` label — the local scrape address — which
+// would land the host metrics under a different instance name than the app metrics and break
+// every panel that shows the two side by side. Relabelling here, rather than relying on
+// `external_labels`, is what makes them join: remote-write external labels are only applied to
+// series that do not already carry them, so they would lose this particular argument.
+discovery.relabel "host" {
+  targets = prometheus.exporter.windows.host.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = "{{INSTANCE}}"
+  }
+}
+
+prometheus.scrape "host" {
+  targets = discovery.relabel.host.output
+
+  // Host metrics are instantaneous readings rather than windowed aggregates, so a coarser
+  // interval genuinely loses detail — but 60s is still ample for "the disk is filling up", and
+  // it keeps the two scrapes on one cadence.
+  scrape_interval = "60s"
+
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+// No `external_labels` block: both scrapes above already set `instance` themselves, and an
+// external label would be silently ignored wherever the series already carries one — a
+// difference that only shows up as a panel that mysteriously has no data.
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = "{{PROM_URL}}"
+    basic_auth {
+      username = "{{PROM_USER}}"
+      password = local.file.grafana_token.content
+    }
+  }
+}

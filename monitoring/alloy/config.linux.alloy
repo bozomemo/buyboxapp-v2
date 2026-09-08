@@ -1,0 +1,194 @@
+// Grafana Alloy — Linux variant (doc 16 §10).
+//
+// ⚠️ UNTESTED. Written 2026-09-08 against the current Alloy documentation because Linux is a
+// likely-later target, not a current one (doc 14 §11 calls Docker Compose "a reasonable third
+// option for a technically staffed customer running a server" and explicitly not the primary
+// path). No Linux deployment of BuyBox exists yet, so nothing here has been run. Treat it as a
+// starting point that still needs verifying against a real host, not as a supported config.
+//
+// The Windows config (`config.alloy.template`) is the maintained one. This file exists so the
+// three genuinely OS-specific decisions are written down while they are fresh, rather than
+// rediscovered later.
+//
+// WHAT DIFFERS FROM WINDOWS, and why — these three, and nothing else:
+//
+//   1. THERE ARE NO LOG FILES TO TAIL. This is the substantive difference, not a path change.
+//      On Windows, WinSW captures the service's stdout/stderr into rolling files and Alloy tails
+//      them. On Linux nothing does that: the process writes to stdout and the init system
+//      captures it — journald under systemd, the container runtime's log driver under Docker.
+//      So the log *source* changes, and the two options are mutually exclusive; pick the one
+//      matching how BuyBox is actually run and delete the other.
+//   2. `prometheus.exporter.windows` → `prometheus.exporter.unix`. Different collector names,
+//      and consequently different metric names in the dashboard's host panels
+//      (`windows_cpu_time_total` → `node_cpu_seconds_total`, and so on). The dashboard's three
+//      "Makine" panels will need their expressions changed; nothing above that row does.
+//   3. Paths and the secret file's protection. `chmod 600` owned by the alloy user replaces the
+//      Windows ACL, and forward slashes replace the doubled backslashes that Alloy string
+//      literals require on Windows.
+//
+// Everything else — the JSON parsing, the timestamp handling, the label choices and above all
+// the cardinality rules — is identical, and identically load-bearing. Read the Windows template's
+// comments; they are not repeated here.
+//
+// Unlike the Windows file this one is NOT a rendered template: there is no installer on this
+// path yet. It reads its settings from the environment, which under systemd means an
+// `EnvironmentFile=` in the unit and under Docker means the usual `environment:` block.
+
+local.file "grafana_token" {
+  // Same rule as Windows: the token is never an environment variable and never inline. On Linux
+  // that means a file owned by the alloy user with mode 0600 — `/proc/<pid>/environ` is readable
+  // by the owning user, and process environment leaks into crash dumps and `ps` output on some
+  // configurations.
+  filename  = sys.env("BUYBOX_TOKEN_FILE")
+  is_secret = true
+}
+
+// ---------------------------------------------------------------------------------------------
+// Logs — OPTION A: systemd (bare service on a Linux host)
+// ---------------------------------------------------------------------------------------------
+// Delete this block if BuyBox runs in Docker; use option B instead.
+
+loki.source.journal "buybox" {
+  forward_to    = [loki.process.buybox_logs.receiver]
+  matches       = "_SYSTEMD_UNIT=buybox.service"
+  // journald already holds the entries; reading the last 24h on first start replaces the
+  // "read the file from the beginning" behaviour the Windows config gets for free.
+  max_age       = "24h"
+  relabel_rules = discovery.relabel.journal.rules
+}
+
+discovery.relabel "journal" {
+  targets = []
+
+  // journald exposes its fields with a leading double underscore, which is not a valid Loki
+  // label name. Only the priority is kept, and only as `stream`, to mirror the Windows config's
+  // stdout/stderr split — journald records the two separately where a file-based capture cannot.
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "stream"
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Logs — OPTION B: Docker
+// ---------------------------------------------------------------------------------------------
+// Delete this block if BuyBox runs as a bare systemd service; use option A instead.
+//
+// discovery.docker "buybox" {
+//   host = "unix:///var/run/docker.sock"
+//   filter {
+//     name   = "label"
+//     values = ["com.docker.compose.service=buybox"]
+//   }
+// }
+//
+// loki.source.docker "buybox" {
+//   host       = "unix:///var/run/docker.sock"
+//   targets    = discovery.docker.buybox.targets
+//   forward_to = [loki.process.buybox_logs.receiver]
+// }
+
+// ---------------------------------------------------------------------------------------------
+// Log processing — identical to Windows
+// ---------------------------------------------------------------------------------------------
+
+loki.process "buybox_logs" {
+  forward_to = [loki.write.grafana_cloud.receiver]
+
+  // The line is forwarded unchanged; there is no `stage.output`. See the Windows template.
+  stage.json {
+    expressions = {
+      time  = "time",
+      level = "level",
+      name  = "name",
+    }
+  }
+
+  stage.timestamp {
+    source            = "time"
+    format            = "RFC3339"
+    action_on_failure = "fudge"
+  }
+
+  // ONLY these become labels. The cardinality rule is the same on every OS and is the single
+  // most expensive mistake available in a Loki config.
+  stage.labels {
+    values = {
+      level = "level",
+      name  = "name",
+    }
+  }
+
+  stage.static_labels {
+    values = {
+      job      = "buybox",
+      instance = sys.env("BUYBOX_INSTANCE"),
+    }
+  }
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_LOKI_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_LOKI_USER")
+      password = local.file.grafana_token.content
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Application metrics — identical to Windows apart from the address
+// ---------------------------------------------------------------------------------------------
+
+prometheus.scrape "buybox_app" {
+  targets = [
+    {
+      __address__ = sys.env("BUYBOX_ADDRESS"),
+      instance    = sys.env("BUYBOX_INSTANCE"),
+    },
+  ]
+  metrics_path    = "/api/metrics"
+  scrape_interval = "60s"
+  scrape_timeout  = "30s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+// ---------------------------------------------------------------------------------------------
+// Host metrics
+// ---------------------------------------------------------------------------------------------
+
+prometheus.exporter.unix "host" {
+  // The Linux counterparts of the five Windows collectors, and the same reasoning: a deliberately
+  // small set, because every collector is series volume against the free tier's limit.
+  set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo"]
+}
+
+discovery.relabel "host" {
+  targets = prometheus.exporter.unix.host.targets
+
+  // Same argument as on Windows: the exporter's targets carry their own `instance` label, which
+  // would land host metrics under a different name than app metrics and break every panel
+  // showing the two together. `external_labels` cannot fix it — they are only applied to series
+  // that do not already carry the label.
+  rule {
+    target_label = "instance"
+    replacement  = sys.env("BUYBOX_INSTANCE")
+  }
+}
+
+prometheus.scrape "host" {
+  targets         = discovery.relabel.host.output
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROM_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROM_USER")
+      password = local.file.grafana_token.content
+    }
+  }
+}

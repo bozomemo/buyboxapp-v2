@@ -189,7 +189,7 @@ try {
 # --- 7. Scripts and the service wrapper -------------------------------------------------------------------
 $scriptsDir = Join-Path $staging 'scripts'
 New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
-foreach ($name in @('preflight.ps1', 'stop-service.ps1', 'configure-env.ps1', 'install-service.ps1', 'verify-health.ps1', 'uninstall-service.ps1')) {
+foreach ($name in @('preflight.ps1', 'stop-service.ps1', 'configure-env.ps1', 'install-service.ps1', 'install-monitoring.ps1', 'verify-health.ps1', 'uninstall-service.ps1')) {
   $source = Join-Path $PSScriptRoot $name
   # These scripts must be pure ASCII. Windows PowerShell 5.1 -- which is what a customer machine
   # runs, and what the installer invokes -- reads a BOM-less UTF-8 file as ANSI, so a single
@@ -212,6 +212,31 @@ if (-not (Test-Path $winswSource)) {
   throw "WinSW is missing at $winswSource. See installer\README-build.md -- it is a vendored binary, downloaded once and checked against its hash, not fetched during a build."
 }
 Copy-Item $winswSource (Join-Path $serviceDir 'BuyBoxApp.exe') -Force
+
+# --- 7b. Monitoring agent (doc 16) ------------------------------------------------------------------------
+# Alloy ships inside the package for the same reason Node and Chromium do (doc 14 section 3): the
+# installer looks for nothing and downloads nothing. It costs ~109 MB of staging, roughly 40-55 MB
+# after LZMA2.
+#
+# Unlike WinSW, this is NOT copied into the service directory and is NOT run from Program
+# Files\BuyBox at runtime. It is an installer that Alloy uses to place itself in its own
+# directory, so that a BuyBox upgrade -- which empties {app} wholesale -- leaves the monitoring
+# agent running and shipping right through the upgrade.
+#
+# Absence is a warning, not an error, and that is the difference from WinSW above: a package
+# without WinSW cannot run at all, while a package without Alloy is a perfectly working product
+# that simply has no remote monitoring. Failing the build over it would make every developer
+# build depend on a 109 MB vendored binary nobody needs to test pricing.
+$monitoringDir = Join-Path $staging 'monitoring'
+New-Item -ItemType Directory -Path $monitoringDir -Force | Out-Null
+Copy-Item (Join-Path $repoRoot 'monitoring\alloy\config.alloy.template') (Join-Path $monitoringDir 'config.alloy.template') -Force
+
+$alloySource = Join-Path $PSScriptRoot 'vendor\alloy-installer-windows-amd64.exe'
+if (Test-Path $alloySource) {
+  Copy-Item $alloySource (Join-Path $monitoringDir 'alloy-installer.exe') -Force
+} else {
+  Write-Warning "Alloy is missing at $alloySource. The package will install and run normally, but with no remote monitoring (doc 16). See installer\vendor\README.md."
+}
 
 # --- 8. Smoke test: boot the assembled package and require a healthy answer -------------------------------
 # This exists because two packaging bugs shipped in the first build (doc 14 section 8.2). Both

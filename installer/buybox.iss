@@ -44,6 +44,10 @@ Source: "staging\node\*";     DestDir: "{app}\node";     Flags: recursesubdirs c
 Source: "staging\chromium\*"; DestDir: "{app}\chromium"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "staging\scripts\*";  DestDir: "{app}\scripts";  Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "staging\service\*";  DestDir: "{app}\service";  Flags: recursesubdirs createallsubdirs ignoreversion
+; Doc 16: the Alloy installer and its config template. `skipifsourcedoesntexist` because a build
+; made without the vendored Alloy binary is a valid package -- it installs a working product with
+; no remote monitoring, and install-monitoring.ps1 says so and carries on.
+Source: "staging\monitoring\*"; DestDir: "{app}\monitoring"; Flags: recursesubdirs createallsubdirs ignoreversion skipifsourcedoesntexist
 ; Preflight runs before anything is installed (InitializeSetup), and stop-service before the
 ; first file is replaced (PrepareToInstall). Both need a copy the wizard can extract to {tmp}
 ; rather than one that only exists after the files are laid down -- and on an upgrade the copy
@@ -64,6 +68,7 @@ Type: filesandordirs; Name: "{app}\app"
 Type: filesandordirs; Name: "{app}\node"
 Type: filesandordirs; Name: "{app}\chromium"
 Type: filesandordirs; Name: "{app}\scripts"
+Type: filesandordirs; Name: "{app}\monitoring"
 
 [Dirs]
 ; Data lives outside {app} so an upgrade, which replaces {app} wholesale, cannot reach it
@@ -98,6 +103,18 @@ Filename: "powershell.exe"; \
 [Code]
 var
   PortPage: TInputQueryWizardPage;
+  { Doc 16 section 5. Every field is optional: leaving them blank installs a working product with
+    no remote monitoring, and on an upgrade blank means "keep whatever is already configured"
+    (install-monitoring.ps1 merges rather than overwrites). That is why nothing here is validated
+    the way the port is -- there is no wrong answer, including no answer. }
+  { Split across two pages of three fields. Six fields plus this page's description overflow a
+    TInputQueryWizardPage, which lays its rows out at fixed spacing and does not scroll: the
+    sixth control is created off the bottom of the frame and simply cannot be reached. That is
+    the worst possible field to lose, because the token is what makes monitoring work at all,
+    and losing it is silent -- install-monitoring.ps1 reads "no token" as "not configured" and
+    skips, so the install still succeeds and nothing ships. Found on the 0.1.10 build. }
+  MonitorPageA: TInputQueryWizardPage;
+  MonitorPageB: TInputQueryWizardPage;
   { Set by CurStepChanged when a step of doc 14 section 5 failed. Read by ShouldLaunchApp. }
   InstallFailed: Boolean;
 
@@ -260,6 +277,67 @@ begin
   if Port = '' then
     Port := '3000';
   PortPage.Values[0] := Port;
+
+  { Doc 16. Placed after the port page so the operator has already dealt with the decision that
+    can block the install before meeting one that cannot. }
+  MonitorPageA := CreateInputQueryPage(PortPage.ID,
+    'Uzaktan izleme 1/2 (istege bagli)',
+    'Kayitlari ve grafikleri bu bilgisayara baglanmadan gormek ister misiniz?',
+    'Grafana Cloud hesabinizdaki degerleri girin. Bos birakirsaniz BuyBox normal kurulur, ' +
+    'yalnizca uzaktan izleme etkin olmaz. Yukseltmede bos birakmak mevcut ayarlari korur.');
+  MonitorPageA.Add('Makine adi (orn. ofis-pc):', False);
+  MonitorPageA.Add('Loki URL (.../loki/api/v1/push):', False);
+  MonitorPageA.Add('Loki kullanici no:', False);
+
+  MonitorPageB := CreateInputQueryPage(MonitorPageA.ID,
+    'Uzaktan izleme 2/2 (istege bagli)',
+    'Metrik adresi ve erisim jetonu.',
+    'Prometheus kullanici numarasi Loki''ninkinden farklidir; ayni numarayi iki yere yazmak ' +
+    'yarisini sessizce calismaz hale getirir.');
+  MonitorPageB.Add('Prometheus URL (.../api/prom/push):', False);
+  MonitorPageB.Add('Prometheus kullanici no:', False);
+  { The one masked field. It is also the only one never written to disk in the clear:
+    install-monitoring.ps1 puts it in its own file, readable by SYSTEM and Administrators only. }
+  MonitorPageB.Add('Erisim jetonu (token):', True);
+end;
+
+{ Quotes a wizard value for the PowerShell command line RunPowerShell builds. Single quotes,
+  because that helper already wraps the whole command in double quotes -- and an embedded single
+  quote is doubled, the PowerShell escape, so a stray apostrophe in a value cannot end the string
+  early and turn the rest of it into commands. None of these fields should ever contain one; that
+  is exactly why it is worth handling rather than assuming. }
+function PSQuote(const Value: string): string;
+var
+  I: Integer;
+  Ch, Escaped: string;
+begin
+  Escaped := '';
+  for I := 1 to Length(Value) do
+  begin
+    Ch := Copy(Value, I, 1);
+    if Ch = '''' then
+      Escaped := Escaped + ''''''
+    else
+      Escaped := Escaped + Ch;
+  end;
+  Result := '''' + Escaped + '''';
+end;
+
+{ Indices stay 0..5 across the two pages so the CurStepChanged call site reads as one list of
+  fields; 0-2 live on page A, 3-5 on page B. }
+function MonitorValue(Index: Integer): string;
+begin
+  Result := '';
+  if Index < 3 then
+  begin
+    if Assigned(MonitorPageA) then
+      Result := Trim(MonitorPageA.Values[Index]);
+  end
+  else
+  begin
+    if Assigned(MonitorPageB) then
+      Result := Trim(MonitorPageB.Values[Index - 3]);
+  end;
 end;
 
 function GetPort(Param: string): string;
@@ -336,7 +414,8 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   AppDirArg, DataDirArg: string;
-  DefenderCode: Integer;
+  DefenderCode, MonitorCode: Integer;
+  MonitorOutput: string;
 begin
   if CurStep <> ssPostInstall then
     exit;
@@ -374,6 +453,45 @@ begin
                  '-Port ' + GetPort('') + ' -DataDir ' + DataDirArg,
                  'BuyBox servisi calisir duruma gelmedi; kurulum tamamlanamadi.') then
     exit;
+
+  { Doc 16 section 5. Deliberately LAST, and deliberately not checked with RunStep.
+
+    Last, because it is the only step that is not required for a working product -- by the time
+    it runs, BuyBox is installed, started and verified, so nothing it does can take that away.
+
+    Unchecked, because remote monitoring is a convenience and its absence is not a broken
+    install. install-monitoring.ps1 exits 0 on every path it can reach, reporting what it did in
+    its own output; treating a missing Grafana account, or no internet during setup, as an
+    installation failure would be the tail wagging the dog. This is the one place where the
+    2026-09-02 lesson -- that Inno ignoring an exit code hid a real failure -- does not apply,
+    because here there is no failure to hide. }
+  { RunPowerShell, not a bare Exec with -File. Under -File the Windows command line is split
+    before PowerShell sees it, and that split honours double quotes only -- so -InstallDir
+    'C:\Program Files\BuyBox' binds the parameter to 'C:\Program and leaves Files\BuyBox' as a
+    stray positional argument. The result is a binding failure that exits 1 in a third of a
+    second, before the script's first statement, which looks exactly like a script that ran and
+    declined to do anything. RunPowerShell instead passes the whole invocation as a -Command
+    string, which PowerShell parses itself, and it is what every other step here already uses.
+    Note for anyone editing this comment: a brace closes it, so the -Command form cannot be
+    spelled out literally here -- see RunPowerShell for it.
+    Measured on the 0.1.10 install, 2026-09-08.
+
+    RunPowerShell rather than RunStep, though: RunStep sets InstallFailed and shows a critical
+    error box, and monitoring must never fail the installation (see the note above). The exit
+    code and the script's own output go to the log and nowhere else. }
+  Status('Uzaktan izleme kuruluyor...');
+  MonitorCode := RunPowerShell(ExpandConstant('{app}\scripts\install-monitoring.ps1'),
+                               '-InstallDir ' + AppDirArg + ' -DataDir ' + DataDirArg +
+                                 ' -Port ' + GetPort('') +
+                                 ' -Instance ' + PSQuote(MonitorValue(0)) +
+                                 ' -LokiUrl '  + PSQuote(MonitorValue(1)) +
+                                 ' -LokiUser ' + PSQuote(MonitorValue(2)) +
+                                 ' -PromUrl '  + PSQuote(MonitorValue(3)) +
+                                 ' -PromUser ' + PSQuote(MonitorValue(4)) +
+                                 ' -Token '    + PSQuote(MonitorValue(5)),
+                               MonitorOutput);
+  Log('Uzaktan izleme adimi cikis kodu: ' + IntToStr(MonitorCode));
+  Log(MonitorOutput);
 end;
 
 function ShouldLaunchApp(): Boolean;
@@ -403,3 +521,4 @@ Type: filesandordirs; Name: "{app}\node"
 Type: filesandordirs; Name: "{app}\chromium"
 Type: filesandordirs; Name: "{app}\scripts"
 Type: filesandordirs; Name: "{app}\service"
+Type: filesandordirs; Name: "{app}\monitoring"

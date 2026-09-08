@@ -22,8 +22,14 @@ import { getCachedLicenseStatus } from '@/lib/server/license';
  * `/api/health` is exempt for a different reason (doc 14 §5.1): the installer polls it to decide
  * whether the service came up, and that happens before any licence has been pasted. Gating it
  * would make every first install report itself as failed. It exposes no business data.
+ *
+ * `/api/metrics` is exempt for a sharper version of the same reason (doc 16 §3): a lapsed licence
+ * is exactly a moment somebody needs to see what the machine is doing, and a 402 there would
+ * blank every remote dashboard at precisely that moment. Monitoring that switches itself off
+ * when the news is bad is worse than no monitoring, because it is trusted. Like `/api/health` it
+ * exposes no business data — counts, states and durations only, never a price (doc 16 §3.2).
  */
-const EXEMPT_PREFIXES = ['/license', '/api/license', '/api/health'];
+const EXEMPT_PREFIXES = ['/license', '/api/license', '/api/health', '/api/metrics'];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

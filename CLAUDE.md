@@ -51,6 +51,7 @@ Read the document that covers your task. Do not read all of them.
 | Acceptance criteria | `docs/11-rewrite-requirements.md` |
 | Licensing / activation | `docs/13-licensing.md` |
 | Installer, packaging, deployment | `docs/14-deployment.md` |
+| Remote logs/metrics, Grafana, Alloy | `docs/16-remote-observability.md` |
 
 ## Rule: marketplace API work
 
