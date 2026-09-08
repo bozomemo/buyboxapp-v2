@@ -603,7 +603,8 @@ describe('tracked products (doc 06 §12.2) — customer feedback 2026-08-25', ()
       expect(result.itemsFailed).toBe(SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT);
       const events = await eventsRepo.listRecentEvents(db.appDb, 50);
       expect(events.some((e) => e.code === 'TrackedProductsScrapeHalted')).toBe(true);
-    });
+      // Seeding 40 tracked products dominates the runtime here; see the timeout note below.
+    }, 30_000);
 
     it('does not stop on failures that are broken up by successes', async () => {
       const ids = Array.from({ length: 40 }, (_, i) => `t-m-${String(i).padStart(2, '0')}`);
@@ -615,7 +616,10 @@ describe('tracked products (doc 06 §12.2) — customer feedback 2026-08-25', ()
       await run(source, NOW, { maxTracked: 40 });
 
       expect(calls).toHaveLength(40);
-    });
+      // 40 sequential scrapes, each writing an observation row: the slowest test in the file, and
+      // measured at ~6s once the suite is running other DB-backed files alongside it. The default
+      // 5s is a stopwatch on the machine, not an assertion about the code.
+    }, 30_000);
   });
 
   it('scrapes an active tracked product even with zero listing candidates, and never touches listings/repricing_state', async () => {
