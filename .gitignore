@@ -17,9 +17,14 @@ data/
 installer/staging/
 installer/out/
 
+# Same split for the Linux build (installer/linux/README.md, doc 14 §11.7/§11.13).
+installer/linux/staging/
+installer/linux/out/
+
 # Alloy's installer is vendored like WinSW (installer/vendor/README.md) but deliberately NOT
 # committed: at 109 MB it is over GitHub's 100 MB per-file hard limit, so a push carrying it is
 # rejected outright — and unlike WinSW a missing one only downgrades a build to "no remote
 # monitoring" rather than failing it. Download it per the README before building a package that
 # should ship monitoring.
 installer/vendor/alloy-installer-windows-amd64.exe
+installer/linux/vendor/alloy-linux-*

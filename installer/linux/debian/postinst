@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+#
+# Doc 14 section 5 steps 4-8 / 11.6 -- everything the Windows installer's post-file-copy
+# sequence does, run from dpkg's postinst hook instead of Inno's CurStepChanged(ssPostInstall).
+#
+# Unlike an Inno [Run] entry (doc 14 section 5.6), dpkg does not let a postinst's failure go
+# unreported: a non-zero exit here fails the package installation and `apt`/`dpkg` reports it as
+# such, with no separate "was the exit code checked" step to get wrong (doc 14 section 11.6).
+# `set -e` is therefore both correct and sufficient for steps 4, 7 and 8 -- the ones whose
+# failure must stop the install. Step 8b (monitoring) is deliberately exempted below, the same
+# exemption install-monitoring.ps1 has on Windows.
+set -eu
+
+DATA_DIR=/var/lib/buybox
+INSTALL_DIR=/opt/buybox
+LOG_DIR="$DATA_DIR/logs"
+VERSION="$(dpkg-query -W -f='${Version}' buybox 2>/dev/null || echo unknown)"
+
+# The port: an upgrade must keep what the previous install used (doc 14 section 5 step 2's
+# reasoning applies identically here -- defaulting back to 3000 would silently move a customer
+# who chose a different port). A fresh install takes BUYBOX_PORT from the environment (apt/dpkg
+# does not sanitise maintainer-script environment, so `BUYBOX_PORT=3500 apt-get install -y
+# ./buybox_*.deb` works) and falls back to 3000, since there is no interactive wizard step on
+# this platform to ask.
+port=""
+if [ -f /etc/systemd/system/buybox.service ]; then
+  port="$(sed -n 's/^Environment=PORT=\([0-9]*\)$/\1/p' /etc/systemd/system/buybox.service | head -n1)"
+fi
+[ -z "$port" ] && port="${BUYBOX_PORT:-3000}"
+
+case "$1" in
+  configure)
+    mkdir -p "$DATA_DIR" "$LOG_DIR"
+
+    # Step 4 -- environment. §4.3/§11.5: only ever adds missing keys, never rewrites one that
+    # is already there.
+    "$INSTALL_DIR/scripts/configure-env.sh" --data-dir "$DATA_DIR" --install-dir "$INSTALL_DIR"
+
+    # Step 6 (Defender exclusion) has no Ubuntu equivalent -- doc 14 section 11.6 -- deliberately
+    # skipped rather than substituted.
+
+    # Step 7 -- service. Creates the buybox user, renders and installs the unit, starts it.
+    "$INSTALL_DIR/scripts/install-service.sh" \
+      --install-dir "$INSTALL_DIR" --data-dir "$DATA_DIR" --port "$port" --version "$VERSION"
+
+    # /etc/logrotate.d/buybox is shipped as a real package file (staged at build time, see
+    # build-package.sh and debian/conffiles), not written here -- unlike .env.local it is
+    # static, non-secret configuration, and shipping it as a tracked file is what lets dpkg
+    # remove and purge it correctly instead of leaving an orphan behind.
+
+    # Step 8 -- verify. "Anything less fails the install" (doc 14 section 5 step 8) -- and here,
+    # unlike Inno, that is dpkg's own default behaviour once this script exits non-zero.
+    "$INSTALL_DIR/scripts/verify-health.sh" --port "$port" --data-dir "$DATA_DIR"
+
+    # Step 8b -- monitoring. Never fails the install (doc 14 section 5 step 8b / 11.5): every
+    # path in install-monitoring.sh exits 0, and this line is not allowed to change that even
+    # under `set -e` -- `|| true` is the whole reason it's written this way rather than trusted
+    # to the script's own exit code.
+    if [ -f "$DATA_DIR/monitoring/settings.env" ] || [ -n "${BUYBOX_GRAFANA_TOKEN:-}" ]; then
+      "$INSTALL_DIR/scripts/install-monitoring.sh" \
+        --install-dir "$INSTALL_DIR" --data-dir "$DATA_DIR" --port "$port" \
+        --token "${BUYBOX_GRAFANA_TOKEN:-}" \
+        --loki-url "${BUYBOX_LOKI_URL:-}" --loki-user "${BUYBOX_LOKI_USER:-}" \
+        --prom-url "${BUYBOX_PROM_URL:-}" --prom-user "${BUYBOX_PROM_USER:-}" \
+        --instance "${BUYBOX_INSTANCE:-}" || true
+    fi
+
+    echo "BuyBox kuruldu. http://127.0.0.1:$port adresinden erisin."
+    ;;
+esac
+
+exit 0

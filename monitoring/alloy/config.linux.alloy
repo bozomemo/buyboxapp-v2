@@ -1,23 +1,27 @@
-// Grafana Alloy — Linux variant (doc 16 §10).
+// Grafana Alloy — Linux variant (doc 16 §9-10, doc 14 §11.4-11.5).
 //
-// ⚠️ UNTESTED. Written 2026-09-08 against the current Alloy documentation because Linux is a
-// likely-later target, not a current one (doc 14 §11 calls Docker Compose "a reasonable third
-// option for a technically staffed customer running a server" and explicitly not the primary
-// path). No Linux deployment of BuyBox exists yet, so nothing here has been run. Treat it as a
-// starting point that still needs verifying against a real host, not as a supported config.
+// ⚠️ UNTESTED against a real Alloy binary or a real Grafana Cloud account (doc 16 §10's status
+// table). Wired into `installer/linux/install-monitoring.sh` and wired into a real Ubuntu build
+// 2026-09-08, which is what settled the log-source question §10 originally left open — see
+// below.
 //
-// The Windows config (`config.alloy.template`) is the maintained one. This file exists so the
-// three genuinely OS-specific decisions are written down while they are fresh, rather than
-// rediscovered later.
+// The Windows config (`config.alloy.template`) is the maintained sibling. Read its comments;
+// they are not repeated here. Only what differs is explained in this file.
 //
 // WHAT DIFFERS FROM WINDOWS, and why — these three, and nothing else:
 //
-//   1. THERE ARE NO LOG FILES TO TAIL. This is the substantive difference, not a path change.
-//      On Windows, WinSW captures the service's stdout/stderr into rolling files and Alloy tails
-//      them. On Linux nothing does that: the process writes to stdout and the init system
-//      captures it — journald under systemd, the container runtime's log driver under Docker.
-//      So the log *source* changes, and the two options are mutually exclusive; pick the one
-//      matching how BuyBox is actually run and delete the other.
+//   1. THE LOG SOURCE. On Windows, WinSW captures the service's stdout/stderr into rolling
+//      files and Alloy tails them. This file originally offered two Linux alternatives here —
+//      tail journald, or tail Docker's log driver — because no systemd unit existed yet to say
+//      which applies. `installer/linux/buybox.service.template` (written 2026-09-08) settles
+//      it: `StandardOutput=append:`/`StandardError=append:` write the same two plain files
+//      WinSW does, rotated by `installer/linux/buybox.logrotate` instead of WinSW's
+//      `roll-by-size-time` (doc 14 §11.4). That was the deliberate choice — file-based capture
+//      is what the existing retention story (`app_events`' 30-day warn/error window, doc 05
+//      §10) was already written to match on Windows, and diverging from it on Linux would mean
+//      two different answers to "how far back can I look?" depending on platform. The journald
+//      and Docker alternatives are recorded below in a comment rather than deleted outright, in
+//      case a future Docker Compose path (doc 14 §11.11) needs them.
 //   2. `prometheus.exporter.windows` → `prometheus.exporter.unix`. Different collector names,
 //      and consequently different metric names in the dashboard's host panels
 //      (`windows_cpu_time_total` → `node_cpu_seconds_total`, and so on). The dashboard's three
@@ -44,35 +48,52 @@ local.file "grafana_token" {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Logs — OPTION A: systemd (bare service on a Linux host)
+// Logs — file-based, matching the Windows config (decided 2026-09-08, see the header comment)
 // ---------------------------------------------------------------------------------------------
-// Delete this block if BuyBox runs in Docker; use option B instead.
 
-loki.source.journal "buybox" {
+local.file_match "buybox_logs" {
+  path_targets = [
+    {
+      __path__ = sys.env("BUYBOX_DATA_DIR") + "/logs/buybox.out.log",
+      stream   = "stdout",
+    },
+    {
+      __path__ = sys.env("BUYBOX_DATA_DIR") + "/logs/buybox.err.log",
+      stream   = "stderr",
+    },
+  ]
+  sync_period = "30s"
+}
+
+loki.source.file "buybox_logs" {
+  targets       = local.file_match.buybox_logs.targets
   forward_to    = [loki.process.buybox_logs.receiver]
-  matches       = "_SYSTEMD_UNIT=buybox.service"
-  // journald already holds the entries; reading the last 24h on first start replaces the
-  // "read the file from the beginning" behaviour the Windows config gets for free.
-  max_age       = "24h"
-  relabel_rules = discovery.relabel.journal.rules
-}
-
-discovery.relabel "journal" {
-  targets = []
-
-  // journald exposes its fields with a leading double underscore, which is not a valid Loki
-  // label name. Only the priority is kept, and only as `stream`, to mirror the Windows config's
-  // stdout/stderr split — journald records the two separately where a file-based capture cannot.
-  rule {
-    source_labels = ["__journal_priority_keyword"]
-    target_label  = "stream"
-  }
+  // Read existing files from the beginning on first start, so the install does not begin with
+  // an artificial gap. Survives logrotate's copytruncate (installer/linux/buybox.logrotate):
+  // Alloy follows the file by inode, and copytruncate keeps the same inode.
+  tail_from_end = false
 }
 
 // ---------------------------------------------------------------------------------------------
-// Logs — OPTION B: Docker
+// Logs — alternatives not currently wired up, kept for a future Docker Compose path (doc 14
+// §11.11). If that path is ever built, delete the file-based blocks above and uncomment the one
+// that applies instead of running both.
 // ---------------------------------------------------------------------------------------------
-// Delete this block if BuyBox runs as a bare systemd service; use option A instead.
+//
+// loki.source.journal "buybox" {
+//   forward_to    = [loki.process.buybox_logs.receiver]
+//   matches       = "_SYSTEMD_UNIT=buybox.service"
+//   max_age       = "24h"
+//   relabel_rules = discovery.relabel.journal.rules
+// }
+//
+// discovery.relabel "journal" {
+//   targets = []
+//   rule {
+//     source_labels = ["__journal_priority_keyword"]
+//     target_label  = "stream"
+//   }
+// }
 //
 // discovery.docker "buybox" {
 //   host = "unix:///var/run/docker.sock"

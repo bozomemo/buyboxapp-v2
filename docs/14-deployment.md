@@ -792,22 +792,414 @@ so it is a development workaround and never a release check. D-1 still requires 
 | D-8 | Trendyol competitor collection succeeds on the installed machine, proving the bundled Chromium is found via `PLAYWRIGHT_BROWSERS_PATH` |
 | D-9 | An ABI-mismatched package fails in CI, not on a customer machine (§3.1 assertion in step 5) |
 
-## 11. Ubuntu, later
+## 11. Ubuntu
 
-The layout generalises without redesign: `/opt/buybox` for code, `/var/lib/buybox` for data,
-systemd `WorkingDirectory=/var/lib/buybox` reproducing §4.1, a `buybox` system user, and
-`ExecStart` on the bundled Node.
+Status: planning, added 2026-09-08. Nothing in this section is built yet — it is the ordered
+plan for building it, in the same spirit as `docs/12-build-plan.md`: each step has a definition
+of done, and a step is not started before the previous one's is met.
 
-The packaging is a `.deb`, not a shell script. Chromium's shared-library needs
-(`libnss3`, `libatk-bridge2.0-0`, `libgbm1`, and the rest of Playwright's list) go in `Depends:`,
-so **apt** performs the dependency resolution instead of a script we wrote — strictly more
-reliable, and it makes the "check dependencies" requirement disappear into the package manager.
-`postinst` performs §5 steps 4–8; `postrm` keeps data except on `purge`.
+### 11.1 What an audit of the repository found, and why this is a packaging problem, not a code problem
 
-Docker Compose is a reasonable third option for a technically staffed customer running a server,
-and the repository already has `packages/db/docker-compose.test.yml` as a starting shape. It is
-explicitly **not** the primary path on Windows: Docker Desktop is a second product to install and
-upgrade, and it is not free for larger companies.
+Before planning the packaging, the application code (`packages/*`, `apps/web`, `apps/worker`)
+was checked for anything that would refuse to run on Linux. It does not exist:
+
+- Every path is built with `node:path`'s `path.join`/`path.resolve` (`apps/web/src/lib/server/db.ts`,
+  `scripts/migrate.mjs`, `packages/db/src/dialect.ts`). Nothing concatenates a literal `\`.
+- Nothing branches on `process.platform`. `grep -r "process.platform" apps packages` outside
+  `node_modules` returns zero hits.
+- The `C:\ProgramData\BuyBox\...` and `C:\BuyBox\app.db` strings that do exist
+  (`apps/web/src/app/api/setup/database/migrate/route.ts`,
+  `apps/web/src/app/setup/steps/step1-database.tsx`) are **Turkish-language example text inside
+  error messages**, not path logic — they tell the operator what an absolute path looks like on
+  the machine they're sitting at. They need a platform-conditional example, not a rewrite of the
+  validation itself (§11.9).
+- `better-sqlite3`, `pg`, `mysql2` are all in `serverExternalPackages` already and all ship
+  prebuilt or build cleanly on Linux; none of the three is Windows-only.
+
+So §3–§10 above — dependencies eliminated rather than checked, the code/data directory split,
+`AUTO_MIGRATE` at boot, the `/api/health` contradiction checks, the ASCII-scripts lesson, the
+"boot the package before shipping it" lesson — all of it **carries over unchanged**, because none
+of it is about Windows. What is Windows-specific and has no Linux equivalent yet is narrower than
+it looks: WinSW, Inno Setup, the five PowerShell orchestration scripts, and Windows Defender.
+Everything else in this document is either already portable or generalises by substitution.
+
+### 11.2 Installed layout
+
+Parallel to §4, substituting the Filesystem Hierarchy Standard for `Program Files`/`ProgramData`:
+
+```
+/opt/buybox/                      — code. Replaced wholesale on upgrade. Owned by root.
+  node/                              bundled Node 22 runtime
+  app/                               next build --output standalone result
+    server.js
+    .next/static/
+    public/
+  chromium/                         Playwright browser, pinned by PLAYWRIGHT_BROWSERS_PATH
+  scripts/migrate.mjs
+  boot.mjs
+
+/var/lib/buybox/                  — data. Never touched by an upgrade. Owned by the buybox user.
+  .env.local
+  app.db                             SQLite, when the operator keeps the default
+  secrets.enc.json
+  backups/
+
+/var/log/buybox/                  — logs, owned by the buybox user, rotated by logrotate (§11.5)
+
+/etc/buybox/                      — nothing today; reserved, not used, so an operator does not
+                                     go looking for config in a third place. Everything
+                                     configurable lives in /var/lib/buybox/.env.local, exactly as
+                                     on Windows (§4.3): it is the one file the setup wizard writes.
+```
+
+`/opt` is standard for third-party, self-contained application trees (FHS §4.9); `/var/lib` is
+standard for a service's persistent state (FHS §5.8, the same category PostgreSQL and Docker use
+for theirs). This is the direct substitution the original §11 named, kept because nothing in the
+audit above found a reason to deviate from it.
+
+A dedicated **system user and group, `buybox`** (`useradd --system --home /var/lib/buybox
+--shell /usr/sbin/nologin buybox`), owns `/var/lib/buybox` and `/var/log/buybox` and runs the
+service. It owns nothing under `/opt/buybox` — the same reasoning as the Windows service account
+having no write access to `Program Files` (§4.1): a compromised or buggy process should not be
+able to modify the code it is running.
+
+### 11.3 The working-directory design carries over exactly
+
+§4.1's problem is not Windows-specific: Next's generated `server.js` calls
+`process.chdir(__dirname)` on every platform, and `boot.mjs` (`installer/boot.mjs`) already
+captures and restores the real working directory using only `process.cwd()`/`process.chdir()` —
+no Windows API. **No change to `boot.mjs` is needed.** systemd sets the working directory the
+same way WinSW's XML does:
+
+```ini
+[Service]
+WorkingDirectory=/var/lib/buybox
+ExecStart=/opt/buybox/node/bin/node /opt/buybox/app/boot.mjs
+```
+
+`BUYBOX_DATA_DIR=/var/lib/buybox` is set as an `Environment=` line in the unit, exactly as it is
+set on the Windows service today (§4.3) — it is a deployment fact, not something
+`.env.local`-editable, for the same reason given there.
+
+### 11.4 systemd unit — the WinSW substitution
+
+Parallel to §5 step 7. `installer/BuyBoxApp.xml.template` becomes
+`installer/linux/buybox.service.template`:
+
+```ini
+[Unit]
+Description=BuyBox repricing service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=buybox
+Group=buybox
+WorkingDirectory=/var/lib/buybox
+Environment=BUYBOX_DATA_DIR=/var/lib/buybox
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/buybox/chromium
+Environment=BUYBOX_MIGRATIONS_DIR=/opt/buybox/app/migrations
+Environment=AUTO_MIGRATE=1
+Environment=PORT=__PORT__
+ExecStart=/opt/buybox/node/bin/node /opt/buybox/app/boot.mjs
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/buybox/buybox.out.log
+StandardError=append:/var/log/buybox/buybox.err.log
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/buybox /var/log/buybox
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Why this is a smaller, not larger, problem than WinSW: §5 step 7 spent most of its reasoning on
+*why WinSW instead of `node-windows`/NSSM* — none of that choice exists on Linux, because systemd
+is already present on every supported Ubuntu release and is the one process supervisor, not a
+choice among three. There is no `refresh`-vs-`start` command-set mismatch to trip over (§5.6):
+`systemctl daemon-reload` always re-reads the unit file, on every systemd version Ubuntu has
+shipped, so the class of bug that caused D-16 cannot recur in the same shape. The `Restart=`
+directive is systemd's equivalent of WinSW's `onfailure`.
+
+**Log rotation** is `logrotate`, not WinSW's `roll-by-size-time`: a dropped-in
+`/etc/logrotate.d/buybox` rotating `/var/log/buybox/*.log` daily or at 10 MB, keeping 30,
+reproduces §5 step 7's table exactly. `app_events` (the database-backed record) is unaffected —
+`PruneHistory` (doc 05 §10) already runs from the application, not the OS.
+
+The hardening lines (`NoNewPrivileges`, `ProtectSystem=strict`, `ReadWritePaths`, `ProtectHome`)
+have no Windows analogue in this document and are not required for parity — they are added
+because systemd makes them nearly free and CLAUDE.md's "no credential in source" posture implies
+the same caution at the OS layer: a compromised BuyBox process should not be able to write outside
+`/var/lib/buybox` and `/var/log/buybox`, full stop.
+
+### 11.5 Script-by-script mapping
+
+Every PowerShell script under `installer/` gets a named Linux equivalent. None is a
+line-for-line port — each is re-derived from what its Windows counterpart is actually *for*
+(stated in the table below), because the failure modes differ by platform (there is no
+"file in use" on Linux the way Windows locks a running executable, for instance).
+
+| Windows script | What it's actually for (§ above) | Linux equivalent |
+|---|---|---|
+| `preflight.ps1` | §5 step 1 — refuse before touching anything | `installer/linux/preflight.sh`: Ubuntu version (22.04+ LTS, matching the Node 22 / Playwright support matrix), `dpkg --print-architecture` is amd64 or arm64, ~1.5 GB free on `/opt` and `/var`, running as root |
+| `configure-env.ps1` | §5 step 4 — write/preserve `.env.local` | `installer/linux/configure-env.sh`, identical preserve-on-upgrade rule (§5 step 4), same key table (§4.3) with Linux paths |
+| `install-service.ps1` | §5 step 7 — register and (re)start the service | `installer/linux/install-service.sh`: renders `buybox.service.template`, `systemctl daemon-reload`, `systemctl enable --now buybox` |
+| `stop-service.ps1` | §5 step 3 — stop before files are replaced, wait for exit | `systemctl stop buybox` blocks until the unit is fully stopped by design (unlike SCM's async stop that Windows had to poll for) — the script becomes a thin wrapper that also waits out `TimeoutStopSec` |
+| `uninstall-service.ps1` | §10 D-6 | `installer/linux/uninstall-service.sh`: `systemctl disable --now buybox`, remove the unit file — but on Ubuntu this step mostly **disappears into `postrm`** (§11.6) |
+| `verify-health.ps1` | §5 step 8 — poll `/api/health`, require `status: ok` | `installer/linux/verify-health.sh`, same 90 s poll loop and same "anything less fails the install" rule, `curl` instead of `Invoke-WebRequest` |
+| `install-monitoring.ps1` | §5 step 8b — optional Alloy install, never fails the install | `installer/linux/install-monitoring.sh` using Grafana's `.deb` repo or the `alloy-linux-amd64.zip` binary (vendor the binary, per §8's reasoning for the Windows one — a build should not depend on Grafana's servers being up); same "exit 0 on every path" rule from doc 16 §5 |
+| `boot.mjs` | §4.1 | **unchanged** (§11.3) |
+| `build-package.ps1` | §8, the whole pipeline | `installer/linux/build-package.sh` (§11.7) |
+| — (no Windows equivalent) | — | `postinst`/`postrm`/`prerm` (§11.6) — Debian's own script hooks replace the Inno `CurStepChanged` sequencing problem from §5.6 outright, see below |
+
+Nothing here is "ASCII-only" in the way §8.4 required (that was specifically PowerShell 5.1
+misreading a BOM-less UTF-8 file as ANSI) — bash scripts are read as UTF-8 by default on Ubuntu,
+so the Turkish messages in the Linux scripts can use proper diacritics. The ASCII constraint does
+**not** carry over; it was a Windows PowerShell defect, not a general packaging lesson, and
+inventing a parallel constraint here would be imitating a symptom instead of the underlying rule
+(CLAUDE.md's instruction not to resolve ambiguity by imitation applies to migrating our own
+scripts too).
+
+### 11.6 Packaging as a `.deb`, and why `postinst`/`postrm` genuinely simplify §5.6's problem
+
+The package is `buybox_<version>_amd64.deb` (and `arm64`, if a customer runs one), built with
+`dpkg-deb` from a staged tree, not a hand-rolled shell installer.
+
+**Dependencies go in `Depends:` instead of a script we wrote and must maintain.** Playwright's
+Chromium needs `libnss3`, `libatk-bridge2.0-0`, `libgbm1`, `libasound2`, `libxkbcommon0`, and the
+rest of the list `npx playwright install-deps --dry-run` prints for the target Ubuntu version —
+that command's own output, captured during the build in §11.7, is copy-pasted into `debian/control`
+rather than retyped, because Playwright's own required-package list is versioned with Chromium and
+should not be hand-maintained twice. **apt** then resolves and installs them, which is exactly
+§3's "detection means the install can fail" argument turned around: on Windows there was nothing
+to delegate to, so everything ships inside the package; on Ubuntu there is a dependency resolver
+already on every machine, so delegating to it is the more reliable choice, not a departure from
+§3's reasoning. Node itself is still **bundled**, not a `Depends:` on `nodejs` — §3's argument
+against relying on a version already on the customer's PATH applies identically on Linux (a
+distro-packaged Node is frequently the wrong major version).
+
+**`postinst` performs §5 steps 4–8** (environment, optional monitoring is 8b, service
+registration, health verification) using the scripts in §11.5, run in the same order for the same
+reasons. **`preinst`** performs §5 step 3 (stop the running service, if any, before the package
+manager overwrites `/opt/buybox`) and creates the `buybox` user idempotently.
+
+This is where Debian packaging genuinely removes a class of bug rather than merely relocating it.
+§5.6's root cause was that an Inno `[Run]` entry silently discards a step's exit code, so a
+script could throw and the installer would still report success. **`dpkg` has no equivalent
+failure mode**: a `postinst` that exits non-zero fails the package installation outright and
+`apt`/`dpkg` reports it as failed, with no separate "did anyone check the exit code" step to get
+wrong. The fix that took a dedicated incident, a rule, and a table of scripts moved off `[Run]`
+on Windows (§5.6) is the *default* behaviour of `dpkg` on Ubuntu. That does not mean the health
+check is now optional — `postinst` must still call `verify-health.sh` and `exit 1` if it fails,
+exactly as `install-service.ps1`/`verify-health.ps1` do today — it means the platform no longer
+lets that failure go unreported by construction.
+
+**`postrm`** keeps `/var/lib/buybox` and `/var/log/buybox` on `remove`, and deletes them only on
+`purge` (`apt purge buybox`) — the direct equivalent of D-6's "leaves ProgramData\BuyBox unless
+the operator ticks the box; the default is to keep it". Debian's remove/purge distinction gives
+this for free where Inno needed an explicit checkbox and a script to honour it.
+
+**Defender exclusion (§5 step 6) has no Ubuntu equivalent and is dropped, not substituted.**
+Server-oriented Ubuntu installs do not run a signature-scanning AV by default the way Windows
+does; if a customer has installed one (ClamAV, or a commercial EDR), excluding `/var/lib/buybox`
+from it is a decision for that customer's own security tooling, not something this package should
+configure on their behalf. This is a genuine scope reduction, not an oversight — record it as
+such rather than silently forgetting §5 step 6 existed.
+
+### 11.7 Build pipeline
+
+Parallel to §8, on an `ubuntu-latest` (or a pinned `ubuntu-22.04`, to match the oldest supported
+target rather than whatever GitHub moves `latest` to) GitHub Actions runner — a **new** workflow,
+`.github/workflows/release-linux.yml`, alongside the existing `release-windows.yml`, not a
+replacement for it:
+
+1. `npm ci` — on the Linux runner, so `better-sqlite3` is built for the **Linux** Node ABI. §3.1's
+   constraint is symmetric: a `node_modules` built on Windows next to a Linux `node` binary fails
+   exactly the same way, just on the other platform. This is the one CI step whose entire reason
+   for existing is platform-specific, and it is easy to get backwards by copying the Windows job —
+   watch for that in review.
+2. `npm test` and `npm run typecheck` — identical to §8 step 2; these are platform-independent
+   already, but running them again on Linux (rather than trusting the Windows run) is what catches
+   a Linux-only regression before it reaches packaging, and it's nearly free on a matrix build.
+3. `npm run build` with `output: 'standalone'` — identical to §8 step 3.
+4. Assemble `app/`: identical purge-and-assert rule from §8.1 (`.env*`, `*.db`, `*.db-wal`,
+   `*.db-shm`, `*.sqlite`, `*.sqlite3`, `secrets.enc.json`, `data/`) — this defends against the
+   same developer-state leak on either platform and needs no platform conditional.
+5. Copy the Linux Node 22 runtime into `node/`. CI asserts the major version matches the one
+   `npm ci` ran under, same as §8 step 5.
+6. `PLAYWRIGHT_BROWSERS_PATH=<staging>/chromium npx playwright install chromium --with-deps
+   --dry-run` first, to capture the apt package list for `debian/control` (§11.6), then without
+   `--dry-run` to actually stage the browser.
+7. Run `debian/postinst`'s steps 4–8 against a throwaway data directory inside the CI runner —
+   the direct Linux equivalent of §8.2's "boot the assembled package the way the service boots
+   it" — requiring `/api/health` to report `status: ok` and `/` not to return 5xx before the `.deb`
+   is even built. §8.2's two specific failures (Playwright's `browsers.json` not traced;
+   migration SQL not traced because `@buybox/db` is `transpilePackages`d) are Next/Node build
+   artefacts, not Windows artefacts — they reproduce identically on Linux if the same copy-and-
+   assert steps are skipped, so this check is not optional here either.
+8. Build the `.deb` with `dpkg-deb --build --root-owner-group`.
+9. Sign — see §11.10.
+
+### 11.7a A fourth §8.2-shaped failure, found building this for real — relative symlinks
+
+Doc 14 §8.2 names two things Next's file tracing gets wrong (`browsers.json`, migration SQL) and
+calls the lesson "a package is a different artefact from the repository it was built from, and
+the only reliable way to know it works is to run it." The first real Linux build (2026-09-08)
+found a third, and it is the first one that is Linux-specific in its *symptom* while still being
+platform-independent in its *cause* — worth separating those two clearly, because the instinct
+to write it off as "a Linux thing" would have been wrong.
+
+Next's standalone output gives native modules (`better-sqlite3` among them) a **relative
+symlink** under `.next/node_modules/`, computed for their original nested depth in a workspace
+build — `apps/web/.next/node_modules/better-sqlite3-<hash>` pointing `../../../../node_modules/
+better-sqlite3` (four levels up) at the real copy Next places at the standalone root. §8's step 3
+(`build-package.ps1`/`build-package.sh` step 3) flattens `apps/web/*` up into `app/`, exactly as
+the Windows build always has, to keep the service's command line from having to know the
+repository's shape. That flatten shortens the symlink's own location by exactly two path
+components — but the symlink's *stored target text* does not move with it, so after the flatten
+every one of these pointed two levels too far up and dangled.
+
+**This has always been true of the Windows build too — it just never manifested there.**
+`Copy-Item` does not preserve an NTFS reparse point the way `cp -a` preserves a POSIX symlink;
+the exact mechanism was not investigated further because the outcome (no dangling link) made it
+moot on that platform. The bug is in the flatten step's assumption that nothing inside the moved
+tree references its own location by a relative path — an assumption that was always false, and
+happened to go unexercised on Windows rather than being platform-correct there.
+
+The fix (`installer/linux/build-package.sh`) is general, not a `better-sqlite3` special case:
+after the flatten, every symlink under the assembled `app/` whose target starts with the
+pre-flatten depth (`../../../../`) has exactly two levels removed, and the result is verified to
+resolve — a build fails loudly if a native module added later produces a symlink this rule
+doesn't fix, rather than shipping a silently broken one the way the first run did.
+
+Whether the equivalent fix belongs in `build-package.ps1` too is worth checking rather than
+assuming "it works today" means "it is correct" — the Windows build not hitting this may be
+independent of whether some future NTFS/Node/npm combination starts preserving symlinks there
+as well.
+
+### 11.8 Chromium's shared-library dependencies
+
+Recorded here rather than left implicit, because §11.6 depends on capturing this list correctly
+and it is worth stating what "correctly" means: **the authoritative source is
+`npx playwright install-deps --dry-run` run during the build (§11.7 step 6) against the exact
+Playwright version this project has pinned, on the exact Ubuntu version being targeted** — not a
+list copied from Playwright's documentation or from this paragraph, both of which can drift from
+the pinned version. The known members of that list as of Playwright's current Chromium build
+include `libnss3`, `libnspr4`, `libatk1.0-0`, `libatk-bridge2.0-0`, `libcups2`, `libdrm2`,
+`libgbm1`, `libxkbcommon0`, `libasound2`, `libatspi2.0-0`, `libxcomposite1`, `libxdamage1`,
+`libxfixes3`, `libxrandr2`; this is illustrative, not the list to paste into `debian/control` —
+step 6 of §11.7 generates the real one on every build so it cannot go stale the way a hand-
+maintained list would.
+
+### 11.9 Loopback binding and firewall — no functional change, one UI-text change
+
+§4.4's requirement — `HOSTNAME=127.0.0.1`, no rule opening the port to the LAN — is enforced in
+`apps/web`'s own listener configuration, not by a Windows Firewall rule the installer wrote. Search
+of the installer scripts confirms `installer/*.ps1` never touches Windows Firewall today; the
+binding alone is what does the work. That means **§4.4 carries over with zero packaging change**:
+the Linux service binds `127.0.0.1` the same way, and `ufw`/`iptables` are not touched by
+`postinst`, matching D-7's requirement ("not reachable from a second machine on the same LAN")
+identically on both platforms.
+
+The one change: the absolute-path example text in
+`apps/web/src/app/api/setup/database/migrate/route.ts` and
+`apps/web/src/app/setup/steps/step1-database.tsx` (`C:\ProgramData\BuyBox\data\app.db`,
+`C:\BuyBox\app.db`) should show a platform-appropriate example. The validation itself is already
+platform-neutral (it checks for an absolute path via `path.isAbsolute`-equivalent logic, not a
+Windows-shaped regex — confirm this when making the change rather than assuming it); only the
+*example string* in the Turkish error message is Windows-flavoured. The cheapest correct fix is
+to pick the example from `process.platform` at render time (`/var/lib/buybox/app.db` on Linux),
+not to fork the validator.
+
+### 11.10 Code signing / package integrity
+
+There is no Authenticode-equivalent SmartScreen/Smart App Control problem on Ubuntu — §9's
+concerns are Windows-specific and do not recur in the same shape. The Linux equivalent of "prove
+what the customer downloaded is what we built" is:
+
+- Sign the `.deb` with `dpkg-sig` or, preferably, publish it behind a signed **apt repository**
+  (a `Release` file signed with a GPG key the customer's `apt` trusts once, via
+  `apt-key`/`signed-by`) — this is the closer analogue to a code-signing certificate because it
+  lets `apt upgrade` verify every future release automatically, which manual SHA-256 checking
+  (§9's fallback on Windows) does not give you.
+- Until a signing key and a hosted repository exist, ship the same fallback §9 uses today:
+  publish the SHA-256 of each release so it can be verified by hand, and say so in the Linux
+  install note.
+- This is lower urgency than §9 on Windows: there is no Smart App Control-shaped hard block on
+  Ubuntu that can make an unsigned package simply refuse to run. It should still be done before
+  selling to a customer with a managed Ubuntu fleet, for the same trust reasons, just without §9's
+  "cannot be worked around" urgency.
+
+### 11.11 Docker Compose — a third option, not the primary path here either
+
+`packages/db/docker-compose.test.yml` already exists as a starting shape for a technically
+staffed customer who would rather run a container than a `.deb`. It remains explicitly
+**secondary** on Ubuntu for the same reason it was ruled out as primary on Windows (original text,
+kept): it is a second thing to operate (image builds, volume management, container restart
+policy) in exchange for nothing the `.deb` doesn't already give a single-machine install. Revisit
+only if a specific customer's environment (e.g., an existing Kubernetes/container platform) makes
+the `.deb` the wrong fit for them specifically — not as a default alternative to build alongside
+the package.
+
+### 11.12 Definition of done
+
+Mirrors §10, substituted for the platform. Each existing Windows check has a named Ubuntu
+counterpart so neither list can silently drift out of parity with the other; a few (D-2 through
+D-5, D-10 through D-13) are stated once in §10 because their logic lives in `apps/worker` and is
+platform-independent — they are **not** re-tested here, they are **re-run** here, on the Linux
+build, to catch a platform-specific regression in code that is supposed to have none.
+
+| # | Check |
+|---|---|
+| D-U1 | On a clean Ubuntu 22.04 LTS container/VM with no Node, no Chromium and no internet after the `.deb` is copied in, `apt install ./buybox_<version>_amd64.deb` completes and the browser (or `curl`) reaches `/license` |
+| D-U2 | `SECRET_STORE_KEY` differs between two installs made from the same package (= D-2, re-run) |
+| D-U3 | Rebooting the machine brings the service back with no login (`systemctl is-enabled buybox` is `enabled`) |
+| D-U4 | `apt install` over an existing install preserves `SECRET_STORE_KEY`, `app.db`, `secrets.enc.json` and the licence, and applies pending migrations (= D-4, re-run) |
+| D-U5 | `apt remove buybox` stops the service and deletes `/opt/buybox`, leaving `/var/lib/buybox` and `/var/log/buybox`; `apt purge buybox` deletes those too (= D-6, Debian-shaped) |
+| D-U6 | The port is not reachable from a second machine on the same LAN (= D-7, re-run — confirms §11.9's "zero packaging change" claim rather than assuming it) |
+| D-U7 | Trendyol competitor collection succeeds on the installed container, proving the bundled Chromium finds its shared libraries via `Depends:` and `PLAYWRIGHT_BROWSERS_PATH` (= D-8, and the sharpest test of §11.6/§11.8) |
+| D-U8 | An ABI-mismatched package (Windows-built `better-sqlite3` staged into a Linux package by mistake) fails in CI, not on a customer machine (= D-9, and the specific regression §11.7 step 1 warns about) |
+| D-U9 | A `postinst` failure (deliberately broken health check) leaves `dpkg`/`apt` reporting the package as failed, with the service left in whatever state `preinst`/`postinst` reached — never a silently "successful" install over a broken service, proving §11.6's claim that this class of bug cannot recur the way D-16 did |
+| D-U10 | `journalctl -u buybox` and `/var/log/buybox/buybox.err.log` both show the same crash for a deliberately induced uncaught exception, proving `registerProcessErrorHandlers` (§5 step 7) needs no Linux-specific change |
+
+### 11.13 What to build, in order
+
+1. ✅ **Written 2026-09-08, not yet run.** `installer/linux/preflight.sh`, `configure-env.sh`,
+   `install-service.sh`, `stop-service.sh`, `verify-health.sh`, `uninstall-service.sh`,
+   `buybox.service.template`, `buybox.logrotate` (§11.4, §11.5) — syntax-checked
+   (`bash -n`) but not yet executed against a real machine. These can be tested in a container
+   **before** `.deb` packaging is exercised, by running them by hand the way
+   `install-from-staging.ps1` lets the Windows scripts be tested without a real installer (§9);
+   see `installer/linux/README.md` for the exact sequence.
+2. ✅ **Written 2026-09-08, not yet run.** `installer/linux/debian/control.template`,
+   `preinst`, `postinst`, `prerm`, `postrm`, `conffiles` (§11.6), and
+   `monitoring/alloy/config.linux.alloy` (doc 16 §9-10 — this file predates this section and was
+   found, not written, during implementation; its journald/Docker log-source ambiguity was
+   settled in favour of file-based capture to match §11.4's systemd unit, see that file's header)
+   plus `installer/linux/install-monitoring.sh` (§11.5) wiring the scripts from step 1 together
+   — including the remove/purge split (D-U5) and the never-fails-the-install rule for monitoring
+   (§5 step 8b's exemption, reproduced).
+3. ✅ **Written 2026-09-08, not yet run.** `installer/linux/build-package.sh` — assembles the
+   staging tree, generates the `Depends:` list from `playwright install-deps --dry-run` rather
+   than a hand-maintained one (§11.8), runs the §8.2-equivalent smoke test, and calls
+   `dpkg-deb --build`. **Missing before it can produce a real package:**
+   `.github/workflows/release-linux.yml` (an `ubuntu-22.04` runner calling this script) and
+   `installer/linux/vendor/alloy-linux-<arch>` (the vendored Alloy binary — optional, same as
+   the Windows build).
+4. **Not started.** A signed apt repository or `dpkg-sig` signing (§11.10) — deferred the same
+   way §9 was on Windows, lower urgency here because there is no Smart App Control-shaped hard
+   block on Ubuntu.
+5. **Not started — the next action.** Run §11.12 (D-U1 … D-U10) top to bottom in a clean Ubuntu
+   22.04+ container: the scripts from steps 1–2 run by hand first (proving the pieces before
+   proving the packaging), then the full `.deb` once a build has been produced by hand
+   (`installer/linux/build-package.sh`, no CI required yet).
+
+Nothing in steps 1–3 has executed against a real Linux machine yet — they are written to the
+same reasoning as their Windows counterparts and syntax-checked, not proven. Step 5 is where
+that changes.
 
 ## 12. Automatic self-update — deferred, and what it would take
 

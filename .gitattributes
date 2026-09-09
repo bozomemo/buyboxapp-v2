@@ -1,0 +1,8 @@
+# installer/linux/ ships shell scripts (some with no .sh extension -- the Debian maintainer
+# scripts) and templates that run or get rendered inside a Linux container/VM. Git on this
+# repository's development machine (Windows) defaults to converting LF to CRLF on checkout; a
+# CRLF shebang line (`#!/usr/bin/env bash\r`) fails with "bad interpreter", and a CRLF inside a
+# systemd unit or logrotate config produced by sed can be just as silently wrong. Force LF here
+# regardless of the checking-out machine's `core.autocrlf`, the same way the ASCII-only rule in
+# doc 14 §8.4 exists for the Windows scripts' own encoding trap.
+installer/linux/** text eol=lf

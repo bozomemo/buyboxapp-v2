@@ -1,0 +1,22 @@
+# Doc 14 section 11.4 -- the logrotate substitution for WinSW's `roll-by-size-time`.
+# Installed at /etc/logrotate.d/buybox by debian/postinst.
+#
+# `copytruncate`, not `create`: the service holds its log files open via systemd's
+# `StandardOutput=append:`/`StandardError=append:`, and neither the app nor its systemd unit
+# knows how to reopen that descriptor on a signal (no SIGHUP handler in `packages/shared/src/
+# logger.ts`). `create` would rename the file and start a new one while the process kept writing
+# to the renamed file's now-orphaned descriptor forever. `copytruncate` copies the content out
+# and truncates the original in place, so the same open descriptor keeps working. Its one known
+# cost is a few lines possibly lost in the copy/truncate race, judged acceptable because
+# `app_events` (doc 05 section 10) is the record an operator actually searches; the file log's
+# own ranking below it is already stated in doc 14 section 5 step 7's table.
+/var/log/buybox/*.log {
+  daily
+  maxsize 10M
+  rotate 30
+  missingok
+  notifempty
+  compress
+  delaycompress
+  copytruncate
+}

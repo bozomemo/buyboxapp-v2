@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# Doc 14 section 5 step 3 / 11.6 -- stop the running service before dpkg overwrites
+# /opt/buybox. Debian's preinst hook is where "before a single file is touched" lives on this
+# platform; dpkg calls this before it unpacks the new package's files over the old ones.
+#
+# On a fresh install there is nothing to stop and nothing under /opt/buybox yet -- both branches
+# below are no-ops in that case, which is correct and not an error (doc 14 section 5 step 3's
+# own framing).
+set -uo pipefail
+
+case "$1" in
+  install|upgrade)
+    if [ -x /opt/buybox/scripts/stop-service.sh ]; then
+      /opt/buybox/scripts/stop-service.sh --install-dir /opt/buybox --timeout-seconds 90
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        echo "buybox: onceki servis durdurulamadi; kurulum iptal ediliyor." >&2
+        exit 1
+      fi
+    fi
+    ;;
+esac
+
+exit 0

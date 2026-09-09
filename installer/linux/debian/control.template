@@ -1,0 +1,12 @@
+Package: buybox
+Version: {{VERSION}}
+Section: misc
+Priority: optional
+Architecture: {{ARCH}}
+Maintainer: BuyBox <mehmet.1817@gmail.com>
+Depends: adduser, {{PLAYWRIGHT_DEPS}}
+Description: BuyBox marketplace repricing and listing management
+ Keeps Trendyol and Hepsiburada selling prices at the most profitable price that still wins or
+ defends the buybox, never below a computed floor price. Ships its own Node.js runtime and
+ Chromium; see /opt/buybox/README after install and docs/14-deployment.md section 11 in the
+ source repository for the full specification this package implements.

@@ -1,0 +1,75 @@
+# systemd unit (doc 14 section 11.4). Rendered by install-service.sh, which replaces the
+# {{TOKENS}} and installs the result at /etc/systemd/system/buybox.service.
+#
+# Two things here are load-bearing, the same two as BuyBoxApp.xml.template on Windows:
+#
+# - WorkingDirectory is the DATA directory, not the install directory (doc 14 section 4.1,
+#   11.3). The app resolves `.env.local` and a relative SQLite path against the working
+#   directory, and the `buybox` service user cannot write inside /opt/buybox.
+# - Environment= carries only what the operator cannot change from the UI. DATABASE_URL,
+#   SECRET_STORE_KEY and SECRET_STORE_PATH are deliberately absent: they live in `.env.local`
+#   where the setup wizard can rewrite them, and a unit-file env var would silently win over
+#   the operator's own change after the next restart.
+
+[Unit]
+Description=BuyBox - pazaryeri fiyatlandirma ve ilan yonetimi
+Documentation=file:///opt/buybox/app/README.md
+After=network-online.target
+Wants=network-online.target
+# The restart-storm limiter belongs here, not in [Service] -- found by running this for real,
+# 2026-09-08: systemd logs "Unknown key name 'StartLimitIntervalSec' in section 'Service',
+# ignoring" and silently drops it, so a crash loop would have restarted forever with no backoff
+# ceiling until this moved.
+StartLimitIntervalSec=3600
+StartLimitBurst=20
+
+[Service]
+Type=simple
+User=buybox
+Group=buybox
+WorkingDirectory={{DATA_DIR}}
+
+ExecStart={{INSTALL_DIR}}/node/bin/node {{INSTALL_DIR}}/app/boot.mjs
+
+# A crashed repricing host that stays down is an outage nobody is watching for. Matches the
+# Windows service's three staged onfailure delays with systemd's own retry/backoff pair.
+Restart=on-failure
+RestartSec=10
+
+# Graceful shutdown: the scheduler stops claiming, lets in-flight work finish and releases its
+# lock. Killing it mid-submission is what leaves a price change unconfirmed. SIGTERM is
+# systemd's default stop signal and `registerProcessErrorHandlers` (packages/shared) already
+# handles it the same way it handles an uncaught exception.
+TimeoutStopSec=45
+
+# The file half of the log record (doc 14 section 5 step 7 / 11.4). logrotate.d/buybox handles
+# rotation; systemd just appends. stdout carries debug/info, stderr warn/error, one JSON object
+# per line -- identical to the Windows log shape, so BuyBoxApp.err.log's "usually the whole
+# investigation" note applies here unchanged.
+StandardOutput=append:{{DATA_DIR}}/logs/buybox.out.log
+StandardError=append:{{DATA_DIR}}/logs/buybox.err.log
+
+Environment=NODE_ENV=production
+Environment=PORT={{PORT}}
+# Loopback only, until authentication exists (doc 14 section 4.4 / 11.9).
+Environment=HOSTNAME=127.0.0.1
+Environment=AUTO_MIGRATE=1
+Environment=APP_VERSION={{VERSION}}
+Environment=PLAYWRIGHT_BROWSERS_PATH={{INSTALL_DIR}}/chromium
+# Bundling moves this module into a chunk, so the package cannot find its own migrations by
+# relative path (doc 14 section 8.2). Tell it where they are.
+Environment=BUYBOX_MIGRATIONS_DIR={{INSTALL_DIR}}/app/migrations
+# The anchor a relative SQLite path resolves against, independent of the working directory at
+# the moment a connection is opened (doc 14 section 8.3 / 11.3).
+Environment=BUYBOX_DATA_DIR={{DATA_DIR}}
+
+# Hardening: free on systemd, and consistent with "no credential in source" applied at the OS
+# layer (doc 14 section 11.4). A compromised process should not be able to write outside its
+# own data and log directories, or gain new privileges.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{DATA_DIR}} {{LOG_DIR}}
+
+[Install]
+WantedBy=multi-user.target

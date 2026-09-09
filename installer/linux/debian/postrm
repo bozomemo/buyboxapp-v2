@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# Doc 14 section 10 D-6 / 11.6 -- the remove/purge distinction. `apt remove buybox` keeps
+# /var/lib/buybox and /var/log/buybox (the direct equivalent of D-6: "leaves ProgramData\BuyBox
+# unless the operator ticks the box; the default is to keep it" -- here the default is simply
+# what `remove` vs `purge` already means on this platform, no checkbox needed). `apt purge
+# buybox` deletes them, and only then.
+set -uo pipefail
+
+case "$1" in
+  purge)
+    rm -rf /var/lib/buybox /var/log/buybox
+    if id -u buybox >/dev/null 2>&1; then
+      userdel buybox >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+exit 0

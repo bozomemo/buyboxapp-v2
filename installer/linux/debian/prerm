@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# Doc 14 section 10 D-6 / 11.6 -- stop and unregister the service before its files are removed.
+#
+# Only on an actual `remove`/`purge`. An `upgrade` reaches here as the *old* package's prerm,
+# and preinst (of the *new* package, run right after this) is what stops the service in that
+# case -- stopping it twice is harmless but redundant, and more importantly: this script must
+# not remove the systemd unit file during an upgrade, or the new package's postinst would be
+# re-registering a service `install-service.sh` already treats as "does it exist" logic for.
+set -uo pipefail
+
+case "$1" in
+  remove|deconfigure)
+    if [ -x /opt/buybox/scripts/stop-service.sh ]; then
+      /opt/buybox/scripts/stop-service.sh --install-dir /opt/buybox --timeout-seconds 90 || true
+    fi
+    systemctl disable buybox >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/buybox.service
+    systemctl daemon-reload || true
+
+    # Best effort, same reasoning as uninstall-service.ps1: BuyBox put Alloy there, so BuyBox
+    # takes it back out, but never lets that failure block BuyBox's own removal.
+    if systemctl list-unit-files alloy.service >/dev/null 2>&1 \
+       && systemctl list-unit-files alloy.service | grep -q alloy.service; then
+      systemctl stop alloy >/dev/null 2>&1 || true
+      systemctl disable alloy >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/alloy.service /usr/local/bin/alloy
+      systemctl daemon-reload || true
+    fi
+    ;;
+esac
+
+exit 0

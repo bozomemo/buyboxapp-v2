@@ -290,9 +290,10 @@ Sırası geldiğinde ilk adaylar, hepsi hâlihazırda yayınlanan metriklerden:
 
 ## 9. Linux
 
-Bugün Linux'ta çalışan bir kurulum **yok**. Doc 14 §11 Docker Compose'u "sunucu işleten, teknik
-personeli olan bir müşteri için makul bir üçüncü seçenek" olarak anar ve birincil yol olmadığını
-açıkça söyler. Bu bölüm, ileride gerekirse neyin değişeceğini şimdiden yazılı bırakır.
+Doc 14 §11.4-11.5 artık gerçek bir Ubuntu kurulum planı içeriyor (`installer/linux/`,
+2026-09-08), ama **çalıştırılıp doğrulanmış bir kurulum hâlâ yok** — aşağıdaki her şey yazıldı ve
+`installer/linux/install-monitoring.sh` içine bağlandı, `alloy` ikili dosyasına karşı hiç
+çalıştırılmadı.
 
 **Taşınabilir olan (hiçbir değişiklik gerekmez):**
 
@@ -300,18 +301,28 @@ açıkça söyler. Bu bölüm, ileride gerekirse neyin değişeceğini şimdiden
 - Metrik SQL'i — zaten üç lehçe.
 - Panonun "Makine" satırı dışındaki her paneli.
 
-**Değişmesi gereken üç şey**, `monitoring/alloy/config.linux.alloy` içinde yazılı — **denenmemiş**
-olarak işaretli:
+**Değişen üç şey**, `monitoring/alloy/config.linux.alloy` içinde yazılı:
 
-1. **Tail edilecek log dosyası yoktur.** Asıl fark budur, bir yol değişikliği değil. Windows'ta
-   WinSW stdout/stderr'i dosyaya alır ve Alloy onu okur. Linux'ta bunu yapan bir şey yoktur:
-   süreç stdout'a yazar, init sistemi yakalar — systemd altında journald, Docker altında log
-   sürücüsü. Dolayısıyla log **kaynağı** değişir; dosyada iki seçenek de var, biri silinip diğeri
-   kullanılacak.
+1. **Log kaynağı — 2026-09-08 karara bağlandı.** Bu bölüm önceden journald mi yoksa Docker log
+   sürücüsü mü tail edileceğini açık bırakıyordu, çünkü hangisinin geçerli olacağını söyleyecek
+   bir systemd unit'i yoktu. `installer/linux/buybox.service.template` bunu karara bağladı:
+   `StandardOutput=append:`/`StandardError=append:`, WinSW'nin yazdığı iki düz dosyanın aynısını
+   yazıyor, `installer/linux/buybox.logrotate` ile döndürülüyor (doc 14 §11.4) — Windows'taki
+   dosya tabanlı yakalamanın birebir aynısı, çünkü `app_events`'in 30 günlük saklama penceresi
+   zaten bu varsayıma göre yazıldı (doc 05 §10) ve platforma göre iki farklı "ne kadar geriye
+   bakabilirim" cevabı olması istenmiyordu. journald ve Docker seçenekleri dosyada yorum satırı
+   olarak duruyor, ileride bir Docker Compose yolu (doc 14 §11.11) gerekirse diye.
 2. `prometheus.exporter.windows` → `prometheus.exporter.unix`. Metrik adları da değişir
    (`windows_cpu_time_total` → `node_cpu_seconds_total`), yani panonun üç "Makine" paneli
    güncellenir.
-3. Jeton dosyasının korunması: Windows ACL yerine alloy kullanıcısına ait `chmod 600`.
+3. Jeton dosyasının korunması: Windows ACL yerine `chmod 600`, root sahipliğinde
+   (`install-monitoring.sh` — Alloy systemd unit'i root olarak çalışıyor, buybox log dosyalarını
+   ayrı bir grup üyeliği olmadan okuyabilsin diye).
+
+`install-monitoring.sh` bu dosyayı `{{TOKEN}}` gibi yer tutucularla değil, `EnvironmentFile=`
+üzerinden dolduruyor — `config.linux.alloy` ayarlarını `sys.env(...)` ile okuyor, Windows
+şablonunun `sed` ile doldurulmasından farklı bir mekanizma. Bu, dosyanın
+`install-monitoring.sh`'tan önce, bu bölümdeki ayrı bir kararla var olmasının doğal sonucu.
 
 ---
 
@@ -326,7 +337,7 @@ olarak işaretli:
 | `buybox.iss` değişiklikleri | **Derlenmedi.** Inno Setup bu makinede kurulu değil; `build-package.ps1` bir derlemede doğrular |
 | Kurulum paketi (Alloy dahil) | **Derlenmedi.** `installer\vendor\alloy-installer-windows-amd64.exe` henüz indirilmedi |
 | Pano JSON'u | Geçerli JSON; Grafana'ya içe aktarılarak **denenmedi** |
-| Linux yapılandırması | **Tamamen denenmedi.** Çalışan bir Linux kurulumu yok |
+| Linux yapılandırması | **Tamamen denenmedi.** Log kaynağı karara bağlandı ve `install-monitoring.sh`'a bağlandı (§9), ama `alloy` ikili dosyasına karşı hiç çalıştırılmadı — çalışan bir Linux kurulumu yok |
 | Uçtan uca akış | **Denenmedi** — Grafana Cloud hesabı gerekiyor |
 
 ### Sıradaki adımlar
