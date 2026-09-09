@@ -190,10 +190,21 @@ pushd "$repo_root" >/dev/null
 # only, for the Trendyol source). The unscoped list pulled in ~300 packages including gstreamer,
 # ghostscript and spellcheckers -- WebKit/Firefox media and forms support this headless scraper
 # never touches -- and would have shipped every one of them in `Depends:` to every customer.
+#
+# `--dry-run` reports what is MISSING, not what Chromium needs in the abstract -- it prints
+# nothing on a machine that already has these libraries (from a previous build or a previous
+# `apt install` of this same package on this same machine), and this then fails loudly below
+# rather than silently shipping an empty `Depends:`. A stateless CI runner (doc 14 section 11.7)
+# never hits this; a persistent local/test machine that has already installed a build of this
+# package does, and the fix there is `apt purge` of the previous build's dependency packages
+# (or a fresh container) before rebuilding, not a change to this script.
 playwright_deps="$(npx playwright install-deps chromium --dry-run 2>/dev/null \
   | grep -oE '^\s+[a-z0-9][a-z0-9.+-]*' | sed 's/^\s*//' | sort -u | paste -sd, - || true)"
 if [ -z "$playwright_deps" ]; then
-  echo "Could not determine Playwright's apt dependency list (install-deps --dry-run produced nothing); check the Playwright version and its --dry-run output format." >&2
+  echo "Could not determine Playwright's apt dependency list (install-deps --dry-run produced nothing)." >&2
+  echo "If this is a persistent machine that already has Chromium's deps installed (e.g. from a" >&2
+  echo "previous build or 'apt install' of this package), that is the likely cause, not a broken" >&2
+  echo "Playwright version -- purge them first or use a fresh machine/container." >&2
   exit 1
 fi
 PLAYWRIGHT_BROWSERS_PATH="$chromium_dir" npx playwright install chromium
