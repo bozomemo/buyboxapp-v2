@@ -369,6 +369,25 @@ The browser side of that same failure was fixed with it: the Playwright fetcher 
 session whose browser has died rather than caching it for the process's lifetime. A launch that
 *never* worked is still cached and not retried per call — the two are different facts.
 
+**The same failure, one layer down** (2026-09-11). That fix handled a dead *browser*. On
+2026-09-07 the **renderer** crashed instead, which the liveness check could not see — the browser
+stays connected and the page still reports itself open — so the poisoned page was handed back to
+every fetch for twenty hours, across the whole tracked catalogue, until the worker was restarted.
+The fetcher now also watches Playwright's `crash` event and the navigation error, retires the
+session even on the attempt that gives up, retries once on a fresh one, and recycles the page
+every `MAX_NAVIGATIONS_PER_PAGE` navigations rather than waiting to be surprised again
+(api-references §1.6, `docs/trendyol-merchants-scraping-guide.md` §37.5).
+
+**A product the marketplace says is gone is retired, not retried** (2026-09-11). A 404 or 410 on
+a tracked product is the marketplace answering definitively, and the same product was being asked
+again every hour for days. `scrapeTrackedProducts` now deactivates that row
+(`setTrackedProductsActive(false)`) and logs `TrackedProductGone` at `warn`. Deactivation, never
+deletion: the row and its whole observation history stay, so a report over last month still has
+that product's sellers and prices. It is reversible both ways — the operator can reactivate it,
+and a rescan (§7.1) deliberately ignores `is_active`, so a page that comes back simply stops
+failing. Such a failure also does **not** count towards the halt above: that counter asks whether
+the source has stopped answering, and a marketplace that answered 404 has answered.
+
 **One page, one fetch at a time** (2026-08-29). That fetcher runs a single browser page and used
 to rely on the source's rate limiter to serialise calls, which it does only while there is a
 single caller. Two concurrent runs of one job share one source instance, and two navigations on

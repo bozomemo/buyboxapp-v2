@@ -26,6 +26,30 @@ import { competitorSellersRepo, eventsRepo, newId, trackedProductsRepo } from '@
 import { CompetitorSourceError, type ICompetitorSource } from '@buybox/adapters';
 import type { JobContext } from '../job.js';
 import { SCRAPE_MAX_TRACKED_PER_RUN, SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT } from '../scrape-config.js';
+
+/**
+ * The statuses that mean **the product is gone**, not that the look failed.
+ *
+ * 404 is "no such product page"; 410 is the marketplace going out of its way to say it existed
+ * and has been withdrawn. Either way every future look will say the same thing, and until now
+ * that is exactly what happened: the production event log carries one 410 product
+ * (`…kedi-mamasi-5-4-kg-p-793542803`) failing once an hour for two days, and two 404s beside it,
+ * each spending a rate-limit token and writing a failure row to be told again.
+ *
+ * Deliberately these two and nothing else. A 503 is the server saying "not now" (retried in the
+ * source), a timeout is our own machine, a `parseFailed` is a page we *did* reach — none of them
+ * is evidence about whether the product exists, and acting on them would quietly retire products
+ * over a bad afternoon on the operator's link.
+ */
+const GONE_HTTP_STATUSES: ReadonlySet<number> = new Set([404, 410]);
+
+function isGone(error: unknown): boolean {
+  return (
+    error instanceof CompetitorSourceError &&
+    error.httpStatus !== undefined &&
+    GONE_HTTP_STATUSES.has(error.httpStatus)
+  );
+}
 import { hashOffers } from './scrape-competitors.js';
 import { byRotationPriority } from './tracked-rotation.js';
 
@@ -277,7 +301,11 @@ export async function scrapeTrackedProducts(
       );
     } catch (error) {
       itemsFailed += 1;
-      consecutiveFailures += 1;
+      const gone = isGone(error);
+      // A `gone` product does **not** count towards the halt below. That counter asks "has the
+      // source stopped answering", and a marketplace that answered 404 has answered — halting a
+      // run over a handful of withdrawn products would strand every product behind them.
+      consecutiveFailures = gone ? 0 : consecutiveFailures + 1;
       const status =
         error instanceof CompetitorSourceError && error.kind === 'parseFailed'
           ? 'parseFailed'
@@ -324,6 +352,44 @@ export async function scrapeTrackedProducts(
         message: `Scrape ${status} for tracked product ${product.id} (${product.label}): ${error instanceof Error ? error.message : String(error)}`,
         context: JSON.stringify({ status }),
       });
+
+      /**
+       * The page is gone, not the source (2026-09-11).
+       *
+       * Deactivated rather than deleted, exactly as the dead-product suggestion does
+       * (`setTrackedProductsActive`): the row and its whole observation history stay, and a
+       * brand report that covers last month still has the seller and price series for a product
+       * that has since left the marketplace. What stops is the cadence — `rotatedProducts` reads
+       * `activeOnly`, so the hourly rotation lets it go and spends the budget on products that
+       * can still answer.
+       *
+       * Reversible in two ways, both of which matter because a marketplace can un-withdraw a
+       * page: the operator can reactivate the row from the list screen, and a rescan
+       * (`onlyIds`) deliberately ignores `is_active` — an operator who ticks the row and presses
+       * the button has said something more specific than the flag does, so the product is looked
+       * at again and, if it answers, simply stops failing.
+       *
+       * `warn`, not `debug`: unlike the per-failure silence above this is the system changing
+       * what it watches on its own, and the operator has to be able to find out why a product
+       * stopped updating.
+       */
+      if (gone) {
+        await trackedProductsRepo.setTrackedProductsActive(ctx.appDb, [product.id], false);
+        await eventsRepo.logEvent(ctx.appDb, {
+          id: newId(),
+          at: nowMs,
+          level: 'warn',
+          marketplaceCode,
+          listingId: null,
+          jobRunId: ctx.correlationId,
+          code: 'TrackedProductGone',
+          message: `Tracked product ${product.id} (${product.label}) was deactivated: the marketplace answered ${error instanceof CompetitorSourceError ? error.httpStatus : '?'} — the product page no longer exists. History is kept; reactivate the row or rescan it if it comes back.`,
+          context: JSON.stringify({
+            httpStatus: error instanceof CompetitorSourceError ? error.httpStatus : null,
+            productRef: product.productRef,
+          }),
+        });
+      }
 
       // The source is gone, not the page — see the constant's doc comment. Logged at `warn`
       // rather than `debug` on purpose: this is the one scraping condition an operator has to
