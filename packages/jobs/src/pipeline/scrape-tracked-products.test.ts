@@ -186,10 +186,7 @@ describe('scrapeTrackedProducts', () => {
    */
   it.each([
     ['a timeout with no status', new CompetitorSourceError('Timeout 15000ms exceeded', 'fetchFailed')],
-    [
-      'a 503',
-      new CompetitorSourceError('Trendyol public page 503 for x', 'fetchFailed', undefined, 503),
-    ],
+    ['a 503', new CompetitorSourceError('Trendyol public page 503 for x', 'fetchFailed', undefined, 503)],
     ['a parse failure', new CompetitorSourceError('no shared props', 'parseFailed')],
   ])('leaves the product active after %s', async (_label, error) => {
     await seedTracked('t-live');
@@ -220,5 +217,71 @@ describe('scrapeTrackedProducts', () => {
     expect(calls).toHaveLength(ids.length);
     expect(result.itemsOk).toBe(1);
     expect(await eventCodes()).not.toContain('TrackedProductsScrapeHalted');
+  });
+
+  /**
+   * The production incident of 2026-09-11: three `ScrapeBrandSellers` attempts died one after
+   * another, a 605-product brand abandoned each time, because the operator deleted three failing
+   * products from the list screen — thirteen seconds apart — while the run walked past them. A
+   * whole-brand run takes hours, so this is ordinary use of the two screens at once.
+   */
+  describe('a product the operator deletes while the run is reading it', () => {
+    // The deletes below are fired without awaiting, from inside the source double, to land in
+    // the middle of the look. That is deterministic here and only here: these tests run on
+    // better-sqlite3, whose driver is synchronous, so the row is gone by the time the fetch
+    // returns.
+
+    it('is skipped on the success path, and the rest of the run still happens', async () => {
+      await seedTracked('t-doomed');
+      await seedTracked('t-live');
+      const { source } = fakeSource((ref) => {
+        // The delete lands while this very page is being fetched.
+        if (ref.contentId === 't-doomed') void trackedProductsRepo.deleteTrackedProduct(db.appDb, 't-doomed');
+        return [offer()];
+      });
+
+      const result = await scrapeTrackedProducts(context(), 'trendyol', source);
+
+      expect(result).toMatchObject({ itemsOk: 1, itemsFailed: 0, itemsRemoved: 1, itemsTotal: 2 });
+      // The survivor was read, which is the whole point: before this the throw took the job.
+      const obs = await trackedProductsRepo.latestTrackedProductObservations(db.appDb, 't-live');
+      expect(obs.map((o) => o.status)).toEqual(['ok']);
+    });
+
+    /**
+     * The nastier half: the failure row is written from inside a `catch`, so a row that goes away
+     * between the failed read and the note about it used to throw out of the handler — the one
+     * place where a second failure was fatal rather than recorded.
+     */
+    it('is skipped on the failure path too', async () => {
+      await seedTracked('t-doomed');
+      await seedTracked('t-live');
+      const { source } = fakeSource((ref) => {
+        if (ref.contentId !== 't-doomed') return [offer()];
+        void trackedProductsRepo.deleteTrackedProduct(db.appDb, 't-doomed');
+        return new CompetitorSourceError('Trendyol public page 503 for x', 'fetchFailed', undefined, 503);
+      });
+
+      const result = await scrapeTrackedProducts(context(), 'trendyol', source);
+
+      // Not counted as a failure: what the run learned about it went with the row.
+      expect(result).toMatchObject({ itemsOk: 1, itemsFailed: 0, itemsRemoved: 1 });
+    });
+
+    /** A removal says nothing about Trendyol, so it must not spend the "source is down" budget. */
+    it('does not count towards the halt that says the source is down', async () => {
+      const ids = ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'live'];
+      for (const id of ids) await seedTracked(id);
+      const { source, calls } = fakeSource((ref) => {
+        if (ref.contentId !== 'live') void trackedProductsRepo.deleteTrackedProduct(db.appDb, ref.contentId!);
+        return [offer()];
+      });
+
+      const result = await scrapeTrackedProducts(context(), 'trendyol', source);
+
+      expect(calls).toHaveLength(ids.length);
+      expect(result).toMatchObject({ itemsOk: 1, itemsRemoved: 8 });
+      expect(await eventCodes()).not.toContain('TrackedProductsScrapeHalted');
+    });
   });
 });

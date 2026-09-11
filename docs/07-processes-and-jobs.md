@@ -388,6 +388,21 @@ and a rescan (§7.1) deliberately ignores `is_active`, so a page that comes back
 failing. Such a failure also does **not** count towards the halt above: that counter asks whether
 the source has stopped answering, and a marketplace that answered 404 has answered.
 
+**A product deleted mid-run is skipped, not fatal** (2026-09-12). A whole-brand run (§7.3) reads
+its products in pages and then takes *hours* to walk them, so an operator tidying dead rows out
+of the tracked-product list (doc 06 §12.2) while it runs is ordinary use of the two screens at
+once. Until this, it was fatal: `recordTrackedProductLook` threw an untyped error for a row that
+was no longer there, and on 2026-09-11 three consecutive `ScrapeBrandSellers` attempts died that
+way — a 605-product brand abandoned each time — because three failing products were deleted
+thirteen seconds apart while the run walked past them. Nothing was wrong with the scrape or the
+data. The repository now throws `TrackedProductRemovedError`, which separates "this id was never
+valid" (still a loud bug) from "the row went away while I worked", and the pipeline skips that
+product and carries on. It is counted as neither a success nor a failure — `itemsRemoved`, named
+in `BrandSellerScrapeFinished` only when it is non-zero — and, like a withdrawn product above, it
+does **not** count towards the halt: a row the operator removed says nothing about whether the
+source is answering. Both write sites are guarded, including the failure-row write inside the
+`catch`, which was the one place a second failure took the job rather than being recorded.
+
 **One page, one fetch at a time** (2026-08-29). That fetcher runs a single browser page and used
 to rely on the source's rate limiter to serialise calls, which it does only while there is a
 single caller. Two concurrent runs of one job share one source instance, and two navigations on

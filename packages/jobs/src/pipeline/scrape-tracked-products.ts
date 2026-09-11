@@ -69,6 +69,15 @@ export interface ScrapeTrackedProductsResult {
    * 4,679 rows says so rather than claiming the catalogue is 300 rows long.
    */
   readonly itemsTotal: number;
+  /**
+   * How many of those products the operator deleted while the run was reading them.
+   *
+   * Reported rather than folded into either other count, because it is the one figure that
+   * explains an arithmetic the caller would otherwise have to call a bug: from 2026-09-12
+   * `itemsOk + itemsFailed` can be **less** than `itemsTotal`, and a removed product is a row
+   * that stopped existing, not a look that succeeded and not a look that failed.
+   */
+  readonly itemsRemoved: number;
 }
 
 /**
@@ -162,6 +171,7 @@ export async function scrapeTrackedProducts(
   let itemsFailed = 0;
   let itemsChanged = 0;
   let consecutiveFailures = 0;
+  let itemsRemoved = 0;
   let processed = 0;
 
   for (const product of due) {
@@ -300,45 +310,81 @@ export async function scrapeTrackedProducts(
         ),
       );
     } catch (error) {
-      itemsFailed += 1;
+      /**
+       * The operator deleted this row while the run was working (2026-09-12).
+       *
+       * Skipped outright: there is no row to write a look against, nothing to count — a product
+       * that no longer exists is neither a success nor a failure — and above all nothing worth
+       * abandoning the rest of the run for. A whole-brand run takes hours, so an operator
+       * tidying dead products out of the list screen while it walks past them is ordinary use;
+       * before this it killed the job (`TrackedProductRemovedError`'s doc comment records the
+       * production incident).
+       *
+       * Deliberately not counted towards `consecutiveFailures` either, for the same reason a
+       * `gone` product is not: that counter asks whether the *source* has stopped answering, and
+       * a row the operator removed says nothing at all about Trendyol.
+       */
+      if (error instanceof trackedProductsRepo.TrackedProductRemovedError) {
+        itemsRemoved += 1;
+        continue;
+      }
+
       const gone = isGone(error);
-      // A `gone` product does **not** count towards the halt below. That counter asks "has the
-      // source stopped answering", and a marketplace that answered 404 has answered — halting a
-      // run over a handful of withdrawn products would strand every product behind them.
-      consecutiveFailures = gone ? 0 : consecutiveFailures + 1;
       const status =
         error instanceof CompetitorSourceError && error.kind === 'parseFailed'
           ? 'parseFailed'
           : 'fetchFailed';
-      // `offersHash: null` — the failure row is always stored, and the stored hash is left
-      // alone. Clearing it would make the next successful look read as a change and store a
-      // duplicate offer set, turning every transient network error into a fake price event.
-      await trackedProductsRepo.recordTrackedProductLook(ctx.appDb, {
-        trackedProductId: product.id,
-        observedAt: nowMs,
-        offersHash: null,
-        rows: [
-          {
-            id: newId(),
-            trackedProductId: product.id,
-            observedAt: nowMs,
-            status,
-            rank: null,
-            sellerName: null,
-            sellerRef: null,
-            price: null,
-            finalPrice: null,
-            offeredStock: null,
-            // `hasPromotion: null`, not `false`: this row records that the page could not be
-            // read, and `false` would state that it carried no promotion.
-            sellerRating: null,
-            dispatchTime: null,
-            hasPromotion: null,
-            promotionText: null,
-            listingRef: null,
-          },
-        ],
-      });
+      /**
+       * `offersHash: null` — the failure row is always stored, and the stored hash is left
+       * alone. Clearing it would make the next successful look read as a change and store a
+       * duplicate offer set, turning every transient network error into a fake price event.
+       *
+       * Guarded by its own `try` because **this** write can hit the removal race too, and did:
+       * the failure row is written from inside a `catch`, so before 2026-09-12 a product the
+       * operator deleted between the failed read and the note about it threw out of the handler
+       * and took the job with it — the one place where a second failure was fatal rather than
+       * recorded. Nothing to write the row against now, so the product is skipped exactly as
+       * above, and the failure is not counted either: what the run learned about it is gone with
+       * the row.
+       */
+      try {
+        await trackedProductsRepo.recordTrackedProductLook(ctx.appDb, {
+          trackedProductId: product.id,
+          observedAt: nowMs,
+          offersHash: null,
+          rows: [
+            {
+              id: newId(),
+              trackedProductId: product.id,
+              observedAt: nowMs,
+              status,
+              rank: null,
+              sellerName: null,
+              sellerRef: null,
+              price: null,
+              finalPrice: null,
+              offeredStock: null,
+              // `hasPromotion: null`, not `false`: this row records that the page could not be
+              // read, and `false` would state that it carried no promotion.
+              sellerRating: null,
+              dispatchTime: null,
+              hasPromotion: null,
+              promotionText: null,
+              listingRef: null,
+            },
+          ],
+        });
+      } catch (writeError) {
+        if (!(writeError instanceof trackedProductsRepo.TrackedProductRemovedError)) throw writeError;
+        itemsRemoved += 1;
+        continue;
+      }
+
+      itemsFailed += 1;
+      // A `gone` product does **not** count towards the halt below. That counter asks "has the
+      // source stopped answering", and a marketplace that answered 404 has answered — halting a
+      // run over a handful of withdrawn products would strand every product behind them.
+      consecutiveFailures = gone ? 0 : consecutiveFailures + 1;
       // Same "per-failure silence, rate alerts" posture as ScrapeCompetitors (doc 07 §7) — a
       // handful of tracked products is not worth a dedicated failure-rate alert of its own.
       await eventsRepo.logEvent(ctx.appDb, {
@@ -411,5 +457,5 @@ export async function scrapeTrackedProducts(
     }
   }
 
-  return { itemsOk, itemsFailed, itemsChanged, itemsTotal: due.length };
+  return { itemsOk, itemsFailed, itemsChanged, itemsRemoved, itemsTotal: due.length };
 }

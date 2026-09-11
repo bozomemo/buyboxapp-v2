@@ -305,6 +305,30 @@ export async function findTrackedProductByRef(
   });
 }
 
+/**
+ * The tracked product a caller is writing about is no longer in the table.
+ *
+ * A distinct type rather than a bare `Error`, because the two things it can mean are not equally
+ * the caller's fault and must not be handled alike:
+ *
+ * - **a bug** — an id that was never valid, which should still fail loudly;
+ * - **a removal mid-run** — the operator deleted the row from the list screen (§12.2) while a
+ *   scrape that had already read it was still working. Whole-brand runs take *hours*
+ *   (`ScrapeBrandSellers`), so the window is wide open, and a person tidying away dead products
+ *   while a sweep runs is ordinary use, not misuse.
+ *
+ * Until 2026-09-12 both were one untyped throw, so the second killed the job: the live install
+ * lost three consecutive `ScrapeBrandSellers` attempts on 2026-09-11 — a 605-product brand
+ * abandoned each time — because the operator deleted three failing products, thirteen seconds
+ * apart, while the run walked past them. Nothing was wrong with the scrape or the data.
+ */
+export class TrackedProductRemovedError extends Error {
+  constructor(readonly trackedProductId: string) {
+    super(`recordTrackedProductLook: tracked product ${trackedProductId} is no longer in the table`);
+    this.name = 'TrackedProductRemovedError';
+  }
+}
+
 export async function getTrackedProduct(
   appDb: AppDatabase,
   id: string,
@@ -413,15 +437,20 @@ export interface TrackedProductLook {
  * look has already stored its own.
  *
  * Returns whether anything was stored, so a caller can count real changes rather than looks.
+ *
+ * Throws `TrackedProductRemovedError` if the row is no longer there — which a long-running
+ * caller must expect rather than treat as a bug. See that class.
  */
 export async function recordTrackedProductLook(
   appDb: AppDatabase,
   look: TrackedProductLook,
 ): Promise<{ readonly changed: boolean }> {
   const previous = await getTrackedProduct(appDb, look.trackedProductId);
-  // An unknown product is a caller bug, not a silent no-op: the FK would reject the rows anyway.
+  // Still never a silent no-op — the FK would reject the rows anyway — but a *typed* refusal, so
+  // a caller that read the row minutes ago can tell "it was removed while I worked" apart from
+  // its own bug. See `TrackedProductRemovedError`.
   if (!previous) {
-    throw new Error(`recordTrackedProductLook: unknown tracked product ${look.trackedProductId}`);
+    throw new TrackedProductRemovedError(look.trackedProductId);
   }
 
   const failed = look.offersHash === null;

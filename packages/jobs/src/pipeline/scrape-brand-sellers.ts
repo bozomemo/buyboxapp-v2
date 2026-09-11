@@ -112,6 +112,7 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
   let itemsOk = 0;
   let itemsFailed = 0;
   let itemsChanged = 0;
+  let itemsRemoved = 0;
   let processed = 0;
   let truncated = false;
 
@@ -134,6 +135,7 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
     itemsOk += result.itemsOk;
     itemsFailed += result.itemsFailed;
     itemsChanged += result.itemsChanged;
+    itemsRemoved += result.itemsRemoved;
     processed += result.itemsTotal;
 
     /**
@@ -185,7 +187,10 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
     ctx,
     marketplaceCode,
     'BrandSellerScrapeFinished',
-    `${brand.label} · ${processed} products read (${itemsOk} ok, ${itemsFailed} failed, ${itemsChanged} changed)`,
+    // `removed` is named only when it happened: it is the operator's own deletions catching up
+    // with a run in flight, and printing "0 removed" on every ordinary sweep would invite them
+    // to read a normal run as one that lost something.
+    `${brand.label} · ${processed} products read (${itemsOk} ok, ${itemsFailed} failed, ${itemsChanged} changed${itemsRemoved > 0 ? `, ${itemsRemoved} removed while the run was reading them` : ''})`,
     'info',
   );
 
