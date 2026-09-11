@@ -1526,3 +1526,21 @@ Every run records the §33 diagnostics. The signals worth alerting on are a fall
 `winnerVariantFound` or `merchantCount`, or a rise in `parseFailed` — all of which show up as
 a `scrape_runs` status distribution rather than as quietly empty reports, which is precisely
 how the retired scraper failed (doc 09 §22).
+
+## 37.5 Transport incidents (added 2026-09-11)
+
+Two of the three things that have actually stopped this scraper in production were the
+*transport*, not the payload, and neither was visible as a parser diagnostic. Recorded here
+because §37.4's signals would not have caught either: every one of those metrics is computed
+from a page that was fetched, and in both incidents no page was fetched at all.
+
+| Date | What happened | What the log said | Fix |
+|---|---|---|---|
+| 2026-08-28 | Chromium disappeared after ~1,400 navigations on the shared page | `Target page, context or browser has been closed`, 2,700 tracked products in a row | `getSession` replaces a browser that died after a successful launch |
+| 2026-09-07 | The **renderer** crashed while the browser stayed connected and the page stayed open | `page.goto: Page crashed`, unbroken 17:38 → 13:28 the next day, the whole catalogue, ending at a worker restart | `isUsable` also consults Playwright's `crash` event and the navigation error; the page is additionally recycled every `MAX_NAVIGATIONS_PER_PAGE` navigations, and Chromium runs with `--disable-dev-shm-usage` |
+
+The shape they share is worth stating plainly, because a third variant would share it too: the
+source is built **once at worker startup** (`buildCompetitorSources`), so anything that poisons
+its one browser poisons every later run until the process restarts. A liveness check that misses
+a failure mode does not degrade the scrape — it stops it, silently, for as long as the worker
+happens to stay up.

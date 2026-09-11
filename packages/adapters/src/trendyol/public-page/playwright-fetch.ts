@@ -13,8 +13,8 @@
  * via headers on a non-browser client.
  *
  * One browser and one page are launched lazily on first use and reused for the fetcher's whole
- * lifetime — but a browser that dies under a long run is replaced rather than poisoning every
- * later fetch; see `getSession`.
+ * lifetime — but a session that dies under a long run is replaced rather than poisoning every
+ * later fetch. *Dies* means three different things and all three are handled; see `isUsable`.
  *
  * A page pool would add resource cost and complexity for no throughput benefit: the source's own
  * rate limiter holds the whole thing to a handful of requests a minute (doc 08 §12), so one page
@@ -38,13 +38,45 @@ export interface PlaywrightSession {
 }
 
 /**
- * How a session is obtained. Injectable **only** so the crash-recovery path in `getSession` can
+ * How a session is obtained. Injectable **only** so the crash-recovery paths in `getSession` can
  * be exercised without killing a real Chromium out from under a test; production always uses
  * `launchChromium`.
  */
 export type PlaywrightLauncher = (userAgent: string | undefined) => Promise<PlaywrightSession>;
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+/**
+ * A session plus what this module knows about its health — neither of which Playwright exposes
+ * on the objects themselves.
+ *
+ * `crashed` exists because a crashed renderer is invisible to every API that looks like it would
+ * report one: see `isUsable`. `navigations` exists because the crash it records is, on the
+ * evidence, a resource leak rather than a random event — see `MAX_NAVIGATIONS_PER_PAGE`.
+ */
+interface TrackedSession {
+  readonly session: PlaywrightSession;
+  crashed: boolean;
+  navigations: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * Recycle the page after this many navigations, before it can crash.
+ *
+ * The 2026-09-07 production incident (below) crashed a renderer that had been reused across a
+ * whole catalogue, and the 2026-08-28 one lost the whole browser after ~1,400 navigations on the
+ * same shared page. Both read as a process whose memory grows with every page it has ever
+ * rendered — Trendyol's product page is a heavy SPA — rather than as bad luck, and neither
+ * recovery path below makes the crash itself free: it costs the product in flight, and on a
+ * small machine a crashing renderer is also the machine's worst moment to be launching a
+ * replacement browser.
+ *
+ * So the crash is pre-empted as well as survived. 300 is chosen well under the only figure ever
+ * measured (~1,400) and well above the ~120 navigations one hourly `ScrapeCompetitors` run makes
+ * at the default rate, so a typical run never pays for a relaunch mid-run and a catalogue sweep
+ * pays for a handful.
+ */
+const MAX_NAVIGATIONS_PER_PAGE = 300;
 
 /**
  * Chromium aborts a navigation — `net::ERR_ABORTED`, thrown by `page.goto` — when the page it is
@@ -60,19 +92,58 @@ const DEFAULT_TIMEOUT_MS = 15_000;
  */
 const ABORTED_NAVIGATION_RETRIES = 1;
 
+/**
+ * A navigation that died with its session gets one retry too — on a **fresh** session, which is
+ * the whole difference from the abort retry above. One, because the replacement is brand new: if
+ * a just-launched browser crashes on the same URL, that is the page, the machine or the install,
+ * and repeating it would only spend the rate budget saying so.
+ */
+const DEAD_SESSION_RETRIES = 1;
+
 function isAbortedNavigation(error: unknown): boolean {
   return error instanceof Error && error.message.includes('net::ERR_ABORTED');
 }
 
+/**
+ * The errors that mean "this session is gone", as Playwright words them.
+ *
+ * `Page crashed` is the renderer dying under us — the 2026-09-07 incident. The `…has been
+ * closed` family is the browser process going away, which `isUsable`'s `isConnected()` check
+ * normally catches first but can lose a race to.
+ *
+ * Matched on the message because Playwright throws a plain `Error` for all of them; there is no
+ * code or class to switch on. Deliberately narrow: a timeout, a DNS failure and an HTTP status
+ * are all ordinary outcomes of a healthy session and must keep failing the item, not the
+ * browser.
+ */
+function isDeadSession(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message;
+  return (
+    message.includes('Page crashed') ||
+    message.includes('Target crashed') ||
+    message.includes('Target page, context or browser has been closed') ||
+    message.includes('Target closed')
+  );
+}
+
 async function launchChromium(userAgent: string | undefined): Promise<PlaywrightSession> {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    // Chromium puts its shared-memory files in `/dev/shm`, which is 64 MB in a default Docker
+    // container and small on a trimmed Linux install; a renderer that outgrows it dies with
+    // exactly the `Page crashed` this module now recovers from. The flag moves that allocation
+    // to ordinary temp files — slower in theory, and the documented fix for this crash. Harmless
+    // on Windows, where there is no `/dev/shm` to run out of.
+    args: ['--disable-dev-shm-usage'],
+  });
   const page = await browser.newPage(userAgent ? { userAgent } : {});
   return { browser, page };
 }
 
 /** Launches nothing until the first `fetch()` call — a source that's never invoked never pays for a browser. */
 export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChromium): PlaywrightFetcher {
-  let session: Promise<PlaywrightSession> | undefined;
+  let session: Promise<TrackedSession> | undefined;
   let disposed = false;
   /** Tail of the fetch queue — see `serialised`. */
   let queue: Promise<unknown> = Promise.resolve();
@@ -106,7 +177,64 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
     return run;
   }
 
-  function getSession(userAgent: string | undefined): Promise<PlaywrightSession> {
+  /**
+   * Whether a cached session may serve the next fetch. Four ways it may not, and the first three
+   * are each a real production incident:
+   *
+   * - **the browser process is gone** (2026-08-28): Chromium disappeared after ~1,400
+   *   navigations and every later fetch threw `Target page, context or browser has been closed`
+   *   — 2,700 tracked products in a row, each still spending a rate-limit token and writing a
+   *   failure row, with only a worker restart able to clear it;
+   * - **the page was closed** under us, while the browser lives;
+   * - **the renderer crashed** (2026-09-07): `page.goto: Page crashed`, unbroken from 17:38 on
+   *   7 Eylül to 13:28 the next day across the whole tracked catalogue, ending only at a
+   *   restart. This is the case the first two checks cannot see: after a renderer crash the
+   *   browser is still connected and the page still reports itself open, so a liveness check
+   *   built from `isConnected()` and `isClosed()` alone hands the poisoned page back for ever.
+   *   Nothing on `Page` exposes it either, so it is recorded from the `crash` event and from the
+   *   navigation error itself (`isDeadSession`);
+   * - **it has done enough navigations** — pre-emption rather than recovery, see
+   *   `MAX_NAVIGATIONS_PER_PAGE`.
+   */
+  function isUsable(tracked: TrackedSession): boolean {
+    return (
+      !tracked.crashed &&
+      tracked.navigations < MAX_NAVIGATIONS_PER_PAGE &&
+      tracked.session.browser.isConnected() &&
+      !tracked.session.page.isClosed()
+    );
+  }
+
+  /**
+   * Drops a session from the cache and disposes it on a detached promise.
+   *
+   * Detached because a dead browser's `close()` has nothing to wait for and awaiting it would
+   * only delay the replacement; a *recycled* (still healthy) one is closed the same way because
+   * the caller is waiting on a fetch, not on tidy-up. Relaunching loses nothing worth keeping:
+   * this fetcher relies on no cookie or session state, and the caller's cache and rate limiter
+   * live in the source.
+   *
+   * Guarded on identity — if another path has already replaced the cached session, this one must
+   * not clear its successor.
+   */
+  function discard(expected: Promise<TrackedSession>, tracked: TrackedSession): void {
+    if (session === expected) session = undefined;
+    void tracked.session.browser.close().catch(() => undefined);
+  }
+
+  async function launchTracked(userAgent: string | undefined): Promise<TrackedSession> {
+    const live = await launch(userAgent);
+    const tracked: TrackedSession = { session: live, crashed: false, navigations: 0 };
+    // The only signal Playwright gives for a crashed renderer. It arrives on the page object, not
+    // as a rejection, and a crash that happens *between* two fetches would otherwise be invisible
+    // until the next `goto` failed.
+    live.page.on('crash', () => {
+      tracked.crashed = true;
+    });
+    return tracked;
+  }
+
+  function getSession(userAgent: string | undefined): Promise<TrackedSession> {
     // `close()` is the caller saying it is finished (worker shutdown). A straggler fetch after
     // that must fail, never quietly launch a browser nobody is left to close.
     if (disposed) {
@@ -114,21 +242,11 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
     }
     if (session) {
       const existing = session;
-      return existing.then((live) => {
-        if (live.browser.isConnected() && !live.page.isClosed()) return live;
+      return existing.then((tracked) => {
+        if (isUsable(tracked)) return tracked;
         // A browser that launched successfully and *later died* is not a launch failure, and
-        // caching it as one is what the check below would otherwise do. Measured on the live
-        // install 2026-08-28: Chromium disappeared after ~1,400 navigations on the shared page
-        // and every fetch for the rest of the run threw `Target page, context or browser has
-        // been closed` — 2,700 tracked products in a row, each still spending a rate-limit
-        // token and writing a failure row, with only a worker restart able to clear it.
-        //
-        // Relaunching is safe because this fetcher holds no state worth preserving: no cookies
-        // are relied on, and the caller's own cache and rate limiter live in the source. The
-        // dead browser is disposed on a detached promise — it is already gone, and awaiting its
-        // `close()` would only delay the replacement.
-        if (session === existing) session = undefined;
-        void live.browser.close().catch(() => undefined);
+        // caching it as one is what the check below would otherwise do.
+        discard(existing, tracked);
         return getSession(userAgent);
       });
     }
@@ -140,7 +258,7 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
     // `ICompetitorSource.fetchProductOffers`'s catch and is recorded as an ordinary
     // `fetchFailed` (doc 07 §7: never escalates); a fresh worker restart is what clears a launch
     // failure, same as every other config problem this source depends on.
-    session = launch(userAgent);
+    session = launchTracked(userAgent);
     return session;
   }
 
@@ -150,21 +268,41 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
       // the body is read off the shared page after the fact (see `page.content()` below).
       return serialised(async () => {
         const userAgent = init.headers['User-Agent'] ?? init.headers['user-agent'];
-        const { page } = await getSession(userAgent);
-        const goto = async () =>
-          page.goto(url, {
-            waitUntil: 'domcontentloaded',
-            timeout: init.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          });
+        const timeout = init.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+        let abortRetries = 0;
+        let deadSessionRetries = 0;
+        let tracked = await getSession(userAgent);
         let response;
-        for (let attempt = 0; ; attempt += 1) {
+        for (;;) {
           try {
-            response = await goto();
+            tracked.navigations += 1;
+            response = await tracked.session.page.goto(url, {
+              waitUntil: 'domcontentloaded',
+              timeout,
+            });
             break;
           } catch (error) {
-            // Only the abort race above is retried here. A timeout, a closed browser or any other
-            // navigation failure propagates on the first attempt, exactly as before.
-            if (attempt >= ABORTED_NAVIGATION_RETRIES || !isAbortedNavigation(error)) throw error;
+            // The session died mid-navigation: replace it and try once on the new one. Without
+            // this the caller sees a failure whose cause has already been cleared, and — worse
+            // before `isUsable` learned about crashes — the next caller inherited the corpse.
+            if (isDeadSession(error)) {
+              // Marked before the retry budget is consulted, so even the attempt that gives up
+              // leaves a session nobody will be handed again. That ordering *is* the fix for the
+              // 20-hour outage: the failure that ends the item must still retire the corpse.
+              tracked.crashed = true;
+              if (deadSessionRetries < DEAD_SESSION_RETRIES) {
+                deadSessionRetries += 1;
+                tracked = await getSession(userAgent);
+                continue;
+              }
+            }
+            // The abort race above. A timeout or any other navigation failure propagates on the
+            // first attempt, exactly as before.
+            if (isAbortedNavigation(error) && abortRetries < ABORTED_NAVIGATION_RETRIES) {
+              abortRetries += 1;
+              continue;
+            }
+            throw error;
           }
         }
         if (response === null) {
@@ -179,7 +317,7 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
         // this was a real production hazard on the very first hung/slow request after any success.
         // Doc 07 §7's inline `__envoy__SHARED_PROPS` script is a DOM text node either way, so the
         // parser sees the same content it would have from the raw response.
-        const body = await page.content();
+        const body = await tracked.session.page.content();
         return {
           ok: status >= 200 && status < 300,
           status,
@@ -195,8 +333,8 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
       if (!existing) return;
       // `catch`, not a bare await: a cached *launch failure* has no browser to close, and
       // shutdown must not be the place that finally rethrows it.
-      const live = await existing.catch(() => undefined);
-      await live?.browser.close();
+      const tracked = await existing.catch(() => undefined);
+      await tracked?.session.browser.close();
     },
   };
 }

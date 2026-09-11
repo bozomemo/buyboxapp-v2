@@ -136,6 +136,7 @@ describe('createPlaywrightFetcher', () => {
         browser: { isConnected: () => true, close: async () => undefined },
         page: {
           isClosed: () => false,
+          on: () => undefined,
           goto: async () => goto(),
           content: async () => '<html><body>second try</body></html>',
         },
@@ -199,7 +200,7 @@ describe('createPlaywrightFetcher', () => {
    */
   describe('a browser that dies after a successful launch', () => {
     function stubSession(
-      state: { connected: boolean; closed: boolean },
+      state: { connected: boolean; closed: boolean; onCrash?: () => void },
       goto: () => unknown,
     ): PlaywrightSession {
       return {
@@ -211,6 +212,9 @@ describe('createPlaywrightFetcher', () => {
         },
         page: {
           isClosed: () => state.closed,
+          on: (event: string, handler: () => void) => {
+            if (event === 'crash') state.onCrash = handler;
+          },
           goto: async () => goto(),
           content: async () => '<html><body>relaunched</body></html>',
         },
@@ -218,7 +222,7 @@ describe('createPlaywrightFetcher', () => {
     }
 
     it('is replaced on the next fetch instead of poisoning the rest of the run', async () => {
-      const states: { connected: boolean; closed: boolean }[] = [];
+      const states: { connected: boolean; closed: boolean; onCrash?: () => void }[] = [];
       let launches = 0;
       const solo = createPlaywrightFetcher(async () => {
         launches += 1;
@@ -243,7 +247,7 @@ describe('createPlaywrightFetcher', () => {
 
     it('replaces a session whose page was closed even while the browser is still connected', async () => {
       let launches = 0;
-      const states: { connected: boolean; closed: boolean }[] = [];
+      const states: { connected: boolean; closed: boolean; onCrash?: () => void }[] = [];
       const solo = createPlaywrightFetcher(async () => {
         launches += 1;
         const state = { connected: true, closed: false };
@@ -289,6 +293,137 @@ describe('createPlaywrightFetcher', () => {
 
       await expect(solo.fetch('http://x/', { headers: {} })).rejects.toThrow('has been closed');
       expect(launches).toBe(1);
+    });
+  });
+
+  /**
+   * The 2026-09-07 production failure, and the one the `isConnected()`/`isClosed()` pair could
+   * not see: the renderer crashed while the browser stayed connected and the page kept reporting
+   * itself open, so the poisoned page was handed back to every later fetch. The event log shows
+   * `page.goto: Page crashed` unbroken from 7 Eylül 17:38 to 8 Eylül 13:28 across the whole
+   * tracked catalogue, ending only when the worker was restarted.
+   *
+   * Injected launcher for the same reason as the tests above: the bookkeeping is the point, and
+   * making a real Chromium renderer crash on cue is slow and flaky for no extra coverage.
+   */
+  describe('a renderer that crashes while the browser stays connected', () => {
+    interface CrashState {
+      connected: boolean;
+      closed: boolean;
+      onCrash?: () => void;
+    }
+
+    function crashingSession(state: CrashState, goto: () => unknown): PlaywrightSession {
+      return {
+        browser: {
+          isConnected: () => state.connected,
+          close: async () => {
+            state.connected = false;
+          },
+        },
+        page: {
+          isClosed: () => state.closed,
+          on: (event: string, handler: () => void) => {
+            if (event === 'crash') state.onCrash = handler;
+          },
+          goto: async () => goto(),
+          content: async () => '<html><body>after crash</body></html>',
+        },
+      } as unknown as PlaywrightSession;
+    }
+
+    /** Launches sessions whose Nth `goto` behaves as `script[n]` says. */
+    function fetcherOver(scripts: readonly (() => unknown)[]) {
+      const states: CrashState[] = [];
+      let launches = 0;
+      const fetcherUnderTest = createPlaywrightFetcher(async () => {
+        const index = launches;
+        launches += 1;
+        const state: CrashState = { connected: true, closed: false };
+        states.push(state);
+        return crashingSession(state, () => scripts[index]!());
+      });
+      return { fetcher: fetcherUnderTest, states, launchCount: () => launches };
+    }
+
+    it('retries the navigation once on a fresh session rather than failing the item', async () => {
+      const ok = () => ({ status: () => 200, url: () => 'http://x/' });
+      const { fetcher: solo, launchCount } = fetcherOver([
+        () => {
+          throw new Error('page.goto: Page crashed at http://x/');
+        },
+        ok,
+      ]);
+
+      const res = await solo.fetch('http://x/', { headers: {} });
+      expect(launchCount()).toBe(2);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain('after crash');
+      await solo.close();
+    });
+
+    it('does not hand the crashed session to the next fetch — the bug behind the 20-hour outage', async () => {
+      const ok = () => ({ status: () => 200, url: () => 'http://x/' });
+      let firstGotos = 0;
+      const { fetcher: solo, launchCount } = fetcherOver([
+        () => {
+          firstGotos += 1;
+          throw new Error('page.goto: Page crashed at http://x/');
+        },
+        ok,
+        ok,
+      ]);
+
+      await solo.fetch('http://x/', { headers: {} });
+      const second = await solo.fetch('http://x/', { headers: {} });
+
+      // The crashed session was used once, then dropped: two fetches, two launches, and the
+      // second fetch never went near the poisoned page.
+      expect(firstGotos).toBe(1);
+      expect(launchCount()).toBe(2);
+      expect(second.status).toBe(200);
+      await solo.close();
+    });
+
+    it('gives up when the replacement crashes too, rather than relaunching per attempt', async () => {
+      const crash = () => {
+        throw new Error('page.goto: Page crashed at http://x/');
+      };
+      const { fetcher: solo, launchCount } = fetcherOver([crash, crash, crash]);
+
+      await expect(solo.fetch('http://x/', { headers: {} })).rejects.toThrow('Page crashed');
+      expect(launchCount()).toBe(2);
+      await solo.close();
+    });
+
+    it("replaces a session whose page emitted 'crash' between two fetches", async () => {
+      const ok = () => ({ status: () => 200, url: () => 'http://x/' });
+      const { fetcher: solo, states, launchCount } = fetcherOver([ok, ok]);
+
+      await solo.fetch('http://x/', { headers: {} });
+      expect(launchCount()).toBe(1);
+
+      // The renderer dies while nothing is in flight. Neither `isConnected()` nor `isClosed()`
+      // changes; only the event says so.
+      states[0]!.onCrash?.();
+
+      await solo.fetch('http://x/', { headers: {} });
+      expect(launchCount()).toBe(2);
+      await solo.close();
+    });
+
+    it('recycles the page before it can crash, after enough navigations', async () => {
+      const ok = () => ({ status: () => 200, url: () => 'http://x/' });
+      const { fetcher: solo, launchCount } = fetcherOver(Array.from({ length: 4 }, () => ok));
+
+      // One page serves many navigations; the recycle threshold is high enough that an ordinary
+      // run never trips it, so this asserts the *shape* — one launch, many fetches — rather than
+      // counting to the constant.
+      for (let i = 0; i < 10; i += 1) {
+        await solo.fetch('http://x/', { headers: {} });
+      }
+      expect(launchCount()).toBe(1);
+      await solo.close();
     });
   });
 
