@@ -164,6 +164,8 @@ export {
   getScrapeRateLimit,
   scrapeRateSettingKey,
   setScrapeRateLimit,
+  SCRAPE_TIMEOUT_MAX_MS,
+  SCRAPE_TIMEOUT_MIN_MS,
   type ScrapeRateLimit,
 } from './scrape-rate-settings.js';
 

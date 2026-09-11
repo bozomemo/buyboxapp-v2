@@ -19,7 +19,34 @@ import type { MarketplaceCode } from '@buybox/core';
 export interface ScrapeRateLimit {
   readonly requestsPerMinute: number;
   readonly burst: number;
+  /**
+   * How long a single page request may take before it is abandoned, in milliseconds, or
+   * `undefined` to leave each source on its own compiled default (added 2026-09-11).
+   *
+   * Stored beside the rate because it answers the same question — *how hard may this machine
+   * push, and how long may it wait* — and is set from the same screen at the same moment. It is
+   * emphatically **not** a rate: `RateLimiter` never sees it; it is handed to each source as
+   * `requestTimeoutMs`.
+   *
+   * It exists because the right value is a property of the operator's machine and its link,
+   * which nothing in this repository can know. On the production install
+   * `page.goto: Timeout 15000ms exceeded` was the most common recurring failure in the event
+   * log while the marketplace was answering everyone else normally — a machine too slow for a
+   * developer-machine constant, and until now only a redeploy could say so.
+   *
+   * Optional on purpose: a stored setting written before this existed carries no value, and
+   * "no value" must keep meaning "each source's own default" rather than zero.
+   */
+  readonly requestTimeoutMs?: number;
 }
+
+/**
+ * Guard rails for a value an operator types. The lower bound is a slow page, not a fast one —
+ * below a couple of seconds every request on a heavy SPA fails and the scrape simply stops
+ * working; the upper bound stops a typo from parking a worker slot for an hour.
+ */
+export const SCRAPE_TIMEOUT_MIN_MS = 2_000;
+export const SCRAPE_TIMEOUT_MAX_MS = 120_000;
 
 export function scrapeRateSettingKey(marketplaceCode: MarketplaceCode): string {
   return `scrape.${marketplaceCode}.rateLimit`;
@@ -40,7 +67,20 @@ export async function getScrapeRateLimit(
       typeof parsed.burst === 'number' &&
       parsed.burst > 0
     ) {
-      return { requestsPerMinute: parsed.requestsPerMinute, burst: parsed.burst };
+      // An out-of-range or non-numeric timeout is dropped rather than failing the whole
+      // setting: the rate is the part a run cannot proceed without, and a source with no
+      // override simply keeps its own default.
+      const timeout =
+        typeof parsed.requestTimeoutMs === 'number' &&
+        parsed.requestTimeoutMs >= SCRAPE_TIMEOUT_MIN_MS &&
+        parsed.requestTimeoutMs <= SCRAPE_TIMEOUT_MAX_MS
+          ? parsed.requestTimeoutMs
+          : undefined;
+      return {
+        requestsPerMinute: parsed.requestsPerMinute,
+        burst: parsed.burst,
+        ...(timeout === undefined ? {} : { requestTimeoutMs: timeout }),
+      };
     }
     return undefined;
   } catch {
@@ -61,7 +101,11 @@ export async function setScrapeRateLimit(
     appDb,
     {
       key: scrapeRateSettingKey(marketplaceCode),
-      value: JSON.stringify(limit),
+      value: JSON.stringify({
+        requestsPerMinute: limit.requestsPerMinute,
+        burst: limit.burst,
+        ...(limit.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: limit.requestTimeoutMs }),
+      }),
       updatedBy,
       updatedAt: nowMs,
     },

@@ -269,6 +269,14 @@ async function buildAdapters(
  * back to each source's own conservative compiled default when nothing has been stored. This is
  * a startup-time read, same as the credentials above: a changed rate limit takes effect on the
  * next worker restart, not mid-process.
+ *
+ * `requestTimeoutMs` rides along with the rate (2026-09-11) and is passed to every source the
+ * operator's setting covers, including the catalogue sweeps below. One number per marketplace
+ * rather than one per source, because what it actually describes is *this machine on this link*
+ * — the production install's most common failure was a 15 s page load timing out while the
+ * marketplace answered normally — and an operator who has decided their box is slow has said
+ * something true of every page it fetches. Left unset, each source keeps its own compiled
+ * default, which is not the same number for a product page and a catalogue page.
  */
 async function buildCompetitorSources(
   appDb: AppDatabase,
@@ -286,6 +294,7 @@ async function buildCompetitorSources(
         userAgent: browserUserAgent,
         requestsPerMinute: rateLimit?.requestsPerMinute,
         burst: rateLimit?.burst,
+        requestTimeoutMs: rateLimit?.requestTimeoutMs,
       }),
     ]);
   }
@@ -300,6 +309,7 @@ async function buildCompetitorSources(
         impersonateBrowser: hepsiburadaImpersonates,
         requestsPerMinute: rateLimit?.requestsPerMinute,
         burst: rateLimit?.burst,
+        requestTimeoutMs: rateLimit?.requestTimeoutMs,
       }),
     ]);
   }
@@ -336,6 +346,7 @@ async function buildBrandCatalogueSources(
         userAgent: browserUserAgent,
         requestsPerMinute: rateLimit?.requestsPerMinute,
         burst: rateLimit?.burst,
+        requestTimeoutMs: rateLimit?.requestTimeoutMs,
       }),
     ]);
   }
@@ -351,6 +362,7 @@ async function buildBrandCatalogueSources(
         userAgent: honestUserAgent,
         requestsPerMinute: rateLimit?.requestsPerMinute,
         burst: rateLimit?.burst,
+        requestTimeoutMs: rateLimit?.requestTimeoutMs,
       }),
     ]);
   }

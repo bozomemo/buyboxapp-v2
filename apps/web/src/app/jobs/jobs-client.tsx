@@ -199,8 +199,9 @@ interface ScrapeRateRow {
   marketplaceCode: string;
   requestsPerMinute: number;
   burst: number;
+  requestTimeoutMs: number;
   isOverride: boolean;
-  default: { requestsPerMinute: number; burst: number };
+  default: { requestsPerMinute: number; burst: number; requestTimeoutMs: number };
 }
 
 /**
@@ -393,8 +394,9 @@ export function JobsClient() {
    */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scrapeRates, setScrapeRates] = useState<ScrapeRateRow[]>([]);
+  /** Timeout is drafted in **seconds** — it is read and typed in seconds, and stored in ms. */
   const [scrapeRateDraft, setScrapeRateDraft] = useState<
-    Record<string, { requestsPerMinute: string; burst: string }>
+    Record<string, { requestsPerMinute: string; burst: string; timeoutSeconds: string }>
   >({});
   const [scrapeRateSaved, setScrapeRateSaved] = useState<string | null>(null);
   /** Draft cadence per job, in **seconds** (fine enough for both the 30s and 60min defaults). */
@@ -439,6 +441,7 @@ export function JobsClient() {
               next[rate.marketplaceCode] = {
                 requestsPerMinute: String(rate.requestsPerMinute),
                 burst: String(rate.burst),
+                timeoutSeconds: String(Math.round(rate.requestTimeoutMs / 1000)),
               };
             }
           }
@@ -677,6 +680,7 @@ export function JobsClient() {
     if (!draft) return;
     const requestsPerMinute = Number(draft.requestsPerMinute);
     const burst = Number(draft.burst);
+    const requestTimeoutMs = Math.round(Number(draft.timeoutSeconds) * 1000);
     setBusy(`scrape-rate-${marketplaceCode}`);
     setScrapeRateSaved(null);
     setError(null);
@@ -684,7 +688,7 @@ export function JobsClient() {
       const res = await fetch('/api/jobs/scrape-rate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ marketplaceCode, requestsPerMinute, burst }),
+        body: JSON.stringify({ marketplaceCode, requestsPerMinute, burst, requestTimeoutMs }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? 'Bilinmeyen hata');
@@ -1139,7 +1143,9 @@ export function JobsClient() {
           <p className="mb-2 text-xs text-(--color-muted)">
             Bu değerler yalnızca raporlama amaçlı rakip taramasının (ScrapeCompetitors) pazaryerine gönderdiği
             istek hızını belirler; fiyatlandırma kararlarını etkilemez. 403 hataları sıklaşırsa istek/dakika
-            değerini düşürün. Değişiklik, worker bir sonraki başlatıldığında etkin olur.
+            değerini düşürün. <strong>Zaman aşımı</strong>, tek bir sayfanın açılması için tanınan süredir:
+            olay günlüğünde “Timeout … exceeded” hataları görüyorsanız bu makine sayfaları bu sürede
+            yükleyemiyor demektir, değeri yükseltin. Değişiklik, worker bir sonraki başlatıldığında etkin olur.
           </p>
           <TableFrame maxHeight="50vh">
             <table className="w-full text-sm">
@@ -1148,6 +1154,7 @@ export function JobsClient() {
                   <th className="px-3 py-2">Pazaryeri</th>
                   <th className="px-3 py-2">İstek/Dakika</th>
                   <th className="px-3 py-2">Patlama (burst)</th>
+                  <th className="px-3 py-2">Zaman Aşımı (sn)</th>
                   <th className="px-3 py-2">Varsayılan</th>
                   <th className="px-3 py-2">Kaydet</th>
                 </tr>
@@ -1168,6 +1175,9 @@ export function JobsClient() {
                             [rate.marketplaceCode]: {
                               requestsPerMinute: e.target.value,
                               burst: prev[rate.marketplaceCode]?.burst ?? String(rate.burst),
+                              timeoutSeconds:
+                                prev[rate.marketplaceCode]?.timeoutSeconds ??
+                                String(Math.round(rate.requestTimeoutMs / 1000)),
                             },
                           }))
                         }
@@ -1187,13 +1197,38 @@ export function JobsClient() {
                                 prev[rate.marketplaceCode]?.requestsPerMinute ??
                                 String(rate.requestsPerMinute),
                               burst: e.target.value,
+                              timeoutSeconds:
+                                prev[rate.marketplaceCode]?.timeoutSeconds ??
+                                String(Math.round(rate.requestTimeoutMs / 1000)),
+                            },
+                          }))
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        min={2}
+                        max={120}
+                        className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
+                        value={scrapeRateDraft[rate.marketplaceCode]?.timeoutSeconds ?? ''}
+                        onChange={(e) =>
+                          setScrapeRateDraft((prev) => ({
+                            ...prev,
+                            [rate.marketplaceCode]: {
+                              requestsPerMinute:
+                                prev[rate.marketplaceCode]?.requestsPerMinute ??
+                                String(rate.requestsPerMinute),
+                              burst: prev[rate.marketplaceCode]?.burst ?? String(rate.burst),
+                              timeoutSeconds: e.target.value,
                             },
                           }))
                         }
                       />
                     </td>
                     <td className="px-3 py-2 text-xs text-(--color-muted)">
-                      {rate.default.requestsPerMinute}/dk, patlama {rate.default.burst}
+                      {rate.default.requestsPerMinute}/dk, patlama {rate.default.burst},{' '}
+                      {Math.round(rate.default.requestTimeoutMs / 1000)} sn
                       {rate.isOverride ? ' (özelleştirildi)' : ''}
                     </td>
                     <td className="px-3 py-2">
