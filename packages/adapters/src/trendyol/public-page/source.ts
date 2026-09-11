@@ -46,8 +46,20 @@ export const TRENDYOL_SCRAPE_DEFAULTS = {
   /** Burst allowance; a full minute's worth would defeat the point of the limit. */
   burst: 5,
   cacheTtlMs: 10 * 60_000,
-  /** Abort a page load rather than hold a worker slot indefinitely. */
-  requestTimeoutMs: 15_000,
+  /**
+   * Abort a page load rather than hold a worker slot indefinitely.
+   *
+   * Raised from 15 s on 2026-09-11. 15 s was chosen against a developer machine on a fast link;
+   * on the operator's production box `page.goto: Timeout 15000ms exceeded` was the single most
+   * common recurring entry in the event log — steadily, on ordinary products, outside any of the
+   * crash windows — which is a machine that cannot render a heavy SPA to `domcontentloaded` that
+   * fast, not a marketplace that refuses to answer. A reporting job with no deadline should wait
+   * rather than file a failure and spend the slot again next hour.
+   *
+   * Operator-overridable since the same date (`getScrapeRateLimit`, doc 08 §12), because the
+   * right value is a property of the machine and nothing in this repository can know it.
+   */
+  requestTimeoutMs: 30_000,
   /**
    * Confirmed 2026-08-17 by direct measurement: the same URL, same headers, same rate,
    * requested repeatedly through Node's `fetch` returns 403 on roughly half of attempts and
@@ -55,8 +67,11 @@ export const TRENDYOL_SCRAPE_DEFAULTS = {
    * (403, 200, 403, 200, 403, 200 across six consecutive tries). `curl` against the identical
    * URL never failed. This is Cloudflare's bot-management scoring the HTTP client's
    * connection/TLS fingerprint per-request, not a sustained IP block or a User-Agent check —
-   * so a bounded retry recovers most of what a sustained block would not. Retried **only** on
-   * 403; other statuses are not known to be flaky and are reported as-is.
+   * so a bounded retry recovers most of what a sustained block would not.
+   *
+   * **Widened beyond 403 on 2026-09-11** — see `RETRYABLE_HTTP_STATUSES`. The names are kept as
+   * they are because the 403 measurement above is what sized the backoff and is the reason the
+   * mechanism exists at all.
    */
   retryOn403MaxAttempts: 3,
   retryOn403BaseMs: 300,
@@ -101,6 +116,25 @@ interface CacheEntry {
 }
 
 const RATE_LIMIT_BUCKET = 'publicPage';
+
+/**
+ * Response statuses worth asking about again, and nothing else (widened 2026-09-11).
+ *
+ * Until now only 403 was retried, on the measurement recorded in `TRENDYOL_SCRAPE_DEFAULTS`.
+ * The operator's production event log then carried a steady trickle of `Trendyol public page
+ * 503` — ten in four days, scattered across unrelated products at unrelated hours, each ending
+ * that product's look for the cycle. 503 is by definition a server saying "not now, try later",
+ * which is exactly what a bounded backoff is for, and 429/502/504 are the same statement in
+ * other words.
+ *
+ * Everything else is still reported as-is, and the distinction matters: 404 and 410 are the
+ * marketplace stating that the product is **gone**, and retrying them spends the operator's
+ * rate budget three times over to be told so three times (`scrape-tracked-products.ts` acts on
+ * them instead). 500 is deliberately absent too — an unconditional server error on one specific
+ * product is not known to be transient here, and a retry that cannot help is a request that
+ * costs a token and buys nothing.
+ */
+const RETRYABLE_HTTP_STATUSES: ReadonlySet<number> = new Set([403, 429, 502, 503, 504]);
 
 /** See `buildUrl`'s doc comment — never request the public page as our own merchant. */
 function stripMerchantIdParam(url: string): string {
@@ -243,9 +277,12 @@ export class TrendyolPublicPageSource implements ICompetitorSource {
         factor: 2,
         maxDelayMs: 5_000,
         sleep: this.sleep,
-        // See TRENDYOL_SCRAPE_DEFAULTS.retryOn403MaxAttempts: only 403 is known to be flaky
-        // per-request rather than a real, sustained rejection.
-        isRetryable: (error) => error instanceof CompetitorSourceError && error.httpStatus === 403,
+        // See `RETRYABLE_HTTP_STATUSES`: 403 because it is scored per-request rather than as a
+        // sustained rejection, the rest because the server itself said "later".
+        isRetryable: (error) =>
+          error instanceof CompetitorSourceError &&
+          error.httpStatus !== undefined &&
+          RETRYABLE_HTTP_STATUSES.has(error.httpStatus),
       });
       html = result.html;
       fetchedUrl = result.fetchedUrl;

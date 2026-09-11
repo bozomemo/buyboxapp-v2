@@ -307,13 +307,41 @@ describe('TrendyolPublicPageSource (doc 07 §7)', () => {
   });
 
   it('raises fetchFailed on a non-2xx response (doc 05 §5 status)', async () => {
-    const { source, calls } = build({ status: 503 });
+    const { source, calls } = build({ status: 500 });
     await expect(source.fetchProductOffers({ url: null, contentId: '1' })).rejects.toMatchObject({
       name: 'CompetitorSourceError',
       kind: 'fetchFailed',
-      httpStatus: 503,
+      httpStatus: 500,
     });
-    // 503 is not known to be the per-request-flaky status 403 is (2026-08-17 measurement) — no retry.
+    // Not in `RETRYABLE_HTTP_STATUSES`: an unconditional server error on one product is not
+    // known to be transient here, and a retry that cannot help still costs a rate-limit token.
+    expect(calls).toHaveLength(1);
+  });
+
+  /**
+   * Widened beyond 403 on 2026-09-11. The production event log carried ten `Trendyol public page
+   * 503`s in four days, scattered across unrelated products at unrelated hours, each ending that
+   * product's look for the cycle — a server saying "not now", which is what a bounded backoff is
+   * for.
+   */
+  it.each([429, 502, 503, 504])('retries a %d and succeeds on a later attempt', async (status) => {
+    const { source, calls } = build({ statuses: [status, 200] });
+    const snapshot = await source.fetchProductOffers({ url: null, contentId: '1' });
+    expect(snapshot.offers).toHaveLength(5);
+    expect(calls).toHaveLength(2);
+  });
+
+  /**
+   * The other half of that decision, and the one that costs money if it is wrong: 404 and 410 are
+   * the marketplace stating the product is **gone**. Retrying spends three tokens to be told so
+   * three times, and `scrape-tracked-products.ts` acts on the first answer instead.
+   */
+  it.each([404, 410])('does not retry a %d — the page is gone, not busy', async (status) => {
+    const { source, calls } = build({ status });
+    await expect(source.fetchProductOffers({ url: null, contentId: '1' })).rejects.toMatchObject({
+      kind: 'fetchFailed',
+      httpStatus: status,
+    });
     expect(calls).toHaveLength(1);
   });
 
