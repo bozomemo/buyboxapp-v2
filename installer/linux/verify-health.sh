@@ -24,6 +24,16 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$port" ] && [ -n "$data_dir" ] || usage
 
+# `curl` is a Depends: of the package, so on an apt install it is always here. This says so out
+# loud anyway, because the failure it prevents is the worst kind of wrong answer: `curl -fsS`
+# exits non-zero for a missing binary exactly as it does for a refused connection, so without
+# this check a machine with no curl reports the service as dead for the full timeout and the
+# installation fails with a message that blames the wrong thing (found 2026-09-11).
+if ! command -v curl >/dev/null 2>&1; then
+  echo "curl bulunamadi; servis sagligi dogrulanamiyor. 'apt-get install curl' ile kurup tekrar deneyin." >&2
+  exit 1
+fi
+
 url="http://127.0.0.1:$port/api/health"
 deadline=$((SECONDS + timeout_seconds))
 last_seen="(hic yanit alinamadi)"

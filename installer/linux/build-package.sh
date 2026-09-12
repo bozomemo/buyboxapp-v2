@@ -157,14 +157,40 @@ assert_no_developer_state
 
 # --- 4. Bundle the Node runtime ---------------------------------------------------------------------
 # Unlike node.exe, a Linux Node build is a directory tree (bin/, lib/, include/, share/), not one
-# self-contained file -- `command -v node` only names the executable, so the whole prefix it
-# lives under is what gets copied. actions/setup-node (the CI runner, doc 14 section 11.7) and
-# nvm both install a complete extracted tarball this way, so `bin/../` reliably finds the root.
-node_bin_path="$(command -v node)"
+# self-contained file, so the whole prefix the executable lives under is what gets copied.
+# actions/setup-node (the CI runner, doc 14 section 11.7) and nvm both install a complete
+# extracted tarball this way, so `bin/../` reliably finds the root.
+#
+# Found by building on a developer machine, 2026-09-11: `command -v node` is NOT the binary on
+# every machine. Where Node came from a snap -- Ubuntu's own `snap install node`, and the default
+# on a desktop Ubuntu -- it prints `/snap/bin/node`, which is a symlink to `/usr/bin/snap`, a
+# launcher for every snap on the machine. `dirname`/`..` then makes the "Node prefix" `/snap`,
+# and `cp -a /snap/.` copies every installed snap (14 GB on the machine this was found on) into
+# the package. The old assertion below could not catch it either: `/snap/bin/node` exists, so
+# `node/bin/node` existed after the copy and the build would have gone on to ship it.
+#
+# `process.execPath` is the running interpreter's own real path, resolved by Node itself, so it
+# is right for snap, nvm, setup-node, a distro package and a hand-extracted tarball alike. The
+# prefix is then checked for the things a real Node prefix has and refused if it looks like a
+# shared system root -- a wrong answer here is measured in gigabytes of someone else's software
+# inside our package, so it fails the build rather than being trusted.
+node_bin_path="$(node -p 'process.execPath')"
 node_prefix="$(cd "$(dirname "$node_bin_path")/.." && pwd)"
+case "$node_prefix" in
+  /|/usr|/usr/local|/snap)
+    echo "Node prefix bulunamadi: $node_bin_path -> $node_prefix is a shared system root, not a self-contained Node installation." >&2
+    echo "Build with a Node installed under its own prefix (nvm, actions/setup-node, or an extracted nodejs tarball)." >&2
+    exit 1
+    ;;
+esac
+[ -f "$node_prefix/bin/node" ] && [ -d "$node_prefix/lib/node_modules" ] || {
+  echo "$node_prefix does not look like a Node installation prefix (no bin/node + lib/node_modules)." >&2
+  exit 1
+}
 mkdir -p "$staging/opt/buybox/node"
 cp -a "$node_prefix/." "$staging/opt/buybox/node/"
-[ -x "$staging/opt/buybox/node/bin/node" ] || { echo "Bundled node binary missing after copy from $node_prefix." >&2; exit 1; }
+[ -f "$staging/opt/buybox/node/bin/node" ] && [ -x "$staging/opt/buybox/node/bin/node" ] \
+  || { echo "Bundled node binary missing after copy from $node_prefix." >&2; exit 1; }
 
 # --- 5. Verify the Node ABI matches the native modules we just built ----------------------------------
 sqlite_entry="$app_dir/node_modules/better-sqlite3/lib/index.js"
@@ -182,31 +208,29 @@ chromium_dir="$staging/opt/buybox/chromium"
 mkdir -p "$chromium_dir"
 pushd "$repo_root" >/dev/null
 # The authoritative source for the shared-library list is this project's own pinned Playwright
-# version, captured fresh on every build rather than hand-maintained (doc 14 section 11.8) --
-# --dry-run prints the apt packages without installing anything on the build machine.
+# version, read fresh on every build rather than hand-maintained (doc 14 section 11.8).
 # Scoped to `chromium` specifically. Found by building, 2026-09-08: an unscoped
-# `install-deps --dry-run` prints the union of every browser engine Playwright knows about
+# dependency list is the union of every browser engine Playwright knows about
 # (Firefox, WebKit) rather than just the one this package ships (doc 14 section 3 -- Chromium
 # only, for the Trendyol source). The unscoped list pulled in ~300 packages including gstreamer,
 # ghostscript and spellcheckers -- WebKit/Firefox media and forms support this headless scraper
 # never touches -- and would have shipped every one of them in `Depends:` to every customer.
 #
-# `--dry-run` reports what is MISSING, not what Chromium needs in the abstract -- it prints
-# nothing on a machine that already has these libraries (from a previous build or a previous
-# `apt install` of this same package on this same machine), and this then fails loudly below
-# rather than silently shipping an empty `Depends:`. A stateless CI runner (doc 14 section 11.7)
-# never hits this; a persistent local/test machine that has already installed a build of this
-# package does, and the fix there is `apt purge` of the previous build's dependency packages
-# (or a fresh container) before rebuilding, not a change to this script.
-playwright_deps="$(npx playwright install-deps chromium --dry-run 2>/dev/null \
-  | grep -oE '^\s+[a-z0-9][a-z0-9.+-]*' | sed 's/^\s*//' | sort -u | paste -sd, - || true)"
+# Read from Playwright's own dependency table, not from `playwright install-deps --dry-run`.
+# Found by building on a developer desktop, 2026-09-11: --dry-run reports what is MISSING on the
+# build machine, so on any machine that already has these libraries it prints "All system
+# dependencies are installed." and the list comes back EMPTY -- which stopped the build with no
+# fix available short of uninstalling system libraries. A stateless CI runner never hits it; a
+# developer machine or a persistent build host that has installed this package once always does.
+# chromium-apt-deps.mjs reads the same versioned-with-Chromium table --dry-run derives its own
+# answer from, so doc 14 section 11.6's rule (the list is Playwright's, never hand-maintained)
+# is kept while the answer stops depending on what the build machine happens to have installed.
+playwright_deps="$("$staging/opt/buybox/node/bin/node" "$script_dir/chromium-apt-deps.mjs" "$arch")"
 if [ -z "$playwright_deps" ]; then
-  echo "Could not determine Playwright's apt dependency list (install-deps --dry-run produced nothing)." >&2
-  echo "If this is a persistent machine that already has Chromium's deps installed (e.g. from a" >&2
-  echo "previous build or 'apt install' of this package), that is the likely cause, not a broken" >&2
-  echo "Playwright version -- purge them first or use a fresh machine/container." >&2
+  echo "Could not determine Playwright's apt dependency list (chromium-apt-deps.mjs produced nothing)." >&2
   exit 1
 fi
+echo "-- Depends: $playwright_deps"
 PLAYWRIGHT_BROWSERS_PATH="$chromium_dir" npx playwright install chromium
 popd >/dev/null
 
@@ -247,6 +271,16 @@ fi
 # step is skipped.
 if [ "$skip_smoke_test" -eq 0 ]; then
   echo "-- smoke test"
+  # Checked, not assumed. Found by building on a developer desktop with no curl installed,
+  # 2026-09-11: `curl -fsS ... 2>/dev/null` fails with 127 exactly as it fails on a refused
+  # connection, so a missing curl was reported as "the packaged app never reported healthy" --
+  # ninety seconds of polling and a false accusation against a package that was up and serving
+  # the whole time. The same tool is what postinst's health check runs on the customer's machine,
+  # which is why it is also a `Depends:` (step 9).
+  command -v curl >/dev/null 2>&1 || {
+    echo "curl bulunamadi: smoke test /api/health adresini soramaz. 'apt-get install curl' ile kurun (veya --skip-smoke-test)." >&2
+    exit 1
+  }
   smoke_dir="$(mktemp -d)"
   smoke_port=3999
   smoke_key="$("$staging/opt/buybox/node/bin/node" -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"
@@ -320,6 +354,12 @@ ENV
 fi
 
 # --- 9. debian/control and maintainer scripts -----------------------------------------------------------
+# Beyond Chromium's libraries, `Depends:` names two tools the installation itself needs and a
+# minimal Ubuntu image does not necessarily carry (found reviewing this against a bare image,
+# 2026-09-11; the docker-test container installs curl by hand, which hid it): `curl`, because
+# postinst's health check (verify-health.sh) is what decides whether the install succeeded, and
+# `logrotate`, because /etc/logrotate.d/buybox is a conffile of this package and does nothing
+# without it. A control file cannot carry a comment, so the reason lives here.
 sed \
   -e "s#{{VERSION}}#$version#g" \
   -e "s#{{ARCH}}#$arch#g" \
