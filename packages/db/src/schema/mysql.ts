@@ -769,6 +769,29 @@ export const trackedProductMetrics = mysqlTable(
   ],
 );
 
+/** One pass of the tracked-product sweep — see the sqlite schema for the full rationale. */
+export const trackedScrapePasses = mysqlTable(
+  'tracked_scrape_passes',
+  {
+    id: code('id', 36).primaryKey(),
+    marketplaceCode: code('marketplace_code', 20)
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    passNo: int('pass_no').notNull(),
+    startedAt: timestampMs('started_at').notNull(),
+    finishedAt: timestampMs('finished_at'),
+    plannedCount: int('planned_count').notNull(),
+    doneCount: int('done_count').notNull().default(0),
+    okCount: int('ok_count').notNull().default(0),
+    failedCount: int('failed_count').notNull().default(0),
+    changedCount: int('changed_count').notNull().default(0),
+  },
+  (t) => [
+    index('tracked_scrape_passes_marketplace_started').on(t.marketplaceCode, t.startedAt),
+    uniqueIndex('tracked_scrape_passes_marketplace_no').on(t.marketplaceCode, t.passNo),
+  ],
+);
+
 export const priceSubmissions = mysqlTable(
   'price_submissions',
   {

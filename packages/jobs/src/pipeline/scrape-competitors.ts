@@ -23,11 +23,12 @@
  * - writes only `scrape_runs`, `competitor_observations` and `competitor_sellers`, never
  *   `repricing_state`, `price_submissions` or `buybox_observations`.
  *
- * Also runs the tracked-products half (doc 06 §12.2) at the end of each per-marketplace call —
- * see `scrape-tracked-products.ts` for why that is a separate function over a separate table
- * rather than folded into the loop above. That half is bounded and rotated by its own ceiling
- * (`SCRAPE_MAX_TRACKED_PER_RUN`) for the same reason this one is, and shares this run's progress
- * counter so the Jobs screen keeps moving while it works.
+ * **Listings only.** Tracked products (doc 06 §12.2) used to be read as a second half of this
+ * job and are now `SweepTrackedProducts` (doc 07 §7.4), because the two are different shapes of
+ * work: this one is hourly, tier-driven and short, that one walks a whole catalogue for hours in
+ * resumable passes. Sharing one `job_runs` row meant neither could report its own progress,
+ * duration or retry behaviour honestly, and the catalogue's size showed up on the Jobs screen as
+ * a per-run ceiling.
  */
 import { createHash } from 'node:crypto';
 import { CompetitorSourceError, type CompetitorOffer, type CompetitorPageSnapshot } from '@buybox/adapters';
@@ -51,13 +52,11 @@ import {
   SCRAPE_FAILURE_RATE_ALERT_THRESHOLD,
   SCRAPE_FAILURE_RATE_MIN_SAMPLE,
   SCRAPE_MAX_LISTINGS_PER_RUN,
-  SCRAPE_MAX_TRACKED_PER_RUN,
   SCRAPE_WARM_EVERY_N_CYCLES,
 } from '../scrape-config.js';
 import { evaluateAlertsForListing, toListingContext } from './evaluate-alerts.js';
 import { decodeProductPageRef } from './listing-extra.js';
 import { computeObservationTier, isDueForObservation, type ObservationTier } from './observe-buybox.js';
-import { scrapeTrackedProducts } from './scrape-tracked-products.js';
 
 export const SCRAPE_COMPETITORS_JOB = 'ScrapeCompetitors';
 
@@ -68,8 +67,6 @@ export const ScrapeCompetitorsPayloadSchema = z.object({
   warmEveryNCycles: z.number().int().min(1).default(SCRAPE_WARM_EVERY_N_CYCLES),
   coldEveryNCycles: z.number().int().min(1).default(SCRAPE_COLD_EVERY_N_CYCLES),
   maxListings: z.number().int().min(1).default(SCRAPE_MAX_LISTINGS_PER_RUN),
-  /** The tracked-products half's own ceiling — a separate table with its own size. */
-  maxTracked: z.number().int().min(1).default(SCRAPE_MAX_TRACKED_PER_RUN),
 });
 
 export type ScrapeCompetitorsPayload = z.infer<typeof ScrapeCompetitorsPayloadSchema>;
@@ -488,64 +485,10 @@ export async function scrapeCompetitors(ctx: JobContext): Promise<JobResult> {
     });
   }
 
-  // Tracked products (doc 06 §12.2) — a wholly separate table and candidate source, run last
-  // and isolated by its own `try`/`catch` so a failure there can never turn a clean listings
-  // scrape into a failed run, matching this job's own "never fail the run on one bad page"
-  // posture (see the module header) applied one level up.
-  let trackedOk = 0;
-  let trackedFailed = 0;
-  let trackedChanged = 0;
-  let trackedTotal = 0;
-  try {
-    // `processed` — not `due.length` — is the offset: it is what was actually reported, so the
-    // shared counter continues from the last listing rather than jumping over the ones the
-    // rotation skipped.
-    const trackedResult = await scrapeTrackedProducts(ctx, marketplaceCode, source, {
-      progressOffset: processed,
-      maxProducts: payload.maxTracked,
-    });
-    trackedOk = trackedResult.itemsOk;
-    trackedFailed = trackedResult.itemsFailed;
-    trackedChanged = trackedResult.itemsChanged;
-    trackedTotal = trackedResult.itemsTotal;
-  } catch (error) {
-    await eventsRepo.logEvent(ctx.appDb, {
-      id: newId(),
-      at: nowMs,
-      level: 'warn',
-      marketplaceCode,
-      listingId: null,
-      jobRunId: ctx.correlationId,
-      code: 'TrackedProductsScrapeAborted',
-      message: `Tracked-product scrape for ${marketplaceCode} aborted: ${error instanceof Error ? error.message : String(error)} — the listings scrape above is unaffected`,
-      context: null,
-    });
-  }
-
-  // Outside the `try`, on purpose: this is a summary of work that is already durable, and a
-  // logging failure must not be caught by the handler above and reported as an aborted scrape.
-  //
-  // Debug level, and only the ratio — it is how an operator sees whether change detection is
-  // earning its keep. A run that stores every look it takes means the hash is matching nothing,
-  // which is a bug in the offer set we hash rather than a very busy market.
-  if (trackedOk > 0) {
-    await eventsRepo.logEvent(ctx.appDb, {
-      id: newId(),
-      at: nowMs,
-      level: 'debug',
-      marketplaceCode,
-      listingId: null,
-      jobRunId: ctx.correlationId,
-      code: 'TrackedProductsScrapeSummary',
-      message: `${trackedOk} tracked product(s) read, ${trackedChanged} with a changed offer set`,
-      context: JSON.stringify({ itemsOk: trackedOk, itemsChanged: trackedChanged }),
-    });
-  }
-
   // Deliberately no `error`: individual page failures never fail the run (see the header).
   return {
-    itemsTotal: due.length + trackedTotal,
-    itemsOk: itemsOk + trackedOk,
-    itemsFailed: itemsFailed + trackedFailed,
+    itemsTotal: due.length,
+    itemsOk,
+    itemsFailed,
   };
 }

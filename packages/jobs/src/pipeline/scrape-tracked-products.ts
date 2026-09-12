@@ -1,12 +1,16 @@
 /**
- * The tracked-product half of `ScrapeCompetitors` (doc 06 §12.2, customer feedback
- * 2026-08-25) — watching a marketplace product we do **not** sell, added by pasting its link.
+ * Reading tracked products (doc 06 §12.2, customer feedback 2026-08-25) — marketplace products
+ * we do **not** sell, watched for price and rank only.
  *
- * Deliberately a separate function reading a separate table (`tracked_products`), never
- * `listings`. `Reprice` and `ObserveBuybox` (doc 07 §2.1/§2.2) only ever query `listings`, so
- * nothing here can structurally reach a pricing decision — there is no flag to check because
- * there is no listing row for that code to see. Called from `scrapeCompetitors` under its own
- * `try`/`catch` so a failure here can never fail the listings half of the same run.
+ * This is the shared read, not a job: `SweepTrackedProducts` (doc 07 §7.4), `ScrapeBrandSellers`
+ * (§7.3) and `RescanTrackedProducts` (§7.1) all call it with a list of ids they chose themselves.
+ * Scheduling differs between them; what a look *writes* must not, or the same product would land
+ * in the archive differently depending on who asked for it.
+ *
+ * Deliberately reading a separate table (`tracked_products`), never `listings`. `Reprice` and
+ * `ObserveBuybox` (doc 07 §2.1/§2.2) only ever query `listings`, so nothing here can structurally
+ * reach a pricing decision — there is no flag to check because there is no listing row for that
+ * code to see.
  *
  * Change-detected since Faz 4 (2026-08-28): a look's offer rows are stored only when the offer
  * set differs from the previous one, by the same `hashOffers` `ScrapeCompetitors` uses. That
@@ -25,7 +29,7 @@ import type { MarketplaceCode } from '@buybox/core';
 import { competitorSellersRepo, eventsRepo, newId, trackedProductsRepo } from '@buybox/db';
 import { CompetitorSourceError, type ICompetitorSource } from '@buybox/adapters';
 import type { JobContext } from '../job.js';
-import { SCRAPE_MAX_TRACKED_PER_RUN, SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT } from '../scrape-config.js';
+import { SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT } from '../scrape-config.js';
 
 /**
  * The statuses that mean **the product is gone**, not that the look failed.
@@ -51,7 +55,6 @@ function isGone(error: unknown): boolean {
   );
 }
 import { hashOffers } from './scrape-competitors.js';
-import { byRotationPriority } from './tracked-rotation.js';
 
 export interface ScrapeTrackedProductsResult {
   readonly itemsOk: number;
@@ -64,9 +67,10 @@ export interface ScrapeTrackedProductsResult {
    */
   readonly itemsChanged: number;
   /**
-   * How many products this run actually intended to read — the ceiling, not the size of the
-   * tracked set. The caller reports it as part of the run's totals, so a run that read 300 of
-   * 4,679 rows says so rather than claiming the catalogue is 300 rows long.
+   * How many products this call actually intended to read — the ids it was given that still
+   * exist on this marketplace. A caller walking a catalogue in chunks reports the *pass's* total
+   * instead (`progressTotal`), so the screens say "1.240 / 4.679" rather than claiming the
+   * catalogue is one chunk long.
    */
   readonly itemsTotal: number;
   /**
@@ -81,43 +85,26 @@ export interface ScrapeTrackedProductsResult {
 }
 
 /**
- * The cadence path's candidates: never-looked first, then **most overdue** first.
+ * The candidates: the ids the caller named, in the order they were given.
  *
- * Until 2026-09-03 the second half of that was simply "oldest look first" — every product equal,
- * which is right for the operator-curated list this job was written for and wasteful over a
- * brand catalogue, where a product nobody sells and nobody has ever rated took exactly as much
- * of the hourly budget as the brand's most contested line. `tracked-rotation.ts` scales each
- * product's interval by what the row already says about it; overdue-ness is then measured in
- * multiples of that interval, which is what stops a deprioritised product from starving.
- */
-async function rotatedProducts(
-  ctx: JobContext,
-  marketplaceCode: MarketplaceCode,
-  maxProducts: number,
-): Promise<trackedProductsRepo.TrackedProductRow[]> {
-  const products = await trackedProductsRepo.listTrackedProducts(ctx.appDb, { activeOnly: true });
-  return byRotationPriority(
-    products.filter((p) => p.marketplaceCode === marketplaceCode),
-    ctx.clock.nowMs(),
-  ).slice(0, maxProducts);
-}
-
-/**
- * The rescan path's candidates: the ids the operator ticked, in the order they were sent.
+ * **Every caller names its own ids** — the operator's rescan selection, a brand walk's page, a
+ * sweep pass's chunk — and that is deliberate: choosing what to read next is a scheduling
+ * decision, and each of those three schedules differently (a ticked selection, a brand cursor, a
+ * rotation-ordered pass). This function's job is to read what it is handed, identically in all
+ * three cases, so a look is indistinguishable in the archive whoever asked for it.
  *
- * Fetched one at a time rather than by filtering `listTrackedProducts`, because the selection is
- * a handful of rows and that call reads the whole table — 4,679 rows on the live install. Ids
+ * Fetched one at a time rather than by filtering `listTrackedProducts`, because a chunk is a
+ * hundred rows at most and that call reads the whole table — 4,679 rows on the live install. Ids
  * that no longer exist, or that belong to another marketplace, are dropped silently: the row may
- * have been removed between the click and the run, and there is nothing to look at.
+ * have been removed between the decision and the run, and there is nothing to look at.
  */
 async function selectedProducts(
   ctx: JobContext,
   marketplaceCode: MarketplaceCode,
   ids: readonly string[],
-  maxProducts: number,
 ): Promise<trackedProductsRepo.TrackedProductRow[]> {
   const rows: trackedProductsRepo.TrackedProductRow[] = [];
-  for (const id of ids.slice(0, maxProducts)) {
+  for (const id of ids) {
     const row = await trackedProductsRepo.getTrackedProduct(ctx.appDb, id);
     if (row && row.marketplaceCode === marketplaceCode) rows.push(row);
   }
@@ -126,46 +113,56 @@ async function selectedProducts(
 
 export interface ScrapeTrackedProductsOptions {
   /**
-   * How many items the caller has already reported progress for, so the two halves of one
-   * `ScrapeCompetitors` run share a single counter instead of the tracked half silently
-   * restarting it at zero — which, before this existed, left the Jobs screen frozen on the last
-   * listing for the hours the tracked half was running.
-   */
-  readonly progressOffset?: number;
-  /** Per-run ceiling; see `SCRAPE_MAX_TRACKED_PER_RUN`. Overridable from the job payload. */
-  readonly maxProducts?: number;
-  /**
-   * Read **exactly these products**, in place of the due-rotation below.
+   * Read **exactly these products**, in the order given.
    *
-   * This is the operator asking for one row, or a handful of them, to be looked at now
-   * (`RescanTrackedProducts`, doc 06 §12.2) — not the cadence working through a catalogue. Two
-   * things follow from that, and both are deliberate:
-   *
-   * - the rotation ordering is dropped, because there is nothing to rotate: the whole selection
-   *   is read, and it is small by construction (`RESCAN_MAX_PRODUCTS`);
-   * - `is_active` is **not** consulted. Pausing a product means "the cadence should skip it",
-   *   and an operator who has just ticked that row and pressed the button has said something
-   *   more specific than the flag does.
+   * There is no other candidate path: `is_active`, freshness and priority are decided by the
+   * caller that built this list (doc 07 §7.4's pass, §7.3's brand walk, §7.1's rescan), and
+   * `is_active` in particular is deliberately **not** re-checked here. Pausing a product means
+   * "the sweep should skip it", which the sweep's own query honours; an operator who ticked that
+   * row and pressed the button has said something more specific than the flag does.
    *
    * Everything else — change detection, seller registration, the failure rows, the consecutive
-   * failure limit — is identical, so a rescan writes exactly what a cadence look writes.
+   * failure limit — is identical whoever asked, so a rescan writes exactly what a pass look writes.
    */
-  readonly onlyIds?: readonly string[];
+  readonly ids: readonly string[];
+  /**
+   * How many items the caller has already reported progress for, so a walk made of many chunks
+   * reports one continuous counter instead of restarting it at zero every chunk — which, before
+   * this existed, left the Jobs screen's bar jumping back to the start every fifty products for
+   * the hours a whole-brand run takes.
+   */
+  readonly progressOffset?: number;
+  /**
+   * The denominator to report, when the caller's unit of work is larger than this call's.
+   *
+   * A sweep pass reads a hundred products at a time but is *about* the whole catalogue, and the
+   * operator watching the Jobs screen is asking how far through the catalogue the system is —
+   * "1.240 / 4.679", not "40 / 100" forty-seven times. Defaults to the caller's offset plus this
+   * chunk, which is what a single-chunk caller means.
+   */
+  readonly progressTotal?: number;
+  /**
+   * How many products to read at once. Defaults to 1 — serial, as every caller was before
+   * 2026-09-12.
+   *
+   * Only the sweep raises it (`SCRAPE_TRACKED_CONCURRENCY`), and only because the request rate it
+   * is allowed has always exceeded the rate one Chromium page can deliver. It changes no
+   * per-product behaviour: the rate limiter inside the source is shared and still the ceiling,
+   * and each product's writes happen when that product finishes.
+   */
+  readonly concurrency?: number;
 }
 
 export async function scrapeTrackedProducts(
   ctx: JobContext,
   marketplaceCode: MarketplaceCode,
   source: ICompetitorSource,
-  options: ScrapeTrackedProductsOptions = {},
+  options: ScrapeTrackedProductsOptions,
 ): Promise<ScrapeTrackedProductsResult> {
   const progressOffset = options.progressOffset ?? 0;
-  const maxProducts = options.maxProducts ?? SCRAPE_MAX_TRACKED_PER_RUN;
-  const nowMs = ctx.clock.nowMs();
+  const progressTotal = options.progressTotal;
 
-  const due = options.onlyIds
-    ? await selectedProducts(ctx, marketplaceCode, options.onlyIds, maxProducts)
-    : await rotatedProducts(ctx, marketplaceCode, maxProducts);
+  const due = await selectedProducts(ctx, marketplaceCode, options.ids);
 
   let itemsOk = 0;
   let itemsFailed = 0;
@@ -173,16 +170,24 @@ export async function scrapeTrackedProducts(
   let consecutiveFailures = 0;
   let itemsRemoved = 0;
   let processed = 0;
+  /** Set once the consecutive-failure guard fires: no further product is started. */
+  let halted = false;
 
-  for (const product of due) {
-    // Before the fetch, like the listings half: on a rate-limited scrape the wait *is* most of
-    // the elapsed time, and the operator is watching to see which page it is waiting on.
-    ctx.reportProgress({
-      done: progressOffset + processed,
-      total: progressOffset + due.length,
-      currentItem: product.label,
-    });
-    processed += 1;
+  /**
+   * Reads one product. Extracted from the loop so several can be in flight at once — see
+   * `runConcurrently` below — and deliberately doing all of its own bookkeeping: every counter
+   * it touches is incremented when *that* product finishes, not when it was scheduled.
+   */
+  async function readOne(product: trackedProductsRepo.TrackedProductRow): Promise<void> {
+    /**
+     * Stamped per product, not once per run (fixed 2026-09-12).
+     *
+     * `observed_at` is the time we looked, and a pass now walks a whole catalogue for hours. One
+     * timestamp taken at the top of the run would file the four-thousandth product's offers under
+     * the moment the first one was read — a price series whose points are all wrong by up to the
+     * length of a pass, in the one table the brand reports date their findings from.
+     */
+    const nowMs = ctx.clock.nowMs();
 
     try {
       const snapshot = await source.fetchProductOffers({
@@ -326,7 +331,7 @@ export async function scrapeTrackedProducts(
        */
       if (error instanceof trackedProductsRepo.TrackedProductRemovedError) {
         itemsRemoved += 1;
-        continue;
+        return;
       }
 
       const gone = isGone(error);
@@ -377,7 +382,7 @@ export async function scrapeTrackedProducts(
       } catch (writeError) {
         if (!(writeError instanceof trackedProductsRepo.TrackedProductRemovedError)) throw writeError;
         itemsRemoved += 1;
-        continue;
+        return;
       }
 
       itemsFailed += 1;
@@ -440,7 +445,8 @@ export async function scrapeTrackedProducts(
       // The source is gone, not the page — see the constant's doc comment. Logged at `warn`
       // rather than `debug` on purpose: this is the one scraping condition an operator has to
       // act on, and it is otherwise invisible behind the per-failure silence above.
-      if (consecutiveFailures >= SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT) {
+      if (consecutiveFailures >= SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT && !halted) {
+        halted = true;
         await eventsRepo.logEvent(ctx.appDb, {
           id: newId(),
           at: nowMs,
@@ -452,10 +458,46 @@ export async function scrapeTrackedProducts(
           message: `Tracked-product scrape for ${marketplaceCode} stopped after ${consecutiveFailures} consecutive failures at ${processed}/${due.length} — the source looks unavailable; the products not reached are first in the next run`,
           context: JSON.stringify({ consecutiveFailures, processed, due: due.length }),
         });
-        break;
       }
     }
   }
+
+  /**
+   * Runs `readOne` over the candidates `concurrency` at a time.
+   *
+   * A shared index rather than fixed slices: page load times differ by an order of magnitude
+   * between products, and slicing would leave two workers idle while the third finished the slow
+   * half of the catalogue. Each worker takes the next product the moment it is free.
+   *
+   * `readOne` never rejects — every failure path inside it is recorded and swallowed, exactly as
+   * the serial loop's was — so one product cannot take the others down with it, and there is no
+   * `Promise.all` rejection to race.
+   */
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? 1, due.length));
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      for (;;) {
+        if (halted) return;
+        const index = next;
+        next += 1;
+        const product = due[index];
+        if (!product) return;
+        // Before the fetch, like the listings half: on a rate-limited scrape the wait *is* most
+        // of the elapsed time, and the operator is watching to see which page it is waiting on.
+        // `processed` counts products *started*, so with several in flight the figure leads the
+        // completed count by at most `concurrency` — the alternative, reporting on completion,
+        // would leave the current item naming a page already finished.
+        ctx.reportProgress({
+          done: progressOffset + processed,
+          total: progressTotal ?? progressOffset + due.length,
+          currentItem: product.label,
+        });
+        processed += 1;
+        await readOne(product);
+      }
+    }),
+  );
 
   return { itemsOk, itemsFailed, itemsChanged, itemsRemoved, itemsTotal: due.length };
 }

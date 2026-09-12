@@ -16,6 +16,7 @@ import { REPRICE_JOB } from './pipeline/reprice.js';
 import { RESET_BUDGET_JOB } from './pipeline/reset-budget.js';
 import { SCRAPE_COMPETITORS_JOB } from './pipeline/scrape-competitors.js';
 import { SWEEP_BRAND_CATALOGUE_JOB } from './pipeline/sweep-brand-catalogue.js';
+import { SWEEP_TRACKED_PRODUCTS_JOB } from './pipeline/sweep-tracked-products.js';
 import { RESOLVE_PRODUCT_BARCODES_JOB } from './pipeline/resolve-product-barcodes.js';
 import { EVALUATE_BRAND_FINDINGS_JOB } from './pipeline/evaluate-brand-findings.js';
 import { SUBMIT_PRICE_CHANGES_JOB } from './pipeline/submit-price-changes.js';
@@ -130,6 +131,24 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     defaultPayload: {},
     // Off until an operator turns it on: scraping needs an explicit business decision
     // (api-references §1.6, doc 04 §1.5), and nothing depends on it (doc 12 Phase 7 DoD).
+    defaultEnabled: false,
+  },
+  {
+    jobName: SWEEP_TRACKED_PRODUCTS_JOB,
+    label: 'Takip Ürün Turu (raporlama)',
+    /**
+     * A minute — and it is **not** how often the catalogue is read.
+     *
+     * This job works in passes that take hours (doc 07 §7.4) and `Scheduler.tick` will not
+     * enqueue a job whose name is already active, so the cadence governs only the gap between one
+     * run ending and the next starting. A minute makes that gap invisible: the sweep is
+     * effectively always working, which is the point — the pass is the unit of work, not the hour.
+     */
+    cadenceMs: 60_000,
+    perMarketplace: true,
+    defaultPayload: {},
+    // Off by default for exactly the same reason as `ScrapeCompetitors`: it reads the same public
+    // pages under the same explicit business decision (api-references §1.6).
     defaultEnabled: false,
   },
   {

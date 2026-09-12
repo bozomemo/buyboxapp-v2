@@ -22,7 +22,7 @@ import { buildAdapterRegistry } from '../adapter-registry.js';
 import { FakeClock } from '../clock.js';
 import { buildCompetitorSourceRegistry } from '../competitor-source-registry.js';
 import type { JobContext, JobProgress } from '../job.js';
-import { SCRAPE_MAX_TRACKED_PER_RUN } from '../scrape-config.js';
+import { SCRAPE_TRACKED_CHUNK } from '../scrape-config.js';
 import { createSqliteTestDb, NOW, seedMarketplace, type TestDb } from '../test-helpers.js';
 import { SCRAPE_BRAND_SELLERS_JOB, scrapeBrandSellers } from './scrape-brand-sellers.js';
 
@@ -171,10 +171,10 @@ describe('ScrapeBrandSellers', () => {
   });
   afterEach(() => db.cleanup());
 
-  // Deliberately the only slow test here: 325 products at a row-per-look is seconds of SQLite
-  // writes, and the assertion is precisely that the run does *not* stop at 300.
-  it('reads every product of the brand, past the cadence ceiling, in chunks', async () => {
-    const productCount = SCRAPE_MAX_TRACKED_PER_RUN + 25;
+  // Deliberately the only slow test here: 125 products at a row-per-look is seconds of SQLite
+  // writes, and the assertion is precisely that the run does not stop at a chunk boundary.
+  it('reads every product of the brand, past a chunk boundary, in chunks', async () => {
+    const productCount = SCRAPE_TRACKED_CHUNK + 25;
     await seedProducts(productCount);
     const { source, calls } = fakeSource(() => [offer()]);
 
@@ -182,8 +182,8 @@ describe('ScrapeBrandSellers', () => {
       ctxFor(source, { marketplaceCode: 'trendyol', watchedBrandId: brandId, chunkSize: 50 }),
     );
 
-    // The whole brand, not `SCRAPE_MAX_TRACKED_PER_RUN` of it: this is the one path with no
-    // rotation ceiling, because the operator asked for this brand rather than for a cycle.
+    // The whole brand in one run: unlike a sweep pass, nothing here comes back for the
+    // remainder later — the operator asked for this brand, now.
     expect(calls).toHaveLength(productCount);
     expect(new Set(calls.map((c) => c.contentId)).size).toBe(productCount);
     expect(result).toEqual({ itemsTotal: productCount, itemsOk: productCount, itemsFailed: 0 });

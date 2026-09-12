@@ -680,9 +680,37 @@ A `null` count is **never** written: that is our failure to read the page, not a
 product's life, and recording it would put a fake dip in every series. A product's first
 readable count is always written, so a series starts at a known point.
 
-Scraped as the last step of each per-marketplace `ScrapeCompetitors` run
-(`pipeline/scrape-tracked-products.ts`), under its own `try`/`catch` so a failure here can never
-fail the listings half of the same run.
+Written by whichever job read the page (`pipeline/scrape-tracked-products.ts`): the sweep
+(doc 07 §7.4), a whole-brand scrape (§7.3) or an operator's rescan (§7.1). The rating comes free
+with a page already in hand, so no read exists for it alone.
+
+### `tracked_scrape_passes` — how far the sweep has got (2026-09-12)
+
+One row per **pass**: one lap of `SweepTrackedProducts` over every active tracked product of a
+marketplace (doc 07 §7.4).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `marketplace_code` | text FK, cascade | |
+| `pass_no` | int | 1-based per marketplace; unique with `marketplace_code`. Shown as "Tur #12" |
+| `started_at` | bigint | **The cursor.** A product is owed a look while `last_scraped_at` is null or older than this |
+| `finished_at` | bigint nullable | Null while the pass is open; set when the candidate set empties |
+| `planned_count` | int | Active products when the pass opened — read once, never recomputed |
+| `done_count` / `ok_count` / `failed_count` / `changed_count` | int | Advanced per chunk |
+
+Index `(marketplace_code, started_at)`; unique `(marketplace_code, pass_no)`.
+
+Two properties are the whole point of the table. **`started_at` is not metadata, it is the work
+queue** — nothing records which products remain, because `last_scraped_at` already does, so a
+restart resumes and no list can go stale when a brand sweep adds rows mid-pass. And
+**`planned_count` is read once**: a total recomputed per chunk would shrink as the pass consumed
+it and drive the progress bar backwards. A product added mid-pass is therefore read in that pass
+but not counted in its plan, which can push `done_count` slightly past `planned_count` — honest,
+and less confusing than a moving total.
+
+The counters are a record, never the scheduler's state: what to read next comes from the cursor,
+which cannot disagree with the table it queries.
 
 ### `brand_findings` — which findings are open, and which have been sent (2026-09-03)
 

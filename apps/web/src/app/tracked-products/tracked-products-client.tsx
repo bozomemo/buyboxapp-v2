@@ -194,6 +194,113 @@ function moneyCell(value: string | null | undefined) {
   return <span className="tabular-nums">{value ? formatMoney(BigInt(value)) : '—'}</span>;
 }
 
+/** What `/api/tracked-products/sweep-pass` returns for the card below. */
+interface SweepPass {
+  passNo: number;
+  startedAt: number;
+  finishedAt: number | null;
+  plannedCount: number;
+  doneCount: number;
+  failedCount: number;
+  estimatedFinishAtMs: number | null;
+}
+
+function formatClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatSpan(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes} dk`;
+  return `${Math.floor(minutes / 60)} sa ${minutes % 60} dk`;
+}
+
+/**
+ * "Tur #12 — 1.240 / 4.679" — how far the tracked sweep is through the catalogue (doc 07 §7.4).
+ *
+ * This is the figure the screen could not show before: the sweep read a fixed 300 products an
+ * hour and reported *that* as its total, so an operator looking at 4,679 rows had no way to tell
+ * whether the numbers in front of them had been refreshed this morning or yesterday. A pass is a
+ * full lap, so "kaç üründen kaçı" is a real fraction and the estimate is the pass's own measured
+ * rate rather than a configured limit.
+ *
+ * Absent rather than empty when no pass exists (the sweep has never been enabled): a progress bar
+ * at zero would read as a stalled job rather than as a job nobody switched on.
+ */
+function SweepPassCard() {
+  const [pass, setPass] = useState<SweepPass | null>(null);
+  const [previous, setPrevious] = useState<{ passNo: number; doneCount: number; durationMs: number }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      fetch('/api/tracked-products/sweep-pass')
+        .then((r) => r.json())
+        .then((d: { current: SweepPass | null; previous: typeof previous }) => {
+          if (cancelled) return;
+          setPass(d.current);
+          setPrevious(d.previous);
+        })
+        .catch(() => undefined);
+    void load();
+    // A pass moves at a page a few seconds, so a minute is plenty — and this screen is often left
+    // open, which is exactly where a tighter poll costs something for nothing.
+    const timer = setInterval(() => void load(), 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  if (!pass) return null;
+
+  const done = Math.min(pass.doneCount, pass.plannedCount);
+  const percent = pass.plannedCount > 0 ? Math.round((done / pass.plannedCount) * 100) : 0;
+  const last = previous[0];
+
+  return (
+    <div className="rounded border border-(--color-border) p-3 text-sm">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-medium">Tarama turu #{pass.passNo}</span>
+        <span className="tabular-nums">
+          {formatNumber(done)} / {formatNumber(pass.plannedCount)} ürün
+          <span className="text-(--color-muted)"> (%{percent})</span>
+        </span>
+        {pass.failedCount > 0 && (
+          <span className="text-(--color-muted)">{formatNumber(pass.failedCount)} okunamadı</span>
+        )}
+        <span className="text-(--color-muted)">Başlangıç {formatClock(pass.startedAt)}</span>
+        {pass.finishedAt !== null ? (
+          <span className="text-(--color-muted)">
+            Tamamlandı {formatClock(pass.finishedAt)} · yeni tur birazdan başlar
+          </span>
+        ) : (
+          pass.estimatedFinishAtMs !== null && (
+            <span className="text-(--color-muted)">
+              Tahmini bitiş {formatClock(pass.estimatedFinishAtMs)}
+            </span>
+          )
+        )}
+        {last && (
+          <span className="ml-auto text-xs text-(--color-muted)">
+            Önceki tur: {formatNumber(last.doneCount)} ürün, {formatSpan(last.durationMs)}
+          </span>
+        )}
+      </div>
+      <div
+        className="mt-2 h-1.5 overflow-hidden rounded bg-(--color-border)"
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Tarama turu #${pass.passNo} ilerlemesi`}
+      >
+        <div className="h-full bg-(--color-accent)" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
 /**
  * Takip edilen ürünler — hem link ile eklenen tekil ürünler hem marka taramasının bulduğu
  * ürünler (doc 06 §12.2, api-references §1.7).
@@ -829,6 +936,8 @@ export function TrackedProductsClient() {
           </button>
         </div>
       </div>
+
+      <SweepPassCard />
 
       {/* ---- link ile ekle ---- */}
       <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) p-3">

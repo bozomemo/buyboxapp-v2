@@ -427,11 +427,13 @@ describe('createPlaywrightFetcher', () => {
     });
   });
 
-  it('serialises concurrent fetches so the shared page never serves the wrong body', async () => {
-    // Two `SweepBrandCatalogue` runs share one source, and so one page. Before the fetch queue,
-    // the second navigation either aborted the first (`net::ERR_ABORTED`) or replaced the page
-    // it was about to read, handing one caller the other's HTML under its own URL — a page of
-    // one brand's catalogue written as another brand's.
+  it('never serves one caller another caller\'s body, however many fetch at once', async () => {
+    // Two `SweepBrandCatalogue` runs share one source, and a sweep pass reads three products at a
+    // time through it. Before a page was held for the whole navigate-then-read, the second
+    // navigation on a page either aborted the first (`net::ERR_ABORTED`) or replaced the page it
+    // was about to read, handing one caller the other's HTML under its own URL — a page of one
+    // brand's catalogue written as another brand's. Six at once against a pool of three, so the
+    // property is asserted both across lanes and within a reused one.
     const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
     const bodies = await Promise.all(
       ids.map(async (id) => {
@@ -443,5 +445,109 @@ describe('createPlaywrightFetcher', () => {
       expect(status).toBe(200);
       expect(body).toContain(`echo-${id}`);
     }
+  });
+
+  /**
+   * The pool itself (2026-09-12).
+   *
+   * Three pages is what lets the tracked sweep spend the request budget it was already granted:
+   * one page delivers a page load every 8-15 s on the operator's machine against a 30/min
+   * allowance. Both halves are asserted — that three really do run at once, and that a fourth
+   * waits rather than opening a page nobody accounted for.
+   */
+  describe('the page pool', () => {
+    /** A launcher whose `goto` blocks until the test releases it, so concurrency is observable. */
+    function blockingLauncher(): {
+      launcher: () => Promise<PlaywrightSession>;
+      inFlight: () => number;
+      releaseAll: () => void;
+      launches: () => number;
+      crash: (index: number) => void;
+    } {
+      let launches = 0;
+      let current = 0;
+      let peak = 0;
+      const releases: (() => void)[] = [];
+      const crashed: boolean[] = [];
+      const launcher = async (): Promise<PlaywrightSession> => {
+        const index = launches;
+        launches += 1;
+        crashed.push(false);
+        return {
+          browser: { isConnected: () => true, close: async () => undefined },
+          page: {
+            isClosed: () => false,
+            on: () => undefined,
+            goto: async () => {
+              if (crashed[index]) throw new Error('page.goto: Page crashed');
+              current += 1;
+              peak = Math.max(peak, current);
+              await new Promise<void>((resolve) => releases.push(resolve));
+              current -= 1;
+              return { status: () => 200, url: () => 'http://x/' };
+            },
+            content: async () => `<html><body>lane-${index}</body></html>`,
+          },
+        } as unknown as PlaywrightSession;
+      };
+      return {
+        launcher,
+        inFlight: () => peak,
+        releaseAll: () => {
+          while (releases.length > 0) releases.shift()!();
+        },
+        launches: () => launches,
+        crash: (index) => {
+          crashed[index] = true;
+        },
+      };
+    }
+
+    it('runs three fetches at once and makes the fourth wait', async () => {
+      const lanes = blockingLauncher();
+      const pooled = createPlaywrightFetcher(lanes.launcher);
+
+      const all = Promise.all(
+        ['a', 'b', 'c', 'd'].map((id) => pooled.fetch(`http://x/${id}`, { headers: {} })),
+      );
+      // Let the three that fit start, then release everything until all four are done.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const peakWhileFull = lanes.inFlight();
+      lanes.releaseAll();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      lanes.releaseAll();
+      await all;
+
+      // Three at once — not one (the old queue) and not four (a page per caller).
+      expect(peakWhileFull).toBe(3);
+      expect(lanes.launches()).toBe(3);
+      await pooled.close();
+    });
+
+    it('keeps the other lanes working when one renderer dies', async () => {
+      const lanes = blockingLauncher();
+      const pooled = createPlaywrightFetcher(lanes.launcher);
+
+      // Fill the pool once so three sessions exist, then kill exactly one of them.
+      const warm = Promise.all(['a', 'b', 'c'].map((id) => pooled.fetch(`http://x/${id}`, { headers: {} })));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      lanes.releaseAll();
+      await warm;
+      lanes.crash(0);
+
+      const again = Promise.all(['d', 'e', 'f'].map((id) => pooled.fetch(`http://x/${id}`, { headers: {} })));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      lanes.releaseAll();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      lanes.releaseAll();
+      const responses = await again;
+
+      // All three still answer: the dead lane relaunched for itself alone (a fourth session),
+      // which is the property the single shared page could not have — there, one crash ended
+      // every fetch until a restart.
+      expect(responses.map((r) => r.status)).toEqual([200, 200, 200]);
+      expect(lanes.launches()).toBe(4);
+      await pooled.close();
+    });
   });
 });

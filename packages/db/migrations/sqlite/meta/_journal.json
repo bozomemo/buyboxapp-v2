@@ -148,6 +148,13 @@
       "when": 1788469576249,
       "tag": "0020_yielding_jazinda",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1789191963873,
+      "tag": "0021_glossy_excalibur",
+      "breakpoints": true
     }
   ]
 }

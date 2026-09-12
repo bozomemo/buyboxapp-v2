@@ -19,9 +19,10 @@ per job from the Jobs screen (§8 "Operator-configurable cadence").
 | `ImportBundles` | daily | Rebuild bundle definitions |
 | `ImportListings` | per marketplace, 30 min | Full listing sync: price, stock, commission, VAT, status |
 | `ObserveBuybox` | per marketplace, tiered (§4) | Official buybox API → `buybox_observations` |
-| `ScrapeCompetitors` | per marketplace, hourly, tiered (§4) — **disabled by default** | Full seller detail → `scrape_runs` + `competitor_observations` (reporting only, §7) |
+| `ScrapeCompetitors` | per marketplace, hourly, tiered (§4) — **disabled by default** | Full seller detail for **our own listings** → `scrape_runs` + `competitor_observations` (reporting only, §7) |
+| `SweepTrackedProducts` | per marketplace, continuous passes — **disabled by default** | Read every tracked product, lap after lap, resumably (reporting only, §7.4) |
 | `RescanTrackedProducts` | on demand only, never scheduled | Re-read the tracked products an operator selected (reporting only, §7.1) |
-| `ScrapeBrandSellers` | on demand only, never scheduled | Read **every** product of one watched brand for sellers/buybox, with no rotation ceiling (reporting only, §7.3) |
+| `ScrapeBrandSellers` | on demand only, never scheduled | Read **every** product of one watched brand for sellers/buybox, now rather than when the sweep reaches it (reporting only, §7.3) |
 | `Reprice` | per marketplace, policy interval | Decide; enqueue `price_submissions` |
 | `SubmitPriceChanges` | continuous | Drain the outbox in marketplace-sized batches |
 | `ConfirmSubmissions` | continuous | Poll batch status to a terminal state |
@@ -37,7 +38,13 @@ A long-running handler MAY also heartbeat its progress through `JobContext.repor
 second and settles before the run's terminal write. This is what makes a run watchable from the
 web process (doc 06 §7.2, doc 05 §7). It is **reporting only** on exactly the terms §7 sets for
 competitor data: not reporting is fully supported, a failed progress write never fails the run,
-and no decision may branch on it. `ScrapeCompetitors` reports; the other jobs do not yet.
+and no decision may branch on it. `ScrapeCompetitors`, `SweepTrackedProducts` and
+`ScrapeBrandSellers` report; the other jobs do not yet.
+
+A job whose unit of work is larger than one run reports the **unit's** progress, not the run's:
+`SweepTrackedProducts` walks a catalogue in chunks and reports the pass (`1.240 / 4.679`), because
+the operator watching the bar is asking how far through the catalogue the system is, not how large
+this chunk happened to be.
 
 ### 1.1 What each job actually does
 
@@ -107,9 +114,14 @@ reads a separate `ctx.competitorSources` registry (never the marketplace adapter
 the marketplace circuit breaker, never returns a job-level error for one bad page (failures are
 counted and the **rate** alerts, not each failure), and writes only `scrape_runs` /
 `competitor_observations` / `competitor_sellers` — never `repricing_state`, `price_submissions`
-or `buybox_observations`. **Disabled by default** (`defaultEnabled: false` — the only job in the
-catalog that is); an operator must turn it on explicitly per doc 04 §1.5 / api-references §1.6.
-Per marketplace, hourly by default when enabled.
+or `buybox_observations`. **Disabled by default** (`defaultEnabled: false`); an operator must turn
+it on explicitly per doc 04 §1.5 / api-references §1.6. Per marketplace, hourly by default when
+enabled. **Listings only** — tracked products are `SweepTrackedProducts` (§7.4), which used to be
+this job's second half.
+
+**`SweepTrackedProducts`** (`pipeline/sweep-tracked-products.ts`) — the same reporting-only read
+applied to `tracked_products` instead of `listings`, in continuous resumable **passes** (§7.4).
+Also disabled by default and on the same authority.
 
 Two details of the write path matter (doc 05 §5 records both in full):
 
@@ -355,11 +367,13 @@ progress — the failure mode this specification cares most about, a silent one.
 It was invisible for a second reason: the tracked half reported no progress at all, so
 `job_runs.items_done` stayed frozen on the last *listing* for the hours it ran.
 
-*Fixed* by giving the tracked half the same three properties the listings half already had —
-`SCRAPE_MAX_TRACKED_PER_RUN` (300) as a ceiling, ordering on `tracked_products.last_scraped_at`
-(never-looked first, then oldest first) so the ceiling rotates, and `ctx.reportProgress` sharing
-one counter across both halves of the run. A fourth was added that the listings half does not
-need: after `SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT` (25) failures **in a row** the tracked half
+*Fixed* on the day by giving the tracked half the same three properties the listings half already
+had — a per-run ceiling of 300, ordering on `tracked_products.last_scraped_at` (never-looked
+first, then oldest first) so the ceiling rotates, and `ctx.reportProgress` sharing one counter
+across both halves of the run. **Superseded 2026-09-12** (§7.4): a ceiling made a full lap take
+sixteen hours and reported itself, not the catalogue, as the run's total, so the tracked half
+became its own job walking resumable passes with no ceiling at all. The cursor, not the ceiling,
+is what makes that safe. A fourth property was added that the listings half does not need: after `SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT` (25) failures **in a row** the tracked half
 stops and logs `TrackedProductsScrapeHalted` at `warn`. The case is a headless browser that dies
 mid-run — every later fetch then fails instantly while still spending a rate-limit token and
 writing a failure row, which on 2026-08-28 was 2,700 products in a row. Stopping costs nothing:
@@ -524,9 +538,8 @@ supported state, not a failure.
 
 ### 7.1 `RescanTrackedProducts` — the operator-triggered look
 
-`ScrapeCompetitors`' tracked half rotates through the catalogue at `SCRAPE_MAX_TRACKED_PER_RUN`
-(300) products an hour, which on the live install is a full pass a little under every sixteen
-hours. That is the right cost for a report nobody is watching. It is the wrong answer to an
+`SweepTrackedProducts` (§7.4) walks the catalogue in passes measured in hours. That is the right
+cost for a report nobody is watching. It is the wrong answer to an
 operator who has just noticed one row on `/tracked-products` (doc 06 §12.2) and wants to know
 whether the figure in front of them is still true.
 
@@ -542,8 +555,8 @@ named in its payload** and nothing else. It is enqueued only from
   never `listings`, so there is no path from it to a pricing decision, and per-product failures
   are counted rather than failing the run.
 - **`RESCAN_MAX_PRODUCTS` = 50 per run**, and the route refuses a larger selection rather than
-  truncating it. This is a *selection* cap, not a rotation cap like `SCRAPE_MAX_TRACKED_PER_RUN`
-  — nothing comes back for the remainder later, so reading part of a selection and reporting
+  truncating it. This is a *selection* cap, not a chunk size like the sweep's — nothing comes back
+  for the remainder later, so reading part of a selection and reporting
   success would leave the operator believing a figure was refreshed when it was not.
 - **`is_active` is not consulted** for a named id. Pausing a product means "the cadence should
   skip it"; an operator who ticked that row has said something more specific.
@@ -609,11 +622,10 @@ says in as many words that nobody is being told.
 Added 2026-09-08, from an operator watching a newly added brand come back with products and no
 sellers. `SweepBrandCatalogue` answers *"what products exist under this brand?"* and writes them
 to `tracked_products`; it collects **no seller, price or buybox data at all**. That data comes
-from `ScrapeCompetitors`' tracked half, which rotates the whole catalogue at
-`SCRAPE_MAX_TRACKED_PER_RUN` (300) products a cycle. So a brand added at noon read as complete on
-every brand screen while all 305 of its products still said "hiç bakılmadı", and stayed that way
-until the rotation reached them — most of a day on the live install, with no way to ask for
-sooner other than ticking fifty rows at a time (§7.1).
+from `SweepTrackedProducts` (§7.4), which walks the whole catalogue a pass at a time. So a brand
+added at noon read as complete on every brand screen while all 305 of its products still said
+"hiç bakılmadı", and stayed that way until the pass reached them — hours on the live install, with
+no way to ask for sooner other than ticking fifty rows at a time (§7.1).
 
 ```
 loop:
@@ -661,6 +673,62 @@ loop:
 
 ⚠️ **Reporting only**, on the terms of §7 throughout: it reads `tracked_products`, never
 `listings`, so nothing it writes can reach a pricing decision.
+
+---
+
+### 7.4 `SweepTrackedProducts` — the continuous pass over the catalogue
+
+Added 2026-09-12, replacing `ScrapeCompetitors`' tracked half.
+
+**What a pass is.** A pass is one lap over every active tracked product of a marketplace. It is
+defined by a single instant — `tracked_scrape_passes.started_at` — which is also its cursor: a
+product is still owed a look exactly while its `last_scraped_at` is null or older than that
+instant. When nothing is left the pass is closed and the next run opens the next one. The job
+therefore never idles and never re-reads: **tarama bitince tekrar baştan başlar**.
+
+```
+pass = the open pass, or a new one stamped at now
+loop:
+    chunk = active products of this marketplace not looked at since pass.started_at   (100)
+    if chunk is empty: close the pass; the next run opens the next one
+    scrapeTrackedProducts(ids = chunk)         ← the same read §7.1 and §7.3 use
+```
+
+**Why there is no per-run ceiling any more.** The ceiling it replaces (300 products a run) was a
+sound answer to the 2026-08-28 failure in §4.1 — but it made a full lap of the live install's
+4,679 rows take a little under sixteen hours, and it reported *itself* as the run's total, so the
+one question the screen was being asked ("kaç üründen kaçı gezildi?") had no answer anywhere. The
+ceiling can go because what actually made the uncapped run unrecoverable was not its length but
+that it had no cursor: a restart, a retry or a requeue began the catalogue again from the top. A
+pass is that cursor, and it gives three properties at once:
+
+- **it terminates** — `recordTrackedProductLook` advances `last_scraped_at` on every look, success
+  *or* failure, so the candidate set shrinks by exactly the work done;
+- **it resumes** — a worker restart, a halted chunk or a retry continues the open pass instead of
+  restarting it;
+- **it is measurable** — `planned_count` against `done_count` is the whole catalogue, which is what
+  the Jobs screen and `/tracked-products` (doc 06 §12.2) now show.
+
+**Ordering inside a pass.** Candidates are ordered by `tracked-rotation.ts` — never-looked first,
+then most overdue by the product's own weighted interval. Since this change the weights no longer
+decide *whether* a product is read in a lap (every active product is), only how early in the lap
+it is reached. A product with a published reference price is read near the start of every pass; a
+product nobody sells and nobody has rated is read near the end of every pass.
+
+- **Cadence 60 s, and that is not how often the catalogue is read.** A pass takes hours and is one
+  job run; `countActiveJobsForTarget` skips the tick while it walks, so the minute governs only the
+  gap between passes. Visibility timeout 6 h, heartbeated like any long run (§8).
+- **Concurrency 3** (`SCRAPE_TRACKED_CONCURRENCY`, matched by the Playwright fetcher's page pool).
+  This raises **no** limit: the source's single shared rate limiter is still the ceiling. It exists
+  because one Chromium page delivers a page load every 8-15 s on the operator's machine against a
+  budget of 30 a minute, so the sweep was spending a fifth of what it was allowed.
+- **`is_active` is honoured** — a paused product is out of the plan and out of the pass.
+- **The consecutive-failure guard is unchanged** (`SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT`, 25):
+  a dead source ends the run, and the **pass stays open** so the next run resumes it. With three
+  reads in flight the guard stops at the limit plus what had already started.
+- **Disabled by default**, on the same authority as `ScrapeCompetitors` (api-references §1.6).
+
+⚠️ **Reporting only**, on the terms of §7: it reads `tracked_products`, never `listings`.
 
 ---
 

@@ -903,10 +903,23 @@ Four decisions worth keeping:
 - **The grid is not reloaded on success.** The job has been queued, not run — redrawing the same
   figures would read as "nothing happened". The operator is told where the progress is instead.
 
-Why it exists at all: the cadence rotates 300 products an hour (`SCRAPE_MAX_TRACKED_PER_RUN`),
-which on the live install is a full pass a little under every sixteen hours. That is the right
-cost for a report nobody is watching, and the wrong answer to someone who has just noticed one
-row and wants to know whether the number in front of them is still true.
+Why it exists at all: the sweep walks the catalogue in passes measured in hours (doc 07 §7.4).
+That is the right cost for a report nobody is watching, and the wrong answer to someone who has
+just noticed one row and wants to know whether the number in front of them is still true.
+
+**Tur kartı.** Above the grid, one line says where the sweep has got to: `Tarama turu #12 —
+1.240 / 4.679 ürün (%26)`, when the lap started, an estimated finish, and how long the previous
+lap took. It is fed by `GET /api/tracked-products/sweep-pass` and polled once a minute.
+
+- **The denominator is the catalogue, not a run.** Until 2026-09-12 the sweep read a fixed 300
+  products an hour and the Jobs screen reported *that* as the total, so an operator looking at
+  4,679 rows had no way to tell whether the figures in front of them were refreshed this morning
+  or yesterday. This card exists to answer exactly that.
+- **The estimate comes from the pass's own measured rate**, never from the configured
+  requests-per-minute: the two differ by about a factor of four on the operator's machine, and a
+  prediction built from the limit would promise a finishing time the machine cannot reach.
+- **Absent, not empty, when no pass exists.** A zeroed progress bar on an install that never
+  enabled the sweep reads as a stalled job rather than as a job nobody switched on.
 
 **Arriving pre-filtered.** `/tracked-products` seeds its filter bar from `?watchedBrandId=`,
 `?categoryRef=`, `?text=`, `?unratedOnly=` and `?searchTermOnly=`, which is what the brand links

@@ -3,7 +3,7 @@
  *
  * The tracked half of `ScrapeCompetitors` rotates through the catalogue on an hourly cadence at
  * 300 products a run, which on the live install is a full pass a little under every sixteen
- * hours (`SCRAPE_MAX_TRACKED_PER_RUN`). That is the right cost for a report nobody is watching.
+ * hours (doc 07 §7.4). That is the right cost for a report nobody is watching.
  * It is the wrong answer to an operator who has just noticed one row and wants to know whether
  * the figure in front of them is still true — that person would otherwise wait most of a day,
  * or press the whole-marketplace scrape and wait for a two-hour pass over 4,679 rows to reach
@@ -37,10 +37,10 @@ export const RESCAN_TRACKED_PRODUCTS_JOB = 'RescanTrackedProducts';
  *
  * Fifty products at the conservative default scrape rate is a couple of minutes — long enough to
  * be worth watching on the Jobs screen, short enough that an operator gets an answer while they
- * still care. It is a *selection* cap, not a rotation cap like `SCRAPE_MAX_TRACKED_PER_RUN`:
- * nothing here comes back for the remainder on a later cycle, so the API refuses a larger
- * selection outright rather than silently reading part of it. Someone who wants a whole brand
- * re-read wants the cadence, or a sweep, not this button.
+ * still care. It is a *selection* cap, and unlike the sweep's chunk size nothing here comes back
+ * for the remainder on a later run, so the API refuses a larger selection outright rather than
+ * silently reading part of it. Someone who wants a whole brand re-read wants the sweep, or the
+ * brand's own button, not this one.
  */
 export const RESCAN_MAX_PRODUCTS = 50;
 
@@ -72,9 +72,10 @@ export async function rescanTrackedProducts(ctx: JobContext): Promise<JobResult>
     };
   }
 
+  // The selection is capped by the schema above, not here: a rescan reads exactly what was
+  // ticked, and the route refuses a larger selection rather than letting this truncate one.
   const result = await scrapeTrackedProducts(ctx, marketplaceCode, source, {
-    onlyIds: payload.trackedProductIds,
-    maxProducts: RESCAN_MAX_PRODUCTS,
+    ids: payload.trackedProductIds,
   });
 
   // No `error`: individual page failures are counted and never fail the run, exactly as they do

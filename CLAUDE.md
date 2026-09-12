@@ -94,7 +94,7 @@ becomes an unintended crawl.
 
 **Before writing or changing any code under `packages/adapters/src/*/public-page/`,
 `packages/adapters/src/*/brand-catalogue/`, `packages/adapters/src/*/public-listings/`,
-`packages/adapters/src/*/product-detail/`, `ScrapeCompetitors`, `SweepBrandCatalogue` or
+`packages/adapters/src/*/product-detail/`, `ScrapeCompetitors`, `SweepTrackedProducts`, `SweepBrandCatalogue` or
 `ResolveProductBarcodes`, read the row above that applies.** Trendyol's payload in particular has traps that look like ordinary field access and
 silently produce wrong data — `merchantListing` is an object rather than an array, the buybox
 seller is stored apart from the other sellers and is lost if not joined, and price nodes carry

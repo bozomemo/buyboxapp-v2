@@ -1534,3 +1534,260 @@ export async function countBrandProductsToScrape(
       ),
   });
 }
+
+/**
+ * The products of one **marketplace** a sweep pass has not yet reached — the brand-less sibling
+ * of `listBrandProductsToScrape`, and the candidate query `SweepTrackedProducts` walks
+ * (doc 07 §7.4).
+ *
+ * Everything the brand version's comment says about the cursor applies unchanged: `last_scraped_at`
+ * advances on every look, success or failure, so the remaining set shrinks by exactly the work
+ * done and a restart resumes rather than restarting. The difference is only the scope — a whole
+ * marketplace rather than one brand — and one consequence of it: a rescan or a whole-brand scrape
+ * that reads a product mid-pass takes it out of this pass's remainder, which is correct. It has
+ * been looked at.
+ *
+ * **Ordering is deliberately left to the caller.** The pass orders its candidates by
+ * `byRotationPriority` (packages/jobs), which weighs fields — a reference price, whether anyone
+ * was selling — that mean nothing to this table and everything to the job. Ordering here by
+ * `last_scraped_at` as well would be a second, disagreeing policy; the `limit` is applied to
+ * whatever this returns, so the two would quietly fight over which products a chunk contains.
+ * The query is therefore unordered and unlimited, and the caller sorts and slices.
+ */
+export interface ProductsToScrapeQuery {
+  readonly marketplaceCode: string;
+  readonly notScrapedSinceMs: number;
+}
+
+function toScrapeWhere(t: TrackedSchema, query: ProductsToScrapeQuery) {
+  return and(
+    eq(t.marketplaceCode, query.marketplaceCode),
+    eq(t.isActive, true),
+    or(isNull(t.lastScrapedAt), lt(t.lastScrapedAt, query.notScrapedSinceMs)),
+  );
+}
+
+export async function listProductsToScrape(
+  appDb: AppDatabase,
+  query: ProductsToScrapeQuery,
+): Promise<TrackedProductRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db.select().from(sqliteSchema.trackedProducts).where(toScrapeWhere(sqliteSchema.trackedProducts, query)),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.trackedProducts)
+        .where(toScrapeWhere(postgresSchema.trackedProducts, query)),
+    mysql: (db) =>
+      db.select().from(mysqlSchema.trackedProducts).where(toScrapeWhere(mysqlSchema.trackedProducts, query)),
+  }) as Promise<TrackedProductRow[]>;
+}
+
+/**
+ * How many active products this marketplace has at all — a pass's plan.
+ *
+ * Counted with no cursor on purpose: a pass opens by declaring how much work the whole catalogue
+ * is, and `plannedCount` is compared against `doneCount` for the rest of the pass. Counting
+ * only what is *outstanding* would make a pass resumed after a restart report a plan smaller
+ * than the work it had already done.
+ */
+export async function countActiveTrackedProducts(
+  appDb: AppDatabase,
+  marketplaceCode: string,
+): Promise<number> {
+  const where = (t: TrackedSchema) => and(eq(t.marketplaceCode, marketplaceCode), eq(t.isActive, true));
+  return withDialect(appDb, {
+    sqlite: async (db) =>
+      Number(
+        (
+          await db
+            .select({ n: count() })
+            .from(sqliteSchema.trackedProducts)
+            .where(where(sqliteSchema.trackedProducts))
+        )[0]?.n ?? 0,
+      ),
+    postgres: async (db) =>
+      Number(
+        (
+          await db
+            .select({ n: count() })
+            .from(postgresSchema.trackedProducts)
+            .where(where(postgresSchema.trackedProducts))
+        )[0]?.n ?? 0,
+      ),
+    mysql: async (db) =>
+      Number(
+        (
+          await db
+            .select({ n: count() })
+            .from(mysqlSchema.trackedProducts)
+            .where(where(mysqlSchema.trackedProducts))
+        )[0]?.n ?? 0,
+      ),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sweep passes (doc 07 §7.4)
+// ---------------------------------------------------------------------------
+
+export interface TrackedScrapePassRow {
+  readonly id: string;
+  readonly marketplaceCode: string;
+  readonly passNo: number;
+  readonly startedAt: number;
+  readonly finishedAt: number | null;
+  readonly plannedCount: number;
+  readonly doneCount: number;
+  readonly okCount: number;
+  readonly failedCount: number;
+  readonly changedCount: number;
+}
+
+/**
+ * The marketplace's newest pass, open or finished — what the screens read and what the job
+ * checks before opening a new one.
+ */
+export async function latestTrackedScrapePass(
+  appDb: AppDatabase,
+  marketplaceCode: string,
+): Promise<TrackedScrapePassRow | undefined> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.trackedScrapePasses)
+        .where(eq(sqliteSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .orderBy(desc(sqliteSchema.trackedScrapePasses.passNo))
+        .limit(1),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.trackedScrapePasses)
+        .where(eq(postgresSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .orderBy(desc(postgresSchema.trackedScrapePasses.passNo))
+        .limit(1),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.trackedScrapePasses)
+        .where(eq(mysqlSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .orderBy(desc(mysqlSchema.trackedScrapePasses.passNo))
+        .limit(1),
+  })) as TrackedScrapePassRow[];
+  return rows[0];
+}
+
+/**
+ * The finished passes, newest first — the pass history a screen shows ("önceki tur 5s 42dk").
+ */
+export async function listTrackedScrapePasses(
+  appDb: AppDatabase,
+  marketplaceCode: string,
+  limit: number,
+): Promise<TrackedScrapePassRow[]> {
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.trackedScrapePasses)
+        .where(eq(sqliteSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .orderBy(desc(sqliteSchema.trackedScrapePasses.passNo))
+        .limit(limit),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.trackedScrapePasses)
+        .where(eq(postgresSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .orderBy(desc(postgresSchema.trackedScrapePasses.passNo))
+        .limit(limit),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.trackedScrapePasses)
+        .where(eq(mysqlSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .orderBy(desc(mysqlSchema.trackedScrapePasses.passNo))
+        .limit(limit),
+  }) as Promise<TrackedScrapePassRow[]>;
+}
+
+export async function insertTrackedScrapePass(
+  appDb: AppDatabase,
+  row: TrackedScrapePassRow,
+): Promise<void> {
+  await runDialect(appDb, {
+    sqlite: (db) => db.insert(sqliteSchema.trackedScrapePasses).values(row),
+    postgres: (db) => db.insert(postgresSchema.trackedScrapePasses).values(row),
+    mysql: (db) => db.insert(mysqlSchema.trackedScrapePasses).values(row),
+  });
+}
+
+export interface TrackedScrapePassProgress {
+  readonly done: number;
+  readonly ok: number;
+  readonly failed: number;
+  readonly changed: number;
+}
+
+/**
+ * Adds a chunk's work to an open pass.
+ *
+ * Increments rather than assignments, so a pass's counters survive the job restarting mid-pass:
+ * the run that resumes knows what it did, not what every earlier run did, and the row is the only
+ * place the total is kept.
+ */
+export async function addTrackedScrapePassProgress(
+  appDb: AppDatabase,
+  passId: string,
+  progress: TrackedScrapePassProgress,
+): Promise<void> {
+  const set = (t: typeof sqliteSchema.trackedScrapePasses) => ({
+    doneCount: sql`${t.doneCount} + ${progress.done}`,
+    okCount: sql`${t.okCount} + ${progress.ok}`,
+    failedCount: sql`${t.failedCount} + ${progress.failed}`,
+    changedCount: sql`${t.changedCount} + ${progress.changed}`,
+  });
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .update(sqliteSchema.trackedScrapePasses)
+        .set(set(sqliteSchema.trackedScrapePasses))
+        .where(eq(sqliteSchema.trackedScrapePasses.id, passId)),
+    postgres: (db) =>
+      db
+        .update(postgresSchema.trackedScrapePasses)
+        .set(set(postgresSchema.trackedScrapePasses as never))
+        .where(eq(postgresSchema.trackedScrapePasses.id, passId)),
+    mysql: (db) =>
+      db
+        .update(mysqlSchema.trackedScrapePasses)
+        .set(set(mysqlSchema.trackedScrapePasses as never))
+        .where(eq(mysqlSchema.trackedScrapePasses.id, passId)),
+  });
+}
+
+/** Closes a pass. `finishedAt` is what makes a pass a completed lap rather than an open one. */
+export async function finishTrackedScrapePass(
+  appDb: AppDatabase,
+  passId: string,
+  finishedAtMs: number,
+): Promise<void> {
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .update(sqliteSchema.trackedScrapePasses)
+        .set({ finishedAt: finishedAtMs })
+        .where(eq(sqliteSchema.trackedScrapePasses.id, passId)),
+    postgres: (db) =>
+      db
+        .update(postgresSchema.trackedScrapePasses)
+        .set({ finishedAt: finishedAtMs })
+        .where(eq(postgresSchema.trackedScrapePasses.id, passId)),
+    mysql: (db) =>
+      db
+        .update(mysqlSchema.trackedScrapePasses)
+        .set({ finishedAt: finishedAtMs })
+        .where(eq(mysqlSchema.trackedScrapePasses.id, passId)),
+  });
+}

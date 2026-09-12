@@ -921,6 +921,57 @@ export const trackedProductMetrics = sqliteTable(
   (t) => [index('tracked_product_metrics_product_observed').on(t.trackedProductId, t.observedAt)],
 );
 
+/**
+ * One **pass** of the tracked-product sweep: the unit `SweepTrackedProducts` works in, and the
+ * only place the operator's "how far through the catalogue are we?" has an answer (doc 07 §7.4).
+ *
+ * A pass is defined by a single instant, `started_at`, which is also its cursor: a product is
+ * still owed a look in this pass exactly while its `last_scraped_at` is null or older than that
+ * instant. Nothing else is stored about *which* products are left, and that is the point —
+ * `recordTrackedProductLook` advances `last_scraped_at` on every look, success or failure, so the
+ * remaining set shrinks by exactly the work done, with no offset to keep, nothing to go stale when
+ * a brand sweep adds rows mid-pass, and a worker restart resuming where it stopped rather than
+ * re-reading the catalogue from the top.
+ *
+ * The counters are a **record of a pass that happened**, not the scheduler's state: they are what
+ * the screens read, what dates a pass, and what makes "the last full pass took 5h42m" answerable
+ * at all. They are deliberately not authoritative for what to read next — that is the cursor
+ * above, which cannot disagree with the table it queries.
+ */
+export const trackedScrapePasses = sqliteTable(
+  'tracked_scrape_passes',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    /** 1-based, per marketplace. Shown on the screens ("Tur #12") and orders the history. */
+    passNo: integer('pass_no').notNull(),
+    /** The cursor. See the table comment: this is the pass, the rest is bookkeeping. */
+    startedAt: timestampMs('started_at').notNull(),
+    /** Null while the pass is open. Set when the candidate set empties — never on a restart. */
+    finishedAt: timestampMs('finished_at'),
+    /**
+     * How many products were owed a look when the pass opened.
+     *
+     * Read once, at the open, and never recomputed: a total re-read per chunk would shrink as the
+     * pass consumed it and drive the progress bar backwards (the same reason
+     * `countBrandProductsToScrape` is read once). A product added mid-pass is therefore read in
+     * this pass but not counted in its plan, which can make `done_count` exceed it slightly —
+     * honest, and far less confusing than a total that moves.
+     */
+    plannedCount: integer('planned_count').notNull(),
+    doneCount: integer('done_count').notNull().default(0),
+    okCount: integer('ok_count').notNull().default(0),
+    failedCount: integer('failed_count').notNull().default(0),
+    changedCount: integer('changed_count').notNull().default(0),
+  },
+  (t) => [
+    index('tracked_scrape_passes_marketplace_started').on(t.marketplaceCode, t.startedAt),
+    uniqueIndex('tracked_scrape_passes_marketplace_no').on(t.marketplaceCode, t.passNo),
+  ],
+);
+
 export const priceSubmissions = sqliteTable(
   'price_submissions',
   {

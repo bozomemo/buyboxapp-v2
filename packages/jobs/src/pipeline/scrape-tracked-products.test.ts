@@ -1,5 +1,5 @@
 /**
- * `scrapeTrackedProducts` — the cadence half of `ScrapeCompetitors` (doc 06 §12.2).
+ * `scrapeTrackedProducts` — the shared tracked-product read (doc 06 §12.2, doc 07 §7.4).
  *
  * What is pinned down here is the **failure** side, which is where this job's production
  * behaviour actually went wrong: a page the marketplace says no longer exists must stop being
@@ -21,7 +21,10 @@ import { buildAdapterRegistry } from '../adapter-registry.js';
 import { FakeClock } from '../clock.js';
 import type { JobContext } from '../job.js';
 import { createFakeAdapter, createSqliteTestDb, NOW, seedMarketplace, type TestDb } from '../test-helpers.js';
-import { scrapeTrackedProducts } from './scrape-tracked-products.js';
+import {
+  scrapeTrackedProducts,
+  type ScrapeTrackedProductsResult,
+} from './scrape-tracked-products.js';
 
 function offer(): CompetitorOffer {
   return {
@@ -125,6 +128,19 @@ describe('scrapeTrackedProducts', () => {
     };
   }
 
+  /**
+   * Reads every active tracked product once, the way `SweepTrackedProducts` does: the candidate
+   * query decides *what*, this function reads *it*. `notScrapedSinceMs` is set past any stamp so
+   * the whole catalogue is outstanding, which is what a fresh pass means.
+   */
+  async function readAll(source: ICompetitorSource): Promise<ScrapeTrackedProductsResult> {
+    const due = await trackedProductsRepo.listProductsToScrape(db.appDb, {
+      marketplaceCode: 'trendyol',
+      notScrapedSinceMs: Number.MAX_SAFE_INTEGER,
+    });
+    return scrapeTrackedProducts(context(), 'trendyol', source, { ids: due.map((p) => p.id) });
+  }
+
   async function eventCodes(): Promise<string[]> {
     const events = await eventsRepo.listRecentEvents(db.appDb, 50);
     return events.map((e) => e.code);
@@ -144,7 +160,7 @@ describe('scrapeTrackedProducts', () => {
       () => new CompetitorSourceError('Trendyol public page 410 for x', 'fetchFailed', undefined, 410),
     );
 
-    const result = await scrapeTrackedProducts(context(), 'trendyol', source);
+    const result = await readAll(source);
 
     expect(result).toMatchObject({ itemsOk: 0, itemsFailed: 1 });
     expect(await isActive('t-gone')).toBe(false);
@@ -161,7 +177,7 @@ describe('scrapeTrackedProducts', () => {
       () => new CompetitorSourceError('Trendyol public page 404 for x', 'fetchFailed', undefined, 404),
     );
 
-    await scrapeTrackedProducts(context(), 'trendyol', source);
+    await readAll(source);
 
     expect(await isActive('t-404')).toBe(false);
   });
@@ -173,8 +189,8 @@ describe('scrapeTrackedProducts', () => {
       () => new CompetitorSourceError('Trendyol public page 410 for x', 'fetchFailed', undefined, 410),
     );
 
-    await scrapeTrackedProducts(context(), 'trendyol', source);
-    await scrapeTrackedProducts(context(), 'trendyol', source);
+    await readAll(source);
+    await readAll(source);
 
     expect(calls).toHaveLength(1);
   });
@@ -192,7 +208,7 @@ describe('scrapeTrackedProducts', () => {
     await seedTracked('t-live');
     const { source } = fakeSource(() => error);
 
-    await scrapeTrackedProducts(context(), 'trendyol', source);
+    await readAll(source);
 
     expect(await isActive('t-live')).toBe(true);
     expect(await eventCodes()).not.toContain('TrackedProductGone');
@@ -212,7 +228,7 @@ describe('scrapeTrackedProducts', () => {
         : new CompetitorSourceError('Trendyol public page 404 for x', 'fetchFailed', undefined, 404),
     );
 
-    const result = await scrapeTrackedProducts(context(), 'trendyol', source);
+    const result = await readAll(source);
 
     expect(calls).toHaveLength(ids.length);
     expect(result.itemsOk).toBe(1);
@@ -240,7 +256,7 @@ describe('scrapeTrackedProducts', () => {
         return [offer()];
       });
 
-      const result = await scrapeTrackedProducts(context(), 'trendyol', source);
+      const result = await readAll(source);
 
       expect(result).toMatchObject({ itemsOk: 1, itemsFailed: 0, itemsRemoved: 1, itemsTotal: 2 });
       // The survivor was read, which is the whole point: before this the throw took the job.
@@ -262,7 +278,7 @@ describe('scrapeTrackedProducts', () => {
         return new CompetitorSourceError('Trendyol public page 503 for x', 'fetchFailed', undefined, 503);
       });
 
-      const result = await scrapeTrackedProducts(context(), 'trendyol', source);
+      const result = await readAll(source);
 
       // Not counted as a failure: what the run learned about it went with the row.
       expect(result).toMatchObject({ itemsOk: 1, itemsFailed: 0, itemsRemoved: 1 });
@@ -277,7 +293,7 @@ describe('scrapeTrackedProducts', () => {
         return [offer()];
       });
 
-      const result = await scrapeTrackedProducts(context(), 'trendyol', source);
+      const result = await readAll(source);
 
       expect(calls).toHaveLength(ids.length);
       expect(result).toMatchObject({ itemsOk: 1, itemsRemoved: 8 });

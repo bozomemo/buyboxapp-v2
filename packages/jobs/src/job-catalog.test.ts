@@ -21,6 +21,7 @@ import { EvaluateBrandFindingsPayloadSchema } from './pipeline/evaluate-brand-fi
 import { ScrapeCompetitorsPayloadSchema } from './pipeline/scrape-competitors.js';
 import { SubmitPriceChangesPayloadSchema } from './pipeline/submit-price-changes.js';
 import { SweepBrandCataloguePayloadSchema } from './pipeline/sweep-brand-catalogue.js';
+import { SweepTrackedProductsPayloadSchema } from './pipeline/sweep-tracked-products.js';
 import { createSqliteTestDb } from './test-helpers.js';
 
 describe('job cadence (doc 07 §8, doc 08 §12, R-JOB-2)', () => {
@@ -131,6 +132,7 @@ describe('catalogue default payloads are runnable', () => {
     ImportBundles: ImportBundlesPayloadSchema,
     ScrapeCompetitors: ScrapeCompetitorsPayloadSchema,
     SweepBrandCatalogue: SweepBrandCataloguePayloadSchema,
+    SweepTrackedProducts: SweepTrackedProductsPayloadSchema,
     ResolveProductBarcodes: ResolveProductBarcodesPayloadSchema,
     EvaluateBrandFindings: EvaluateBrandFindingsPayloadSchema,
   };

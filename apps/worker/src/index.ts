@@ -105,7 +105,9 @@ import {
   resolveProductBarcodes,
   resolveSellerIdentity,
   SWEEP_BRAND_CATALOGUE_JOB,
+  SWEEP_TRACKED_PRODUCTS_JOB,
   sweepBrandCatalogue,
+  sweepTrackedProducts,
   EVALUATE_BRAND_FINDINGS_JOB,
   evaluateBrandFindings,
   submitPriceChanges,
@@ -530,6 +532,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     resetBudgetCadence,
     scrapeCompetitorsCadence,
     sweepBrandCatalogueCadence,
+    sweepTrackedProductsCadence,
     resolveProductBarcodesCadence,
     evaluateBrandFindingsCadence,
     importStockItemsCadence,
@@ -543,6 +546,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     getJobCadenceMs(appDb, RESET_BUDGET_JOB),
     getJobCadenceMs(appDb, SCRAPE_COMPETITORS_JOB),
     getJobCadenceMs(appDb, SWEEP_BRAND_CATALOGUE_JOB),
+    getJobCadenceMs(appDb, SWEEP_TRACKED_PRODUCTS_JOB),
     getJobCadenceMs(appDb, RESOLVE_PRODUCT_BARCODES_JOB),
     getJobCadenceMs(appDb, EVALUATE_BRAND_FINDINGS_JOB),
     getJobCadenceMs(appDb, IMPORT_STOCK_ITEMS_JOB),
@@ -558,6 +562,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   const resetBudgetCadenceMs = resetBudgetCadence ?? 60_000;
   const scrapeCompetitorsCadenceMs = scrapeCompetitorsCadence ?? 60_000;
   const sweepBrandCatalogueCadenceMs = sweepBrandCatalogueCadence ?? 24 * 60 * 60_000;
+  const sweepTrackedProductsCadenceMs = sweepTrackedProductsCadence ?? 60_000;
   const resolveProductBarcodesCadenceMs = resolveProductBarcodesCadence ?? 60 * 60_000;
   const evaluateBrandFindingsCadenceMs = evaluateBrandFindingsCadence ?? 6 * 60 * 60_000;
   const importStockItemsCadenceMs = importStockItemsCadence ?? 60_000;
@@ -574,6 +579,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     [RESET_BUDGET_JOB, resetBudgetCadenceMs],
     [SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs],
     [SWEEP_BRAND_CATALOGUE_JOB, sweepBrandCatalogueCadenceMs],
+    [SWEEP_TRACKED_PRODUCTS_JOB, sweepTrackedProductsCadenceMs],
     [RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs],
     [EVALUATE_BRAND_FINDINGS_JOB, evaluateBrandFindingsCadenceMs],
     [IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs],
@@ -613,6 +619,19 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   scheduler.register({ jobName: IMPORT_BUNDLES_JOB, handler: importBundles });
   scheduler.register({ jobName: SCRAPE_COMPETITORS_JOB, handler: scrapeCompetitors });
   scheduler.register({ jobName: SWEEP_BRAND_CATALOGUE_JOB, handler: sweepBrandCatalogue });
+  /**
+   * A pass walks a whole catalogue and takes hours, so its visibility timeout is measured in
+   * hours too — the runner heartbeats the lock while a handler runs, and this is only the window
+   * a genuinely dead worker's row waits before another instance may claim it (doc 07 §7.4).
+   */
+  scheduler.register({
+    jobName: SWEEP_TRACKED_PRODUCTS_JOB,
+    handler: sweepTrackedProducts,
+    // No `cadenceMs`: this job is ticked per marketplace by `everyMarketplace` below, like every
+    // other `perMarketplace` job — the scheduler's own cadence enqueues a payload-less `{}`,
+    // which this handler's schema rejects for want of a marketplace.
+    visibilityTimeoutMs: 6 * 60 * 60_000,
+  });
   // Cadenced by the scheduler itself rather than by a ticker, like `PruneHistory`: it is global
   // rather than per marketplace — a finding belongs to a *brand*, and the job enumerates brands
   // — so a per-marketplace tick would evaluate every brand once per marketplace and open each
@@ -724,6 +743,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   everyMarketplace(SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs);
   // Likewise off unless enabled, and on the same authority (api-references §1.6/§1.7).
   everyMarketplace(SWEEP_BRAND_CATALOGUE_JOB, sweepBrandCatalogueCadenceMs);
+  // A pass takes hours, so this minute is only the gap between passes: `countActiveJobsForTarget`
+  // above skips the tick while one is still walking (doc 07 §7.4).
+  everyMarketplace(SWEEP_TRACKED_PRODUCTS_JOB, sweepTrackedProductsCadenceMs);
   // Only where a product-detail source exists — `productDetailSources` is rebuilt by
   // `reloadIfConfigChanged`, so this reads the live registry rather than a boot-time snapshot.
   everyMarketplace(RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs, {}, (code) =>

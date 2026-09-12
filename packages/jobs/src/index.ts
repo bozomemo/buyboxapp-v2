@@ -88,6 +88,12 @@ export {
   type ScrapeCompetitorsPayload,
 } from './pipeline/scrape-competitors.js';
 export {
+  SWEEP_TRACKED_PRODUCTS_JOB,
+  SweepTrackedProductsPayloadSchema,
+  sweepTrackedProducts,
+  type SweepTrackedProductsPayload,
+} from './pipeline/sweep-tracked-products.js';
+export {
   RESCAN_MAX_PRODUCTS,
   RESCAN_TRACKED_PRODUCTS_JOB,
   RescanTrackedProductsPayloadSchema,
@@ -139,7 +145,8 @@ export {
   SCRAPE_FAILURE_RATE_ALERT_THRESHOLD,
   SCRAPE_FAILURE_RATE_MIN_SAMPLE,
   SCRAPE_MAX_LISTINGS_PER_RUN,
-  SCRAPE_MAX_TRACKED_PER_RUN,
+  SCRAPE_TRACKED_CHUNK,
+  SCRAPE_TRACKED_CONCURRENCY,
   SCRAPE_WARM_EVERY_N_CYCLES,
   SELLER_IDENTITY_MAX_AGE_MS,
 } from './scrape-config.js';

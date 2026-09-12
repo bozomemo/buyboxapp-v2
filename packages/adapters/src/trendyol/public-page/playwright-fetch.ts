@@ -12,14 +12,22 @@
  * source (CLAUDE.md, api-references §1.6, 2026-08-17) taken literally, rather than approximated
  * via headers on a non-browser client.
  *
- * One browser and one page are launched lazily on first use and reused for the fetcher's whole
- * lifetime — but a session that dies under a long run is replaced rather than poisoning every
- * later fetch. *Dies* means three different things and all three are handled; see `isUsable`.
+ * Pages are launched lazily on first use and reused for the fetcher's lifetime — but a session
+ * that dies under a long run is replaced rather than poisoning every later fetch. *Dies* means
+ * three different things and all three are handled; see `isUsable`.
  *
- * A page pool would add resource cost and complexity for no throughput benefit: the source's own
- * rate limiter holds the whole thing to a handful of requests a minute (doc 08 §12), so one page
- * is ample. What one page is *not*, by itself, is safe under concurrent callers — hence the
- * fetch queue below.
+ * **A pool of `PAGE_POOL_SIZE` pages, since 2026-09-12.** It used to be one page with every fetch
+ * queued behind the one before it, on the reasoning that the rate limiter was the real throughput
+ * bound and a pool would therefore buy nothing. Measurement on the operator's machine says
+ * otherwise: a Trendyol product page takes 8-15 s to reach `domcontentloaded` there, so one page
+ * delivers ~4-7 requests a minute against a configured budget of 30, and the tracked sweep spent
+ * four fifths of its allowance waiting. The pool closes that gap and **raises no limit**: the
+ * source holds one shared `RateLimiter` in front of every fetch, so the operator's configured
+ * requests-per-minute is the ceiling whether one page is asking or three.
+ *
+ * Each page is still a critical section of its own — `goto` and `page.content()` must not be
+ * interleaved on one page (see `withPage`) — and each carries its own health, so one renderer
+ * crashing costs its own in-flight product and nothing else.
  *
  * Callers must call `close()` when done (worker shutdown) or the browser process leaks.
  */
@@ -31,7 +39,7 @@ export interface PlaywrightFetcher {
   readonly close: () => Promise<void>;
 }
 
-/** The one browser and page this fetcher reuses for its lifetime. */
+/** One browser and page, reused for as long as they stay healthy; one lane of the pool. */
 export interface PlaywrightSession {
   readonly browser: Browser;
   readonly page: Page;
@@ -141,40 +149,65 @@ async function launchChromium(userAgent: string | undefined): Promise<Playwright
   return { browser, page };
 }
 
+/**
+ * How many Chromium pages serve fetches at once.
+ *
+ * Three because that is enough to spend the default rate budget (30/min) at the page load times
+ * measured on the operator's machine, and because each page is a real renderer: on a small box —
+ * the same one whose 15 s timeout had to be raised to 30 — pages cost memory that the crash
+ * history in `MAX_NAVIGATIONS_PER_PAGE` says is already the scarce resource. It is deliberately
+ * not "as many as the rate limit allows": the limiter is the ceiling, this is only how much of it
+ * can be in flight.
+ *
+ * Matched by `SCRAPE_TRACKED_CONCURRENCY` in packages/jobs — a caller asking for more concurrent
+ * products than there are pages simply queues, which is correct but buys nothing.
+ */
+const PAGE_POOL_SIZE = 3;
+
+/**
+ * One lane of the pool: a page's worth of capacity, and the session currently filling it.
+ *
+ * The session is cached per slot rather than per fetcher, so `getSession`'s replace-on-death logic
+ * is per page: a crashed renderer retires its own slot's session while the other lanes keep
+ * working, which is the property the single shared page could not have.
+ */
+interface PoolSlot {
+  session: Promise<TrackedSession> | undefined;
+}
+
 /** Launches nothing until the first `fetch()` call — a source that's never invoked never pays for a browser. */
 export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChromium): PlaywrightFetcher {
-  let session: Promise<TrackedSession> | undefined;
+  const slots: PoolSlot[] = Array.from({ length: PAGE_POOL_SIZE }, () => ({ session: undefined }));
   let disposed = false;
-  /** Tail of the fetch queue — see `serialised`. */
-  let queue: Promise<unknown> = Promise.resolve();
+
+  /** Slots nobody is using. A fetch takes one, and returns it in a `finally`. */
+  const idle: PoolSlot[] = [...slots];
+  /** Callers waiting for a slot, oldest first — so fetches are served in the order they arrived. */
+  const waiting: ((slot: PoolSlot) => void)[] = [];
 
   /**
-   * Runs `work` only once every earlier call has finished, because **one page cannot serve two
-   * fetches at once** and this fetcher is shared by everything holding its source.
+   * Runs `work` on a page nobody else is using.
    *
-   * This was previously left to the rate limiter, which serialises calls only while there is a
-   * single caller. Two concurrent runs of the same job share one source instance — two presses
-   * of "Şimdi tara" put two `SweepBrandCatalogue` runs on the same page within seconds — and the
-   * shared page then fails in two ways:
+   * The reason a slot is held for the *whole* of `work` and not just the navigation is unchanged
+   * from when this was a queue: the response body is read off the page after the fact
+   * (`page.content()` below), so a second fetch reaching that page between the `goto` and the read
+   * would hand the first caller the second caller's HTML under the first caller's status and URL.
+   * That is one brand's page recorded as another's — wrong data, silently, which is the failure
+   * this codebase spends most of its comments avoiding.
    *
-   * - the second `goto` cancels the first, which surfaces as `net::ERR_ABORTED` and reads like
-   *   a block rather than the self-inflicted race it is;
-   * - worse, a `goto` that *did* complete is followed by the other caller's navigation before
-   *   `page.content()` runs, so the first caller returns the second caller's HTML under its own
-   *   status and URL. That is a page of one brand's catalogue written as another's — wrong data,
-   *   silently, which is the failure this codebase spends most of its comments avoiding.
-   *
-   * A queue rather than a page pool: the rate limiter is the real throughput bound, so waiting
-   * costs nothing that was ever going to be spent. Failures do not poison the queue — the tail
-   * is settled either way, so one caller's error never strands the next.
+   * The slot is released in a `finally`, so a failed fetch frees its lane exactly as a successful
+   * one does; a poisoned session is retired separately, by `getSession`'s liveness check, and
+   * never strands the lane it was in.
    */
-  function serialised<T>(work: () => Promise<T>): Promise<T> {
-    const run = queue.then(work, work);
-    queue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+  async function withPage<T>(work: (slot: PoolSlot) => Promise<T>): Promise<T> {
+    const slot = idle.pop() ?? (await new Promise<PoolSlot>((resolve) => waiting.push(resolve)));
+    try {
+      return await work(slot);
+    } finally {
+      const next = waiting.shift();
+      if (next) next(slot);
+      else idle.push(slot);
+    }
   }
 
   /**
@@ -206,7 +239,7 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
   }
 
   /**
-   * Drops a session from the cache and disposes it on a detached promise.
+   * Drops a session from its slot and disposes it on a detached promise.
    *
    * Detached because a dead browser's `close()` has nothing to wait for and awaiting it would
    * only delay the replacement; a *recycled* (still healthy) one is closed the same way because
@@ -214,11 +247,11 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
    * this fetcher relies on no cookie or session state, and the caller's cache and rate limiter
    * live in the source.
    *
-   * Guarded on identity — if another path has already replaced the cached session, this one must
+   * Guarded on identity — if another path has already replaced this slot's session, this one must
    * not clear its successor.
    */
-  function discard(expected: Promise<TrackedSession>, tracked: TrackedSession): void {
-    if (session === expected) session = undefined;
+  function discard(slot: PoolSlot, expected: Promise<TrackedSession>, tracked: TrackedSession): void {
+    if (slot.session === expected) slot.session = undefined;
     void tracked.session.browser.close().catch(() => undefined);
   }
 
@@ -234,44 +267,43 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
     return tracked;
   }
 
-  function getSession(userAgent: string | undefined): Promise<TrackedSession> {
+  function getSession(slot: PoolSlot, userAgent: string | undefined): Promise<TrackedSession> {
     // `close()` is the caller saying it is finished (worker shutdown). A straggler fetch after
     // that must fail, never quietly launch a browser nobody is left to close.
     if (disposed) {
       return Promise.reject(new Error('Trendyol Playwright fetcher has been closed'));
     }
-    if (session) {
-      const existing = session;
+    const existing = slot.session;
+    if (existing) {
       return existing.then((tracked) => {
         if (isUsable(tracked)) return tracked;
         // A browser that launched successfully and *later died* is not a launch failure, and
         // caching it as one is what the check below would otherwise do.
-        discard(existing, tracked);
-        return getSession(userAgent);
+        discard(slot, existing, tracked);
+        return getSession(slot, userAgent);
       });
     }
     // Deliberate: a failed launch (e.g. missing OS-level Chromium libraries, doc 10 §1) is
-    // cached, not retried per call — every `fetch()` after that fails fast with the same error
-    // rather than re-attempting an expensive, likely-still-broken launch on each scrape. That is
-    // why the liveness check above only reaches a *resolved* session: a rejected one propagates
-    // its rejection and stays cached, exactly as before. Each failure still reaches
-    // `ICompetitorSource.fetchProductOffers`'s catch and is recorded as an ordinary
-    // `fetchFailed` (doc 07 §7: never escalates); a fresh worker restart is what clears a launch
+    // cached, not retried per call — every `fetch()` on this slot after that fails fast with the
+    // same error rather than re-attempting an expensive, likely-still-broken launch on each
+    // scrape. Per slot rather than per fetcher, so a broken install costs one failed launch per
+    // lane rather than one: a handful of attempts at startup, not one per product. Each failure
+    // still reaches `ICompetitorSource.fetchProductOffers`'s catch and is recorded as an ordinary
+    // `fetchFailed` (doc 07 §7: never escalates); a worker restart is what clears a launch
     // failure, same as every other config problem this source depends on.
-    session = launchTracked(userAgent);
-    return session;
+    const launched = launchTracked(userAgent);
+    slot.session = launched;
+    return launched;
   }
 
   return {
     fetch(url, init) {
-      // The whole navigate-then-read sequence is one critical section, not just the `goto`:
-      // the body is read off the shared page after the fact (see `page.content()` below).
-      return serialised(async () => {
+      return withPage(async (slot) => {
         const userAgent = init.headers['User-Agent'] ?? init.headers['user-agent'];
         const timeout = init.timeoutMs ?? DEFAULT_TIMEOUT_MS;
         let abortRetries = 0;
         let deadSessionRetries = 0;
-        let tracked = await getSession(userAgent);
+        let tracked = await getSession(slot, userAgent);
         let response;
         for (;;) {
           try {
@@ -292,7 +324,7 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
               tracked.crashed = true;
               if (deadSessionRetries < DEAD_SESSION_RETRIES) {
                 deadSessionRetries += 1;
-                tracked = await getSession(userAgent);
+                tracked = await getSession(slot, userAgent);
                 continue;
               }
             }
@@ -313,7 +345,7 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
         // Measured 2026-08-17: awaiting `response.text()` on a page reused for a later navigation
         // makes that *later* navigation's own `timeout` stop being enforced — it hangs indefinitely
         // instead of throwing, reproduced deterministically with a local test server. `page.content()`
-        // carries no such issue and the shared page is reused for the fetcher's whole lifetime, so
+        // carries no such issue and pages are reused for the fetcher's whole lifetime, so
         // this was a real production hazard on the very first hung/slow request after any success.
         // Doc 07 §7's inline `__envoy__SHARED_PROPS` script is a DOM text node either way, so the
         // parser sees the same content it would have from the raw response.
@@ -328,13 +360,20 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
     },
     async close() {
       disposed = true;
-      const existing = session;
-      session = undefined;
-      if (!existing) return;
-      // `catch`, not a bare await: a cached *launch failure* has no browser to close, and
-      // shutdown must not be the place that finally rethrows it.
-      const tracked = await existing.catch(() => undefined);
-      await tracked?.session.browser.close();
+      const open = slots.map((slot) => {
+        const existing = slot.session;
+        slot.session = undefined;
+        return existing;
+      });
+      await Promise.all(
+        open.map(async (existing) => {
+          if (!existing) return;
+          // `catch`, not a bare await: a cached *launch failure* has no browser to close, and
+          // shutdown must not be the place that finally rethrows it.
+          const tracked = await existing.catch(() => undefined);
+          await tracked?.session.browser.close();
+        }),
+      );
     },
   };
 }

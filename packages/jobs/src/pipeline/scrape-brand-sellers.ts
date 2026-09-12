@@ -4,10 +4,9 @@
  *
  * The gap it closes: `SweepBrandCatalogue` answers "what products exist under this brand?" and
  * writes them to `tracked_products`, but it collects no seller, price or buybox data at all —
- * that is `ScrapeCompetitors`' tracked half, which rotates the *whole* catalogue at
- * `SCRAPE_MAX_TRACKED_PER_RUN` (300) products a cycle. A newly watched brand therefore appeared
- * complete on the brand screens while every one of its products still read "hiç bakılmadı", and
- * stayed that way until the rotation reached them — most of a day on the live install, and the
+ * that is `SweepTrackedProducts` (doc 07 §7.4), which walks the whole catalogue in passes. A
+ * newly watched brand therefore appeared complete on the brand screens while every one of its
+ * products still read "hiç bakılmadı", and stayed that way until the pass reached them — and the
  * operator had no way to ask for sooner than that other than ticking fifty rows at a time
  * (`RescanTrackedProducts`, §7.1). This job is the "read this brand now, however long it takes"
  * answer, and it is the one scrape path with no per-run product ceiling worth the name.
@@ -124,8 +123,7 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
     if (page.length === 0) break;
 
     const result = await scrapeTrackedProducts(ctx, marketplaceCode, source, {
-      onlyIds: page.map((product) => product.id),
-      maxProducts: page.length,
+      ids: page.map((product) => product.id),
       // One counter across every chunk, for the reason the two halves of `ScrapeCompetitors`
       // share one: a per-chunk counter restarting at zero leaves the Jobs screen's bar jumping
       // back to the start every fifty products for the hours this run takes.

@@ -71,24 +71,46 @@ export const ALERT_STALE_AFTER_MS = 24 * 60 * 60_000;
 export const ALERT_DEFAULT_QUIET_PERIOD_MS = 6 * 60 * 60_000;
 
 /**
- * Ceiling on **tracked products** read per `ScrapeCompetitors` run, and the reason the tracked
- * half rotates the same way the listings half does.
+ * How many products one `SweepTrackedProducts` chunk reads before the pass asks the database
+ * for the next page (doc 07 §7.4).
  *
- * The tracked set was operator-curated and a few dozen rows when this job was written, so it
- * simply read all of them every cycle. `SweepBrandCatalogue` turned it into a catalogue — 4,679
- * active Trendyol rows on the live install, 2026-08-28 — and at the configured 30 requests per
- * minute that is over two hours of fetching inside an hourly job. Measured that day: the run
- * never reached its own end, the next cycle was suppressed by `countActiveJobs`, and an earlier
- * one had already died at `worker stopped responding (visibility timeout expired)` after 19
- * hours. Competitor collection had stopped while every screen reported a job in progress.
+ * There is **no per-run ceiling on the tracked sweep any more**, and that is the point of the
+ * pass model: a pass is every active product of a marketplace, walked until none is left, and
+ * then opened again. The ceiling this constant replaces (`SCRAPE_MAX_TRACKED_PER_RUN`, 300)
+ * made a full lap of the live install's 4,679 rows take a little under sixteen hours, and
+ * reported "300 items" on a screen whose reader wanted to know how far through the catalogue
+ * the system was.
  *
- * 300 per run against a 4,679-row catalogue is a full pass a little under every sixteen hours,
- * which is well inside the freshness the tracked-product reports are read at. As with
- * `SCRAPE_MAX_LISTINGS_PER_RUN`, the ceiling is only a rotation because the candidates are
- * ordered by last look — never-looked first, then oldest first. Unordered it would read the
- * same 300 rows forever and never touch the rest.
+ * Removing a ceiling is only safe because the thing it was protecting against is now structurally
+ * impossible. What killed the uncapped run on 2026-08-28 was not its length — it was that the run
+ * had no cursor, so a worker restart or a visibility-timeout requeue started the catalogue again
+ * from the top and the job never reached its own end. The pass cursor (`tracked_scrape_passes`)
+ * fixes exactly that: work already done is durable in `last_scraped_at`, so a restart resumes.
+ *
+ * The chunk is the granularity at which three things happen: the candidate query is re-run (so
+ * products a sweep added, or an operator paused, mid-pass are honoured), the pass row's counters
+ * are advanced (so progress survives a restart), and `SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT`
+ * is evaluated. A hundred at the conservative rate is a few minutes' work.
  */
-export const SCRAPE_MAX_TRACKED_PER_RUN = 300;
+export const SCRAPE_TRACKED_CHUNK = 100;
+
+/**
+ * How many tracked products a pass reads **at once**.
+ *
+ * The rate limiter has always allowed 30 requests a minute (`TRENDYOL_SCRAPE_DEFAULTS`), but the
+ * sweep could never spend that budget: the Playwright fetcher drove a single Chromium page and
+ * queued every fetch behind the one before it, so throughput was one page load — 8-15 s on the
+ * operator's machine — not one rate-limit token. Measured against the live install that is
+ * ~250-450 products an hour, which is why raising the old per-run ceiling on its own would have
+ * changed nothing at all.
+ *
+ * **This does not raise the request rate.** The ceiling is still the operator's configured
+ * `requestsPerMinute`, enforced by one shared limiter inside the source; concurrency only lets
+ * the sweep reach a budget it was already granted. Matched to `PAGE_POOL_SIZE` in
+ * `playwright-fetch.ts` — asking for more concurrent products than there are pages to serve them
+ * buys nothing but a longer queue.
+ */
+export const SCRAPE_TRACKED_CONCURRENCY = 3;
 
 /**
  * How many tracked products may fail **in a row** before the tracked half gives up on the run.
@@ -120,8 +142,8 @@ export const SCRAPE_BRAND_SELLERS_CHUNK = 50;
 /**
  * Runaway guard on one whole-brand seller scrape — **not** a rotation cap.
  *
- * Unlike `SCRAPE_MAX_TRACKED_PER_RUN`, nothing comes back for the remainder here: the operator
- * pressed a button that means "read this entire brand", and Royal Canin alone is 5,204 rows. So
+ * Unlike the cadence sweep, nothing comes back for the remainder here: the operator pressed a
+ * button that means "read this entire brand", and Royal Canin alone is 5,204 rows. So
  * the ceiling sits far above any brand measured (20,000) and exists only so that a bug which
  * stopped `last_scraped_at` advancing costs one long run rather than an endless one. Hitting it
  * is recorded as a truncated run, never silently accepted.
