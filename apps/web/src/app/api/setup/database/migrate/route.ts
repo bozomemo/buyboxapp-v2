@@ -10,6 +10,7 @@ import {
 } from '@buybox/db';
 import { LICENSE_TOKEN_SETTING_KEY } from '@buybox/shared';
 import { getAppDb, isBootstrapped, writeBootstrapEnv } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 /**
  * Carries the active licence into the database the operator is switching to.
@@ -50,10 +51,11 @@ async function carryLicenceForward(target: ReturnType<typeof createDb>): Promise
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
+  const body = await readJsonBody<{
     engine: 'sqlite' | 'postgres' | 'mysql';
     connectionString: string;
-  };
+  }>(request);
+  if (body === null) return invalidBody();
 
   // A relative SQLite path is stored verbatim and resolved by whoever opens it, whenever they
   // open it. On the packaged install that produced two live databases from one setting — the

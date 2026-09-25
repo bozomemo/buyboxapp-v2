@@ -14,6 +14,7 @@
 import { NextResponse } from 'next/server';
 import { productBarcodesRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { pageLimit } from '@/lib/pagination';
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const left = params.get('left') ?? 'trendyol';
   const right = params.get('right') ?? 'hepsiburada';
-  const limit = Math.min(Number(params.get('limit') ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, MAX_LIMIT);
+  const limit = pageLimit(params.get('limit'), DEFAULT_LIMIT, MAX_LIMIT);
 
   const appDb = getAppDb();
   const [matches, leftCoverage, rightCoverage] = await Promise.all([

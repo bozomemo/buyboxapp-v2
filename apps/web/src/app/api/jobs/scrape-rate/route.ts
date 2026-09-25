@@ -18,6 +18,7 @@ import {
 } from '@buybox/jobs';
 import { HEPSIBURADA_SCRAPE_DEFAULTS, TRENDYOL_SCRAPE_DEFAULTS } from '@buybox/adapters';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 const DEFAULTS = {
   trendyol: TRENDYOL_SCRAPE_DEFAULTS,
@@ -49,12 +50,13 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
+  const body = await readJsonBody<{
     marketplaceCode: string;
     requestsPerMinute: number;
     burst: number;
     requestTimeoutMs?: number;
-  };
+  }>(request);
+  if (body === null) return invalidBody();
   if (!MARKETPLACE_CODES.includes(body.marketplaceCode as (typeof MARKETPLACE_CODES)[number])) {
     return NextResponse.json({ error: `Bilinmeyen pazaryeri: ${body.marketplaceCode}` }, { status: 400 });
   }

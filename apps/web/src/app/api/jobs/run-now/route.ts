@@ -23,9 +23,11 @@ import {
 } from '@buybox/jobs';
 import { jobsRepo, newId } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { jobName: string; marketplaceCode?: string; payload?: unknown };
+  const body = await readJsonBody<{ jobName: string; marketplaceCode?: string; payload?: unknown }>(request);
+  if (body === null) return invalidBody();
   const entry = JOB_CATALOG.find((j) => j.jobName === body.jobName);
   if (!entry) {
     return NextResponse.json({ error: `Bilinmeyen iş: ${body.jobName}` }, { status: 400 });

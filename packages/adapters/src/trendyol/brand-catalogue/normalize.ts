@@ -25,6 +25,7 @@ import type {
   BrandCatalogueDiagnostics,
   BrandCatalogueProduct,
 } from '../../ports/brand-catalogue-source.js';
+import { displayText } from '../../display-text.js';
 
 /** Bumped whenever the extraction rules change, so sweep rows stay attributable (guide §33). */
 export const TRENDYOL_BRAND_CATALOGUE_PARSER_VERSION = '1.0.0';
@@ -114,11 +115,11 @@ function buildProduct(card: Json): BrandCatalogueProduct | null {
   return {
     productRef,
     url: asNonEmptyString(card.url),
-    name: asNonEmptyString(card.name),
-    brandName: asNonEmptyString(card.brand),
+    name: displayText(card.name),
+    brandName: displayText(card.brand),
     brandRef: readBrandRef(card),
     categoryRef: asNonEmptyString(category?.id),
-    categoryName: asNonEmptyString(category?.name),
+    categoryName: displayText(category?.name),
     ratingCount: rating.count,
     ratingAverage: rating.average,
     price: readCardPrice(card.price),

@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server';
 import { competitorSellersRepo, jobsRepo, newId, sellerIdentitiesRepo } from '@buybox/db';
 import { DEFAULT_MAX_ATTEMPTS, RESOLVE_SELLER_IDENTITY_JOB } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 interface SellerKeyParams {
   readonly marketplaceCode: string;
@@ -62,7 +63,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as Partial<SellerKeyParams>;
+  const body = await readJsonBody<Partial<SellerKeyParams>>(request);
+  if (body === null) return invalidBody();
   if (!body.marketplaceCode || !body.sellerRef) {
     return NextResponse.json({ error: 'Pazaryeri ve satıcı kimliği gerekli.' }, { status: 400 });
   }
@@ -74,6 +76,19 @@ export async function POST(request: Request) {
     body.sellerRef,
   );
   if (!seller) return NextResponse.json({ error: 'Satıcı bulunamadı.' }, { status: 404 });
+
+  // One resolution per seller at a time, like every other on-demand job: a second press used to
+  // queue a second job and read the same pages twice (2026-09-25).
+  const pending = await jobsRepo.listActiveJobsCovering(appDb, RESOLVE_SELLER_IDENTITY_JOB, {
+    marketplaceCode: seller.marketplaceCode,
+    sellerRef: seller.sellerRef,
+  });
+  if (pending.length > 0) {
+    return NextResponse.json(
+      { error: 'Bu satıcı için bir kimlik sorgusu zaten kuyrukta veya çalışıyor.', jobId: pending[0]!.id },
+      { status: 409 },
+    );
+  }
 
   const nowMs = Date.now();
   const jobId = newId();

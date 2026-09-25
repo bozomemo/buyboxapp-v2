@@ -11,10 +11,13 @@
  * parsing a link is offline (`resolveProductLink`; a Hepsiburada `-pm-` link is looked up among the tracked rows, never fetched), and the sweep reads the page on its own cadence.
  */
 import { NextResponse } from 'next/server';
-import { isValidUnitMultiplier } from '@buybox/core';
+import { BRAND_UNIT_MULTIPLIER_MAX, isValidUnitMultiplier } from '@buybox/core';
 import { brandProductsRepo, configRepo, newId, trackedProductsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { resolveProductLink } from '@/lib/server/product-link';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+
+const MULTIPLIER_ERROR = `Adet çarpanı 1 ile ${BRAND_UNIT_MULTIPLIER_MAX} arasında bir tam sayı olmalı.`;
 
 interface LinkBody {
   /** One of the two: an already tracked card, or a link to one. */
@@ -33,18 +36,16 @@ const LINK_FAILURES: Record<string, { status: number; message: string }> = {
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const body = (await request.json()) as LinkBody;
+  const body = await readJsonBody<LinkBody>(request);
+  if (body === null) return invalidBody();
   const appDb = getAppDb();
 
   const unitMultiplier = body.unitMultiplier;
   if (unitMultiplier === undefined) {
     return NextResponse.json({ error: 'Adet çarpanı gerekli.' }, { status: 400 });
   }
-  if (!isValidUnitMultiplier(unitMultiplier)) {
-    return NextResponse.json(
-      { error: 'Adet çarpanı 1 veya daha büyük bir tam sayı olmalı.' },
-      { status: 400 },
-    );
+  if (!isValidUnitMultiplier(unitMultiplier) || unitMultiplier > BRAND_UNIT_MULTIPLIER_MAX) {
+    return NextResponse.json({ error: MULTIPLIER_ERROR }, { status: 400 });
   }
 
   let trackedProductId: string | undefined = body.trackedProductId?.trim() || undefined;
@@ -131,17 +132,15 @@ interface CardPatchBody {
 
 /** Changes one link: its multiplier, or which card is the product's primary on its marketplace. */
 export async function PATCH(request: Request) {
-  const body = (await request.json()) as CardPatchBody;
+  const body = await readJsonBody<CardPatchBody>(request);
+  if (body === null) return invalidBody();
   const cardId = (body.cardId ?? '').trim();
   if (cardId === '') return NextResponse.json({ error: 'Kart bağı gerekli.' }, { status: 400 });
   const appDb = getAppDb();
 
   if (body.unitMultiplier !== undefined) {
-    if (!isValidUnitMultiplier(body.unitMultiplier)) {
-      return NextResponse.json(
-        { error: 'Adet çarpanı 1 veya daha büyük bir tam sayı olmalı.' },
-        { status: 400 },
-      );
+    if (!isValidUnitMultiplier(body.unitMultiplier) || body.unitMultiplier > BRAND_UNIT_MULTIPLIER_MAX) {
+      return NextResponse.json({ error: MULTIPLIER_ERROR }, { status: 400 });
     }
     if (!(await brandProductsRepo.getBrandProductCard(appDb, cardId))) {
       return NextResponse.json({ error: 'Kart bağı bulunamadı.' }, { status: 404 });

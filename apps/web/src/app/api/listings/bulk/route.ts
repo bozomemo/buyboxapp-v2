@@ -8,6 +8,7 @@ import { listingsRepo, repricingRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { z } from 'zod';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonObject } from '@/lib/server/request-body';
 
 const BulkActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('enableAutomation'), ids: z.array(z.string()) }),
@@ -26,7 +27,14 @@ const BulkActionSchema = z.discriminatedUnion('action', [
 ]);
 
 export async function POST(request: Request) {
-  const body = BulkActionSchema.parse(await request.json());
+  // `safeParse`: a malformed request is the caller's mistake, answered 400 — `parse` threw it into a 500.
+  const raw = await readJsonObject(request);
+  if (raw === null) return invalidBody();
+  const checked = BulkActionSchema.safeParse(raw);
+  if (!checked.success) {
+    return NextResponse.json({ error: 'Geçersiz toplu işlem isteği.' }, { status: 400 });
+  }
+  const body = checked.data;
   const appDb = getAppDb();
   const nowMs = Date.now();
 

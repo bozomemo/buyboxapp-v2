@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server';
 import { TRENDYOL_SCRAPE_DEFAULTS } from '@buybox/adapters';
 import { trackedProductsRepo, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 /**
  * The deep per-product scrape's rate, which is what the suggestion actually saves — one page
@@ -66,7 +67,8 @@ export async function GET(request: Request) {
  * them through one request. The client pages if it needs to.
  */
 export async function POST(request: Request) {
-  const body = (await request.json()) as { watchedBrandId?: string; limit?: number };
+  const body = await readJsonBody<{ watchedBrandId?: string; limit?: number }>(request);
+  if (body === null) return invalidBody();
   const watchedBrandId = (body.watchedBrandId ?? '').trim();
   if (!watchedBrandId) return NextResponse.json({ error: 'Marka seçin.' }, { status: 400 });
 

@@ -4,9 +4,11 @@ import { mapFeeSettings } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
 import { formatMoneyValue } from '@/lib/format';
 import { feesPayloadToRow } from '../to-row';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { fees: unknown; sampleCost: string; sampleVatRate: number };
+  const body = await readJsonBody<{ fees: unknown; sampleCost: string; sampleVatRate: number }>(request);
+  if (body === null) return invalidBody();
   try {
     const row = feesPayloadToRow(body.fees, 'preview', Date.now());
     const fees = mapFeeSettings(row);

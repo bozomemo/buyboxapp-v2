@@ -9,6 +9,7 @@ import {
 import { marketplaceCredentialsKey } from '@buybox/shared';
 import { mergeCredentials, missingTrendyolCredentials } from '@/lib/credential-merge';
 import { getSecretStore } from '@/lib/server/secrets';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 /**
  * The credentials this test should actually use: what the operator just typed, over what is
@@ -25,10 +26,11 @@ async function resolveCredentials(
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
+  const body = await readJsonBody<{
     marketplaceCode: 'trendyol' | 'hepsiburada';
     credentials: Record<string, string>;
-  };
+  }>(request);
+  if (body === null) return invalidBody();
 
   try {
     // Inside the try: reading the secret store can fail (no key, unreadable file), and the

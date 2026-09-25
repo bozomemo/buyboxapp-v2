@@ -186,7 +186,18 @@ export function evaluateBand(
  * - `referenceBelowMin` / `referenceAboveMax` — PSF outside the manager's own band. Unusual but
  *   coherent (a PSF nobody is expected to sell at), so it is flagged rather than refused.
  */
-export type BrandPriceError = 'nonPositive' | 'minAboveUpper';
+/**
+ * Ceilings on what a person types, **added 2026-09-25**. Far above any real pet-food price or pack
+ * size, they exist because nothing stopped `99999999999999999999` ₺ (a 500 from the database
+ * layer's 20-digit sortable encoding) or a ×1,000,000 card (a card PSF of 1.9 billion ₺).
+ * `BRAND_UNIT_MULTIPLIER_MAX` is checked where a multiplier is *entered* only —
+ * `isValidUnitMultiplier` stays the arithmetic's guard, so a value stored before this ceiling
+ * still renders.
+ */
+export const BRAND_PRICE_MAX_KURUS = 100_000_000_00n; // 100 million ₺
+export const BRAND_UNIT_MULTIPLIER_MAX = 1000;
+
+export type BrandPriceError = 'nonPositive' | 'minAboveUpper' | 'tooLarge';
 export type BrandPriceWarning = 'referenceBelowMin' | 'referenceAboveMax';
 
 export interface BrandPriceCheck {
@@ -199,6 +210,7 @@ export function checkBrandProductPrices(prices: BrandProductPrices): BrandPriceC
   const warnings: BrandPriceWarning[] = [];
   const amounts = [prices.referencePrice, prices.minPrice, prices.maxPrice];
   if (amounts.some((amount) => amount !== null && amount <= 0n)) errors.push('nonPositive');
+  if (amounts.some((amount) => amount !== null && amount > BRAND_PRICE_MAX_KURUS)) errors.push('tooLarge');
   const band = effectiveBand(prices);
   if (band.lower !== null && band.lower > band.upper) errors.push('minAboveUpper');
   if (prices.minPrice !== null && prices.referencePrice < prices.minPrice) warnings.push('referenceBelowMin');

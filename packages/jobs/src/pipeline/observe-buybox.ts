@@ -5,7 +5,7 @@
  */
 import { getAdapter } from '../adapter-registry.js';
 import type { MarketplaceCode } from '@buybox/core';
-import { circuitBreakerRepo, competitionRepo, listingsRepo, newId, repricingRepo } from '@buybox/db';
+import { circuitBreakerRepo, competitionRepo, eventsRepo, listingsRepo, newId, repricingRepo } from '@buybox/db';
 import { z } from 'zod';
 import {
   CIRCUIT_BREAKER_FAILURE_THRESHOLD,
@@ -165,7 +165,9 @@ export async function observeBuybox(ctx: JobContext): Promise<JobResult> {
 
   let itemsOk = 0;
   let itemsFailed = 0;
+  const answered = new Set<string>();
   for (const observation of observations) {
+    answered.add(observation.marketplaceListingId);
     const listingId = listingByMarketplaceId.get(observation.marketplaceListingId);
     if (!listingId) {
       itemsFailed += 1;
@@ -183,6 +185,25 @@ export async function observeBuybox(ctx: JobContext): Promise<JobResult> {
       source: 'api',
     });
     itemsOk += 1;
+  }
+
+  // Asked about, not answered. Trendyol leaves a barcode out of the response rather than saying
+  // why — measured 2026-09-25, 17 of 47, nearly all out of stock or archived — and until then
+  // they were neither ok nor failed nor logged, so a run read "30 of 47" with nothing to explain
+  // the rest. Recorded, not failed: the call succeeded; the marketplace had nothing to say.
+  const unanswered = dueListingIds.filter((listingId) => !answered.has(listingId));
+  if (unanswered.length > 0) {
+    await eventsRepo.logEvent(ctx.appDb, {
+      id: newId(),
+      at: nowMs,
+      level: 'info',
+      marketplaceCode,
+      listingId: null,
+      jobRunId: ctx.correlationId,
+      code: 'BuyboxNotAnswered',
+      message: `${unanswered.length} ilan için pazaryeri buybox bilgisi döndürmedi (çoğunlukla stoksuz veya arşivli ilanlar).`,
+      context: JSON.stringify({ count: unanswered.length, sample: unanswered.slice(0, 20) }),
+    });
   }
 
   return { itemsTotal: dueListingIds.length, itemsOk, itemsFailed };

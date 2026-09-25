@@ -308,7 +308,7 @@ Structure actually consumed:
 | `$.product.id`, `$.product.productCode` | Product page identity |
 | `$.product.merchantListing.merchant` | The **buybox seller's identity** — `id`, `name`, `sellerScore.value` |
 | `$.product.merchantListing.winnerVariant` | The buybox seller's **offer** — `listingId`, `barcode`, `price`, `quantity`, stock flags |
-| `$.product.merchantListing.promotions[]` | Buybox seller's promotions |
+| `$.product.merchantListing.promotions[]` | Buybox seller's promotions. `hasPromotion` counts only those whose `promotionDiscountType` is not `"Cargo"` (shipping) — **changed 2026-09-25**, when 11,044 of 11,048 archived observations read true because nearly every offer carries a free-shipping campaign. Names are still stored as display text |
 | `$.product.merchantListing.otherMerchants[]` | Competing sellers; each carries `variants[]` with its own `listingId` and `price` |
 
 Four things the shape gets wrong if assumed rather than read:

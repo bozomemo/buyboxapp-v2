@@ -28,6 +28,7 @@ import { Money } from '@buybox/shared';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { feesPayloadToRow } from '@/app/api/setup/fees/to-row';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 async function loadState(appDb: ReturnType<typeof getAppDb>, listingId: string): Promise<RepricingState> {
   const row = await repricingRepo.getRepricingState(appDb, listingId);
@@ -79,7 +80,8 @@ async function loadState(appDb: ReturnType<typeof getAppDb>, listingId: string):
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { fees?: unknown; policy?: unknown };
+  const body = await readJsonBody<{ fees?: unknown; policy?: unknown }>(request);
+  if (body === null) return invalidBody();
   const marketplaceCode = (body.fees as { marketplaceCode?: string } | undefined)?.marketplaceCode as
     MarketplaceCode | undefined;
   if (!marketplaceCode) {

@@ -3,6 +3,7 @@ import { configRepo } from '@buybox/db';
 import { marketplaceCredentialsKey } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { getSecretStore } from '@/lib/server/secrets';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 const TITLES: Record<string, string> = { trendyol: 'Trendyol', hepsiburada: 'Hepsiburada' };
 
@@ -22,11 +23,12 @@ function deriveMerchantRef(code: string, credentials: Record<string, string>): s
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
+  const body = await readJsonBody<{
     code: 'trendyol' | 'hepsiburada';
     enabled: boolean;
     credentials: Record<string, string>;
-  };
+  }>(request);
+  if (body === null) return invalidBody();
 
   const appDb = getAppDb();
   await configRepo.upsertMarketplace(appDb, {

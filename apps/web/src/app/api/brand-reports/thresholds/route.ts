@@ -16,6 +16,7 @@ import {
   readAuditThresholds,
 } from '@/lib/server/audit-thresholds';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonObject } from '@/lib/server/request-body';
 
 export async function GET() {
   const { thresholds, isDefault } = await readAuditThresholds();
@@ -23,7 +24,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const parsed = parseAuditThresholds(await request.json());
+  const body = await readJsonObject(request);
+  if (body === null) return invalidBody();
+  const parsed = parseAuditThresholds(body);
   if (!parsed.ok) return NextResponse.json({ error: parsed.message }, { status: 400 });
 
   await configRepo.setAppSetting(

@@ -33,6 +33,11 @@ import type {
   BrandCatalogueDiagnostics,
   BrandCatalogueProduct,
 } from '../../ports/brand-catalogue-source.js';
+import { displayText, dropRepeatedBrand } from '../../display-text.js';
+
+function nameWithoutRepeatedBrand(name: string | null, brand: string | null): string | null {
+  return name === null ? null : dropRepeatedBrand(name, brand);
+}
 
 /** Bumped whenever the extraction rules change, so sweep rows stay attributable. */
 export const HEPSIBURADA_BRAND_CATALOGUE_PARSER_VERSION = '1.0.0';
@@ -100,7 +105,7 @@ function buildVariantRows(card: Json): { rows: BrandCatalogueProduct[]; dropped:
 
   const rating = readRating(card);
   const category = asObject(card.mainCategory);
-  const brandName = asNonEmptyString(card.brand);
+  const brandName = displayText(card.brand);
 
   for (const entry of asArray(card.variantList)) {
     const variant = asObject(entry);
@@ -117,14 +122,14 @@ function buildVariantRows(card: Json): { rows: BrandCatalogueProduct[]; dropped:
     rows.push({
       productRef,
       url: asNonEmptyString(variant.url),
-      name: asNonEmptyString(variant.name),
+      name: nameWithoutRepeatedBrand(displayText(variant.name), brandName),
       brandName,
       // Hepsiburada does not put a brand id on a card. The product page carries one — the
       // brand's slug, `brandId: "whiskas"` — but deriving it from the card's display name would
       // be exactly the guess this parser is forbidden to make.
       brandRef: null,
       categoryRef: asNonEmptyString(category?.id),
-      categoryName: asNonEmptyString(category?.name),
+      categoryName: displayText(category?.name),
       ratingCount: rating.count,
       ratingAverage: rating.average,
       price: readCardPrice(listing?.priceInfo),

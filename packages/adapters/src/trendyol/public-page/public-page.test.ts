@@ -124,10 +124,16 @@ describe('offer normalisation (guide §5–§24)', () => {
   });
 
   it('§19, §26: promotion presence is structural; the Turkish name is data, never a selector', () => {
-    expect(offers[0]!.hasPromotion).toBe(true);
+    // Shipping only (`promotionDiscountType: "Cargo"`) is not a price promotion; its name is
+    // still kept as display data.
+    expect(offers[0]!.hasPromotion).toBe(false);
     expect(offers[0]!.promotionText).toBe('Kargo Bedava');
     expect(offers[1]!.hasPromotion).toBe(false);
     expect(offers[1]!.promotionText).toBeNull();
+    // A basket discount is a price promotion.
+    const basket = offers.find((o) => o.sellerRef === '992001' && o.promotionText !== null);
+    expect(basket?.hasPromotion).toBe(true);
+    expect(basket?.promotionText).toBe('Sepette %5 indirim');
   });
 
   it('§29: no merchant tax/contact metadata leaks into the normalised offer', () => {

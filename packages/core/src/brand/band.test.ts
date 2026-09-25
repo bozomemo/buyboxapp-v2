@@ -102,6 +102,12 @@ describe('checkBrandProductPrices', () => {
     { name: 'zero PSF', input: prices({ referencePrice: 0n }), errors: ['nonPositive'], warnings: [] },
     { name: 'negative min', input: prices({ minPrice: -1n }), errors: ['nonPositive'], warnings: [] },
     {
+      name: 'a PSF past the 100 million ₺ ceiling',
+      input: prices({ referencePrice: 100_000_000_01n }),
+      errors: ['tooLarge'],
+      warnings: [],
+    },
+    {
       // No max: the upper bound is PSF, and a min above it means nothing could ever be in band.
       name: 'min above PSF with no max',
       input: prices({ minPrice: 100_01n }),

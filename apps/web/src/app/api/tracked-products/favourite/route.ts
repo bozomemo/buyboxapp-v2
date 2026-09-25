@@ -9,9 +9,11 @@
 import { NextResponse } from 'next/server';
 import { trackedProductsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { id?: string; isFavourite?: boolean };
+  const body = await readJsonBody<{ id?: string; isFavourite?: boolean }>(request);
+  if (body === null) return invalidBody();
   const id = (body.id ?? '').trim();
   if (id === '') return NextResponse.json({ error: 'Ürün gerekli.' }, { status: 400 });
 

@@ -16,6 +16,7 @@ import {
 } from '@buybox/shared';
 import { getAppDb, isBootstrapped, removeBootstrapEnv, writeBootstrapEnv } from '@/lib/server/db';
 import { invalidateLicenseCache, readLicenseStatus } from '@/lib/server/license';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { token?: unknown };
+  const body = await readJsonBody<{ token?: unknown }>(request);
+  if (body === null) return invalidBody();
   const token = typeof body.token === 'string' ? body.token.trim() : '';
 
   // Verified before it is stored, so a typo can never replace a working licence with a broken

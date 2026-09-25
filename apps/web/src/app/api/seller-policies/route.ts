@@ -23,6 +23,7 @@ import {
   watchedBrandsRepo,
 } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -159,7 +160,8 @@ interface UpsertBody {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as UpsertBody;
+  const body = await readJsonBody<UpsertBody>(request);
+  if (body === null) return invalidBody();
   const appDb = getAppDb();
 
   const brands = await watchedBrandsRepo.listWatchedBrands(appDb);

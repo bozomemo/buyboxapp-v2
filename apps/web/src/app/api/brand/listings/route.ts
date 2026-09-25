@@ -21,6 +21,7 @@ import { brandProductsRepo, trackedProductsRepo } from '@buybox/db';
 import { marketSnapshot } from '@/lib/market-stats';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { pageLimit, pageOffset } from '@/lib/pagination';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -33,13 +34,6 @@ type Sort = (typeof SORTS)[number];
 function optionalString(params: URLSearchParams, key: string): string | undefined {
   const raw = params.get(key);
   return raw === null || raw.trim() === '' ? undefined : raw.trim();
-}
-
-function optionalInt(params: URLSearchParams, key: string): number | undefined {
-  const raw = params.get(key);
-  if (raw === null || raw.trim() === '') return undefined;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : undefined;
 }
 
 function csvEscape(v: unknown): string {
@@ -100,10 +94,8 @@ export async function GET(request: Request) {
   const rawSort = params.get('sort');
   const sort: Sort = SORTS.includes(rawSort as Sort) ? (rawSort as Sort) : 'label';
   const isCsv = params.get('format') === 'csv';
-  const limit = isCsv
-    ? CSV_EXPORT_LIMIT
-    : Math.min(optionalInt(params, 'limit') ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
-  const offset = isCsv ? 0 : Math.max(optionalInt(params, 'offset') ?? 0, 0);
+  const limit = isCsv ? CSV_EXPORT_LIMIT : pageLimit(params.get('limit'), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const offset = isCsv ? 0 : pageOffset(params.get('offset'));
 
   const { rows, total } = await trackedProductsRepo.queryTrackedProducts(appDb, {
     listedOnly: true,
@@ -242,7 +234,7 @@ export async function GET(request: Request) {
       );
     }
     // BOM so Excel on Windows reads the Turkish characters as UTF-8 rather than guessing.
-    return new NextResponse('﻿' + lines.join('\n'), {
+    return new NextResponse('\uFEFF' + lines.join('\n'), {
       headers: {
         'Content-Type': 'text/csv;charset=utf-8',
         'Content-Disposition': 'attachment; filename="ilanlar.csv"',

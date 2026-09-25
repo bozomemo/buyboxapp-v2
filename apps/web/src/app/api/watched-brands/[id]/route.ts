@@ -7,16 +7,19 @@
 import { NextResponse } from 'next/server';
 import { watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { watchedBrandSelectorProblem } from '@/lib/watched-brand-selector';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const body = (await request.json()) as {
+  const body = await readJsonBody<{
     label?: string;
     brandRef?: string | null;
     searchTerm?: string | null;
     isActive?: boolean;
     isOwnBrand?: boolean;
-  };
+  }>(request);
+  if (body === null) return invalidBody();
 
   const appDb = getAppDb();
   const existing = await watchedBrandsRepo.getWatchedBrand(appDb, id);
@@ -30,6 +33,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     body.searchTerm === undefined ? existing.searchTerm : (body.searchTerm ?? '').trim() || null;
 
   if (!label) return NextResponse.json({ error: 'Marka adı gerekli.' }, { status: 400 });
+  const selectorProblem = watchedBrandSelectorProblem(existing.marketplaceCode, brandRef, searchTerm);
+  if (selectorProblem) return NextResponse.json({ error: selectorProblem }, { status: 400 });
 
   try {
     await watchedBrandsRepo.updateWatchedBrand(appDb, id, {

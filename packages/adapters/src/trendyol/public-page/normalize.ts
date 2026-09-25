@@ -15,6 +15,7 @@ import type {
   CompetitorProductFacts,
   ScrapeDiagnostics,
 } from '../../ports/competitor-source.js';
+import { displayText } from '../../display-text.js';
 
 /** Bumped whenever the extraction rules change, so `scrape_runs` rows stay attributable (guide §33). */
 export const TRENDYOL_PARSER_VERSION = '1.0.0';
@@ -120,8 +121,18 @@ function readPromotions(node: unknown): PromotionSummary {
   const names = promotions
     .map((promotion) => asNonEmptyString(asObject(promotion)?.name))
     .filter((name): name is string => name !== null);
-  return { hasPromotion: true, promotionText: names.length > 0 ? names.join(' · ') : null };
+  // A free-shipping campaign is not a price promotion. Nearly every offer carries one — 11,044 of
+  // 11,048 archived observations read `hasPromotion` true on 2026-09-25, which made the flag
+  // say nothing. Classified by `promotionDiscountType`, guide §19's own example; a promotion
+  // whose type is not stated still counts, since it cannot be shown to be shipping only.
+  const hasPromotion = promotions.some(
+    (promotion) => asNonEmptyString(asObject(promotion)?.promotionDiscountType) !== CARGO_PROMOTION,
+  );
+  return { hasPromotion, promotionText: names.length > 0 ? names.join(' · ') : null };
 }
+
+/** guide §19: the structured type of a shipping-only promotion. */
+const CARGO_PROMOTION = 'Cargo';
 
 /**
  * guide §17: availability has several independent fields and must not all be derived from
@@ -155,7 +166,7 @@ function buildOffer(source: OfferSource, rank: number): CompetitorOffer {
     rank,
     // guide §8: the merchant id is the identity. The seller name is data, never a key.
     sellerRef: asNonEmptyString(source.merchant.id),
-    sellerName: asNonEmptyString(source.merchant.name),
+    sellerName: displayText(source.merchant.name),
     sellerRating: readSellerScore(source.merchant.sellerScore),
     // guide §10: listing id and merchant id are different things and are never interchangeable.
     listingRef: asNonEmptyString(variant.listingId),

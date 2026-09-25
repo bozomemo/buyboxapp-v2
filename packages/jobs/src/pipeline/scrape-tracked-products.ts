@@ -385,8 +385,13 @@ export async function scrapeTrackedProducts(
         return;
       }
 
-      itemsFailed += 1;
-      // A `gone` product does **not** count towards the halt below. That counter asks "has the
+      // A `gone` product is an answer, not a failed read: the marketplace said the page no longer
+      // exists, and the product is deactivated below. Counted as failed until 2026-09-25, a pass
+      // over a catalogue with withdrawn products showed "14 okunamadı" of 60 on the Jobs screen
+      // and fed the failure-rate alert with pages that had been read perfectly well.
+      if (gone) itemsOk += 1;
+      else itemsFailed += 1;
+      // A `gone` product does **not** count towards the halt below either. That counter asks "has the
       // source stopped answering", and a marketplace that answered 404 has answered — halting a
       // run over a handful of withdrawn products would strand every product behind them.
       consecutiveFailures = gone ? 0 : consecutiveFailures + 1;

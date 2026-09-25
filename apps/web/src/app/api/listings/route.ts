@@ -10,6 +10,7 @@ import { mapFeeSettings } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { pageLimit, pageOffset } from '@/lib/pagination';
 
 type RepricingPhase = listingsRepo.RepricingPhase;
 
@@ -147,7 +148,7 @@ export async function GET(request: Request) {
     }
     // BOM so Excel on Windows reads the Turkish characters as UTF-8 rather than guessing the
     // system codepage (mirrors apps/web/src/lib/csv.ts's client-side downloadCsv).
-    return new NextResponse('﻿' + lines.join('\n'), {
+    return new NextResponse('\uFEFF' + lines.join('\n'), {
       headers: {
         'Content-Type': 'text/csv;charset=utf-8',
         'Content-Disposition': 'attachment; filename="ilanlar.csv"',
@@ -155,8 +156,8 @@ export async function GET(request: Request) {
     });
   }
 
-  const limit = Math.min(200, Math.max(1, Number(params.get('limit') ?? '50')));
-  const offset = Math.max(0, Number(params.get('offset') ?? '0'));
+  const limit = pageLimit(params.get('limit'), 50, 200);
+  const offset = pageOffset(params.get('offset'));
 
   const options: listingsRepo.ListingQueryOptions = { ...filterOptions, limit, offset };
 

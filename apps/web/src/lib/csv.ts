@@ -7,7 +7,7 @@
  * screen that had this before. Lifted unchanged out of `competitors-client.tsx`, which had its
  * own copy before every other grid grew one too.
  *
- * `﻿` (byte-order mark) is prepended so Excel on Windows — the operator's own
+ * `\uFEFF` (byte-order mark) is prepended so Excel on Windows — the operator's own
  * environment — detects UTF-8 and renders Turkish characters (İ, ş, ğ, ü, ö, ç) correctly
  * instead of guessing the system codepage and mangling them.
  */
@@ -23,7 +23,8 @@ export function toCsv(rows: readonly Record<string, unknown>[]): string {
 
 /** Builds the CSV and starts the browser download — the click handler every export button calls. */
 export function downloadCsv(filename: string, rows: readonly Record<string, unknown>[]): void {
-  const csv = '﻿' + toCsv(rows);
+  // Written as an escape: an invisible character in source is a trap (and a lint error in a comment).
+  const csv = '\uFEFF' + toCsv(rows);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

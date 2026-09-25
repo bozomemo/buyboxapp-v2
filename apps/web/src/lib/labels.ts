@@ -235,6 +235,7 @@ export const IMPORT_ERROR_LABELS: Record<string, string> = {
   unparseableMinPrice: 'Min fiyat okunamadı. Örnek: 999,90',
   unparseableMaxPrice: 'Max fiyat okunamadı. Örnek: 1.499,90',
   nonPositiveAmount: 'Fiyatlar sıfırdan büyük olmalı.',
+  amountTooLarge: 'Fiyat çok büyük — en fazla 100.000.000 ₺ girilebilir.',
   minAboveUpper: 'Min fiyat üst sınırın üstünde — hiçbir fiyat aralıkta kalmaz.',
   noLink: 'En az bir link gerekli: Trendyol ya da Hepsiburada.',
   linkUnrecognised: 'Link tanınamadı. Ürün sayfasının linkini yapıştırın.',

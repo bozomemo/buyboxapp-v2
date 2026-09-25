@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server';
 import { brandReportsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { pageLimit } from '@/lib/pagination';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
   const marketplaceCode = params.get('marketplaceCode');
   const sellerRef = params.get('sellerRef');
   const trackedProductId = params.get('trackedProductId') ?? undefined;
-  const limit = Math.min(Number(params.get('limit') ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, MAX_LIMIT);
+  const limit = pageLimit(params.get('limit'), DEFAULT_LIMIT, MAX_LIMIT);
 
   // A seller is a marketplace *and* a ref; half of one is not an identity, and querying on the
   // ref alone would hand back another marketplace's company under this one's name.

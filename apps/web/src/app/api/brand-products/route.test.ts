@@ -352,3 +352,19 @@ describe('POST /api/brand-products/[id]/cards — links as this app shows them (
     expect(unknown.body.error).toContain('ürün ailesini');
   });
 });
+
+describe('ceilings on what is typed (2026-09-25)', () => {
+  it('answers an absurd price with 400, not a 500 from the database layer', async () => {
+    const res = await addProduct({ name: 'Mama', referencePrice: '99999999999999999999' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('çok büyük');
+  });
+
+  it('refuses a card multiplier above 1000', async () => {
+    const product = (await addProduct({ name: 'Ürün', referencePrice: '10,00' })).body.id as string;
+    const card = await addCard('42');
+    const res = await linkCard(post('http://x', { trackedProductId: card, unitMultiplier: 1_000_000 }), params(product));
+    expect(res.status).toBe(400);
+    expect((await linkCard(post('http://x', { trackedProductId: card, unitMultiplier: 1000 }), params(product))).status).toBe(200);
+  });
+});

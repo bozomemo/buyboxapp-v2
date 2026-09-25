@@ -19,9 +19,11 @@ import { NextResponse } from 'next/server';
 import { buildAdapterRegistry, IMPORT_STOCK_ITEMS_JOB, importStockItems, systemClock } from '@buybox/jobs';
 import { jobsRepo, newId } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { sourceCode: string; sourceConfig: unknown };
+  const body = await readJsonBody<{ sourceCode: string; sourceConfig: unknown }>(request);
+  if (body === null) return invalidBody();
   const appDb = getAppDb();
   const runId = newId();
   const startedAt = systemClock.nowMs();

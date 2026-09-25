@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { configRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 interface PolicyPayload {
   code: string;
@@ -25,7 +26,8 @@ interface PolicyPayload {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as PolicyPayload;
+  const body = await readJsonBody<PolicyPayload>(request);
+  if (body === null) return invalidBody();
   const appDb = getAppDb();
 
   await configRepo.upsertRepricingPolicy(appDb, {

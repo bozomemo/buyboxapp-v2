@@ -1,4 +1,4 @@
-import { circuitBreakerRepo, competitionRepo, repricingRepo } from '@buybox/db';
+import { circuitBreakerRepo, competitionRepo, eventsRepo, repricingRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { describe, expect, it } from 'vitest';
 import { FakeClock } from '../clock.js';
@@ -7,6 +7,31 @@ import { createFakeAdapter, createSqliteTestDb, NOW, seedListing, seedMarketplac
 import { OBSERVE_BUYBOX_JOB, observeBuybox } from './observe-buybox.js';
 
 describe('observeBuybox (handler)', () => {
+  it('records the listings the marketplace left out of its answer (2026-09-25)', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await seedMarketplace(appDb);
+      await seedListing(appDb);
+      const adapter = createFakeAdapter({ fetchBuyboxObservations: async () => [] });
+      const scheduler = new Scheduler({
+        appDb,
+        clock: new FakeClock(NOW),
+        adapters: new Map([['trendyol', adapter]]),
+        instanceId: 'test',
+      });
+      scheduler.register({ jobName: OBSERVE_BUYBOX_JOB, handler: observeBuybox });
+      await scheduler.enqueueNow(OBSERVE_BUYBOX_JOB, JSON.stringify({ marketplaceCode: 'trendyol' }));
+      await scheduler.tick();
+
+      const events = await eventsRepo.listRecentEvents(appDb, 50);
+      const notAnswered = events.find((event) => event.code === 'BuyboxNotAnswered');
+      expect(notAnswered).toBeDefined();
+      expect(JSON.parse(notAnswered!.context ?? '{}')).toMatchObject({ count: 1, sample: ['barcode-1'] });
+    } finally {
+      cleanup();
+    }
+  });
+
   it('polls a due (never-observed, therefore Hot) listing and records the observation', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {

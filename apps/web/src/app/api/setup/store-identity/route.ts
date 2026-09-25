@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { displayName: string };
+  const body = await readJsonBody<{ displayName: string }>(request);
+  if (body === null) return invalidBody();
   if (!body.displayName?.trim()) {
     return NextResponse.json({ error: 'Görünen ad boş olamaz.' }, { status: 400 });
   }

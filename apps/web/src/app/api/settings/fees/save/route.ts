@@ -7,9 +7,11 @@ import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { feesPayloadToRow } from '@/app/api/setup/fees/to-row';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { marketplaceCode: string };
+  const body = await readJsonBody<{ marketplaceCode: string }>(request);
+  if (body === null) return invalidBody();
   if (!body.marketplaceCode) {
     return NextResponse.json({ error: 'marketplaceCode gerekli.' }, { status: 400 });
   }

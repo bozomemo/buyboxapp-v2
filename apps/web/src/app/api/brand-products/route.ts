@@ -22,6 +22,8 @@ import {
 import { brandProductsRepo, newId } from '@buybox/db';
 import { parseTurkishDecimal } from '@/lib/reference-price-import';
 import { getAppDb } from '@/lib/server/db';
+import { pageLimit, pageOffset } from '@/lib/pagination';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -38,6 +40,7 @@ export interface BrandProductBody {
 
 const PRICE_ERRORS: Record<BrandPriceError, string> = {
   nonPositive: 'Fiyatlar sıfırdan büyük olmalı.',
+  tooLarge: 'Fiyat çok büyük — en fazla 100.000.000 ₺ girilebilir.',
   minAboveUpper: 'Min fiyat, üst sınırın üstünde olamaz — hiçbir fiyat aralıkta kalmaz.',
 };
 
@@ -140,8 +143,8 @@ export function serialiseBrandProduct(row: brandProductsRepo.BrandProductListRow
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
-  const limit = Math.min(Number(params.get('limit')) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
-  const offset = Math.max(Number(params.get('offset')) || 0, 0);
+  const limit = pageLimit(params.get('limit'), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const offset = pageOffset(params.get('offset'));
   const { rows, total } = await brandProductsRepo.queryBrandProducts(getAppDb(), {
     text: params.get('text') ?? undefined,
     unlinkedOnly: params.get('unlinkedOnly') === 'true',
@@ -152,7 +155,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as BrandProductBody;
+  const body = await readJsonBody<BrandProductBody>(request);
+  if (body === null) return invalidBody();
   const parsed = parseBrandProductBody(body);
   if (typeof parsed === 'string') return NextResponse.json({ error: parsed }, { status: 400 });
 

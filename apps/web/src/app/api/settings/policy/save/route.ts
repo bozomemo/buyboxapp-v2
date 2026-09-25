@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 interface PolicyPayload {
   code: string;
@@ -32,7 +33,8 @@ interface PolicyPayload {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as PolicyPayload;
+  const body = await readJsonBody<PolicyPayload>(request);
+  if (body === null) return invalidBody();
   if (!body.code) return NextResponse.json({ error: 'code gerekli.' }, { status: 400 });
   const appDb = getAppDb();
   const nowMs = Date.now();

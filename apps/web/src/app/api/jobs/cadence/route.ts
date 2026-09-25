@@ -16,6 +16,7 @@ import {
   MIN_JOB_CADENCE_MS,
 } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 /** Jobs with no cadence at all (`ImportBundles`) are not cadence-eligible — no source port exists yet (doc 07 §1.1). */
 const CADENCE_ELIGIBLE = JOB_CATALOG.filter((entry) => entry.cadenceMs !== null);
@@ -39,7 +40,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { jobName: string; cadenceMs: number };
+  const body = await readJsonBody<{ jobName: string; cadenceMs: number }>(request);
+  if (body === null) return invalidBody();
   const entry = CADENCE_ELIGIBLE.find((e) => e.jobName === body.jobName);
   if (!entry) {
     return NextResponse.json({ error: `Sıklık ayarlanamayan iş: ${body.jobName}` }, { status: 400 });

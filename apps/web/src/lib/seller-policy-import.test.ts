@@ -42,7 +42,7 @@ describe('parseSellerPolicyCsv', () => {
   });
 
   it('strips the BOM our own export writes', () => {
-    const rows = rowsOf(parseSellerPolicyCsv('﻿Pazaryeri,Satıcı Kodu\ntrendyol,1\n', 'blocked'));
+    const rows = rowsOf(parseSellerPolicyCsv('\uFEFFPazaryeri,Satıcı Kodu\ntrendyol,1\n', 'blocked'));
     expect(rows[0]!.marketplaceCode).toBe('trendyol');
   });
 

@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { ExcelProductSource } from '@buybox/adapters';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { sourceCode: string; sourceConfig: unknown };
+  const body = await readJsonBody<{ sourceCode: string; sourceConfig: unknown }>(request);
+  if (body === null) return invalidBody();
   if (body.sourceCode !== 'excel') {
     return NextResponse.json({ ok: false, error: 'Bu kaynak için önizleme desteklenmiyor.' });
   }

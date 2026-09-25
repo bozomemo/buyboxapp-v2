@@ -78,6 +78,7 @@ export type ImportErrorCode =
   | 'unparseableMinPrice'
   | 'unparseableMaxPrice'
   | 'nonPositiveAmount'
+  | 'amountTooLarge'
   | 'minAboveUpper'
   | 'noLink'
   | 'linkUnrecognised'
@@ -318,6 +319,7 @@ function planRow(
   if (referencePrice !== null) {
     const check = checkBrandProductPrices({ referencePrice, minPrice, maxPrice });
     if (check.errors.includes('nonPositive')) errors.push({ code: 'nonPositiveAmount' });
+    if (check.errors.includes('tooLarge')) errors.push({ code: 'amountTooLarge' });
     if (check.errors.includes('minAboveUpper')) errors.push({ code: 'minAboveUpper', column: 'minPrice' });
     warnings.push(...check.warnings);
   }

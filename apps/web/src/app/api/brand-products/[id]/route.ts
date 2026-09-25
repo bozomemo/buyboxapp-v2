@@ -10,6 +10,7 @@ import { scaleToCard } from '@buybox/core';
 import { brandProductsRepo } from '@buybox/db';
 import { parseBrandProductBody, type BrandProductBody } from '../route';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 /** Kuruş → the `1249.90` form `parseTurkishDecimal` reads back exactly. */
 function formatKurus(kurus: bigint): string {
@@ -78,7 +79,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!existing) {
     return NextResponse.json({ error: 'Ürün bulunamadı.' }, { status: 404 });
   }
-  const body = (await request.json()) as BrandProductBody;
+  const body = await readJsonBody<BrandProductBody>(request);
+  if (body === null) return invalidBody();
   // A field the request leaves out keeps its stored value; only a field sent empty is cleared.
   // The edit form sends no `referencePriceSource`, and reading "absent" as "clear" erased the
   // PSF's source on every save from the screen (measured 2026-09-25).

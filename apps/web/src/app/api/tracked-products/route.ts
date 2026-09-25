@@ -19,6 +19,8 @@ import { exportHeaders, exportRow, resolveExportColumns } from '@/lib/tracked-pr
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { resolveProductLink } from '@/lib/server/product-link';
+import { pageLimit, pageOffset } from '@/lib/pagination';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -98,8 +100,8 @@ export async function GET(request: Request) {
 
   const rawSort = params.get('sort');
   const sort: Sort = SORTS.includes(rawSort as Sort) ? (rawSort as Sort) : 'label';
-  const limit = Math.min(optionalInt(params, 'limit') ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
-  const offset = Math.max(optionalInt(params, 'offset') ?? 0, 0);
+  const limit = pageLimit(params.get('limit'), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const offset = pageOffset(params.get('offset'));
 
   const periodDays = Math.max(1, optionalInt(params, 'periodDays') ?? DEFAULT_PERIOD_DAYS);
   const untilMs = Date.now();
@@ -273,7 +275,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { link?: string; label?: string };
+  const body = await readJsonBody<{ link?: string; label?: string }>(request);
+  if (body === null) return invalidBody();
   const link = (body.link ?? '').trim();
   if (!link) {
     return NextResponse.json({ error: 'Ürün linki gerekli.' }, { status: 400 });
@@ -331,7 +334,8 @@ export async function DELETE(request: Request) {
  * reversible. The row and its history stay exactly where they were.
  */
 export async function PATCH(request: Request) {
-  const body = (await request.json()) as { ids?: string[]; isActive?: boolean };
+  const body = await readJsonBody<{ ids?: string[]; isActive?: boolean }>(request);
+  if (body === null) return invalidBody();
   const ids = Array.isArray(body.ids) ? body.ids.filter((id) => typeof id === 'string') : [];
   if (ids.length === 0) return NextResponse.json({ error: 'En az bir ürün seçin.' }, { status: 400 });
   if (typeof body.isActive !== 'boolean') {

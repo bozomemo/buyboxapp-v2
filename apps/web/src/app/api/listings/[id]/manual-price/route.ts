@@ -10,10 +10,12 @@ import { NextResponse } from 'next/server';
 import { configRepo, listingsRepo, newId, repricingRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const body = (await request.json()) as { newPrice: string };
+  const body = await readJsonBody<{ newPrice: string }>(request);
+  if (body === null) return invalidBody();
   const appDb = getAppDb();
   const nowMs = Date.now();
 

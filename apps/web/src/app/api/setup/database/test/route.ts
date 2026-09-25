@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createDb } from '@buybox/db';
 import { sql } from 'drizzle-orm';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
+  const body = await readJsonBody<{
     engine: 'sqlite' | 'postgres' | 'mysql';
     connectionString: string;
-  };
+  }>(request);
+  if (body === null) return invalidBody();
   let appDb;
   try {
     appDb = createDb(body.connectionString, body.engine);

@@ -162,7 +162,8 @@ describe('scrapeTrackedProducts', () => {
 
     const result = await readAll(source);
 
-    expect(result).toMatchObject({ itemsOk: 0, itemsFailed: 1 });
+    // An answer, not a failed read (2026-09-25): counted ok, and the product deactivated.
+    expect(result).toMatchObject({ itemsOk: 1, itemsFailed: 0 });
     expect(await isActive('t-gone')).toBe(false);
     expect(await eventCodes()).toContain('TrackedProductGone');
     // The failure row is still written, and the observation history is untouched: a report over
@@ -231,7 +232,7 @@ describe('scrapeTrackedProducts', () => {
     const result = await readAll(source);
 
     expect(calls).toHaveLength(ids.length);
-    expect(result.itemsOk).toBe(1);
+    expect(result).toMatchObject({ itemsOk: ids.length, itemsFailed: 0 });
     expect(await eventCodes()).not.toContain('TrackedProductsScrapeHalted');
   });
 

@@ -11,8 +11,10 @@
  * `packages/db/src/schema/sqlite.ts`.
  */
 import { NextResponse } from 'next/server';
-import { newId, watchedBrandsRepo } from '@buybox/db';
+import { configRepo, newId, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { watchedBrandSelectorProblem } from '@/lib/watched-brand-selector';
 
 /**
  * How dominant a brand id must be among a brand's swept products before it is offered as a
@@ -83,7 +85,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
+  const body = await readJsonBody<{
     groupId?: string;
     marketplaceCode?: string;
     label?: string;
@@ -91,7 +93,8 @@ export async function POST(request: Request) {
     searchTerm?: string;
     /** `false` marks a competitor's brand: swept and priced, but never audited. */
     isOwnBrand?: boolean;
-  };
+  }>(request);
+  if (body === null) return invalidBody();
 
   const groupId = (body.groupId ?? '').trim();
   const marketplaceCode = (body.marketplaceCode ?? '').trim();
@@ -102,14 +105,23 @@ export async function POST(request: Request) {
   if (!groupId) return NextResponse.json({ error: 'Marka grubu seçin.' }, { status: 400 });
   if (!marketplaceCode) return NextResponse.json({ error: 'Pazaryeri seçin.' }, { status: 400 });
   if (!label) return NextResponse.json({ error: 'Marka adı gerekli.' }, { status: 400 });
-  if (!brandRef && !searchTerm) {
+  const selectorProblem = watchedBrandSelectorProblem(marketplaceCode, brandRef || null, searchTerm || null);
+  if (selectorProblem) return NextResponse.json({ error: selectorProblem }, { status: 400 });
+
+  const appDb = getAppDb();
+  // Checked by name rather than left to the foreign keys: a missing group or an unknown
+  // marketplace used to fail the insert and be reported as "a brand with this name already
+  // exists", which sent the operator looking for a duplicate that was not there.
+  if (!(await configRepo.getMarketplace(appDb, marketplaceCode))) {
     return NextResponse.json(
-      { error: 'Marka id’si veya arama terimi gerekli — en az biri olmadan tarama yapılamaz.' },
+      { error: `${marketplaceCode} bu kurulumda tanımlı değil. Ayarlar > Pazaryerleri.` },
       { status: 400 },
     );
   }
-
-  const appDb = getAppDb();
+  const groups = await watchedBrandsRepo.listWatchedBrandGroups(appDb);
+  if (!groups.some((group) => group.id === groupId)) {
+    return NextResponse.json({ error: 'Marka grubu bulunamadı.' }, { status: 400 });
+  }
   const nowMs = Date.now();
   const id = newId();
   try {

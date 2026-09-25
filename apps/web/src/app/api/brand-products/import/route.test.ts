@@ -66,7 +66,7 @@ const tyLink = (id: string) => `https://www.trendyol.com/marka/urun-p-${id}`;
 
 function csvFile(...lines: string[]): { fileBase64: string; fileName: string } {
   return {
-    fileBase64: Buffer.from(['﻿' + HEADER, ...lines].join('\r\n'), 'utf8').toString('base64'),
+    fileBase64: Buffer.from(['\uFEFF' + HEADER, ...lines].join('\r\n'), 'utf8').toString('base64'),
     fileName: 'liste.csv',
   };
 }

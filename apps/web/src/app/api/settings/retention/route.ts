@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { DEFAULT_RETENTION_WINDOWS, type RetentionWindows } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 const SETTING_KEY = 'retention.windows';
 
@@ -20,7 +21,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as RetentionWindows;
+  const body = await readJsonBody<RetentionWindows>(request);
+  if (body === null) return invalidBody();
   const appDb = getAppDb();
   await configRepo.setAppSetting(
     appDb,

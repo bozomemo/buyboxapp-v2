@@ -12,6 +12,7 @@
  * copy that may be stale.
  */
 import type { ProductDetail, ProductDetailDiagnostics } from '../../ports/product-detail-source.js';
+import { displayText } from '../../display-text.js';
 
 export const HEPSIBURADA_PRODUCT_DETAIL_PARSER_VERSION = '1.0.0';
 
@@ -76,7 +77,7 @@ function readDeepestCategory(value: unknown): { ref: string | null; name: string
     }
   }
   if (!deepest) return { ref: null, name: null };
-  return { ref: asNonEmptyString(deepest.categoryId), name: asNonEmptyString(deepest.categoryName) };
+  return { ref: asNonEmptyString(deepest.categoryId), name: displayText(deepest.categoryName) };
 }
 
 /**
@@ -138,8 +139,8 @@ export function normalizeHepsiburadaProductDetail(
       productRef,
       parentProductRef: asNonEmptyString(product.productId),
       barcode: asNonEmptyString(product.barcode),
-      name: asNonEmptyString(product.name),
-      brandName: asNonEmptyString(product.brand),
+      name: displayText(product.name),
+      brandName: displayText(product.brand),
       brandRef: asNonEmptyString(product.brandId),
       categoryRef: category.ref,
       categoryName: category.name,

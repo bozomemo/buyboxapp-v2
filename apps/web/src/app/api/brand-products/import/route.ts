@@ -13,6 +13,7 @@ import { NextResponse } from 'next/server';
 import { TEMPLATE_HEADERS } from '@/lib/brand-product-import';
 import { applyImport, planImport } from '@/lib/server/brand-import';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 interface ImportBody {
   readonly fileBase64?: string;
@@ -38,7 +39,8 @@ function warningRows(planned: Awaited<ReturnType<typeof planImport>>) {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as ImportBody;
+  const body = await readJsonBody<ImportBody>(request);
+  if (body === null) return invalidBody();
   if (!body.fileBase64) return NextResponse.json({ error: 'Dosya gerekli.' }, { status: 400 });
 
   const appDb = getAppDb();
@@ -94,7 +96,7 @@ export function GET() {
     '',
     '8690000000001',
   ];
-  const csv = '﻿' + [TEMPLATE_HEADERS.join(';'), example.join(';')].join('\r\n') + '\r\n';
+  const csv = '\uFEFF' + [TEMPLATE_HEADERS.join(';'), example.join(';')].join('\r\n') + '\r\n';
   return new NextResponse(csv, {
     headers: {
       'Content-Type': 'text/csv;charset=utf-8',

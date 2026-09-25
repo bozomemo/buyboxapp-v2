@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server';
 import { newId, sellerPoliciesRepo, watchedBrandsRepo } from '@buybox/db';
 import { parseSellerPolicyCsv, type ImportedStatus } from '@/lib/seller-policy-import';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 interface ImportBody {
   readonly watchedBrandId: string;
@@ -26,7 +27,8 @@ interface ImportBody {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as ImportBody;
+  const body = await readJsonBody<ImportBody>(request);
+  if (body === null) return invalidBody();
   const appDb = getAppDb();
 
   if (body.defaultStatus !== 'authorised' && body.defaultStatus !== 'blocked') {

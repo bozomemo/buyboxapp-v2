@@ -9,9 +9,11 @@
 import { NextResponse } from 'next/server';
 import { newId, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { name?: string; note?: string };
+  const body = await readJsonBody<{ name?: string; note?: string }>(request);
+  if (body === null) return invalidBody();
   const name = (body.name ?? '').trim();
   if (!name) return NextResponse.json({ error: 'Grup adı gerekli.' }, { status: 400 });
 
@@ -28,7 +30,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const body = (await request.json()) as { id?: string; name?: string; note?: string };
+  const body = await readJsonBody<{ id?: string; name?: string; note?: string }>(request);
+  if (body === null) return invalidBody();
   const id = (body.id ?? '').trim();
   const name = (body.name ?? '').trim();
   if (!id) return NextResponse.json({ error: 'id gerekli.' }, { status: 400 });

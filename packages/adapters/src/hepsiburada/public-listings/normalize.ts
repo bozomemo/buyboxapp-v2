@@ -16,6 +16,7 @@
  */
 import { Money } from '@buybox/shared';
 import type { CompetitorOffer, ScrapeDiagnostics } from '../../ports/competitor-source.js';
+import { displayText } from '../../display-text.js';
 
 /** Bumped whenever the extraction rules change, so `scrape_runs` rows stay attributable. */
 export const HEPSIBURADA_PARSER_VERSION = '1.0.0';
@@ -115,7 +116,7 @@ function buildOffer(listing: Json, rank: number): CompetitorOffer {
     rank,
     // The GUID is the identity. `merchantName` is display data and is never a key.
     sellerRef: asNonEmptyString(listing.merchantId) ?? asNonEmptyString(merchantInfo?.id),
-    sellerName: asNonEmptyString(listing.merchantName) ?? asNonEmptyString(merchantInfo?.name),
+    sellerName: displayText(listing.merchantName) ?? displayText(merchantInfo?.name),
     // 0–10, same scale as Trendyol's seller score. Absent is `null`, never `-1` (doc 10 §3).
     sellerRating: asFiniteNumber(ratingSummary?.lifetimeRating),
     // The seller's own offer id, distinct from the merchant id — the two are never interchangeable.

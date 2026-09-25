@@ -27,9 +27,11 @@ import { NextResponse } from 'next/server';
 import { RESCAN_MAX_PRODUCTS, RESCAN_TRACKED_PRODUCTS_JOB } from '@buybox/jobs';
 import { jobsRepo, newId, trackedProductsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { ids?: unknown };
+  const body = await readJsonBody<{ ids?: unknown }>(request);
+  if (body === null) return invalidBody();
   const ids = Array.isArray(body.ids)
     ? [...new Set(body.ids.filter((id): id is string => typeof id === 'string' && id.length > 0))]
     : [];

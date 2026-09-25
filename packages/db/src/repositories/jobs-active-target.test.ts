@@ -15,7 +15,6 @@ import type { AppDatabase } from '../client.js';
 import * as jobsRepo from './jobs.js';
 
 const trendyol = JSON.stringify({ marketplaceCode: 'trendyol' });
-const hepsiburada = JSON.stringify({ marketplaceCode: 'hepsiburada' });
 
 async function enqueue(
   appDb: AppDatabase,

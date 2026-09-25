@@ -108,6 +108,8 @@ export {
   effectiveBand,
   evaluateBand,
   isValidUnitMultiplier,
+  BRAND_PRICE_MAX_KURUS,
+  BRAND_UNIT_MULTIPLIER_MAX,
   scaleToCard,
   unitPriceForDisplay,
 } from './brand/band.js';
