@@ -119,6 +119,18 @@ export class JobRunner {
     // moved on (reclaimed, or already finished) is a harmless no-op. `unref()` so a lingering
     // interval never keeps the process alive on its own — `finally` clears it regardless.
     const visibilityTimeoutMs = def.visibilityTimeoutMs ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
+    // Brought down to *this* job's own timeout at once. `claimNextJob` has to stamp one timeout
+    // before it knows which job it will claim, so it uses the longest any job asks for — six
+    // hours — and the first heartbeat only fires at half this job's timeout. A worker stopped
+    // inside that window left a thirty-second job locked for six hours, invisible to "Şimdi
+    // çalıştır" and to its own cadence (measured 2026-09-25).
+    await jobsRepo.renewJobLock(
+      this.appDb,
+      claimed.id,
+      claimed.lockedBy ?? '',
+      this.clock.nowMs(),
+      visibilityTimeoutMs,
+    );
     const heartbeat = setInterval(() => {
       void jobsRepo.renewJobLock(
         this.appDb,

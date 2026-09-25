@@ -83,6 +83,24 @@ export function MarketplacesClient() {
   // Which form is mid-request, and which action — so "Kaydet" and "Bağlantıyı Test Et" can each
   // say what they are doing rather than only going dim (doc 15 §3.2 "Busy").
   const [busy, setBusy] = useState<{ code: string; action: 'test' | 'save' } | undefined>();
+  // With the seller module off (doc 17 §1.4) a marketplace is only switched on for the brand
+  // module's public-page scraping: there is no store to authenticate as and no price to send, so
+  // neither the credential form nor the price-sending confirmation applies. Assumed on until
+  // `/api/modules` answers, so a seller install never flickers its form away.
+  const [sellerModule, setSellerModule] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/modules')
+      .then((r) => (r.ok ? (r.json() as Promise<{ modules: { seller: boolean } }>) : undefined))
+      .then((data) => {
+        if (!cancelled && data) setSellerModule(data.modules.seller);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -126,7 +144,7 @@ export function MarketplacesClient() {
   // here is a checkbox, and `ConfirmButton` only wraps a `<button>` — routing this through it
   // would mean replacing the checkbox with a button-styled toggle, a UI change beyond this nit.
   function setEnabled(form: Form, next: boolean) {
-    if (next && !form.enabled) {
+    if (next && !form.enabled && sellerModule) {
       const confirmed = window.confirm(
         `${TITLES[form.code]} etkinleştirilsin mi? Bu, arka plan işlerinin bu pazaryerinde gerçek fiyat göndermeye başlamasına izin verir.`,
       );
@@ -215,69 +233,88 @@ export function MarketplacesClient() {
             </div>
           }
         >
-          <div className="rounded border border-(--color-border) p-4">
-            <div className="flex flex-col gap-3">
-              {/* Derived, not entered. It used to be a text field, which made it a second copy of
+          {!sellerModule ? (
+            <div className="rounded border border-(--color-border) p-4">
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-(--color-muted)">
+                  Marka izleme bu pazaryerinin herkese açık ürün sayfalarını okur; API bilgisi gerekmez.
+                  Kapalı bir pazaryerindeki markalar taranmaz.
+                </p>
+                <div>
+                  <Button type="button" onClick={() => void save(form)} disabled={busy?.code === form.code}>
+                    {busy?.code === form.code && busy.action === 'save' ? 'Kaydediliyor…' : 'Kaydet'}
+                  </Button>
+                </div>
+                {form.saved && <StatusBanner ok message="Kaydedildi." />}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded border border-(--color-border) p-4">
+              <div className="flex flex-col gap-3">
+                {/* Derived, not entered. It used to be a text field, which made it a second copy of
                   the seller id already in the credentials — free to drift from it, and silent when
                   it did: every own-offer filter simply matched nothing and our own store was
                   reported as our biggest competitor. */}
-              <Field label="Satıcı Referansı (merchantRef)">
-                <div className="rounded border border-(--color-border) bg-(--color-surface-2) px-2 py-1.5 text-sm">
-                  {form.merchantRef || '— henüz belirlenmedi —'}
-                </div>
-              </Field>
-              <p className="text-xs text-(--color-muted)">
-                Bu alan elle girilmez: kimlik bilgilerindeki satıcı kodundan (Trendyol <code>sellerId</code>,
-                Hepsiburada <code>merchantId</code>) otomatik belirlenir ve her ürün içe aktarımında
-                doğrulanır. Kendi teklifimizi rakiplerinkinden ayıran tek veri budur; yanlış olduğunda hata
-                vermez, sadece kendi mağazamızı rakip sayardık.
-              </p>
-              <p className="text-xs text-(--color-muted)">
-                Kimlik bilgileri güvenlik nedeniyle görüntülenmez — yalnızca doldurduğunuz alanlar kaydedilir,
-                boş bırakılanlar mevcut değeri korur.
-              </p>
-              <Field label="Ortam (Environment)">
-                <Select
-                  options={ENV_OPTIONS[form.code]}
-                  value={form.credentials.environment ?? 'production'}
-                  onChange={(e) =>
-                    update(form.code, { credentials: { ...form.credentials, environment: e.target.value } })
-                  }
-                />
-              </Field>
-              {CREDENTIAL_FIELDS[form.code].map((f) => (
-                <Field key={f.key} label={f.label}>
-                  <TextInput
-                    type={
-                      f.key.toLowerCase().includes('secret') || f.key === 'password' ? 'password' : 'text'
-                    }
-                    value={form.credentials[f.key] ?? ''}
+                <Field label="Satıcı Referansı (merchantRef)">
+                  <div className="rounded border border-(--color-border) bg-(--color-surface-2) px-2 py-1.5 text-sm">
+                    {form.merchantRef || '— henüz belirlenmedi —'}
+                  </div>
+                </Field>
+                <p className="text-xs text-(--color-muted)">
+                  Bu alan elle girilmez: kimlik bilgilerindeki satıcı kodundan (Trendyol <code>sellerId</code>
+                  , Hepsiburada <code>merchantId</code>) otomatik belirlenir ve her ürün içe aktarımında
+                  doğrulanır. Kendi teklifimizi rakiplerinkinden ayıran tek veri budur; yanlış olduğunda hata
+                  vermez, sadece kendi mağazamızı rakip sayardık.
+                </p>
+                <p className="text-xs text-(--color-muted)">
+                  Kimlik bilgileri güvenlik nedeniyle görüntülenmez — yalnızca doldurduğunuz alanlar
+                  kaydedilir, boş bırakılanlar mevcut değeri korur.
+                </p>
+                <Field label="Ortam (Environment)">
+                  <Select
+                    options={ENV_OPTIONS[form.code]}
+                    value={form.credentials.environment ?? 'production'}
                     onChange={(e) =>
-                      update(form.code, { credentials: { ...form.credentials, [f.key]: e.target.value } })
+                      update(form.code, { credentials: { ...form.credentials, environment: e.target.value } })
                     }
-                    placeholder="değiştirmek için doldurun"
                   />
                 </Field>
-              ))}
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() => void test(form)}
-                  disabled={busy?.code === form.code}
-                >
-                  {busy?.code === form.code && busy.action === 'test'
-                    ? 'Test ediliyor…'
-                    : 'Bağlantıyı Test Et'}
-                </Button>
-                <Button type="button" onClick={() => void save(form)} disabled={busy?.code === form.code}>
-                  {busy?.code === form.code && busy.action === 'save' ? 'Kaydediliyor…' : 'Kaydet'}
-                </Button>
+                {CREDENTIAL_FIELDS[form.code].map((f) => (
+                  <Field key={f.key} label={f.label}>
+                    <TextInput
+                      type={
+                        f.key.toLowerCase().includes('secret') || f.key === 'password' ? 'password' : 'text'
+                      }
+                      value={form.credentials[f.key] ?? ''}
+                      onChange={(e) =>
+                        update(form.code, { credentials: { ...form.credentials, [f.key]: e.target.value } })
+                      }
+                      placeholder="değiştirmek için doldurun"
+                    />
+                  </Field>
+                ))}
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => void test(form)}
+                    disabled={busy?.code === form.code}
+                  >
+                    {busy?.code === form.code && busy.action === 'test'
+                      ? 'Test ediliyor…'
+                      : 'Bağlantıyı Test Et'}
+                  </Button>
+                  <Button type="button" onClick={() => void save(form)} disabled={busy?.code === form.code}>
+                    {busy?.code === form.code && busy.action === 'save' ? 'Kaydediliyor…' : 'Kaydet'}
+                  </Button>
+                </div>
+                {form.testResult && (
+                  <StatusBanner ok={form.testResult.ok} message={form.testResult.message} />
+                )}
+                {form.saved && <StatusBanner ok message="Kaydedildi." />}
               </div>
-              {form.testResult && <StatusBanner ok={form.testResult.ok} message={form.testResult.message} />}
-              {form.saved && <StatusBanner ok message="Kaydedildi." />}
             </div>
-          </div>
+          )}
         </Section>
       ))}
     </div>

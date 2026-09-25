@@ -14,6 +14,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { isLicensedToRun } from '@buybox/shared';
 import { getCachedLicenseStatus } from '@/lib/server/license';
+import { getCachedModules } from '@/lib/server/modules';
+import { moduleForPath } from '@/lib/module-routes';
 
 /**
  * The licence screen itself and its API must stay reachable while unlicensed — otherwise the
@@ -37,7 +39,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (isLicensedToRun(await getCachedLicenseStatus())) return NextResponse.next();
+  if (isLicensedToRun(await getCachedLicenseStatus())) return moduleGate(request);
 
   // An API caller gets a status code it can act on rather than an HTML redirect it would parse
   // as a successful response. 402 Payment Required is the one status that means exactly this.
@@ -49,6 +51,35 @@ export async function proxy(request: NextRequest) {
   }
 
   return NextResponse.redirect(new URL('/license', request.url));
+}
+
+/**
+ * The module gate (doc 17 §1.3), applied only once the licence gate has passed.
+ *
+ * A disabled module's API routes answer **409, reads included** — a page gone while its API still
+ * writes would be the worst half-open state. Its screens redirect to the modules settings page,
+ * which names what was disabled and is where it is switched back on; a redirect to the dashboard
+ * would leave the operator wondering where the screen went.
+ */
+async function moduleGate(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const module = moduleForPath(pathname);
+  if (module === null) return NextResponse.next();
+  if ((await getCachedModules())[module]) return NextResponse.next();
+
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json(
+      {
+        error: 'module_disabled',
+        module,
+        message: 'Bu özellik kapalı bir modüle ait. Ayarlar > Modüller ekranından açılabilir.',
+      },
+      { status: 409 },
+    );
+  }
+  const target = new URL('/settings/modules', request.url);
+  target.searchParams.set('disabled', module);
+  return NextResponse.redirect(target);
 }
 
 export const config = {

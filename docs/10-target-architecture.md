@@ -274,6 +274,11 @@ configuration, **testing each step before accepting it**.
      engine (SQLite / PostgreSQL / MySQL) · connection details
      → Test connection → Run migrations → Verify schema version
 
+1b. Purpose (doc 17 §1.4) — after the database, which is where the choice is stored
+     Pazaryeri satıcısıyım · Marka ürün yöneticisiyim — at least one
+     → the steps below that belong to a disabled module are skipped; a brand-only
+       install sees 1, 1b, 3 (on/off switches only, no credentials) and 8
+
 2. Store identity
      store display name · per-marketplace merchant/seller id
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
+import { enableBrandScanJobsAtSetup } from '@buybox/jobs';
 import { isKillSwitchEngaged, SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 
@@ -32,5 +33,13 @@ export async function POST() {
     );
   }
 
-  return NextResponse.json({ ok: true, systemPaused: isKillSwitchEngaged(pause?.value ?? 'false') });
+  // A brand install scans from the start (doc 17 §1.4): choosing the brand module in the wizard
+  // is the explicit decision its public-page jobs otherwise wait for on the Jobs screen.
+  const enabledJobs = await enableBrandScanJobsAtSetup(appDb, now);
+
+  return NextResponse.json({
+    ok: true,
+    enabledJobs,
+    systemPaused: isKillSwitchEngaged(pause?.value ?? 'false'),
+  });
 }

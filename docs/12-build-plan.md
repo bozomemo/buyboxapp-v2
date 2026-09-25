@@ -355,6 +355,48 @@ Deferred to when observed listings approach ~500: the daily rollup table and its
 
 ---
 
+## Phase 11 — Brand product management
+
+> Listed ahead of Phase 9 for the same reason as Phase 10: this document is ordered by execution.
+
+Specification: **doc 17** (decisions of 2026-09-19); tables in doc 05 (brand module tables), jobs
+in doc 07 §7.5–§7.6, constants in doc 08 §14.
+
+| # | Task | Status |
+|---|------|--------|
+| 11.1 | **Modules.** `modules.*` settings (absent = enabled, no migration); dispatch-time job gating incl. the `ConfirmSubmissions` drain and the price switch engaged on seller-off; route/API gating in the proxy; public-page sources built without seller credentials; nav groups by module + header view switch; dashboard and Jobs screen module-aware; wizard purpose step; `/settings/modules` | ✅ 2026-09-19 |
+| 11.2 | **Brand products.** `brand_products`, `brand_product_cards`, `tracked_products.is_favourite`, all three dialects (migration 0022); repositories with the one-primary-per-marketplace and one-product-per-card rules (`brand-products.ts`); effective upper bound, card scaling and price checks in `packages/core` (`brand/band.ts`); PSF migration from `tracked_products.reference_price` (SQL inside 0022) and repointing `belowReferencePrice` (PSF × multiplier) + rotation weight (`listed`) + the tracked-products grid and coverage; the old reference-price import removed | ✅ 2026-09-19 |
+| 11.3 | **Excel import.** Link shapes recorded in api-references §1.6/§2.11 (measured against the live catalogue); `.xlsx` (exceljs, already a dependency) + `.csv` reading, cells as text; marketplace-aware link parser; row matching, planned purely in `packages/core` (`brand/import-plan.ts`); preview → confirm → error file; template download | ✅ 2026-09-20 |
+| 11.4 | **Screens.** `/brand/products` (grid, row edit, import) ✅, `/brand/products/[id]` (cards, multiplier, primary, barcode suggestions) ✅, _Ürünüme bağla_ + favourite star on `/tracked-products` ✅, `/brand/listings` (İlanlar: linked + favourite cards, buybox, per-unit band, live verdict, export) ✅ 2026-09-20 — **the per-unit seller view on the product detail still waits for 11.6** | 🟡 |
+| 11.5 | **Listings lane.** `tracked_scrape_passes.scope`; `SweepListedProducts`; both progress bars on `/jobs` | ✅ 2026-09-20 |
+| 11.6 | **Band alarm.** Pure `evaluateBand` in `packages/core` (table-driven tests: min unset, max defaulting to PSF, multiplier scaling, `finalPrice` fallback, boundary equality) ✅ 2026-09-20; İlanlar status column ✅ 2026-09-20 — **remaining:** `band_violations` reconcile inside the shared read, `/brand/alerts`, dashboard count with staleness | 🟡 |
+| 11.7 | **Notifications.** `NotificationChannel` port; webhook + SMTP adapters; SMS port and settings (adapter after provider choice); `notification_deliveries`; `DeliverNotifications`; quiet period; `/settings/notifications` with test send | ⬜ |
+| 11.8 | Retention rows in `PruneHistory`; drop the old `tracked_products.reference_price*` columns once no reader remains | ⬜ |
+
+Order: 11.1 → 11.2 → 11.3 → 11.4 → 11.5 → 11.6 → 11.7 → 11.8. **11.4 was partly built before
+11.3** (2026-09-20): its screens need 11.2's model and nothing of 11.3's, and without them a
+brand product could only be created by writing to the database. 11.3 followed the same day and
+added the import panel to the screen, so the order caught up with itself. 11.6 needs 11.2's links and is
+only useful with 11.5's cadence; 11.7 needs 11.6's violations.
+
+**İlanlar landed with 11.5 rather than after 11.6** (2026-09-20, at the product owner's ask: the
+favourites and the Excel-linked cards had nowhere to be seen). The screen only ever needed 11.2's
+links and 11.5's lane, so deferring it to 11.6 had been the wrong call. Its status column brought
+`evaluateBand` forward out of 11.6 — a pure function with no state behind it, which is why it
+could move without rework: 11.6 now reconciles `band_violations` using the same judge the screen
+already shows, rather than a second one. What genuinely needed the state table — _açık ihlal
+süresi_, `/brand/alerts`, the dashboard count and the notifications — stayed in 11.6.
+
+Definition of done: a brand-only install never asks for seller credentials and never dispatches a
+seller job; disabling the seller module mid-flight leaves no submitted batch unconfirmed; a
+3,000-row file with 40 bad rows imports 2,960 after one confirmation and hands back the 40; a ×3
+card is judged against three times the unit band, exactly, in kuruş; a buybox outside the band
+opens one violation and one notification however many looks confirm it; a failed look neither
+opens nor resolves anything; the listings lane and the catalogue sweep together never exceed the
+source's single rate limit.
+
+---
+
 ## Phase 9 — MAY-ADD-LATER
 
 Not in scope. Recorded so they are not forgotten.

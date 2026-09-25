@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { EnabledModules } from '@buybox/shared';
 import { Button, StatusBanner, StepFooter, StepStopNotice } from '@/components/ui';
 import { clearWizardProgress } from '../wizard-types';
 
-export function Step8Review({ onBack }: { onBack: () => void }) {
+export function Step8Review({ modules, onBack }: { modules: EnabledModules; onBack: () => void }) {
   const router = useRouter();
   const [result, setResult] = useState<{ ok: boolean; message: string } | undefined>();
   const [busy, setBusy] = useState(false);
@@ -29,12 +30,20 @@ export function Step8Review({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-(--color-muted)">
-        Veritabanı hazır, mağaza kimliği kaydedildi, pazaryeri kimlik bilgileri şifreli olarak saklandı, ücret
-        ve politika ayarları girildi, ürün kaynağı yapılandırıldı. Otomasyon her pazaryerinde{' '}
-        <strong>kapalı</strong> olarak başlayacak — Panel'den bilinçli olarak açacaksınız (doc 10 §6, adım 8).
-        Sistem bittiğinde ürünleri içe aktarıp gözlemlemeye başlayacak, fiyat göndermeyecektir.
-      </p>
+      {modules.seller ? (
+        <p className="text-sm text-(--color-muted)">
+          Veritabanı hazır, mağaza kimliği kaydedildi, pazaryeri kimlik bilgileri şifreli olarak saklandı,
+          ücret ve politika ayarları girildi, ürün kaynağı yapılandırıldı. Otomasyon her pazaryerinde{' '}
+          <strong>kapalı</strong> olarak başlayacak — Panel'den bilinçli olarak açacaksınız (doc 10 §6, adım
+          8). Sistem bittiğinde ürünleri içe aktarıp gözlemlemeye başlayacak, fiyat göndermeyecektir.
+        </p>
+      ) : (
+        <p className="text-sm text-(--color-muted)">
+          Veritabanı hazır ve izlenecek pazaryerleri seçildi. Bu kurulum yalnızca marka izleme için
+          yapılandırıldı: hiçbir pazaryerine fiyat gönderilmez. Tarama işleri kapalı başlar — İzlenen Markalar
+          ekranından markanızı ekledikten sonra İşler ekranından açabilirsiniz.
+        </p>
+      )}
       <StepStopNotice>
         Bu adımda "Kurulumu Bitir"i tıklamadan çıkarsanız, önceki adımlarda kaydettikleriniz kalıcı olarak
         durur, ancak kurulum tamamlanmış sayılmaz: Panel açılışta kurulumun bitmediğini göstermeye devam eder.

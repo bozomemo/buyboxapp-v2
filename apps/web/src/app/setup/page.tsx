@@ -1,16 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { EnabledModules } from '@buybox/shared';
 import {
   loadWizardProgress,
   saveWizardProgress,
   STEP_LABELS,
-  WIZARD_STEPS,
+  visibleSteps,
   type WizardStep,
 } from './wizard-types';
 import { Step1Database } from './steps/step1-database';
 import { Step2StoreIdentity } from './steps/step2-store-identity';
+import { StepPurpose } from './steps/step-purpose';
 import { Step3Marketplaces } from './steps/step3-marketplaces';
+import { Step3WatchMarketplaces } from './steps/step3-watch-marketplaces';
 import { Step4Fees } from './steps/step4-fees';
 import { Step5Policy } from './steps/step5-policy';
 import { Step6ProductSource } from './steps/step6-product-source';
@@ -33,11 +36,15 @@ export default function SetupWizard() {
   const [stepIndex, setStepIndex] = useState(0);
   const [databaseReady, setDatabaseReady] = useState(false);
   const [enabledMarketplaces, setEnabledMarketplaces] = useState<('trendyol' | 'hepsiburada')[]>([]);
+  // Which modules the purpose step chose (doc 17 §1.4). Both until then — the full wizard, which
+  // is also what an install that never chose runs.
+  const [modules, setModules] = useState<EnabledModules>({ seller: true, brand: true });
   // Restored client-side only, after mount: reading `localStorage` during the initial render
   // would disagree with the server-rendered markup (SSR has no `window`) and React would warn
   // about a hydration mismatch. A one-frame flash of "step 1" before this runs is the trade-off.
   const [restored, setRestored] = useState(false);
-  const step: WizardStep = WIZARD_STEPS[stepIndex]!;
+  const steps = visibleSteps(modules);
+  const step: WizardStep = steps[Math.min(stepIndex, steps.length - 1)]!;
 
   useEffect(() => {
     const progress = loadWizardProgress();
@@ -45,17 +52,20 @@ export default function SetupWizard() {
       setStepIndex(progress.stepIndex);
       setDatabaseReady(progress.databaseReady);
       setEnabledMarketplaces(progress.enabledMarketplaces);
+      setModules(progress.modules);
     }
     setRestored(true);
   }, []);
 
   useEffect(() => {
     if (!restored) return; // don't overwrite a saved position with the initial defaults
-    saveWizardProgress({ stepIndex, databaseReady, enabledMarketplaces });
-  }, [restored, stepIndex, databaseReady, enabledMarketplaces]);
+    saveWizardProgress({ stepIndex, databaseReady, enabledMarketplaces, modules });
+  }, [restored, stepIndex, databaseReady, enabledMarketplaces, modules]);
 
+  // Bounded by the steps *currently* shown. The purpose step changes that list, but only the part
+  // after itself, so the index it advances from means the same step either way.
   function next() {
-    setStepIndex((i) => Math.min(i + 1, WIZARD_STEPS.length - 1));
+    setStepIndex((i) => Math.min(i + 1, steps.length - 1));
   }
   function back() {
     setStepIndex((i) => Math.max(i - 1, 0));
@@ -66,12 +76,12 @@ export default function SetupWizard() {
       <div>
         <h1 className="text-2xl font-bold">Kurulum Sihirbazı</h1>
         <p className="text-sm text-(--color-muted)">
-          Adım {stepIndex + 1} / {WIZARD_STEPS.length} — {STEP_LABELS[step]}
+          Adım {steps.indexOf(step) + 1} / {steps.length} — {STEP_LABELS[step]}
         </p>
       </div>
 
       <ol className="flex flex-wrap gap-2 text-xs">
-        {WIZARD_STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <li
             key={s}
             className={`rounded-full px-3 py-1 ${
@@ -96,8 +106,26 @@ export default function SetupWizard() {
             }}
           />
         )}
+        {step === 'purpose' && (
+          <StepPurpose
+            onDone={(chosen) => {
+              setModules(chosen);
+              next();
+            }}
+            onBack={back}
+          />
+        )}
         {step === 'store-identity' && <Step2StoreIdentity onDone={next} onBack={back} />}
-        {step === 'marketplaces' && (
+        {step === 'marketplaces' && !modules.seller && (
+          <Step3WatchMarketplaces
+            onDone={(codes) => {
+              setEnabledMarketplaces(codes);
+              next();
+            }}
+            onBack={back}
+          />
+        )}
+        {step === 'marketplaces' && modules.seller && (
           <Step3Marketplaces
             onDone={(codes) => {
               setEnabledMarketplaces(codes);
@@ -114,7 +142,7 @@ export default function SetupWizard() {
         )}
         {step === 'product-source' && <Step6ProductSource onDone={next} onBack={back} />}
         {step === 'erp' && <Step7Erp onDone={next} onBack={back} onSkip={next} />}
-        {step === 'review' && <Step8Review onBack={back} />}
+        {step === 'review' && <Step8Review modules={modules} onBack={back} />}
       </div>
 
       {!databaseReady && step !== 'database' && (

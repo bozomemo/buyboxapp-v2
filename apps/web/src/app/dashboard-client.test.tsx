@@ -118,4 +118,46 @@ describe('DashboardClient', () => {
     expect(await screen.findByText('Her şey yolunda')).toBeTruthy();
     expect(screen.getByText('Test Ürünü')).toBeTruthy();
   });
+
+  // doc 17 §1: a brand-only install has no prices to submit, so neither the verdict nor its chips
+  // may talk about them — found on a real brand-only run (2026-09-19), whose verdict read
+  // "fiyatlandırma güvenilir şekilde ilerlemiyor".
+  it('brand-only: the verdict says nothing about prices', async () => {
+    stubFetch({
+      '/api/dashboard': {
+        body: {
+          modules: { seller: false, brand: true },
+          brandAudit: null,
+          systemPaused: false,
+          globalKillSwitchEngaged: true,
+          marketplaces: [
+            {
+              code: 'trendyol',
+              displayName: 'Trendyol',
+              enabled: true,
+              killSwitchEngaged: false,
+              automationEnabled: false,
+              budget: { consumed: 0, allowance: 0, reservePct: 10 },
+              health: {
+                lastImportAt: null,
+                lastBuyboxObservationAt: null,
+                reachable: true,
+                scrapeFailureRatePct: 0,
+              },
+            },
+          ],
+          phaseDistribution: {},
+          competitorAlerts: { open: 0, coverage: [], staleMarketplaces: [] },
+          alerts: [],
+          recentDecisions: [],
+        },
+      },
+      '/api/health': { body: HEALTH_OK },
+    });
+
+    render(<DashboardClient />);
+
+    expect(await screen.findByText('İşler çalışıyor ve müdahale gerektiren bir şey yok.')).toBeTruthy();
+    expect(screen.queryByText(/Fiyat gönderimi/)).toBeNull();
+  });
 });

@@ -261,6 +261,27 @@ Accept: text/html
 User-Agent: <identifies this client; see "Operating constraints" below>
 ```
 
+#### Accepted link shapes (operator-pasted) — measured 2026-09-20
+
+The Excel import (doc 17 §3.2) and every paste-a-link field reduce a link to
+`(marketplace, contentId)` with `parseProductLink`. What that has to accept was measured against
+the live install's own 7,309 tracked Trendyol rows rather than assumed:
+
+| Shape | Seen | Read as |
+|---|---|---|
+| `https://www.trendyol.com/{marka}/{slug}-p-{contentId}` | operator-pasted rows | `contentId` |
+| `/{marka}/{slug}-p-{contentId}?boutiqueId=…&merchantId=…` | **7,308 of 7,309** — what the catalogue sweep stores | `contentId` |
+| `https://trendyol.com/…` (no `www`) | accepted | `contentId` |
+
+Two consequences the parser must hold to:
+
+- **The query string is never identity.** `boutiqueId` and `merchantId` name a boutique and a
+  *seller*, not the product; two links to the same product differ only there. They are ignored
+  for matching — and `merchantId` is additionally stripped before any fetch, for the separate
+  reason above.
+- **The slug is display text** and changes when the marketplace renames a product. Only the
+  digits after `-p-` identify it (CLAUDE.md: never derive identity from display text).
+
 Redirects are followed; the final URL is the canonical product link. `productUrl` on each
 variant of the product filter (§1.4) is preferred when the import captured one — it is
 Trendyol's own canonical link, but its query string carries `merchantId=<our own seller id>`
@@ -1178,6 +1199,26 @@ GET https://www.hepsiburada.com/api/v1/product/listings/{sku}
 credential, no cookie and no session are required: the verification request sent none and
 received a 200.
 
+#### Accepted link shapes (operator-pasted) — 🟡 partly unverified, 2026-09-20
+
+| Shape | Status | Read as |
+|---|---|---|
+| `https://www.hepsiburada.com/{slug}-p-{SKU}` | verified 2026-08-13 (`…-p-BS1372`) | the SKU |
+| `/{slug}-pm-{productId}` | recorded 2026-08-28 in §2.13 (`variantList[].url`) | **refused, deliberately** |
+| `…-p-{SKU}?magaza=…` and other query strings | unverified | the SKU; the query is ignored |
+
+`-pm-` is the **parent product**, not the variant that is sold: §2.13's sweep captures it per
+variant precisely because the two differ, and §2.14 needs the variant's own url. A `-pm-` link
+pasted into the import is therefore an error on that row with its own message — "bu link ürün
+ailesini gösteriyor, satılan varyantı değil" — rather than a guess at which variant was meant.
+Guessing would attach a manager's PSF to the wrong pack size, which is exactly the mistake the
+unit multiplier exists to prevent.
+
+⚠️ **This install has no Hepsiburada data**, so unlike Trendyol above these shapes are not
+measured against a real catalogue — only against §2.11's and §2.13's own recorded examples. A
+campaign or short link shape may exist that is not listed here; an unrecognised link is refused
+with the row's line number rather than guessed at, so the cost of the gap is a rejected row.
+
 The endpoint sits behind Akamai bot protection and answers only a browser-shaped request.
 Measured header by header — each row is a separate observed result, not an assumption:
 
@@ -1404,6 +1445,12 @@ does not exist.)*
 | `reviews.{customerReviewCount,customerReviewScore}` | `ratingCount` / `ratingAverage` |
 | `isProductLive` | `isLive` |
 
+⚠️ **`barcode` is not always a GTIN** (measured 2026-09-25, five Orijen products read live):
+all five carried a merchant stock code instead — `HBDFBD21352107`, `HBFE4E8EF917865`,
+`0Ptl291314783`. `ResolveProductBarcodes` now keeps the value only when it passes the GS1 check
+(`isValidGtin`, `packages/core`) and otherwise records the page as having stated no barcode,
+which stops it being asked again. The field's name is not evidence of what it holds.
+
 The page also carries a JSON-LD block with the same barcode under `gtin`. **Not read**: two
 sources for one field is one more than can be kept honest, and a silent fallback to a possibly
 stale copy is worse than a named failure.
@@ -1437,4 +1484,5 @@ sounding one would have reported a live product as gone. Unconfirmed, unmapped.
 | 2026-08-28 | Hepsiburada | **§2.13 brand catalogue.** `/ara?q=…` 200 to the honest agent; `window.MORIA.PRODUCTLIST` card payload; Whiskas 564 products / 16 pages / 36 per page, Royal Canin 2,360 claimed / 50 claimed. Two traps measured: past-the-last-page serves page 1 again (`currentPage: 1`, identical 36 SKUs), and page 50 of Royal Canin 403s reproducibly after a cooldown while pages 1 and 20 do not. No brand-id addressing: `?markalar=` alone redirects home and adds nothing beside `q=` | assistant, read-only live requests; three cards recorded as a fixture |
 | 2026-08-28 | Hepsiburada | **§2.14 product page.** `productState.product.barcode` = `8681002995109` for `HBCV00006POXK3`; url cannot be derived from the SKU (`/p-{sku}` 404s). `product.listings` truncated to 2 of 6 beside `hasMoreListings: true`. `isProductLive` and `isClosedProduct` both `true` on a product on sale — the latter left unmapped | assistant, read-only live request; redux store recorded as a fixture |
 | 2026-08-29 | Trendyol | §1.6 — **`net::ERR_ABORTED` characterised and retried.** Reproduced live through the production Playwright transport: ~1 navigation in 6 across one reused page aborts in ~70 ms, non-deterministically (three consecutive fetches of one URL fine; a repeat of another aborted), with the fetches either side returning 200 and full `__envoy__SHARED_PROPS`. Not URL-specific and not a block. One retry added; a second consecutive abort still fails the item | assistant, read-only live fetches; measured while trialling every job on the operator's install |
+| 2026-09-20 | Trendyol | §1.6 — **operator-pasted link shapes**, measured against the live install's 7,309 tracked rows: 7,308 are stored as a relative `/{marka}/{slug}-p-{id}?boutiqueId=…&merchantId=…` path (what the sweep writes), the rest absolute. Query params are never identity | assistant, read-only query against the operator's database; no marketplace request |
 | 2026-09-11 | Trendyol | §1.6 — **the production event log read end to end** (`TrackedProductScrapeFailed`, the operator's own export). Five distinct causes, not one: (1) `page.goto: Page crashed` unbroken from 7 Eylül 17:38 to 8 Eylül 13:28 across the whole tracked catalogue — a crashed renderer the session liveness check could not see, since the browser stays connected and the page stays open, so the poisoned page was handed to every later fetch until the worker restarted; (2) `Timeout 15000ms exceeded`, the most common recurring entry, steady and outside every crash window — the machine, not the marketplace; (3) ten 503s over four days, unretried because only 403 was; (4) one 410 product (`…-p-793542803`) and two 404s, retried hourly for days although the marketplace had said they were gone; (5) singletons — `net::ERR_NETWORK_IO_SUSPENDED` (the Windows box asleep), `net::ERR_NAME_NOT_RESOLVED`, and three `parseFailed: No <script> containing __envoy__SHARED_PROPS` on `/pd/…` URLs, **still open**. Fixed: crash detection and page recycling, 30 s operator-settable timeout, retry on 403/429/502/503/504, and 404/410 deactivating the tracked row | operator's CSV export of the live event log; assistant read the code against it — no live request made |

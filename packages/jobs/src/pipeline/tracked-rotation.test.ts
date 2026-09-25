@@ -59,9 +59,19 @@ describe('rotationIntervalMs', () => {
     expect(rotationIntervalMs(product('a', { ratingCount: null }))).toBe(ROTATION_BASE_INTERVAL_MS);
   });
 
-  it('comes back sooner for a product the brand published a price for', () => {
-    expect(rotationIntervalMs(product('a', { referencePrice: 100_00n }))).toBe(
-      ROTATION_BASE_INTERVAL_MS * ROTATION_WEIGHTS.hasReferencePrice,
+  /** doc 17 §2.5: "in İlanlar" — linked to a brand product, or a favourite — replaces "has a PSF". */
+  it.each([
+    { name: 'a card linked to a brand product', fields: { isLinked: true } },
+    { name: 'a favourite card', fields: { isFavourite: true } },
+  ])('comes back sooner for $name', ({ fields }) => {
+    expect(rotationIntervalMs(product('a', fields))).toBe(
+      ROTATION_BASE_INTERVAL_MS * ROTATION_WEIGHTS.listed,
+    );
+  });
+
+  it('applies the İlanlar weight once for a card that is both linked and favourite', () => {
+    expect(rotationIntervalMs(product('a', { isLinked: true, isFavourite: true }))).toBe(
+      ROTATION_BASE_INTERVAL_MS * ROTATION_WEIGHTS.listed,
     );
   });
 
@@ -76,7 +86,7 @@ describe('byRotationPriority', () => {
   it('puts a product nobody has looked at first, whatever its weights say', () => {
     const order = byRotationPriority(
       [
-        product('overdue', { lastScrapedAt: NOW - 500 * HOUR, referencePrice: 100_00n }),
+        product('overdue', { lastScrapedAt: NOW - 500 * HOUR, isLinked: true }),
         product('never', { lastScrapedAt: null, hasSellers: false, ratingCount: 0 }),
       ],
       NOW,
@@ -104,7 +114,7 @@ describe('byRotationPriority', () => {
    */
   it('lets a deprioritised product overtake a favoured one once it has waited long enough', () => {
     const dead = product('dead', { lastScrapedAt: NOW - 100 * HOUR, hasSellers: false, ratingCount: 0 });
-    const favoured = product('favoured', { lastScrapedAt: NOW - HOUR, referencePrice: 100_00n });
+    const favoured = product('favoured', { lastScrapedAt: NOW - HOUR, isLinked: true });
 
     expect(byRotationPriority([favoured, dead], NOW).map((p) => p.id)).toEqual(['dead', 'favoured']);
   });

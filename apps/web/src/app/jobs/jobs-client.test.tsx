@@ -119,4 +119,53 @@ describe('JobsClient', () => {
     // The raw `job_runs.state` ('failed') must not reach the screen — only its Turkish label.
     expect(screen.getAllByText('Başarısız').length).toBeGreaterThan(0);
   });
+
+  // doc 17 §1.3: a brand-only install's catalogue opened on nine price jobs it never runs.
+  it('keeps a disabled module’s jobs out of the catalogue until asked', async () => {
+    const job = (jobName: string, label: string, moduleDisabled: boolean) => ({
+      jobName,
+      label,
+      module: moduleDisabled ? 'seller' : 'brand',
+      moduleDisabled,
+      cadenceMs: null,
+      liveCadenceMs: null,
+      pendingRestart: false,
+      isCadenceOverride: false,
+      defaultCadenceMs: null,
+      perMarketplace: false,
+      defaultPayload: {},
+      enabled: true,
+      nextRunAt: null,
+      queued: false,
+      activeRun: null,
+      lastRun: null,
+    });
+    stubFetch({
+      '/api/jobs': {
+        body: {
+          jobs: [
+            job('Reprice', 'Yeniden Fiyatlandırma', true),
+            job('SweepBrandCatalogue', 'Marka Kataloğu', false),
+          ],
+          scheduler: { running: true, systemPaused: false },
+          queueDepth: { ready: 0, locked: 0, done: 0, failed: 0 },
+          claimed: [],
+          circuitBreakers: [],
+        },
+      },
+      ...EMPTY_SIDE_ROUTES,
+    });
+
+    render(<JobsClient />);
+
+    // Labels also fill the run-history filter's <option>s; only a catalogue cell counts.
+    const inCatalogue = (label: string) => screen.queryAllByText(label).some((el) => el.tagName === 'TD');
+    await screen.findByText('Kapalı modüllerin 1 işi gizli — göster');
+    expect(inCatalogue('Marka Kataloğu')).toBe(true);
+    expect(inCatalogue('Yeniden Fiyatlandırma')).toBe(false);
+
+    screen.getByText('Kapalı modüllerin 1 işi gizli — göster').click();
+    expect(await screen.findByText('Modül kapalı')).toBeTruthy();
+    expect(inCatalogue('Yeniden Fiyatlandırma')).toBe(true);
+  });
 });

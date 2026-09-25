@@ -21,7 +21,7 @@
  * costs only the cross-marketplace column, which says so where it is read.
  */
 import { ProductDetailError, type IProductDetailSource } from '@buybox/adapters';
-import type { MarketplaceCode } from '@buybox/core';
+import { isValidGtin, type MarketplaceCode } from '@buybox/core';
 import { eventsRepo, newId, productBarcodesRepo } from '@buybox/db';
 import { z } from 'zod';
 import type { JobContext, JobResult } from '../job.js';
@@ -121,11 +121,7 @@ export async function resolveProductBarcodes(ctx: JobContext): Promise<JobResult
     return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
   }
 
-  const targets = await productBarcodesRepo.barcodeTargets(
-    ctx.appDb,
-    marketplaceCode,
-    payload.batchSize,
-  );
+  const targets = await productBarcodesRepo.barcodeTargets(ctx.appDb, marketplaceCode, payload.batchSize);
   if (targets.length === 0) {
     return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
   }
@@ -133,6 +129,7 @@ export async function resolveProductBarcodes(ctx: JobContext): Promise<JobResult
   let ok = 0;
   let failed = 0;
   let statedNone = 0;
+  let notGtin = 0;
   let consecutiveFailures = 0;
   let lastError: string | null = null;
 
@@ -163,15 +160,17 @@ export async function resolveProductBarcodes(ctx: JobContext): Promise<JobResult
     }
 
     consecutiveFailures = 0;
+    // Only a real GTIN is kept. Hepsiburada's `barcode` field carried a merchant stock code
+    // (`HBDFBD21352107`, `0Ptl291314783`) on five of five products sampled 2026-09-25; stored,
+    // it could never match a card and read as coverage the match report does not have. Such a
+    // page is recorded as having stated no barcode, which is what it usefully did.
+    const gtin =
+      attempt.barcode !== null && isValidGtin(attempt.barcode.trim()) ? attempt.barcode.trim() : null;
+    if (attempt.barcode !== null && gtin === null) notGtin += 1;
     // Stored either way. "The page stated no barcode" is an answer, and recording it is what
     // stops this product being asked again every night for ever.
-    await productBarcodesRepo.setProductBarcode(
-      ctx.appDb,
-      target.id,
-      attempt.barcode,
-      ctx.clock.nowMs(),
-    );
-    if (attempt.barcode === null) statedNone += 1;
+    await productBarcodesRepo.setProductBarcode(ctx.appDb, target.id, gtin, ctx.clock.nowMs());
+    if (gtin === null) statedNone += 1;
     ok += 1;
   }
 
@@ -183,7 +182,8 @@ export async function resolveProductBarcodes(ctx: JobContext): Promise<JobResult
       marketplaceCode,
       'info',
       'BarcodesResolved',
-      `${ok} üründe barkod soruldu (${ok - statedNone} barkod bulundu, ${statedNone} üründe sayfa barkod bildirmedi)`,
+      `${ok} üründe barkod soruldu (${ok - statedNone} barkod bulundu, ${statedNone} üründe geçerli barkod yok` +
+        `${notGtin > 0 ? ` — ${notGtin} üründe sayfanın bildirdiği kod EAN/GTIN değildi` : ''})`,
     );
   }
 

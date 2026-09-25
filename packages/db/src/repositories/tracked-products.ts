@@ -58,14 +58,19 @@ export interface TrackedProductRow {
   readonly lastSellerSeenAt?: number | null;
   readonly barcode?: string | null;
   /**
-   * The brand owner's own recommended retail price, in kuruş, and where it came from
-   * (2026-09-03). Operator-owned: no sweep or scrape writes these. See the column's doc comment
-   * in `schema/sqlite.ts` for why this is the only price on the brand side that is a statement
-   * rather than an observation.
+   * Operator-set; puts the card in the brand module's İlanlar (doc 17 §4.1). No sweep writes it.
+   *
+   * The old per-card reference price (`reference_price*`) is deliberately not on this type: PSF
+   * lives on the card's brand product now (doc 17 §2.5, `brand-products.ts`), and leaving the
+   * columns off the row type is what stops a new reader of them from compiling.
    */
-  readonly referencePrice?: bigint | null;
-  readonly referencePriceSource?: string | null;
-  readonly referencePriceUpdatedAt?: number | null;
+  readonly isFavourite?: boolean;
+  readonly favouritedAt?: number | null;
+  /**
+   * Whether the card is linked to a brand product. Not a column: filled only by
+   * `listProductsToScrape`, for the rotation weight (doc 17 §2.5).
+   */
+  readonly isLinked?: boolean;
 }
 
 /**
@@ -303,6 +308,53 @@ export async function findTrackedProductByRef(
           )
       )[0],
   });
+}
+
+/**
+ * The tracked Hepsiburada variants whose stored page is the parent product `parentRef` — the
+ * `/{slug}-pm-{parentRef}` form the catalogue sweep writes for every Hepsiburada row. Lets a
+ * `-pm-` link copied from this app's own screen be resolved to the variant it was shown for,
+ * when exactly one variant shares that parent; with several, the link alone cannot say which.
+ */
+export async function findHepsiburadaVariantsByParent(
+  appDb: AppDatabase,
+  parentRef: string,
+): Promise<TrackedProductRow[]> {
+  // The id is `[A-Za-z0-9]+` by the time it reaches here (`hepsiburadaParentRef`), so it
+  // carries no LIKE wildcard. It must end the path, or be followed by a query or a slash.
+  const patterns = [`%-pm-${parentRef}`, `%-pm-${parentRef}?%`, `%-pm-${parentRef}/%`];
+  return withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select()
+        .from(sqliteSchema.trackedProducts)
+        .where(
+          and(
+            eq(sqliteSchema.trackedProducts.marketplaceCode, 'hepsiburada'),
+            or(...patterns.map((pattern) => like(sqliteSchema.trackedProducts.productUrl, pattern))),
+          ),
+        ),
+    postgres: (db) =>
+      db
+        .select()
+        .from(postgresSchema.trackedProducts)
+        .where(
+          and(
+            eq(postgresSchema.trackedProducts.marketplaceCode, 'hepsiburada'),
+            or(...patterns.map((pattern) => like(postgresSchema.trackedProducts.productUrl, pattern))),
+          ),
+        ),
+    mysql: (db) =>
+      db
+        .select()
+        .from(mysqlSchema.trackedProducts)
+        .where(
+          and(
+            eq(mysqlSchema.trackedProducts.marketplaceCode, 'hepsiburada'),
+            or(...patterns.map((pattern) => like(mysqlSchema.trackedProducts.productUrl, pattern))),
+          ),
+        ),
+  }) as Promise<TrackedProductRow[]>;
 }
 
 /**
@@ -918,6 +970,17 @@ export interface TrackedProductQueryOptions {
    */
   readonly noSellerOnly?: boolean;
   readonly minRatingCount?: number;
+  /**
+   * The İlanlar set (doc 17 §4.1): cards **linked to a brand product or marked favourite**, out
+   * of a catalogue where most rows are noise — the product owner's example is a brand with 1,000
+   * Trendyol cards of which about 50 really sell.
+   *
+   * The two halves are independent on purpose: a favourite need not be the manager's own product
+   * (a competing brand's card they want in view), and a linked card is in the set whether or not
+   * anyone starred it. Same predicate `SweepListedProducts` walks, so the screen lists exactly
+   * the rows that lane keeps fresh.
+   */
+  readonly listedOnly?: boolean;
   readonly sort?: 'label' | 'ratingCount' | 'categoryName' | 'lastSweptAt' | 'addedAt';
   readonly sortDir?: 'asc' | 'desc';
   readonly limit: number;
@@ -929,8 +992,24 @@ type TrackedSchema =
   | typeof postgresSchema.trackedProducts
   | typeof mysqlSchema.trackedProducts;
 
-function buildTrackedWhere(t: TrackedSchema, options: TrackedProductQueryOptions) {
+type CardsSchema =
+  | typeof sqliteSchema.brandProductCards
+  | typeof postgresSchema.brandProductCards
+  | typeof mysqlSchema.brandProductCards;
+
+function buildTrackedWhere(t: TrackedSchema, cards: CardsSchema, options: TrackedProductQueryOptions) {
   const parts = [];
+  if (options.listedOnly) {
+    // `exists`, not a join: a join would need a `distinct` to keep a product with two cards out
+    // of the page twice, and `distinct` with the `count()` beside it is where that goes wrong
+    // quietly. Only schema identifiers are interpolated — no caller input reaches the SQL.
+    parts.push(
+      or(
+        sql`exists (select 1 from ${cards} where ${cards.trackedProductId} = ${t.id})`,
+        eq(t.isFavourite, true),
+      ),
+    );
+  }
   if (options.watchedBrandId !== undefined) parts.push(eq(t.watchedBrandId, options.watchedBrandId));
   if (options.marketplaceCode !== undefined) parts.push(eq(t.marketplaceCode, options.marketplaceCode));
   if (options.categoryRef !== undefined) parts.push(eq(t.categoryRef, options.categoryRef));
@@ -1001,7 +1080,7 @@ export async function queryTrackedProducts(
   const { limit, offset } = options;
   return withDialect(appDb, {
     sqlite: async (db) => {
-      const where = buildTrackedWhere(sqliteSchema.trackedProducts, options);
+      const where = buildTrackedWhere(sqliteSchema.trackedProducts, sqliteSchema.brandProductCards, options);
       const [rows, totalRow] = await Promise.all([
         db
           .select()
@@ -1017,7 +1096,11 @@ export async function queryTrackedProducts(
       return { rows: rows as TrackedProductRow[], total: Number(totalRow[0]?.n ?? 0) };
     },
     postgres: async (db) => {
-      const where = buildTrackedWhere(postgresSchema.trackedProducts, options);
+      const where = buildTrackedWhere(
+        postgresSchema.trackedProducts,
+        postgresSchema.brandProductCards,
+        options,
+      );
       const [rows, totalRow] = await Promise.all([
         db
           .select()
@@ -1036,7 +1119,7 @@ export async function queryTrackedProducts(
       return { rows: rows as TrackedProductRow[], total: Number(totalRow[0]?.n ?? 0) };
     },
     mysql: async (db) => {
-      const where = buildTrackedWhere(mysqlSchema.trackedProducts, options);
+      const where = buildTrackedWhere(mysqlSchema.trackedProducts, mysqlSchema.brandProductCards, options);
       const [rows, totalRow] = await Promise.all([
         db
           .select()
@@ -1149,195 +1232,15 @@ export async function setTrackedProductsActive(
 // ------------------------------------------------ reference prices (the brand's own list price)
 
 /**
- * One line of an operator's price list, already parsed and validated
- * (`apps/web/src/lib/reference-price-import.ts`).
- *
- * Identified by **barcode**, or by a marketplace and that marketplace's product ref — never by
- * name. A barcode row deliberately has no marketplace: the same article carries the same barcode
- * everywhere, so one line of a brand's list prices the product on every marketplace it is
- * tracked on, which is the whole reason the cross-marketplace screen joins on it (doc 06 §12.4).
- */
-export interface ReferencePriceAssignment {
-  readonly barcode: string | null;
-  readonly marketplaceCode: string | null;
-  readonly productRef: string | null;
-  /** Kuruş. */
-  readonly referencePrice: bigint;
-}
-
-export interface ReferencePriceApplyResult {
-  /** Tracked products whose reference price was written. */
-  readonly productsMatched: number;
-  /** List lines that matched no tracked product at all — the figure the screen reports back. */
-  readonly linesUnmatched: number;
-}
-
-/**
- * Writes an operator's price list onto the tracked products it identifies.
- *
- * **Unmatched lines are reported, never guessed at.** A brand's list covers its whole catalogue
- * while the tracked set covers what a sweep found on one marketplace, so a partial match is the
- * normal outcome rather than an error — but it has to be *visible*, because "42 of 300 lines
- * matched" and "300 of 300" are the difference between a working import and a screen that will
- * quietly produce no findings for 86% of the list. The same reason the cross-marketplace screen
- * spends half its area on coverage.
- *
- * Products are updated grouped by price rather than one statement per row: a price list has far
- * fewer distinct prices than lines. Both the lookup and the update are chunked at `LOOKUP_CHUNK`,
- * since every driver's parameter ceiling sits well below a catalogue.
- */
-export async function applyReferencePrices(
-  appDb: AppDatabase,
-  assignments: readonly ReferencePriceAssignment[],
-  source: string | null,
-  atMs: number,
-): Promise<ReferencePriceApplyResult> {
-  if (assignments.length === 0) return { productsMatched: 0, linesUnmatched: 0 };
-
-  const byBarcode = new Map<string, bigint>();
-  const byRef = new Map<string, bigint>();
-  for (const a of assignments) {
-    if (a.barcode !== null) byBarcode.set(a.barcode, a.referencePrice);
-    else if (a.marketplaceCode !== null && a.productRef !== null) {
-      byRef.set(`${a.marketplaceCode}::${a.productRef}`, a.referencePrice);
-    }
-  }
-
-  /** productId → price. A product named twice by two lines takes the last one, as a map does. */
-  const priceByProductId = new Map<string, bigint>();
-  const matchedBarcodes = new Set<string>();
-  const matchedRefs = new Set<string>();
-
-  const barcodes = [...byBarcode.keys()];
-  for (let start = 0; start < barcodes.length; start += LOOKUP_CHUNK) {
-    const chunk = barcodes.slice(start, start + LOOKUP_CHUNK);
-    if (chunk.length === 0) continue;
-    const rows = (await withDialect(appDb, {
-      sqlite: (db) =>
-        db
-          .select({ id: sqliteSchema.trackedProducts.id, barcode: sqliteSchema.trackedProducts.barcode })
-          .from(sqliteSchema.trackedProducts)
-          .where(inArray(sqliteSchema.trackedProducts.barcode, chunk)),
-      postgres: (db) =>
-        db
-          .select({ id: postgresSchema.trackedProducts.id, barcode: postgresSchema.trackedProducts.barcode })
-          .from(postgresSchema.trackedProducts)
-          .where(inArray(postgresSchema.trackedProducts.barcode, chunk)),
-      mysql: (db) =>
-        db
-          .select({ id: mysqlSchema.trackedProducts.id, barcode: mysqlSchema.trackedProducts.barcode })
-          .from(mysqlSchema.trackedProducts)
-          .where(inArray(mysqlSchema.trackedProducts.barcode, chunk)),
-    })) as { id: string; barcode: string | null }[];
-    for (const row of rows) {
-      if (row.barcode === null) continue;
-      const price = byBarcode.get(row.barcode);
-      if (price === undefined) continue;
-      priceByProductId.set(row.id, price);
-      matchedBarcodes.add(row.barcode);
-    }
-  }
-
-  // Refs are looked up per marketplace: the same digits are different products on different
-  // marketplaces, so one `IN (...)` across both would match the wrong rows.
-  const refsByMarketplace = new Map<string, string[]>();
-  for (const key of byRef.keys()) {
-    const [marketplaceCode = '', productRef = ''] = key.split('::');
-    const list = refsByMarketplace.get(marketplaceCode) ?? [];
-    list.push(productRef);
-    refsByMarketplace.set(marketplaceCode, list);
-  }
-  for (const [marketplaceCode, refs] of refsByMarketplace) {
-    const found = await findTrackedProductsByRefs(appDb, marketplaceCode, refs);
-    for (const [productRef, row] of found) {
-      const key = `${marketplaceCode}::${productRef}`;
-      const price = byRef.get(key);
-      if (price === undefined) continue;
-      priceByProductId.set(row.id, price);
-      matchedRefs.add(key);
-    }
-  }
-
-  const idsByPrice = new Map<bigint, string[]>();
-  for (const [id, price] of priceByProductId) {
-    const list = idsByPrice.get(price) ?? [];
-    list.push(id);
-    idsByPrice.set(price, list);
-  }
-
-  for (const [price, ids] of idsByPrice) {
-    for (let start = 0; start < ids.length; start += LOOKUP_CHUNK) {
-      const chunk = ids.slice(start, start + LOOKUP_CHUNK);
-      if (chunk.length === 0) continue;
-      const set = {
-        referencePrice: price,
-        referencePriceSource: source,
-        referencePriceUpdatedAt: atMs,
-      };
-      await runDialect(appDb, {
-        sqlite: (db) =>
-          db
-            .update(sqliteSchema.trackedProducts)
-            .set(set)
-            .where(inArray(sqliteSchema.trackedProducts.id, chunk)),
-        postgres: (db) =>
-          db
-            .update(postgresSchema.trackedProducts)
-            .set(set)
-            .where(inArray(postgresSchema.trackedProducts.id, chunk)),
-        mysql: (db) =>
-          db
-            .update(mysqlSchema.trackedProducts)
-            .set(set)
-            .where(inArray(mysqlSchema.trackedProducts.id, chunk)),
-      });
-    }
-  }
-
-  return {
-    productsMatched: priceByProductId.size,
-    linesUnmatched: byBarcode.size - matchedBarcodes.size + (byRef.size - matchedRefs.size),
-  };
-}
-
-/**
- * Clears the reference price on named products — the operator withdrawing a list price rather
- * than correcting it.
- *
- * Separate from `applyReferencePrices` rather than a `null` price through it, because the two are
- * different statements: a written price says "sell at this", and no price says "we have not
- * published one for this product". Clearing must also clear the source and the date, or the
- * screen would show a file name beside an empty price.
- */
-export async function clearReferencePrices(appDb: AppDatabase, ids: readonly string[]): Promise<void> {
-  for (let start = 0; start < ids.length; start += LOOKUP_CHUNK) {
-    const chunk = ids.slice(start, start + LOOKUP_CHUNK);
-    if (chunk.length === 0) continue;
-    const set = { referencePrice: null, referencePriceSource: null, referencePriceUpdatedAt: null };
-    await runDialect(appDb, {
-      sqlite: (db) =>
-        db
-          .update(sqliteSchema.trackedProducts)
-          .set(set)
-          .where(inArray(sqliteSchema.trackedProducts.id, chunk)),
-      postgres: (db) =>
-        db
-          .update(postgresSchema.trackedProducts)
-          .set(set)
-          .where(inArray(postgresSchema.trackedProducts.id, chunk)),
-      mysql: (db) =>
-        db.update(mysqlSchema.trackedProducts).set(set).where(inArray(mysqlSchema.trackedProducts.id, chunk)),
-    });
-  }
-}
-
-/**
- * How much of a brand's tracked catalogue carries a reference price — the coverage figure the
- * screens report beside any finding derived from one.
+ * How much of a brand's tracked catalogue carries a PSF — the coverage figure the screens report
+ * beside any finding derived from one.
  *
  * It exists for the same reason the cross-marketplace screen leads with coverage: "no products
  * are below the list price" reads as good news and means nothing at all when only 12 of 887
  * products have a list price to be below.
+ *
+ * Since doc 17 §2.5 a card has a PSF exactly when it is **linked to a brand product**, so
+ * `withPrice` counts linked cards; the old per-card column is no longer read.
  */
 export async function referencePriceCoverage(
   appDb: AppDatabase,
@@ -1345,44 +1248,56 @@ export async function referencePriceCoverage(
 ): Promise<{ readonly withPrice: number; readonly total: number }> {
   return withDialect(appDb, {
     sqlite: async (db) => {
-      const where = watchedBrandId
-        ? eq(sqliteSchema.trackedProducts.watchedBrandId, watchedBrandId)
-        : undefined;
+      const t = sqliteSchema.trackedProducts;
+      const c = sqliteSchema.brandProductCards;
+      const where = watchedBrandId ? eq(t.watchedBrandId, watchedBrandId) : undefined;
       const [totalRow, withRow] = await Promise.all([
-        db.select({ n: count() }).from(sqliteSchema.trackedProducts).where(where),
-        db
-          .select({ n: count() })
-          .from(sqliteSchema.trackedProducts)
-          .where(and(where, isNotNull(sqliteSchema.trackedProducts.referencePrice))),
+        db.select({ n: count() }).from(t).where(where),
+        db.select({ n: count() }).from(t).innerJoin(c, eq(c.trackedProductId, t.id)).where(where),
       ]);
       return { withPrice: Number(withRow[0]?.n ?? 0), total: Number(totalRow[0]?.n ?? 0) };
     },
     postgres: async (db) => {
-      const where = watchedBrandId
-        ? eq(postgresSchema.trackedProducts.watchedBrandId, watchedBrandId)
-        : undefined;
+      const t = postgresSchema.trackedProducts;
+      const c = postgresSchema.brandProductCards;
+      const where = watchedBrandId ? eq(t.watchedBrandId, watchedBrandId) : undefined;
       const [totalRow, withRow] = await Promise.all([
-        db.select({ n: count() }).from(postgresSchema.trackedProducts).where(where),
-        db
-          .select({ n: count() })
-          .from(postgresSchema.trackedProducts)
-          .where(and(where, isNotNull(postgresSchema.trackedProducts.referencePrice))),
+        db.select({ n: count() }).from(t).where(where),
+        db.select({ n: count() }).from(t).innerJoin(c, eq(c.trackedProductId, t.id)).where(where),
       ]);
       return { withPrice: Number(withRow[0]?.n ?? 0), total: Number(totalRow[0]?.n ?? 0) };
     },
     mysql: async (db) => {
-      const where = watchedBrandId
-        ? eq(mysqlSchema.trackedProducts.watchedBrandId, watchedBrandId)
-        : undefined;
+      const t = mysqlSchema.trackedProducts;
+      const c = mysqlSchema.brandProductCards;
+      const where = watchedBrandId ? eq(t.watchedBrandId, watchedBrandId) : undefined;
       const [totalRow, withRow] = await Promise.all([
-        db.select({ n: count() }).from(mysqlSchema.trackedProducts).where(where),
-        db
-          .select({ n: count() })
-          .from(mysqlSchema.trackedProducts)
-          .where(and(where, isNotNull(mysqlSchema.trackedProducts.referencePrice))),
+        db.select({ n: count() }).from(t).where(where),
+        db.select({ n: count() }).from(t).innerJoin(c, eq(c.trackedProductId, t.id)).where(where),
       ]);
       return { withPrice: Number(withRow[0]?.n ?? 0), total: Number(totalRow[0]?.n ?? 0) };
     },
+  });
+}
+
+/**
+ * Marks or unmarks a card as a favourite (doc 17 §4.1). `favourited_at` is when it was last
+ * marked, and is cleared with the mark.
+ */
+export async function setTrackedProductFavourite(
+  appDb: AppDatabase,
+  id: string,
+  isFavourite: boolean,
+  atMs: number,
+): Promise<void> {
+  const set = { isFavourite, favouritedAt: isFavourite ? atMs : null };
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db.update(sqliteSchema.trackedProducts).set(set).where(eq(sqliteSchema.trackedProducts.id, id)),
+    postgres: (db) =>
+      db.update(postgresSchema.trackedProducts).set(set).where(eq(postgresSchema.trackedProducts.id, id)),
+    mysql: (db) =>
+      db.update(mysqlSchema.trackedProducts).set(set).where(eq(mysqlSchema.trackedProducts.id, id)),
   });
 }
 
@@ -1557,13 +1472,20 @@ export async function countBrandProductsToScrape(
 export interface ProductsToScrapeQuery {
   readonly marketplaceCode: string;
   readonly notScrapedSinceMs: number;
+  /**
+   * `SweepListedProducts`' candidate set (doc 17 §4.1, §4.2): linked to a brand product **or**
+   * marked favourite. Left undefined (or false), every active product of the marketplace is a
+   * candidate — `SweepTrackedProducts`' whole-catalogue set.
+   */
+  readonly onlyListed?: boolean;
 }
 
-function toScrapeWhere(t: TrackedSchema, query: ProductsToScrapeQuery) {
+function toScrapeWhere(t: TrackedSchema, c: { readonly id: AnyColumn }, query: ProductsToScrapeQuery) {
   return and(
     eq(t.marketplaceCode, query.marketplaceCode),
     eq(t.isActive, true),
     or(isNull(t.lastScrapedAt), lt(t.lastScrapedAt, query.notScrapedSinceMs)),
+    query.onlyListed ? or(isNotNull(c.id), eq(t.isFavourite, true)) : undefined,
   );
 }
 
@@ -1571,17 +1493,38 @@ export async function listProductsToScrape(
   appDb: AppDatabase,
   query: ProductsToScrapeQuery,
 ): Promise<TrackedProductRow[]> {
-  return withDialect(appDb, {
-    sqlite: (db) =>
-      db.select().from(sqliteSchema.trackedProducts).where(toScrapeWhere(sqliteSchema.trackedProducts, query)),
-    postgres: (db) =>
-      db
-        .select()
-        .from(postgresSchema.trackedProducts)
-        .where(toScrapeWhere(postgresSchema.trackedProducts, query)),
-    mysql: (db) =>
-      db.select().from(mysqlSchema.trackedProducts).where(toScrapeWhere(mysqlSchema.trackedProducts, query)),
-  }) as Promise<TrackedProductRow[]>;
+  // `isLinked` rides along for the rotation weight (doc 17 §2.5). A left join rather than a
+  // second query: the rotation runs over every outstanding product at once.
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => {
+      const t = sqliteSchema.trackedProducts;
+      const c = sqliteSchema.brandProductCards;
+      return db
+        .select({ product: t, linkId: c.id })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(toScrapeWhere(t, c, query));
+    },
+    postgres: (db) => {
+      const t = postgresSchema.trackedProducts;
+      const c = postgresSchema.brandProductCards;
+      return db
+        .select({ product: t, linkId: c.id })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(toScrapeWhere(t, c, query));
+    },
+    mysql: (db) => {
+      const t = mysqlSchema.trackedProducts;
+      const c = mysqlSchema.brandProductCards;
+      return db
+        .select({ product: t, linkId: c.id })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(toScrapeWhere(t, c, query));
+    },
+  })) as { product: TrackedProductRow; linkId: string | null }[];
+  return rows.map(({ product, linkId }) => ({ ...product, isLinked: linkId !== null }));
 }
 
 /**
@@ -1628,13 +1571,76 @@ export async function countActiveTrackedProducts(
   });
 }
 
+/**
+ * How many active products are in `SweepListedProducts`' candidate set — linked to a brand
+ * product or marked favourite (doc 17 §4.1) — a listings pass's plan. The distinct-card join
+ * mirrors `listProductsToScrape`'s `onlyListed` filter.
+ */
+export async function countListedTrackedProducts(
+  appDb: AppDatabase,
+  marketplaceCode: string,
+): Promise<number> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => {
+      const t = sqliteSchema.trackedProducts;
+      const c = sqliteSchema.brandProductCards;
+      return db
+        .select({ n: count() })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(
+          and(
+            eq(t.marketplaceCode, marketplaceCode),
+            eq(t.isActive, true),
+            or(isNotNull(c.id), eq(t.isFavourite, true)),
+          ),
+        );
+    },
+    postgres: (db) => {
+      const t = postgresSchema.trackedProducts;
+      const c = postgresSchema.brandProductCards;
+      return db
+        .select({ n: count() })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(
+          and(
+            eq(t.marketplaceCode, marketplaceCode),
+            eq(t.isActive, true),
+            or(isNotNull(c.id), eq(t.isFavourite, true)),
+          ),
+        );
+    },
+    mysql: (db) => {
+      const t = mysqlSchema.trackedProducts;
+      const c = mysqlSchema.brandProductCards;
+      return db
+        .select({ n: count() })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(
+          and(
+            eq(t.marketplaceCode, marketplaceCode),
+            eq(t.isActive, true),
+            or(isNotNull(c.id), eq(t.isFavourite, true)),
+          ),
+        );
+    },
+  })) as { n: number }[];
+  return Number(rows[0]?.n ?? 0);
+}
+
 // ---------------------------------------------------------------------------
-// Sweep passes (doc 07 §7.4)
+// Sweep passes (doc 07 §7.4, §7.5)
 // ---------------------------------------------------------------------------
+
+/** `all` (`SweepTrackedProducts`) or `listed` (`SweepListedProducts`) — doc 17 §4.2. */
+export type ScrapePassScope = 'all' | 'listed';
 
 export interface TrackedScrapePassRow {
   readonly id: string;
   readonly marketplaceCode: string;
+  readonly scope: ScrapePassScope;
   readonly passNo: number;
   readonly startedAt: number;
   readonly finishedAt: number | null;
@@ -1646,33 +1652,50 @@ export interface TrackedScrapePassRow {
 }
 
 /**
- * The marketplace's newest pass, open or finished — what the screens read and what the job
- * checks before opening a new one.
+ * The marketplace's newest pass **of this scope**, open or finished — what the screens read and
+ * what the job checks before opening a new one. The two scopes number their passes independently
+ * (doc 17 §4.2), so this never returns the other lane's row.
  */
 export async function latestTrackedScrapePass(
   appDb: AppDatabase,
   marketplaceCode: string,
+  scope: ScrapePassScope = 'all',
 ): Promise<TrackedScrapePassRow | undefined> {
   const rows = (await withDialect(appDb, {
     sqlite: (db) =>
       db
         .select()
         .from(sqliteSchema.trackedScrapePasses)
-        .where(eq(sqliteSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .where(
+          and(
+            eq(sqliteSchema.trackedScrapePasses.marketplaceCode, marketplaceCode),
+            eq(sqliteSchema.trackedScrapePasses.scope, scope),
+          ),
+        )
         .orderBy(desc(sqliteSchema.trackedScrapePasses.passNo))
         .limit(1),
     postgres: (db) =>
       db
         .select()
         .from(postgresSchema.trackedScrapePasses)
-        .where(eq(postgresSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .where(
+          and(
+            eq(postgresSchema.trackedScrapePasses.marketplaceCode, marketplaceCode),
+            eq(postgresSchema.trackedScrapePasses.scope, scope),
+          ),
+        )
         .orderBy(desc(postgresSchema.trackedScrapePasses.passNo))
         .limit(1),
     mysql: (db) =>
       db
         .select()
         .from(mysqlSchema.trackedScrapePasses)
-        .where(eq(mysqlSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .where(
+          and(
+            eq(mysqlSchema.trackedScrapePasses.marketplaceCode, marketplaceCode),
+            eq(mysqlSchema.trackedScrapePasses.scope, scope),
+          ),
+        )
         .orderBy(desc(mysqlSchema.trackedScrapePasses.passNo))
         .limit(1),
   })) as TrackedScrapePassRow[];
@@ -1680,42 +1703,56 @@ export async function latestTrackedScrapePass(
 }
 
 /**
- * The finished passes, newest first — the pass history a screen shows ("önceki tur 5s 42dk").
+ * The finished passes of one scope, newest first — the pass history a screen shows ("önceki tur
+ * 5s 42dk").
  */
 export async function listTrackedScrapePasses(
   appDb: AppDatabase,
   marketplaceCode: string,
   limit: number,
+  scope: ScrapePassScope = 'all',
 ): Promise<TrackedScrapePassRow[]> {
   return withDialect(appDb, {
     sqlite: (db) =>
       db
         .select()
         .from(sqliteSchema.trackedScrapePasses)
-        .where(eq(sqliteSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .where(
+          and(
+            eq(sqliteSchema.trackedScrapePasses.marketplaceCode, marketplaceCode),
+            eq(sqliteSchema.trackedScrapePasses.scope, scope),
+          ),
+        )
         .orderBy(desc(sqliteSchema.trackedScrapePasses.passNo))
         .limit(limit),
     postgres: (db) =>
       db
         .select()
         .from(postgresSchema.trackedScrapePasses)
-        .where(eq(postgresSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .where(
+          and(
+            eq(postgresSchema.trackedScrapePasses.marketplaceCode, marketplaceCode),
+            eq(postgresSchema.trackedScrapePasses.scope, scope),
+          ),
+        )
         .orderBy(desc(postgresSchema.trackedScrapePasses.passNo))
         .limit(limit),
     mysql: (db) =>
       db
         .select()
         .from(mysqlSchema.trackedScrapePasses)
-        .where(eq(mysqlSchema.trackedScrapePasses.marketplaceCode, marketplaceCode))
+        .where(
+          and(
+            eq(mysqlSchema.trackedScrapePasses.marketplaceCode, marketplaceCode),
+            eq(mysqlSchema.trackedScrapePasses.scope, scope),
+          ),
+        )
         .orderBy(desc(mysqlSchema.trackedScrapePasses.passNo))
         .limit(limit),
   }) as Promise<TrackedScrapePassRow[]>;
 }
 
-export async function insertTrackedScrapePass(
-  appDb: AppDatabase,
-  row: TrackedScrapePassRow,
-): Promise<void> {
+export async function insertTrackedScrapePass(appDb: AppDatabase, row: TrackedScrapePassRow): Promise<void> {
   await runDialect(appDb, {
     sqlite: (db) => db.insert(sqliteSchema.trackedScrapePasses).values(row),
     postgres: (db) => db.insert(postgresSchema.trackedScrapePasses).values(row),

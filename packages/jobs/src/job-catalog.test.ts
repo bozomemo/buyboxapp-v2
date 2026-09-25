@@ -1,8 +1,10 @@
-import { newId } from '@buybox/db';
+import { configRepo, newId } from '@buybox/db';
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import {
   getJobCadenceMs,
+  isJobEnabled,
+  jobEnabledSettingKey,
   jobCadenceSettingKey,
   jobDefaultCadenceMs,
   JOB_CATALOG,
@@ -18,11 +20,43 @@ import { RepricePayloadSchema } from './pipeline/reprice.js';
 import { ResetBudgetPayloadSchema } from './pipeline/reset-budget.js';
 import { ResolveProductBarcodesPayloadSchema } from './pipeline/resolve-product-barcodes.js';
 import { EvaluateBrandFindingsPayloadSchema } from './pipeline/evaluate-brand-findings.js';
-import { ScrapeCompetitorsPayloadSchema } from './pipeline/scrape-competitors.js';
-import { SubmitPriceChangesPayloadSchema } from './pipeline/submit-price-changes.js';
+import { SCRAPE_COMPETITORS_JOB, ScrapeCompetitorsPayloadSchema } from './pipeline/scrape-competitors.js';
+import { SUBMIT_PRICE_CHANGES_JOB, SubmitPriceChangesPayloadSchema } from './pipeline/submit-price-changes.js';
 import { SweepBrandCataloguePayloadSchema } from './pipeline/sweep-brand-catalogue.js';
+import { SweepListedProductsPayloadSchema } from './pipeline/sweep-listed-products.js';
 import { SweepTrackedProductsPayloadSchema } from './pipeline/sweep-tracked-products.js';
 import { createSqliteTestDb } from './test-helpers.js';
+
+describe('isJobEnabled — an unreadable stored value never enables a job', () => {
+  // SubmitPriceChanges defaults to enabled, ScrapeCompetitors to disabled: the two directions.
+  const cases: { stored: string | null; job: string; expected: boolean }[] = [
+    { stored: null, job: SUBMIT_PRICE_CHANGES_JOB, expected: true },
+    { stored: null, job: SCRAPE_COMPETITORS_JOB, expected: false },
+    { stored: 'true', job: SCRAPE_COMPETITORS_JOB, expected: true },
+    { stored: 'false', job: SUBMIT_PRICE_CHANGES_JOB, expected: false },
+    { stored: 'undefined', job: SUBMIT_PRICE_CHANGES_JOB, expected: false },
+    { stored: 'yes', job: SUBMIT_PRICE_CHANGES_JOB, expected: false },
+    { stored: '', job: SUBMIT_PRICE_CHANGES_JOB, expected: false },
+    { stored: 'TRUE', job: SUBMIT_PRICE_CHANGES_JOB, expected: false },
+  ];
+  for (const { stored, job, expected } of cases) {
+    it(`${job} with ${stored === null ? 'no row' : JSON.stringify(stored)} → ${expected}`, async () => {
+      const { appDb, cleanup } = await createSqliteTestDb();
+      try {
+        if (stored !== null) {
+          await configRepo.setAppSetting(
+            appDb,
+            { key: jobEnabledSettingKey(job), value: stored, updatedBy: 'test', updatedAt: 1000 },
+            newId(),
+          );
+        }
+        expect(await isJobEnabled(appDb, job)).toBe(expected);
+      } finally {
+        cleanup();
+      }
+    });
+  }
+});
 
 describe('job cadence (doc 07 §8, doc 08 §12, R-JOB-2)', () => {
   it('falls back to the catalogue default when nothing is stored', async () => {
@@ -133,6 +167,7 @@ describe('catalogue default payloads are runnable', () => {
     ScrapeCompetitors: ScrapeCompetitorsPayloadSchema,
     SweepBrandCatalogue: SweepBrandCataloguePayloadSchema,
     SweepTrackedProducts: SweepTrackedProductsPayloadSchema,
+    SweepListedProducts: SweepListedProductsPayloadSchema,
     ResolveProductBarcodes: ResolveProductBarcodesPayloadSchema,
     EvaluateBrandFindings: EvaluateBrandFindingsPayloadSchema,
   };

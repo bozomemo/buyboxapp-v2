@@ -43,23 +43,21 @@ export const ROTATION_WEIGHTS = {
    */
   neverRated: 3,
   /**
-   * The brand published a price for it. That is an operator saying in as many words that this
-   * product matters, and a violation of a published price is the one finding on these screens
-   * that is actionable on its own — so it is worth seeing sooner.
+   * The card is in the brand module's İlanlar: linked to one of the manager's brand products, or
+   * marked favourite (doc 17 §4.1). That is an operator saying in as many words that this card
+   * matters, which is what the old "has a reference price" weight was a proxy for (doc 17 §2.5).
    */
-  hasReferencePrice: 0.5,
+  listed: 0.5,
 } as const;
 
 type Product = trackedProductsRepo.TrackedProductRow;
 
-/** The interval this product waits between looks. Never below the base for a priced product. */
+/** The interval this product waits between looks. */
 export function rotationIntervalMs(product: Product): number {
   let interval = ROTATION_BASE_INTERVAL_MS;
   if (product.hasSellers === false) interval *= ROTATION_WEIGHTS.noSellers;
   if (product.ratingCount === 0) interval *= ROTATION_WEIGHTS.neverRated;
-  if (product.referencePrice !== null && product.referencePrice !== undefined) {
-    interval *= ROTATION_WEIGHTS.hasReferencePrice;
-  }
+  if (product.isLinked === true || product.isFavourite === true) interval *= ROTATION_WEIGHTS.listed;
   return interval;
 }
 

@@ -21,6 +21,7 @@ per job from the Jobs screen (§8 "Operator-configurable cadence").
 | `ObserveBuybox` | per marketplace, tiered (§4) | Official buybox API → `buybox_observations` |
 | `ScrapeCompetitors` | per marketplace, hourly, tiered (§4) — **disabled by default** | Full seller detail for **our own listings** → `scrape_runs` + `competitor_observations` (reporting only, §7) |
 | `SweepTrackedProducts` | per marketplace, continuous passes — **disabled by default** | Read every tracked product, lap after lap, resumably (reporting only, §7.4) |
+| `SweepListedProducts` | per marketplace, a pass every 30 min — **disabled by default** | Read only the brand İlanlar cards (linked + favourite), in parallel with the catalogue sweep; evaluates price bands (reporting only, §7.5) |
 | `RescanTrackedProducts` | on demand only, never scheduled | Re-read the tracked products an operator selected (reporting only, §7.1) |
 | `ScrapeBrandSellers` | on demand only, never scheduled | Read **every** product of one watched brand for sellers/buybox, now rather than when the sweep reaches it (reporting only, §7.3) |
 | `Reprice` | per marketplace, policy interval | Decide; enqueue `price_submissions` |
@@ -28,8 +29,20 @@ per job from the Jobs screen (§8 "Operator-configurable cadence").
 | `ConfirmSubmissions` | continuous | Poll batch status to a terminal state |
 | `ResetBudget` | daily, marketplace midnight | Roll `update_budget_usage` |
 | `EvaluateBrandFindings` | every 6 h, **enabled by default** | Re-derive each watched brand's audit findings, reconcile `brand_findings`, push what is new (§7.2) |
+| `DeliverNotifications` | every 1 min, **enabled by default** | Drain `notification_deliveries`: webhook, e-mail, SMS; retry failures (§7.6) |
 | `PruneHistory` | nightly | Apply retention (doc 05 §10) |
 | `ImportOrders` | — | **MAY-ADD-LATER** |
+
+**Module gating (doc 17 §1).** Every job belongs to the seller module, the brand module or
+both (doc 17 §1.2). A job whose module is disabled is **not dispatched**, and the flag is read on
+every scheduler tick rather than at worker boot, so disabling the seller module stops `Reprice`
+and `SubmitPriceChanges` on the next tick. The one exception is `ConfirmSubmissions`, which keeps
+running while any submitted batch is short of a terminal state, because a price change is only
+recorded once the marketplace confirms it. The module of every job is `JOB_MODULES`
+(`packages/jobs/src/modules.ts`); the worker's own test fails if a registered job is missing
+from it, because a missing job would be treated as belonging to no module and run regardless.
+Seller jobs are ticked for marketplaces with a seller **adapter**; brand jobs for every
+**enabled** marketplace, credentials or not.
 
 Every run writes a `job_runs` row and carries a correlation id through every log line.
 
@@ -589,7 +602,8 @@ for each active watched brand:
 `SweepBrandCatalogue` and `ResolveProductBarcodes` all make requests to a marketplace and so
 need an explicit business decision (api-references §1.6). This one makes **no requests at all**
 — it reads the archive those jobs already wrote — so an install that enabled them has already
-made that decision and would gain nothing from a second switch.
+made that decision and would gain nothing from a second switch. (A new install that chooses the brand module in
+setup has made it there: the wizard switches the brand scanning jobs on — doc 17 §1.4.)
 
 **Global, not per marketplace.** A finding belongs to a *brand*, and brands are enumerated
 inside the job; ticking it per marketplace would evaluate every brand once per marketplace and
@@ -730,6 +744,62 @@ product nobody sells and nobody has rated is read near the end of every pass.
 
 ⚠️ **Reporting only**, on the terms of §7: it reads `tracked_products`, never `listings`.
 
+### 7.5 `SweepListedProducts` — the listings lane, and band evaluation
+
+Specified 2026-09-19 (doc 17 §4.2, §5). The pass loop and its scope column built 2026-09-20
+(build plan Phase 11.5); band evaluation below is **not yet built** — it lands with `evaluateBand`
+and `band_violations` in Phase 11.6, once those exist to evaluate against. Until then this job
+only keeps İlanlar's prices and seller data fresh, exactly like the catalogue sweep over a smaller
+set.
+
+**The same pass loop as §7.4 over a smaller candidate set**: active tracked products that are
+linked to a brand product **or** marked favourite. Its passes are `tracked_scrape_passes` rows
+with `scope = 'listed'`; §7.4's are `scope = 'all'`.
+
+- **Both lanes may run at once.** They are different job names, so `countActiveJobsForTarget`
+  does not make one wait for the other. They read through the **same source instance and its one
+  shared rate limiter**, so running both does not raise the request rate; it only means the
+  listings lane is not queued behind a catalogue pass that takes hours.
+- **They share the cursor column.** Both advance `last_scraped_at`, so a card either lane has
+  read since a pass opened is done for the other lane's pass too.
+- **Cadence 30 min, not continuous.** A listings pass over tens of cards finishes in minutes; at
+  §7.4's 60 s it would re-read the same pages all day. The cadence is the gap between pass
+  *starts*, operator-overridable like any other (§8.1).
+- Consecutive-failure guard, `is_active` handling and disabled-by-default are exactly §7.4's.
+
+**Band evaluation** runs inside the shared read (`scrapeTrackedProducts`), so a card is evaluated
+whichever lane — or `RescanTrackedProducts` — read it:
+
+```
+after a successful look of card C:
+    link = brand_product_cards for C;  if none: done
+    offers → buybox = rank 1 offer
+    evaluateBand(product, link.multiplier, buybox)          ← pure, packages/core
+    reconcile band_violations for (C, belowMin) and (C, aboveMax)
+    for each violation newly opened: enqueue notification_deliveries (or `suppressed`, §7.6)
+after a failed look: nothing
+```
+
+Evaluation is **reporting only**, on §7's terms. It reads no `listings` row, writes no price, and
+a failure inside it is recorded and the look still counts: an exception in the band path must not
+turn a successful read into a failed one.
+
+### 7.6 `DeliverNotifications`
+
+Specified 2026-09-19 (doc 17 §6). Runs every minute in both modules.
+
+- Takes `pending` deliveries, groups them **per channel**, and sends one message per channel per
+  run with up to `MAX_VIOLATIONS_PER_MESSAGE` items and a count of the rest. SMS is always a
+  one-line digest.
+- A successful send sets `sent`. A failure increments `attempts`, stores the error and leaves the
+  row `pending` until `NOTIFY_MAX_ATTEMPTS`, then `failed`. **A failed notification never
+  un-stores a violation**, and never fails the look that produced it.
+- A channel with no configuration (no env credentials, or no recipients) is skipped and its
+  deliveries stay `pending` with the reason, so the screen can say "kimseye bildirilmedi: e-posta
+  yapılandırılmamış" rather than implying someone was told.
+- Enqueuing (in §7.5) checks the re-notify quiet period: a violation for the same (card, kind,
+  seller) resolved within `BAND_RENOTIFY_QUIET_MS` enqueues its delivery as `suppressed`.
+
 ---
 
 ## 8. Scheduling and concurrency
@@ -745,6 +815,13 @@ The scheduler is DB-backed (doc 10 §1.2). Guarantees:
   pages one at a time — is never mistaken for a crashed worker and reclaimed by a second run
   while the first is still going. Only a worker that has actually stopped heartbeating (crashed
   or killed) ever has its claim expire and get requeued.
+  **Changed 2026-09-25:** the runner renews the claim to the *claimed job's own* timeout the
+  moment it starts, rather than leaving the longest registered timeout (6 h) that `claimNextJob`
+  must stamp before it knows which job it claimed. And at startup a worker expires every claim
+  held by a worker on **its own host whose process no longer exists** (worker ids are
+  `worker-<pid>-<rand>@<host>`; `releaseLocksOfDeadLocalWorkers`), so a restart no longer leaves
+  a run frozen on the Jobs screen and "Şimdi çalıştır" answering 409 for hours. A worker on
+  another host, or a pid now used by another process, is left to its timeout.
 - **Bounded retries** with backoff; exhausted jobs move to `failed` and alert. A retry is also
   skipped — the job moves straight to `failed` — if the operator disabled the job (doc 12 6.9)
   since it was claimed, so switching a job off stops its own in-flight retry chain immediately

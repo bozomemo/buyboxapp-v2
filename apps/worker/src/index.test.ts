@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configRepo, createDb, jobsRepo, runMigrations } from '@buybox/db';
-import { IMPORT_LISTINGS_JOB, JOB_CATALOG, jobCadenceSettingKey, REPRICE_JOB } from '@buybox/jobs';
-import { FileSecretStore, marketplaceCredentialsKey } from '@buybox/shared';
+import { IMPORT_LISTINGS_JOB, JOB_CATALOG, JOB_MODULES, jobCadenceSettingKey, REPRICE_JOB } from '@buybox/jobs';
+import { FileSecretStore, marketplaceCredentialsKey, MODULE_SETTING_KEYS } from '@buybox/shared';
 import { startWorker } from './index.js';
 
 describe('startWorker', () => {
@@ -67,6 +67,12 @@ describe('startWorker', () => {
     const missing = JOB_CATALOG.map((entry) => entry.jobName).filter((name) => !registered.has(name));
     expect(missing).toEqual([]);
 
+    // doc 17 §1.3: a job with no module is treated as `core` and runs whatever is enabled. For a
+    // seller job that would mean running with the seller module off, so every registered job —
+    // on-demand ones outside the catalogue included — must be listed.
+    const withoutModule = [...registered].filter((name) => JOB_MODULES[name] === undefined);
+    expect(withoutModule).toEqual([]);
+
     await handle.shutdown();
     appDb.close();
   });
@@ -120,6 +126,48 @@ describe('startWorker', () => {
     } finally {
       vi.useRealTimers();
     }
+    appDb.close();
+  });
+
+  /**
+   * doc 17 §1.4: a brand-only install enables the marketplaces it watches and never enters
+   * seller credentials. The public-page sources need none, and used to be built only where a
+   * seller adapter existed — which left such an install with no sources at all.
+   */
+  it('builds the public-page sources for an enabled marketplace with no seller credentials', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'buybox-worker-test-'));
+    const dbFile = path.join(dir, 'test.db');
+    const appDb = createDb(`file:${dbFile}`, 'sqlite');
+    await runMigrations(appDb);
+    const nowMs = Date.now();
+    await configRepo.upsertMarketplace(appDb, {
+      code: 'trendyol',
+      displayName: 'Trendyol',
+      enabled: true,
+      merchantRef: null,
+      createdAt: nowMs,
+      updatedAt: nowMs,
+    });
+    await configRepo.setAppSetting(
+      appDb,
+      { key: MODULE_SETTING_KEYS.seller, value: 'false', updatedBy: 'test', updatedAt: nowMs },
+      'audit-1',
+    );
+
+    const handle = await startWorker({
+      appDb,
+      env: {
+        DATABASE_URL: `file:${dbFile}`,
+        SECRET_STORE_KEY: 'test-key',
+        SECRET_STORE_PATH: path.join(dir, 'secrets.enc.json'),
+      },
+    });
+
+    expect(handle.adapters.size).toBe(0);
+    expect(handle.competitorSources.has('trendyol')).toBe(true);
+    expect(handle.brandCatalogueSources.has('trendyol')).toBe(true);
+
+    await handle.shutdown();
     appDb.close();
   });
 

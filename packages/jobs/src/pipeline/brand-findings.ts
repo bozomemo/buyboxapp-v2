@@ -262,12 +262,18 @@ export async function collectBrandFindings(
     ),
   );
 
-  const disagreements = await trackedProductsRepo.queryTrackedProducts(appDb, {
-    watchedBrandId: brand.id,
-    searchTermOnly: true,
-    limit: PRODUCT_CANDIDATE_LIMIT,
-    offset: 0,
-  });
+  // "Found by the name, not by the brand id" is evidence only when the brand id was searched
+  // (`brandRefSearched` below, which is what actually gates the finding — the category
+  // candidates reach it too). Not querying here just keeps the "N more" count at zero.
+  const disagreements =
+    brand.brandRef === null
+      ? { rows: [], total: 0 }
+      : await trackedProductsRepo.queryTrackedProducts(appDb, {
+          watchedBrandId: brand.id,
+          searchTermOnly: true,
+          limit: PRODUCT_CANDIDATE_LIMIT,
+          offset: 0,
+        });
 
   const productById = new Map<string, AuditProductFacts>();
   for (const row of [...categoryCandidates.flatMap((page) => page.rows), ...disagreements.rows]) {
@@ -291,7 +297,8 @@ export async function collectBrandFindings(
     sellerName: known.get(`${row.marketplaceCode}::${row.sellerRef}`)?.sellerName ?? row.observedName,
     trackedProductId: row.trackedProductId,
     productLabel: row.productLabel,
-    referencePrice: row.referencePrice,
+    unitReferencePrice: row.unitReferencePrice,
+    unitMultiplier: row.unitMultiplier,
     lowestPrice: row.lowestPrice,
     looksBelow: row.looksBelow,
     lastBelowAt: row.lastBelowAt,
@@ -306,7 +313,12 @@ export async function collectBrandFindings(
       categoryProductCounts,
       totalProductCount,
       hasAuthorisedList,
+      brandRefSearched: brand.brandRef !== null,
       nowMs: untilMs,
+      // The brand's first look in the window: the baseline "new seller" is measured against.
+      // Inside a thirty-day window an older brand's baseline is simply the window's start.
+      watchStartedAt:
+        aggregates.length === 0 ? null : Math.min(...aggregates.map((a) => a.firstSeenAt)),
     },
     policyNoteOf,
   );

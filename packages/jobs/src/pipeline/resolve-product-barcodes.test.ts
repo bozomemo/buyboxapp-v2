@@ -45,6 +45,18 @@ function snapshotFor(productRef: string, barcode: string | null): ProductDetailS
   };
 }
 
+/**
+ * A valid EAN-13 derived from the product ref, so each product's answer is distinguishable and
+ * still passes the GTIN check the job applies before storing.
+ */
+function echoBarcode(productRef: string): string {
+  const digits = productRef.replace(/\D/g, '').padStart(3, '0').slice(-3);
+  const body = `868100299${digits}`;
+  let sum = 0;
+  [...body].reverse().forEach((d, i) => (sum += Number(d) * (i % 2 === 0 ? 3 : 1)));
+  return `${body}${(10 - (sum % 10)) % 10}`;
+}
+
 /** A source driven by a per-call outcome list, so the batch's walk is directly observable. */
 function fakeSource(
   outcomes: readonly (ProductDetailSnapshot | ProductDetailError | 'echo')[],
@@ -57,7 +69,7 @@ function fakeSource(
       calls.push(productRef);
       const outcome = outcomes[calls.length - 1];
       if (outcome === undefined) throw new ProductDetailError('no more outcomes', 'fetchFailed');
-      if (outcome === 'echo') return snapshotFor(productRef, `barcode-${productRef}`);
+      if (outcome === 'echo') return snapshotFor(productRef, echoBarcode(productRef));
       if (outcome instanceof ProductDetailError) throw outcome;
       return outcome;
     },
@@ -136,8 +148,8 @@ describe('ResolveProductBarcodes', () => {
       const result = await resolveProductBarcodes(ctxFor(source));
 
       expect(result).toEqual({ itemsTotal: 2, itemsOk: 2, itemsFailed: 0 });
-      expect((await trackedProductsRepo.getTrackedProduct(db.appDb, a))?.barcode).toBe('barcode-HBCV1');
-      expect((await trackedProductsRepo.getTrackedProduct(db.appDb, b))?.barcode).toBe('barcode-HBCV2');
+      expect((await trackedProductsRepo.getTrackedProduct(db.appDb, a))?.barcode).toBe(echoBarcode('HBCV1'));
+      expect((await trackedProductsRepo.getTrackedProduct(db.appDb, b))?.barcode).toBe(echoBarcode('HBCV2'));
     });
 
     it('does nothing at all when the marketplace has no detail source', async () => {
@@ -197,6 +209,18 @@ describe('ResolveProductBarcodes', () => {
   });
 
   describe('what a run may and may not write', () => {
+    it('stores a merchant code the page calls a barcode as no barcode at all', async () => {
+      const id = await seedProduct('HBCV1');
+      const source = fakeSource([snapshotFor('HBCV1', 'HBDFBD21352107')]);
+
+      const result = await resolveProductBarcodes(ctxFor(source));
+
+      expect(result).toEqual({ itemsTotal: 1, itemsOk: 1, itemsFailed: 0 });
+      const row = await trackedProductsRepo.getTrackedProduct(db.appDb, id);
+      expect(row?.barcode).toBeNull();
+      expect(row?.barcodeResolvedAt).toBe(NOW);
+    });
+
     it('stores "the page stated no barcode" as an answer, so the product is not asked again', async () => {
       const id = await seedProduct('HBCV1');
       const source = fakeSource([snapshotFor('HBCV1', null)]);

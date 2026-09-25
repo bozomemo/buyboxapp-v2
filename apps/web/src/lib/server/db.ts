@@ -33,6 +33,35 @@ export function isBootstrapped(): boolean {
   return tryGetBootstrapEnv() !== undefined;
 }
 
+export interface BootstrapEnvProblem {
+  readonly variable: string;
+  readonly message: string;
+}
+
+/**
+ * Bootstrap variables that are **set but unusable** — the difference between "the wizard has not
+ * run yet" and "this install is misconfigured", which `isBootstrapped` alone cannot express.
+ *
+ * Found 2026-09-20 while testing a packaged run: one wrong value (`SINGLE_PROCESS=true`, where
+ * the schema takes `0` or `1`) fails the whole parse, so the app reported *the database* as not
+ * configured and answered every route "Lisans geçersiz" — the licence gate's fail-closed answer
+ * when it cannot read a database it does not believe exists. Nothing named the real cause, and
+ * the one place designed to say what is wrong (`/api/health`, doc 14 §5.1) was the loudest about
+ * the wrong thing.
+ *
+ * Only variables actually present in the environment are reported. A fresh install has none of
+ * them set, and "DATABASE_URL is required" there is the wizard's starting state, not a fault.
+ */
+export function bootstrapEnvProblems(): BootstrapEnvProblem[] {
+  const parsed = BootstrapEnvSchema.safeParse(process.env);
+  if (parsed.success) return [];
+  return parsed.error.issues.flatMap((issue) => {
+    const variable = typeof issue.path[0] === 'string' ? issue.path[0] : '';
+    if (variable === '' || process.env[variable] === undefined) return [];
+    return [{ variable, message: issue.message }];
+  });
+}
+
 export function getAppDb(): AppDatabase {
   const env = parseBootstrapEnv(process.env);
   if (globalThis.__buyboxAppDb && globalThis.__buyboxAppDbUrl === env.DATABASE_URL) {

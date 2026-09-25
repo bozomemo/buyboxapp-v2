@@ -666,6 +666,9 @@ export const trackedProducts = mysqlTable(
      */
     hasSellers: bool('has_sellers'),
     lastSellerSeenAt: timestampMs('last_seller_seen_at'),
+    /** See the doc comment on `isFavourite` in `schema/sqlite.ts`. */
+    isFavourite: bool('is_favourite').notNull().default(false),
+    favouritedAt: timestampMs('favourited_at'),
   },
   (t) => [
     uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
@@ -777,6 +780,8 @@ export const trackedScrapePasses = mysqlTable(
     marketplaceCode: code('marketplace_code', 20)
       .notNull()
       .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    /** `all` or `listed` — see the doc comment on `schema/sqlite.ts`'s copy of this table. */
+    scope: code('scope', 10).notNull().default('all'),
     passNo: int('pass_no').notNull(),
     startedAt: timestampMs('started_at').notNull(),
     finishedAt: timestampMs('finished_at'),
@@ -788,7 +793,7 @@ export const trackedScrapePasses = mysqlTable(
   },
   (t) => [
     index('tracked_scrape_passes_marketplace_started').on(t.marketplaceCode, t.startedAt),
-    uniqueIndex('tracked_scrape_passes_marketplace_no').on(t.marketplaceCode, t.passNo),
+    uniqueIndex('tracked_scrape_passes_marketplace_scope_no').on(t.marketplaceCode, t.scope, t.passNo),
   ],
 );
 
@@ -1091,6 +1096,57 @@ export const brandFindings = mysqlTable(
       name: 'fk_brand_findings_watched_brand_id',
       columns: [t.watchedBrandId],
       foreignColumns: [watchedBrands.id],
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
+ * See the doc comment on `brandProducts` in `schema/sqlite.ts`. `name` is a `varchar` rather
+ * than `text` here because MySQL cannot index a `text` column without a prefix length.
+ */
+export const brandProducts = mysqlTable(
+  'brand_products',
+  {
+    id: code('id', 36).primaryKey(),
+    name: code('name', 255).notNull(),
+    referencePrice: money('reference_price').notNull(),
+    minPrice: money('min_price'),
+    maxPrice: money('max_price'),
+    barcode: code('barcode', 32),
+    source: code('source', 20).notNull(),
+    referencePriceSource: text('reference_price_source'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [index('brand_products_barcode').on(t.barcode), index('brand_products_name').on(t.name)],
+);
+
+/** See the doc comment on `brandProductCards` in `schema/sqlite.ts`. */
+export const brandProductCards = mysqlTable(
+  'brand_product_cards',
+  {
+    id: code('id', 36).primaryKey(),
+    brandProductId: code('brand_product_id', 36).notNull(),
+    trackedProductId: code('tracked_product_id', 36).notNull(),
+    marketplaceCode: code('marketplace_code', 20).notNull(),
+    unitMultiplier: int('unit_multiplier').notNull(),
+    isPrimary: bool('is_primary').notNull(),
+    linkSource: code('link_source', 20).notNull(),
+    linkedAt: timestampMs('linked_at').notNull(),
+  },
+  (t) => [
+    index('brand_product_cards_product').on(t.brandProductId),
+    uniqueIndex('brand_product_cards_tracked_product').on(t.trackedProductId),
+    // Named explicitly: the auto-generated names exceed MySQL's 64-char identifier limit.
+    foreignKey({
+      name: 'fk_brand_product_cards_product_id',
+      columns: [t.brandProductId],
+      foreignColumns: [brandProducts.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'fk_brand_product_cards_tracked_product_id',
+      columns: [t.trackedProductId],
+      foreignColumns: [trackedProducts.id],
     }).onDelete('cascade'),
   ],
 );

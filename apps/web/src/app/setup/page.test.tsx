@@ -26,7 +26,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => mockNavigation.searchParams,
 }));
 
-const PROGRESS_KEY = 'buybox.setup.wizard.progress.v1';
+const PROGRESS_KEY = 'buybox.setup.wizard.progress.v2';
 
 /**
  * Node 22+'s own experimental `localStorage` global collides with jsdom's under this repo's
@@ -73,27 +73,27 @@ describe('SetupWizard (orchestrator)', () => {
 
     render(<SetupWizard />);
 
-    expect(await screen.findByText('Adım 1 / 8 — Veritabanı', { exact: false })).toBeTruthy();
+    expect(await screen.findByText('Adım 1 / 9 — Veritabanı', { exact: false })).toBeTruthy();
   });
 
   it('populated: a remembered step is restored instead of resetting to step 1', async () => {
     window.localStorage.setItem(
       PROGRESS_KEY,
-      JSON.stringify({ stepIndex: 1, databaseReady: true, enabledMarketplaces: [] }),
+      JSON.stringify({ stepIndex: 2, databaseReady: true, enabledMarketplaces: [] }),
     );
     // Step1Database still mounts for one render before the restore effect switches the step away.
     stubFetch({ '/api/setup/database/suggest': { pending: true } });
 
     render(<SetupWizard />);
 
-    expect(await screen.findByText('Adım 2 / 8 — Mağaza Kimliği', { exact: false })).toBeTruthy();
+    expect(await screen.findByText('Adım 3 / 9 — Mağaza Kimliği', { exact: false })).toBeTruthy();
     expect(screen.queryByText('henüz onaylanmadı', { exact: false })).toBeNull();
   });
 
   it('populated: restoring never re-shows the "database step not confirmed" warning for a completed run', async () => {
     window.localStorage.setItem(
       PROGRESS_KEY,
-      JSON.stringify({ stepIndex: 2, databaseReady: true, enabledMarketplaces: ['trendyol'] }),
+      JSON.stringify({ stepIndex: 3, databaseReady: true, enabledMarketplaces: ['trendyol'] }),
     );
     stubFetch({
       '/api/setup/database/suggest': { pending: true },
@@ -102,7 +102,50 @@ describe('SetupWizard (orchestrator)', () => {
 
     render(<SetupWizard />);
 
-    expect(await screen.findByText('Adım 3 / 8 — Pazaryerleri', { exact: false })).toBeTruthy();
+    expect(await screen.findByText('Adım 4 / 9 — Pazaryerleri', { exact: false })).toBeTruthy();
+  });
+
+  it('asks the purpose right after the database step', async () => {
+    window.localStorage.setItem(
+      PROGRESS_KEY,
+      JSON.stringify({ stepIndex: 1, databaseReady: true, enabledMarketplaces: [] }),
+    );
+    stubFetch({
+      '/api/setup/database/suggest': { pending: true },
+      '/api/modules': { body: { modules: { seller: true, brand: true } } },
+    });
+
+    render(<SetupWizard />);
+
+    expect(await screen.findByText('Adım 2 / 9 — Kullanım Amacı', { exact: false })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: /Marka ürün yöneticisiyim/ })).toBeTruthy();
+  });
+
+  /**
+   * doc 17 §1.4: a brand-only install skips every seller step and is never asked for seller
+   * credentials — the marketplaces step is on/off switches only.
+   */
+  it('brand-only: four steps, and the marketplaces step asks for no credentials', async () => {
+    window.localStorage.setItem(
+      PROGRESS_KEY,
+      JSON.stringify({
+        stepIndex: 2,
+        databaseReady: true,
+        enabledMarketplaces: [],
+        modules: { seller: false, brand: true },
+      }),
+    );
+    stubFetch({
+      '/api/setup/database/suggest': { pending: true },
+      '/api/settings/marketplaces': { body: { marketplaces: [] } },
+    });
+
+    render(<SetupWizard />);
+
+    expect(await screen.findByText('Adım 3 / 4 — Pazaryerleri', { exact: false })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Trendyol' })).toBeTruthy();
+    expect(screen.queryByText('API Anahtarı')).toBeNull();
+    expect(screen.queryByText('Ücret Ayarları')).toBeNull();
   });
 });
 

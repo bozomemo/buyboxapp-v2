@@ -55,3 +55,18 @@ Hâlâ açık:
 - apps/web/src/lib/csv.ts:10 — doc yorumunun içinde gerçek bir BOM karakteri var, eslint
   no-irregular-whitespace hatası veriyor (bu çalışmadan önce de vardı)
 
+
+Pazaryeri satıcı özelliklerini göz ardına alıcaz.
+
+İlanlar olmayacak Onun yerine takip edilenlerin favorileri olacak.
+
+Takip edilen ürünlere excelle ekleme, Başlıklar : ürün linki, PSF, Max fiyatı
+
+Takip edilen ürünlerde aynı ürünü satan kartları görebilmeliyiz. 
+  Takip edilen ürünlere marka temsilcisi ürün tanımlayacak ve pazaryerinde 
+  bu ürünlerin hangi kartlarda satıldıgını girecek.
+
+Takip edilen ürünlerde buyboxta satan birisi bizim belirlediğimiz min fiyat max fiyat
+ aralığının dışında satıyorsa bize alarm olarak vermeli. 
+ Ekrandaki ilanlar ekranında da görünmeli. 
+

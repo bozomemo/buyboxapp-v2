@@ -17,6 +17,17 @@ export {
   type TickResult,
 } from './scheduler.js';
 export {
+  BRAND_SCAN_JOBS,
+  enableBrandScanJobsAtSetup,
+  isJobDispatchable,
+  JOB_MODULES,
+  jobModule,
+  readDispatchGate,
+  readEnabledModules,
+  type DispatchGate,
+  type JobModule,
+} from './modules.js';
+export {
   getLicenseStatus,
   isLicensed,
   readLicenseToken,
@@ -93,6 +104,12 @@ export {
   sweepTrackedProducts,
   type SweepTrackedProductsPayload,
 } from './pipeline/sweep-tracked-products.js';
+export {
+  SWEEP_LISTED_PRODUCTS_JOB,
+  SweepListedProductsPayloadSchema,
+  sweepListedProducts,
+  type SweepListedProductsPayload,
+} from './pipeline/sweep-listed-products.js';
 export {
   RESCAN_MAX_PRODUCTS,
   RESCAN_TRACKED_PRODUCTS_JOB,
@@ -172,6 +189,8 @@ export {
   scrapeRateSettingKey,
   setScrapeRateLimit,
   SCRAPE_TIMEOUT_MAX_MS,
+  SCRAPE_RATE_MAX_PER_MINUTE,
+  SCRAPE_BURST_MAX,
   SCRAPE_TIMEOUT_MIN_MS,
   type ScrapeRateLimit,
 } from './scrape-rate-settings.js';
@@ -229,3 +248,10 @@ export {
   type BrandFindingsRequest,
   type BrandFindingsResult,
 } from './pipeline/brand-findings.js';
+export {
+  isPidAlive,
+  parseWorkerInstanceId,
+  releaseLocksOfDeadLocalWorkers,
+  workerInstanceId,
+} from './stale-locks.js';
+export type { DeadWorkerCheck, ParsedWorkerId } from './stale-locks.js';

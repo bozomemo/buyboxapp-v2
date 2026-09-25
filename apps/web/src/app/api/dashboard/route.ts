@@ -25,7 +25,7 @@ import {
   trackedProductsRepo,
   watchedBrandsRepo,
 } from '@buybox/db';
-import { ALERT_STALE_AFTER_MS, marketplaceKillSwitchSetting } from '@buybox/jobs';
+import { ALERT_STALE_AFTER_MS, marketplaceKillSwitchSetting, readEnabledModules } from '@buybox/jobs';
 import {
   GLOBAL_KILL_SWITCH_SETTING_KEY,
   isKillSwitchEngaged,
@@ -197,6 +197,9 @@ export async function GET() {
         })();
 
   return NextResponse.json({
+    // doc 17 §1.3: which sections this install draws. Read here rather than by a second request
+    // so the screen never renders one module's sections against another poll's answer.
+    modules: await readEnabledModules(appDb),
     brandAudit,
     // Two genuinely separate states — see /api/system-pause's and /api/kill-switch's doc
     // comments. `systemPaused` stops everything; `globalKillSwitchEngaged` stops only

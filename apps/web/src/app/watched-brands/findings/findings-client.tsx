@@ -70,6 +70,9 @@ interface Finding {
   /** Kuruş, dizge olarak — para her zaman bigint, asla float (CLAUDE.md). */
   referencePrice?: string;
   lowestPrice?: string;
+  /** Birim PSF ve kartın adet çarpanı; `referencePrice` = ikisinin çarpımı (doc 17 §2.2). */
+  unitReferencePrice?: string;
+  unitMultiplier?: number;
   shortfallPct?: number;
   looksBelow?: number;
   lastBelowAt?: number;
@@ -233,6 +236,13 @@ function describe(f: Finding): React.ReactNode {
           bakışta. Son <Ago at={f.lastBelowAt} />.
           <div className="mt-1 text-xs text-(--color-muted)">
             Gösterilen, dönem içindeki <em>en düşük</em> teklifidir; ortalaması değil.
+            {(f.unitMultiplier ?? 1) > 1 && f.unitReferencePrice && (
+              <>
+                {' '}
+                Bu kart {f.unitMultiplier} adet satıyor: birim PSF {formatMoney(BigInt(f.unitReferencePrice))}{' '}
+                × {f.unitMultiplier}.
+              </>
+            )}
           </div>
         </>
       );

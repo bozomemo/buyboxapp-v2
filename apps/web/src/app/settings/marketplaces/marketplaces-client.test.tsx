@@ -17,10 +17,11 @@ import { MarketplacesClient } from './marketplaces-client';
 afterEach(() => cleanup());
 
 const PRIMARY_ROUTE = '/api/settings/marketplaces';
+const SELLER_ON = { '/api/modules': { body: { modules: { seller: true, brand: true } } } };
 
 describe('MarketplacesClient', () => {
   it('loading: shows the loading message and does not crash', async () => {
-    stubFetch({ [PRIMARY_ROUTE]: { pending: true } });
+    stubFetch({ [PRIMARY_ROUTE]: { pending: true }, ...SELLER_ON });
 
     render(<MarketplacesClient />);
 
@@ -28,7 +29,7 @@ describe('MarketplacesClient', () => {
   });
 
   it('error: shows the failure message and a retry button', async () => {
-    stubFetch({ [PRIMARY_ROUTE]: { reject: new Error('network down') } });
+    stubFetch({ [PRIMARY_ROUTE]: { reject: new Error('network down') }, ...SELLER_ON });
 
     render(<MarketplacesClient />);
 
@@ -37,7 +38,7 @@ describe('MarketplacesClient', () => {
   });
 
   it('empty: shows both marketplace forms with the not-yet-determined merchantRef', async () => {
-    stubFetch({ [PRIMARY_ROUTE]: { body: { marketplaces: [] } } });
+    stubFetch({ [PRIMARY_ROUTE]: { body: { marketplaces: [] } }, ...SELLER_ON });
 
     render(<MarketplacesClient />);
 
@@ -59,11 +60,27 @@ describe('MarketplacesClient', () => {
           ],
         },
       },
+      ...SELLER_ON,
     });
 
     render(<MarketplacesClient />);
 
     expect(await screen.findByText('M-123456')).toBeTruthy();
     expect(screen.getByText(/önce/)).toBeTruthy();
+  });
+
+  // doc 17 §1.4: a brand-only install scrapes public pages and has no store to log in to, so
+  // asking a brand manager for an API key and secret is asking for something they do not have.
+  it('brand-only: offers the on/off switch without a credential form', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: { body: { marketplaces: [] } },
+      '/api/modules': { body: { modules: { seller: false, brand: true } } },
+    });
+
+    render(<MarketplacesClient />);
+
+    expect(await screen.findAllByText(/API bilgisi gerekmez/)).toHaveLength(2);
+    expect(screen.queryByText('Bağlantıyı Test Et')).toBeNull();
+    expect(screen.getAllByText('Etkin')).toHaveLength(2);
   });
 });

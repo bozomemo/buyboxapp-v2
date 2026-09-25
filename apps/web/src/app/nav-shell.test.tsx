@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockNavigation, stubFetch } from '@/test-utils';
 import { NavShell } from './nav-shell';
@@ -21,7 +21,16 @@ vi.mock('next/navigation', () => ({
   useRouter: () => mockNavigation.router,
 }));
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  // The view switch remembers its choice; one test's click must not become the next test's view.
+  // Guarded because this jsdom's `localStorage` is not always a working Storage.
+  try {
+    window.localStorage.removeItem('buybox.navView');
+  } catch {
+    // nothing stored, nothing to leak
+  }
+});
 
 const SYSTEM_PAUSE_ROUTE = '/api/system-pause';
 const LICENSE_ROUTE = '/api/license';
@@ -91,5 +100,42 @@ describe('NavShell', () => {
 
     expect(await screen.findByRole('button', { name: 'Genel Durdurma: Duraklatıldı' })).toBeTruthy();
     expect(await screen.findByText(/Lisans süresi doldu\. Sistem 3 gün sonra duracak\./)).toBeTruthy();
+  });
+
+  describe('modules (doc 17 §1.3)', () => {
+    const base = {
+      [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },
+      [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
+    };
+
+    it('brand-only: the seller group is not drawn and there is nothing to switch between', async () => {
+      stubFetch({ ...base, '/api/modules': { body: { modules: { seller: false, brand: true } } } });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await screen.findByRole('link', { name: 'Takip Edilen Ürünler' })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: 'Rakip Geçmişi' })).toBeNull();
+      expect(screen.queryByRole('group', { name: 'Menü görünümü' })).toBeNull();
+    });
+
+    it('both installed: both groups by default, and the view switch narrows them', async () => {
+      stubFetch({ ...base, '/api/modules': { body: { modules: { seller: true, brand: true } } } });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await screen.findByRole('group', { name: 'Menü görünümü' })).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Rakip Geçmişi' })).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Takip Edilen Ürünler' })).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Marka' }));
+      expect(screen.queryByRole('link', { name: 'Rakip Geçmişi' })).toBeNull();
+      expect(screen.getByRole('link', { name: 'Takip Edilen Ürünler' })).toBeTruthy();
+      // The shared groups never depend on the view.
+      expect(screen.getByRole('link', { name: 'İşler' })).toBeTruthy();
+    });
   });
 });

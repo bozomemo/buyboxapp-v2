@@ -13,11 +13,12 @@
  * enriched with its latest look.
  */
 import { NextResponse } from 'next/server';
-import { parseProductLink } from '@buybox/adapters';
-import { brandReportsRepo, newId, trackedProductsRepo } from '@buybox/db';
+import { scaleToCard } from '@buybox/core';
+import { brandProductsRepo, brandReportsRepo, newId, trackedProductsRepo } from '@buybox/db';
 import { exportHeaders, exportRow, resolveExportColumns } from '@/lib/tracked-product-columns';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { resolveProductLink } from '@/lib/server/product-link';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -58,6 +59,11 @@ async function periodStatsFor(
     }
   }
   return merged;
+}
+
+/** The price a card is held to: its brand product's per-unit PSF times its multiplier. */
+function cardReferencePrice(link: brandProductsRepo.CardLink | undefined): bigint | null {
+  return link ? scaleToCard(link.referencePrice, link.unitMultiplier) : null;
 }
 
 function csvEscape(v: unknown): string {
@@ -133,6 +139,11 @@ export async function GET(request: Request) {
       csvRows.map((r) => r.id),
       periodWindow,
     );
+    // One query per chunk of ids, like the period band — so PSF is exportable too.
+    const csvLinks = await brandProductsRepo.cardLinksForTrackedProducts(
+      appDb,
+      csvRows.map((r) => r.id),
+    );
     // The operator's own columns, in their own order — the grid sends what it is showing, so
     // hiding and reordering columns on screen changes the file too (R-UI-12 + R-UI-13 together).
     const columns = resolveExportColumns(params.get('columns')?.split(',').filter(Boolean));
@@ -145,6 +156,7 @@ export async function GET(request: Request) {
           ...row,
           label: withBrand(row.label, row.brandName),
           period: csvPeriods.get(row.id) ?? null,
+          referencePrice: cardReferencePrice(csvLinks.get(row.id)),
         })
           .map(csvEscape)
           .join(','),
@@ -179,6 +191,10 @@ export async function GET(request: Request) {
     rows.map((r) => r.id),
     periodWindow,
   );
+  const links = await brandProductsRepo.cardLinksForTrackedProducts(
+    appDb,
+    rows.map((r) => r.id),
+  );
 
   return NextResponse.json({
     total,
@@ -210,13 +226,24 @@ export async function GET(request: Request) {
        */
       lastScrapedAt: row.lastScrapedAt ?? null,
       /**
-       * The brand's own published price, with where it came from and when — the one price on
-       * this row that nothing observed. Carried beside the measured columns rather than in
-       * place of them: the point of the screen is the comparison.
+       * The brand's own published price — the one price on this row that nothing observed.
+       * Carried beside the measured columns rather than in place of them: the point of the
+       * screen is the comparison. Since doc 17 §2.5 it is the linked brand product's PSF times
+       * this card's multiplier, so it compares directly with the card's buybox price.
        */
-      referencePrice: row.referencePrice?.toString() ?? null,
-      referencePriceSource: row.referencePriceSource ?? null,
-      referencePriceUpdatedAt: row.referencePriceUpdatedAt ?? null,
+      referencePrice: cardReferencePrice(links.get(row.id))?.toString() ?? null,
+      brandProduct: (() => {
+        const link = links.get(row.id);
+        return link
+          ? {
+              id: link.brandProductId,
+              name: link.brandProductName,
+              unitMultiplier: link.unitMultiplier,
+              isPrimary: link.isPrimary,
+            }
+          : null;
+      })(),
+      isFavourite: row.isFavourite ?? false,
       period: (() => {
         const stats = periods.get(row.id);
         return stats
@@ -251,15 +278,21 @@ export async function POST(request: Request) {
   if (!link) {
     return NextResponse.json({ error: 'Ürün linki gerekli.' }, { status: 400 });
   }
-  const parsed = parseProductLink(link);
-  if (!parsed || !parsed.ref.contentId) {
+  const appDb = getAppDb();
+  const resolved = await resolveProductLink(appDb, link);
+  if (!resolved.ok) {
     return NextResponse.json(
-      { error: 'Link tanınamadı. Trendyol veya Hepsiburada ürün sayfası linki yapıştırın.' },
+      {
+        error: resolved.error ?? 'Link tanınamadı. Trendyol veya Hepsiburada ürün sayfası linki yapıştırın.',
+      },
       { status: 400 },
     );
   }
+  const parsed = {
+    marketplaceCode: resolved.marketplaceCode,
+    ref: { contentId: resolved.contentId, url: resolved.url },
+  };
 
-  const appDb = getAppDb();
   const existing = await trackedProductsRepo.findTrackedProductByRef(
     appDb,
     parsed.marketplaceCode,

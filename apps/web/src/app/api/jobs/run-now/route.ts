@@ -16,7 +16,9 @@ import { NextResponse } from 'next/server';
 import {
   DEFAULT_MAX_ATTEMPTS,
   IMPORT_STOCK_ITEMS_JOB,
+  isJobDispatchable,
   JOB_CATALOG,
+  readDispatchGate,
   resolveImportStockItemsPayload,
 } from '@buybox/jobs';
 import { jobsRepo, newId } from '@buybox/db';
@@ -34,6 +36,15 @@ export async function POST(request: Request) {
 
   const appDb = getAppDb();
   const nowMs = Date.now();
+
+  // doc 17 §1.3: the scheduler would never claim it, so the row would sit `ready` for as long as
+  // the module stays off and then run at some unexpected later moment. Refused instead, by name.
+  if (!isJobDispatchable(entry.jobName, await readDispatchGate(appDb))) {
+    return NextResponse.json(
+      { error: `${entry.label} kapalı bir modüle ait. Ayarlar > Modüller ekranından açılabilir.` },
+      { status: 409 },
+    );
+  }
 
   const active = body.marketplaceCode
     ? await jobsRepo.countActiveJobsForTarget(appDb, entry.jobName, body.marketplaceCode)

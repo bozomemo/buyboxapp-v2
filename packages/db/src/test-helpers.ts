@@ -23,12 +23,17 @@ export interface TestDb {
   cleanup(): Promise<void>;
 }
 
-export async function createTestDb(dialect: Dialect): Promise<TestDb> {
+/**
+ * `migrationsFolder` migrates with a different folder than the dialect's own — a test of one
+ * migration's data step copies the folder with its journal cut short, seeds the older schema,
+ * then runs the rest.
+ */
+export async function createTestDb(dialect: Dialect, migrationsFolder?: string): Promise<TestDb> {
   if (dialect === 'sqlite') {
     const dir = mkdtempSync(path.join(tmpdir(), 'buybox-db-test-'));
     const file = path.join(dir, 'test.db');
     const appDb = createDb(`file:${file}`, 'sqlite');
-    await runMigrations(appDb);
+    await runMigrations(appDb, migrationsFolder);
     return {
       appDb,
       cleanup: async () => {
@@ -48,7 +53,7 @@ export async function createTestDb(dialect: Dialect): Promise<TestDb> {
     const url = new URL(POSTGRES_ADMIN_URL);
     url.pathname = `/${dbName}`;
     const appDb = createDb(url.toString(), 'postgres');
-    await runMigrations(appDb);
+    await runMigrations(appDb, migrationsFolder);
     return {
       appDb,
       cleanup: async () => {
@@ -69,7 +74,7 @@ export async function createTestDb(dialect: Dialect): Promise<TestDb> {
   const url = new URL(MYSQL_ADMIN_URL);
   url.pathname = `/${dbName}`;
   const appDb = createDb(url.toString(), 'mysql');
-  await runMigrations(appDb);
+  await runMigrations(appDb, migrationsFolder);
   return {
     appDb,
     cleanup: async () => {

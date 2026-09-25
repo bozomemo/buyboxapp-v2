@@ -48,6 +48,17 @@ export interface ScrapeRateLimit {
 export const SCRAPE_TIMEOUT_MIN_MS = 2_000;
 export const SCRAPE_TIMEOUT_MAX_MS = 120_000;
 
+/**
+ * Ceilings on the rate itself, **added 2026-09-25**. Nothing stopped 100,000 requests a minute
+ * from being saved — one mistyped digit away from the burst pattern that gets an address blocked
+ * (api-references §1.6). Two a second is four times the compiled Trendyol default and twice the
+ * fastest rate a live install has chosen (60/min). Enforced when saved (the route answers 400)
+ * and again when read, where a stored value above it is clamped rather than dropped: the operator
+ * asked for *fast*, and falling back to the default would quietly do something else.
+ */
+export const SCRAPE_RATE_MAX_PER_MINUTE = 120;
+export const SCRAPE_BURST_MAX = 20;
+
 export function scrapeRateSettingKey(marketplaceCode: MarketplaceCode): string {
   return `scrape.${marketplaceCode}.rateLimit`;
 }
@@ -77,8 +88,8 @@ export async function getScrapeRateLimit(
           ? parsed.requestTimeoutMs
           : undefined;
       return {
-        requestsPerMinute: parsed.requestsPerMinute,
-        burst: parsed.burst,
+        requestsPerMinute: Math.min(parsed.requestsPerMinute, SCRAPE_RATE_MAX_PER_MINUTE),
+        burst: Math.min(parsed.burst, SCRAPE_BURST_MAX),
         ...(timeout === undefined ? {} : { requestTimeoutMs: timeout }),
       };
     }

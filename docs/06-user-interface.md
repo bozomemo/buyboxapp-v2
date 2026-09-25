@@ -25,6 +25,25 @@ operator already knows the app by them; the interface language is Turkish.
 | `/settings/*`          | Settings           | Marketplaces, fees, policies, product sources, retention                 |
 | `/setup`               | Setup wizard       | First run and re-configuration (doc 10 §6)                               |
 
+**Two modules (doc 17 §1, 2026-09-19).** The routes above from `/stock` to `/alerts` belong to the
+**seller** module. The **brand** module adds:
+
+| Route | Screen | Purpose |
+|-------|--------|---------|
+| `/brand/products` | Stok | The brand manager's own products: PSF, min, max, cards; Excel import (doc 17 §2–§3). **Built 2026-09-20** except the import (11.3): search, kartsız filter, inline create/edit, delete. Prices are typed in major units and parsed exactly; the _Üst sınır_ column marks a bound that is PSF standing in for an unset max |
+| `/brand/products/[id]` | Ürün detayı | Linked cards with multipliers, barcode suggestions, all sellers across cards per unit. **Built 2026-09-20** except the seller view (11.5/11.6): each card shows its own scaled PSF, min and upper bound, its multiplier is editable in place, _Birincil yap_ hands the primary over, and a suggestion fills the add-card form but still asks the multiplier |
+| `/brand/listings` | İlanlar | Linked cards + favourites, with buybox and band status (doc 17 §4.1). **Built 2026-09-20**: search, marketplace filter, favourite star, per-unit band beside a display-only unit price, live verdict, Excel export. _Açık ihlal süresi_ waits for 11.6's `band_violations` |
+| `/brand/alerts` | Alarmlar | Price-band violations, open then resolved (doc 17 §5.4) |
+| `/settings/modules` | Modüller | Enable/disable the two modules (doc 17 §1.3) |
+| `/settings/notifications` | Bildirimler | Channels, recipients, test send (doc 17 §6) |
+
+together with the existing brand-audit screens (§12.2, §12.4). A module that is disabled has its
+nav group hidden, its pages redirected to `/settings/modules` and its API routes refused (409);
+with both enabled, a header switch (_Satış / Marka / Tümü_, default _Tümü_) chooses which group is
+shown. The dashboard drops the seller's sections and warnings while the seller module is off, and
+the Jobs screen marks a disabled module's jobs _Modül kapalı_ and refuses to run them. This **supersedes** the 2026-09-03 decision in §12.4
+(_Panel ve gezinme_) not to hide groups per install type.
+
 ---
 
 ## 2. Dashboard
@@ -918,6 +937,14 @@ lap took. It is fed by `GET /api/tracked-products/sweep-pass` and polled once a 
 - **The estimate comes from the pass's own measured rate**, never from the configured
   requests-per-minute: the two differ by about a factor of four on the operator's machine, and a
   prediction built from the limit would promise a finishing time the machine cannot reach.
+
+**Same card, twice, on `/jobs`** (doc 17 §4.2, built 2026-09-20). The Jobs screen's "Tarama
+Turları" section shows one of these cards per configured marketplace for each of the two lanes —
+`scope=all` (`SweepTrackedProducts`, this same card) and `scope=listed` (`SweepListedProducts`,
+labelled "İlanlar turu"), reading `GET /api/tracked-products/sweep-pass?marketplaceCode=…&scope=…`.
+The two lanes number their passes independently and can both be mid-lap at once — running both
+does not raise the request rate, since they share one source instance and its one rate limiter.
+A lane with no pass yet (never enabled) shows nothing rather than a bar stuck at zero.
 - **Absent, not empty, when no pass exists.** A zeroed progress bar on an install that never
   enabled the sweep reads as a stalled job rather than as a job nobody switched on.
 
@@ -1189,6 +1216,10 @@ number — the plan's _"kara liste eşleşmesi fiyat sapmasından önce gelir, �
 istatistik değil"_. That ordering is a property of the two bases, not a weight anyone tunes.
 Within the measured tier the order is by how much a person can conclude from the finding alone,
 which is why _yeni görülen satıcı_ sits last: a new seller is usually just a new seller.
+**And "new" needs a baseline (2026-09-25):** a seller is new only if first seen at least
+`newSellerDays` after the brand's own first look in the window (`watchStartedAt`). Before that,
+every seller of a freshly added brand was "new" — thirty findings and thirty notification lines
+for Orijen within minutes of adding it.
 
 **Every finding opens to its raw observation** — and to the whole **look**, not the subject's own
 row. "Below the market" is a statement about the other rows; a lone price with nothing beside it
@@ -1301,6 +1332,11 @@ buradaki altı ekleme **fiyat politikası**, **bulunabilirlik**, **pay**, **taze
 
 ##### Tavsiye edilen satış fiyatı ve `belowReferencePrice` bulgusu
 
+> **2026-09-19:** PSF artık `brand_products.reference_price`'ta, birim başına duruyor; bulgu
+> kartın bağlı olduğu ürünün PSF'si × adet çarpanı ile karşılaştırır (doc 17 §2.5). Aşağıdaki
+> Excel içe aktarma **kaldırıldı** (11.2) ve doc 17 §3'teki Stok ekranı importuyla değiştirilir;
+> Takip Edilen Ürünler'deki _Tavsiye Fiyat_ sütunu artık bağlı ürünün PSF × çarpanını gösterir.
+
 Bu ekranlardaki her fiyat rakamı bugüne kadar **ölçülmüştü**: piyasa sapması, makas ve dönem
 bandı, o an sayfada kim varsa ona göre hesaplanır. Hepsi bir örneklemin yorumudur, ki
 `audit-findings.ts` bu yüzden onları `measured` sayar. Marka sahibinin elindeki **yayımlanmış
@@ -1400,7 +1436,7 @@ duranlardı.
 - Seyirde **boş gün doldurulmaz**: hiçbir şeyin saklanmadığı gün, Faz 4'ten beri hiçbir şeyin
   _değişmediği_ gündür — satıcı olmayan gün değil. Boşluktan çizgi geçirmek, yazma tasarrufu
   için var olan değişiklik tespitinden bir trend uydururdu.
-- Kenar çubuğu üç gruba ayrıldı — **Satış**, **Marka Denetimi**, **Sistem**. On altı düz link,
+- _(2026-09-19: gruplar artık modüle göre gizlenir — doc 17 §1.3.)_ Kenar çubuğu üç gruba ayrıldı — **Satış**, **Marka Denetimi**, **Sistem**. On altı düz link,
   sekizde sorun değildi; marka modülü altı tane daha ekleyince _Marka Satıcıları_ ile _Rakip
   Satıcılar_ iki satır arayla, farklı kişilere farklı soruları cevaplar hâlde duruyordu.
 

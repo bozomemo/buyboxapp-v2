@@ -28,6 +28,7 @@ import {
   Select,
   TextInput,
 } from '@/components/ui';
+import { SweepPassCard } from '@/components/sweep-pass-card';
 import { formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { marketSnapshot } from '@/lib/market-stats';
 import { marketplaceProductUrl } from '@/lib/product-url';
@@ -63,10 +64,14 @@ interface TrackedProduct {
   viaSearchTerm: boolean;
   latest: Observation[];
   period: PeriodStats | null;
-  /** Kuruş as a string. The brand's own published price — a statement, not an observation. */
+  /**
+   * Kuruş as a string: PSF of the linked brand product **times the card's multiplier** — the
+   * price this card is held to (doc 17 §2.2). `null` for a card linked to no brand product.
+   */
   referencePrice: string | null;
-  referencePriceSource: string | null;
-  referencePriceUpdatedAt: number | null;
+  /** The brand product this card is linked to, if any (doc 17 §2.1). */
+  brandProduct: { id: string; name: string; unitMultiplier: number; isPrimary: boolean } | null;
+  isFavourite: boolean;
 }
 
 /** The window's price band, aggregated server-side over every look in it. */
@@ -123,7 +128,9 @@ const CSV_EXPORT_ROW_CAP = 5000;
 const RESCAN_MAX_PRODUCTS = 50;
 
 type ColumnId =
+  | 'favourite'
   | 'label'
+  | 'brandProduct'
   | 'brand'
   | 'category'
   | 'marketplace'
@@ -158,7 +165,12 @@ type ColumnId =
  * current family: it is the figure worth scanning a page for.
  */
 const COLUMN_DEFS: readonly ColumnDef<ColumnId>[] = [
+  // The star and the product it belongs to are the brand module's two "is this one of mine?"
+  // columns (doc 17 §4.1): a favourite is in İlanlar whoever's product it is, a linked card is
+  // one of the manager's own and carries its PSF.
+  { id: 'favourite', label: '★', defaultWidth: 44 },
   { id: 'label', label: 'Ürün', defaultWidth: 320 },
+  { id: 'brandProduct', label: 'Stok Ürünü', defaultWidth: 180 },
   { id: 'brand', label: 'Marka', defaultWidth: 120, hiddenByDefault: true },
   { id: 'category', label: 'Kategori', defaultWidth: 180 },
   { id: 'marketplace', label: 'Pazaryeri', defaultWidth: 110, hiddenByDefault: true },
@@ -194,113 +206,6 @@ function moneyCell(value: string | null | undefined) {
   return <span className="tabular-nums">{value ? formatMoney(BigInt(value)) : '—'}</span>;
 }
 
-/** What `/api/tracked-products/sweep-pass` returns for the card below. */
-interface SweepPass {
-  passNo: number;
-  startedAt: number;
-  finishedAt: number | null;
-  plannedCount: number;
-  doneCount: number;
-  failedCount: number;
-  estimatedFinishAtMs: number | null;
-}
-
-function formatClock(ms: number): string {
-  return new Date(ms).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatSpan(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${minutes} dk`;
-  return `${Math.floor(minutes / 60)} sa ${minutes % 60} dk`;
-}
-
-/**
- * "Tur #12 — 1.240 / 4.679" — how far the tracked sweep is through the catalogue (doc 07 §7.4).
- *
- * This is the figure the screen could not show before: the sweep read a fixed 300 products an
- * hour and reported *that* as its total, so an operator looking at 4,679 rows had no way to tell
- * whether the numbers in front of them had been refreshed this morning or yesterday. A pass is a
- * full lap, so "kaç üründen kaçı" is a real fraction and the estimate is the pass's own measured
- * rate rather than a configured limit.
- *
- * Absent rather than empty when no pass exists (the sweep has never been enabled): a progress bar
- * at zero would read as a stalled job rather than as a job nobody switched on.
- */
-function SweepPassCard() {
-  const [pass, setPass] = useState<SweepPass | null>(null);
-  const [previous, setPrevious] = useState<{ passNo: number; doneCount: number; durationMs: number }[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      fetch('/api/tracked-products/sweep-pass')
-        .then((r) => r.json())
-        .then((d: { current: SweepPass | null; previous: typeof previous }) => {
-          if (cancelled) return;
-          setPass(d.current);
-          setPrevious(d.previous);
-        })
-        .catch(() => undefined);
-    void load();
-    // A pass moves at a page a few seconds, so a minute is plenty — and this screen is often left
-    // open, which is exactly where a tighter poll costs something for nothing.
-    const timer = setInterval(() => void load(), 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
-
-  if (!pass) return null;
-
-  const done = Math.min(pass.doneCount, pass.plannedCount);
-  const percent = pass.plannedCount > 0 ? Math.round((done / pass.plannedCount) * 100) : 0;
-  const last = previous[0];
-
-  return (
-    <div className="rounded border border-(--color-border) p-3 text-sm">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="font-medium">Tarama turu #{pass.passNo}</span>
-        <span className="tabular-nums">
-          {formatNumber(done)} / {formatNumber(pass.plannedCount)} ürün
-          <span className="text-(--color-muted)"> (%{percent})</span>
-        </span>
-        {pass.failedCount > 0 && (
-          <span className="text-(--color-muted)">{formatNumber(pass.failedCount)} okunamadı</span>
-        )}
-        <span className="text-(--color-muted)">Başlangıç {formatClock(pass.startedAt)}</span>
-        {pass.finishedAt !== null ? (
-          <span className="text-(--color-muted)">
-            Tamamlandı {formatClock(pass.finishedAt)} · yeni tur birazdan başlar
-          </span>
-        ) : (
-          pass.estimatedFinishAtMs !== null && (
-            <span className="text-(--color-muted)">
-              Tahmini bitiş {formatClock(pass.estimatedFinishAtMs)}
-            </span>
-          )
-        )}
-        {last && (
-          <span className="ml-auto text-xs text-(--color-muted)">
-            Önceki tur: {formatNumber(last.doneCount)} ürün, {formatSpan(last.durationMs)}
-          </span>
-        )}
-      </div>
-      <div
-        className="mt-2 h-1.5 overflow-hidden rounded bg-(--color-border)"
-        role="progressbar"
-        aria-valuenow={percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={`Tarama turu #${pass.passNo} ilerlemesi`}
-      >
-        <div className="h-full bg-(--color-accent)" style={{ width: `${percent}%` }} />
-      </div>
-    </div>
-  );
-}
-
 /**
  * Takip edilen ürünler — hem link ile eklenen tekil ürünler hem marka taramasının bulduğu
  * ürünler (doc 06 §12.2, api-references §1.7).
@@ -334,6 +239,13 @@ export function TrackedProductsClient() {
    */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /** The row whose _Ürünüme bağla_ panel is open, and what that panel has been told so far. */
+  const [linkFor, setLinkFor] = useState<TrackedProduct | null>(null);
+  const [linkProductId, setLinkProductId] = useState('');
+  const [linkMultiplier, setLinkMultiplier] = useState('');
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [brandProducts, setBrandProducts] = useState<{ id: string; name: string }[]>([]);
 
   const [brands, setBrands] = useState<WatchedBrandOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -371,16 +283,6 @@ export function TrackedProductsClient() {
    */
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
-  const [referenceNotice, setReferenceNotice] = useState<string | null>(null);
-  const [referenceErrors, setReferenceErrors] = useState<{ line: number; message: string }[]>([]);
-  /**
-   * Which marketplace a price list's **product codes** belong to. Asked rather than inferred:
-   * the same digits are different products on different marketplaces, and a file whose codes
-   * were silently attributed to the wrong one would price somebody else's catalogue. Irrelevant
-   * to a barcode file, which is why the parser ignores it there.
-   */
-  const [referenceMarketplace, setReferenceMarketplace] = useState('');
-  const [marketplaces, setMarketplaces] = useState<{ code: string; displayName: string }[]>([]);
 
   const columns = useColumnPrefs<ColumnId>('trackedProducts.columns', COLUMN_DEFS);
   const presets = useFilterPresets<Filters>('trackedProducts.filterPresets');
@@ -439,16 +341,17 @@ export function TrackedProductsClient() {
       .then((d: { groups: { brands: WatchedBrandOption[] }[] }) =>
         setBrands(d.groups.flatMap((g) => g.brands)),
       );
-    // Only for the price-list import's "which marketplace are these codes from" pick. A single
-    // configured marketplace answers the question by itself and the control preselects it.
-    fetch('/api/settings/marketplaces')
-      .then((r) => r.json())
-      .then((d: { marketplaces: { code: string; displayName: string }[] }) => {
-        setMarketplaces(d.marketplaces);
-        if (d.marketplaces.length === 1) setReferenceMarketplace(d.marketplaces[0]!.code);
-      })
-      .catch(() => setMarketplaces([]));
   }, []);
+
+  // The link panel's product list. Loaded once the panel opens rather than with the page: most
+  // visits never link anything, and a brand catalogue is thousands of rows behind this grid.
+  useEffect(() => {
+    if (!linkFor) return;
+    fetch('/api/brand-products?limit=200')
+      .then((r) => r.json())
+      .then((d: { products: { id: string; name: string }[] }) => setBrandProducts(d.products))
+      .catch(() => setBrandProducts([]));
+  }, [linkFor]);
 
   useEffect(() => {
     const q = filters.brandId ? `?watchedBrandId=${encodeURIComponent(filters.brandId)}` : '';
@@ -491,64 +394,6 @@ export function TrackedProductsClient() {
     }
   }
 
-  /**
-   * Uploads a brand price list and reports what it actually reached.
-   *
-   * Two outcomes are deliberately reported differently, because they are different things. A
-   * **parse** failure writes nothing at all and lists every bad line — the operator fixes the
-   * file once. A **match** shortfall is not a failure: a brand's list covers its whole catalogue
-   * while this install tracks what a sweep found on one marketplace, so lines that match nothing
-   * are the normal case. They are still stated out loud, because "300 satır yüklendi" over a
-   * list where 258 matched nothing would leave the operator believing prices are in force over
-   * products they never touched.
-   *
-   * The file input is reset either way, so re-uploading the same corrected file fires `change`.
-   */
-  async function importReferencePrices(file: File | null, input: HTMLInputElement) {
-    if (!file) return;
-    setBusy(true);
-    setReferenceNotice(null);
-    setReferenceErrors([]);
-    try {
-      const csv = await file.text();
-      const res = await fetch('/api/tracked-products/reference-prices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          csv,
-          source: file.name,
-          // Rows that name a product code without a marketplace column take the filtered
-          // marketplace. Sent only when the filter names one — guessing a marketplace for a
-          // whole file would attach a brand's prices to the wrong catalogue.
-          defaultMarketplaceCode: referenceMarketplace || null,
-        }),
-      });
-      const data = (await res.json()) as {
-        errors?: { line: number; message: string }[];
-        linesRead?: number;
-        productsMatched?: number;
-        linesUnmatched?: number;
-      };
-      if (!res.ok) {
-        setReferenceErrors(data.errors ?? [{ line: 0, message: 'Dosya okunamadı.' }]);
-        return;
-      }
-      setReferenceNotice(
-        `${formatNumber(data.linesRead ?? 0)} satır okundu · ${formatNumber(
-          data.productsMatched ?? 0,
-        )} ürüne fiyat yazıldı${
-          (data.linesUnmatched ?? 0) > 0
-            ? ` · ${formatNumber(data.linesUnmatched ?? 0)} satır bu kurulumda takip edilen bir ürünle eşleşmedi`
-            : ''
-        }`,
-      );
-      load();
-    } finally {
-      input.value = '';
-      setBusy(false);
-    }
-  }
-
   /** Confirmation lives on the button (`ConfirmButton`, §3.6) — this only performs the removal. */
   async function remove(id: string) {
     await fetch(`/api/tracked-products?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -582,6 +427,61 @@ export function TrackedProductsClient() {
       setNotice(
         `${data.queued ?? ids.length} ürün için tarama kuyruğa alındı. İlerlemesini İşler ekranından izleyebilir, bitince bu sayfayı yenileyebilirsiniz.`,
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * The favourite star (doc 17 §4.1). Written straight through and the row patched locally: the
+   * grid is server-paged and a reload for one star would lose the operator's scroll position.
+   */
+  async function toggleFavourite(product: TrackedProduct) {
+    const next = !product.isFavourite;
+    const res = await fetch('/api/tracked-products/favourite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: product.id, isFavourite: next }),
+    });
+    if (res.ok) {
+      setProducts((rows) =>
+        rows === null
+          ? rows
+          : rows.map((row) => (row.id === product.id ? { ...row, isFavourite: next } : row)),
+      );
+    }
+  }
+
+  /**
+   * _Ürünüme bağla_ (doc 17 §2.4). The multiplier field is **empty on purpose** — the product
+   * owner's requirement is that "one purchase delivers how many units?" is asked, and a
+   * pre-filled 1 is a question nobody reads.
+   */
+  async function linkToBrandProduct() {
+    if (!linkFor) return;
+    const count = Number(linkMultiplier);
+    if (linkProductId === '') {
+      setLinkError('Bir stok ürünü seçin.');
+      return;
+    }
+    if (!Number.isSafeInteger(count) || count < 1) {
+      setLinkError('Adet çarpanı 1 veya daha büyük bir tam sayı olmalı.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/brand-products/${linkProductId}/cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackedProductId: linkFor.id, unitMultiplier: count }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        setLinkError(data.error ?? 'Bağlanamadı.');
+        return;
+      }
+      setLinkFor(null);
+      load();
     } finally {
       setBusy(false);
     }
@@ -628,6 +528,39 @@ export function TrackedProductsClient() {
     // Makas and Buybox cannot disagree with each other about the same row.
     const market = marketSnapshot(p.latest);
     switch (id) {
+      case 'favourite':
+        return (
+          <button
+            type="button"
+            aria-label={p.isFavourite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
+            aria-pressed={p.isFavourite}
+            title={
+              p.isFavourite
+                ? 'Favori: İlanlar listesinde ve rotasyonda önde'
+                : 'Favoriye al — kendi ürünün olmasa da gözünün önünde kalsın'
+            }
+            onClick={() => void toggleFavourite(p)}
+            className={
+              p.isFavourite ? 'text-(--color-accent)' : 'text-(--color-muted) hover:text-(--color-accent)'
+            }
+          >
+            {p.isFavourite ? '★' : '☆'}
+          </button>
+        );
+      case 'brandProduct':
+        return p.brandProduct ? (
+          <Link
+            href={`/brand/products/${p.brandProduct.id}`}
+            className="text-(--color-accent) hover:underline"
+          >
+            {p.brandProduct.name}
+            {p.brandProduct.unitMultiplier > 1 && (
+              <span className="ml-1 text-xs text-(--color-muted)">×{p.brandProduct.unitMultiplier}</span>
+            )}
+          </Link>
+        ) : (
+          <span className="text-(--color-muted)">—</span>
+        );
       case 'label':
         return (
           <>
@@ -720,7 +653,9 @@ export function TrackedProductsClient() {
             <span
               className="text-(--color-muted)"
               title={
-                p.referencePrice ? 'Bu bakışta buybox fiyatı yok' : 'Bu ürün için tavsiye fiyat girilmemiş'
+                p.referencePrice
+                  ? 'Bu bakışta buybox fiyatı yok'
+                  : 'Bu kart bir stok ürününe bağlı değil, PSF yok'
               }
             >
               —
@@ -937,7 +872,7 @@ export function TrackedProductsClient() {
         </div>
       </div>
 
-      <SweepPassCard />
+      <SweepPassCard marketplaceCode="trendyol" scope="all" label="Tarama turu" />
 
       {/* ---- link ile ekle ---- */}
       <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) p-3">
@@ -961,61 +896,60 @@ export function TrackedProductsClient() {
           {busy ? 'Ekleniyor…' : 'Ekle'}
         </Button>
       </div>
-      {/* ---- tavsiye edilen satış fiyatı listesi ---- */}
-      <div className="rounded border border-(--color-border) p-3 text-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Fiyat listesi (Excel/CSV)">
-            <input
-              type="file"
-              accept=".csv,text/csv,text/plain"
-              onChange={(e) => void importReferencePrices(e.target.files?.[0] ?? null, e.target)}
-              className="w-80 rounded border border-(--color-border) px-2 py-1 text-sm"
-            />
-          </Field>
-          <Field label="Ürün kodları hangi pazaryerinden?">
-            <Select
-              value={referenceMarketplace}
-              onChange={(e) => setReferenceMarketplace(e.target.value)}
-              className="w-44"
-              options={[
-                { value: '', label: 'Dosyada yazıyor' },
-                ...marketplaces.map((m) => ({ value: m.code, label: m.displayName })),
-              ]}
-            />
-          </Field>
-          <p className="max-w-xl text-xs text-(--color-muted)">
-            Sütunlar: <strong>Barkod</strong> ya da <strong>Ürün Kodu</strong> (+ Pazaryeri), ve{' '}
-            <strong>Tavsiye Edilen Satış Fiyatı</strong>. Ürünler <em>isimle eşleştirilmez</em>. Tek bir
-            hatalı satır varsa dosyanın tamamı reddedilir — yarısı yüklenmiş bir fiyat listesi, yüklendiğini
-            sandığınız ama çalışmayan bir listedir.
+      {linkFor && (
+        <div
+          role="group"
+          aria-label="Kartı stok ürününe bağla"
+          className="rounded border border-(--color-accent) p-3 text-sm"
+        >
+          <p className="mb-2">
+            <strong>{linkFor.label}</strong> kartını hangi stok ürününe bağlayalım?
           </p>
-        </div>
-        {referenceNotice && (
-          <p role="status" aria-live="polite" className="mt-2 text-(--color-accent)">
-            {referenceNotice}
-          </p>
-        )}
-        {referenceErrors.length > 0 && (
-          <div role="alert" className="mt-2 rounded border border-(--color-danger) p-2 text-xs">
-            <p className="mb-1 font-medium text-(--color-danger)">
-              Dosya yüklenmedi — {formatNumber(referenceErrors.length)} satırda sorun var:
-            </p>
-            <ul className="list-inside list-disc">
-              {referenceErrors.slice(0, 20).map((e) => (
-                <li key={e.line}>
-                  {e.line}. satır: {e.message}
-                </li>
-              ))}
-            </ul>
-            {referenceErrors.length > 20 && (
-              <p className="mt-1 text-(--color-muted)">
-                …ve {formatNumber(referenceErrors.length - 20)} satır daha.
-              </p>
-            )}
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="Stok ürünü">
+              <Select
+                value={linkProductId}
+                onChange={(e) => setLinkProductId(e.target.value)}
+                className="w-72"
+                options={[
+                  { value: '', label: 'Seçin…' },
+                  ...brandProducts.map((product) => ({ value: product.id, label: product.name })),
+                ]}
+              />
+            </Field>
+            {/* Empty on purpose — doc 17 §2.4: the question has to be asked, not pre-answered. */}
+            <Field label="Adet çarpanı" hint="Bir alışta kaç birim gider?">
+              <TextInput
+                value={linkMultiplier}
+                onChange={(e) => setLinkMultiplier(e.target.value)}
+                inputMode="numeric"
+                placeholder="örn. 3"
+                className="w-28"
+              />
+            </Field>
+            <Button type="button" disabled={busy} onClick={() => void linkToBrandProduct()}>
+              {busy ? 'Bağlanıyor…' : 'Bağla'}
+            </Button>
+            <Button variant="secondary" type="button" onClick={() => setLinkFor(null)}>
+              Vazgeç
+            </Button>
           </div>
-        )}
-      </div>
-
+          {brandProducts.length === 0 && (
+            <p className="mt-2 text-xs text-(--color-muted)">
+              Henüz stok ürünü yok.{' '}
+              <Link className="underline" href="/brand/products">
+                Stok ekranından
+              </Link>{' '}
+              bir ürün ekleyin.
+            </p>
+          )}
+          {linkError && (
+            <p role="alert" className="mt-2 text-xs text-(--color-danger)">
+              {linkError}
+            </p>
+          )}
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-sm text-(--color-danger)">
           {error}
@@ -1173,6 +1107,24 @@ export function TrackedProductsClient() {
                       className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent)"
                     >
                       {p.isActive ? 'Duraklat' : 'Sürdür'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLinkFor(p);
+                        setLinkMultiplier('');
+                        setLinkProductId('');
+                        setLinkError(null);
+                      }}
+                      title={
+                        p.brandProduct
+                          ? 'Bu kart zaten bir stok ürününe bağlı'
+                          : 'Bu kartı kendi stok ürününe bağla'
+                      }
+                      disabled={p.brandProduct !== null}
+                      className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent) disabled:opacity-40"
+                    >
+                      Ürünüme bağla
                     </button>
                     <ConfirmButton
                       requireConfirm

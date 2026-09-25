@@ -424,6 +424,15 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
       <p className="mb-2 text-(--color-muted)">
         Yapılandırılmış kaynak: <strong>{config.configured ? config.sourceCode : 'yok'}</strong>
       </p>
+      {/* Only `excel` has a file to import here. `manual` is not a gap in this panel — it is a
+          source with no batch behind it (doc 10 §4), and saying so is what stops an operator
+          waiting for a button that is never coming. */}
+      {config.configured && config.sourceCode === 'manual' && (
+        <p className="text-xs text-(--color-muted)">
+          Bu kaynakta toplu içe aktarma yoktur; stok kalemleri tek tek girilir. Excel'den yüklemek için
+          Ayarlar &gt; Ürün Kaynağı ekranından kaynağı değiştirin.
+        </p>
+      )}
       {config.sourceCode === 'excel' && (
         <div className="flex flex-wrap items-center gap-2">
           <input ref={fileInput} type="file" accept=".xlsx" className="text-xs" aria-label="Excel dosyası" />

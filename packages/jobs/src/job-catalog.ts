@@ -16,6 +16,7 @@ import { REPRICE_JOB } from './pipeline/reprice.js';
 import { RESET_BUDGET_JOB } from './pipeline/reset-budget.js';
 import { SCRAPE_COMPETITORS_JOB } from './pipeline/scrape-competitors.js';
 import { SWEEP_BRAND_CATALOGUE_JOB } from './pipeline/sweep-brand-catalogue.js';
+import { SWEEP_LISTED_PRODUCTS_JOB } from './pipeline/sweep-listed-products.js';
 import { SWEEP_TRACKED_PRODUCTS_JOB } from './pipeline/sweep-tracked-products.js';
 import { RESOLVE_PRODUCT_BARCODES_JOB } from './pipeline/resolve-product-barcodes.js';
 import { EVALUATE_BRAND_FINDINGS_JOB } from './pipeline/evaluate-brand-findings.js';
@@ -152,6 +153,17 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     defaultEnabled: false,
   },
   {
+    jobName: SWEEP_LISTED_PRODUCTS_JOB,
+    label: 'İlanlar Turu (raporlama)',
+    // 30 min, not the catalogue sweep's minute: a listings pass over tens of cards finishes in
+    // minutes, and a 60 s cadence would re-read the same pages all day (doc 07 §7.5).
+    cadenceMs: 30 * 60_000,
+    perMarketplace: true,
+    defaultPayload: {},
+    // Off by default, same authority as the catalogue sweep and `ScrapeCompetitors`.
+    defaultEnabled: false,
+  },
+  {
     jobName: SWEEP_BRAND_CATALOGUE_JOB,
     label: 'Marka Kataloğu Taraması (raporlama)',
     // Daily. The sweep is the cheap tier — 37 pages for Whiskas, 203 for Royal Canin, about a
@@ -258,13 +270,19 @@ export function jobDefaultEnabled(jobName: string): boolean {
  * job's catalogue default applies, which is `true` for everything except `ScrapeCompetitors`
  * (api-references §1.6 requires an explicit decision before any scraping happens).
  *
+ * **A stored value that is neither `"true"` nor `"false"` reads as disabled**, not as the
+ * default. The default is `true` for `Reprice` and `SubmitPriceChanges`, so falling back to it
+ * turned a malformed write into an enabled price path — measured 2026-09-25, when a request with
+ * no `enabled` field stored `"undefined"` and the job read back as on. Only the *absence* of a
+ * row means "no preference"; a row that says something unreadable is treated like the global
+ * kill switch treats one (`isKillSwitchEngaged`): the safe way.
+ *
  * Lives here rather than in `scheduler.ts` (which re-exports it for the existing public API)
  * so `runner.ts` can also read it — for the retry-vs-give-up decision in `handleFailure` —
  * without creating a `scheduler.ts` ⇄ `runner.ts` import cycle.
  */
 export async function isJobEnabled(appDb: AppDatabase, jobName: string): Promise<boolean> {
   const setting = await configRepo.getAppSetting(appDb, jobEnabledSettingKey(jobName));
-  if (setting?.value === 'false') return false;
-  if (setting?.value === 'true') return true;
-  return jobDefaultEnabled(jobName);
+  if (setting === undefined) return jobDefaultEnabled(jobName);
+  return setting.value === 'true';
 }

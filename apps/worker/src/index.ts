@@ -38,6 +38,7 @@
  * for its first run either. Granularity is per job name, not per marketplace — the same
  * granularity the ticker itself already fires at (every marketplace together, every tick).
  */
+import { hostname } from 'node:os';
 import type { MarketplaceCode } from '@buybox/core';
 import {
   autoMigrate,
@@ -84,7 +85,9 @@ import {
   importListings,
   importStockItems,
   resolveImportStockItemsPayload,
+  isJobDispatchable,
   isJobEnabled,
+  jobModule,
   OBSERVE_BUYBOX_JOB,
   observeBuybox,
   PRUNE_HISTORY_JOB,
@@ -100,13 +103,17 @@ import {
   SCRAPE_COMPETITORS_JOB,
   scrapeCompetitors,
   Scheduler,
+  readDispatchGate,
+  readEnabledModules,
   RESOLVE_PRODUCT_BARCODES_JOB,
   RESOLVE_SELLER_IDENTITY_JOB,
   resolveProductBarcodes,
   resolveSellerIdentity,
   SWEEP_BRAND_CATALOGUE_JOB,
+  SWEEP_LISTED_PRODUCTS_JOB,
   SWEEP_TRACKED_PRODUCTS_JOB,
   sweepBrandCatalogue,
+  sweepListedProducts,
   sweepTrackedProducts,
   EVALUATE_BRAND_FINDINGS_JOB,
   evaluateBrandFindings,
@@ -118,6 +125,9 @@ import {
   type MarketplaceAdapterRegistry,
   type ProductDetailSourceRegistry,
   type SellerIdentitySourceRegistry,
+  isPidAlive,
+  releaseLocksOfDeadLocalWorkers,
+  workerInstanceId,
 } from '@buybox/jobs';
 import {
   createLogger,
@@ -218,12 +228,16 @@ async function buildAdapters(
   secretStore: ISecretStore,
 ): Promise<MarketplaceAdapterRegistry> {
   const marketplaces = await configRepo.listMarketplaces(appDb);
+  // A brand-only install enables marketplaces to watch them and never enters seller credentials
+  // (doc 17 §1.4), so an enabled marketplace without an adapter is its normal state, not a fault.
+  const sellerModuleEnabled = (await readEnabledModules(appDb)).seller;
   const entries: [MarketplaceCode, IMarketplaceAdapter][] = [];
   for (const marketplace of marketplaces) {
     if (!marketplace.enabled) continue;
     const code = marketplace.code as MarketplaceCode;
     const adapter = await buildAdapter(code, secretStore);
     if (!adapter) {
+      if (!sellerModuleEnabled) continue;
       // An enabled marketplace whose credentials are absent or malformed. `buildAdapter` returns
       // `undefined` on purpose — an unregistered marketplace is visibly absent where a registered
       // broken one looks like a transient outage — but skipping it in silence is how this ends up
@@ -242,6 +256,25 @@ async function buildAdapters(
     await syncMerchantRef(appDb, code, adapter.merchantRef, Date.now());
   }
   return buildAdapterRegistry(entries);
+}
+
+/**
+ * The marketplaces the public-page sources are built for: every **enabled** marketplace row,
+ * whether or not seller credentials were stored for it.
+ *
+ * Until doc 17 the sources below were built only where a marketplace *adapter* existed, which
+ * made "enabled" and "has seller credentials" the same test. A brand-only install never enters
+ * seller credentials (doc 17 §1.4), and every source here reads a public page that needs none —
+ * so tying them to the adapter left such an install with no sources at all, and every brand job
+ * failing with `no competitor source registered`.
+ */
+async function enabledMarketplaceCodes(appDb: AppDatabase): Promise<ReadonlySet<MarketplaceCode>> {
+  const marketplaces = await configRepo.listMarketplaces(appDb);
+  return new Set(
+    marketplaces
+      .filter((m) => m.enabled && (m.code === 'trendyol' || m.code === 'hepsiburada'))
+      .map((m) => m.code as MarketplaceCode),
+  );
 }
 
 /**
@@ -282,13 +315,13 @@ async function buildAdapters(
  */
 async function buildCompetitorSources(
   appDb: AppDatabase,
-  adapters: MarketplaceAdapterRegistry,
+  marketplaces: ReadonlySet<MarketplaceCode>,
   browserUserAgent: string,
   honestUserAgent: string,
   hepsiburadaImpersonates: boolean,
 ): Promise<CompetitorSourceRegistry> {
   const entries: [MarketplaceCode, ICompetitorSource][] = [];
-  if (adapters.has('trendyol')) {
+  if (marketplaces.has('trendyol')) {
     const rateLimit = await getScrapeRateLimit(appDb, 'trendyol');
     entries.push([
       'trendyol',
@@ -300,7 +333,7 @@ async function buildCompetitorSources(
       }),
     ]);
   }
-  if (adapters.has('hepsiburada')) {
+  if (marketplaces.has('hepsiburada')) {
     const rateLimit = await getScrapeRateLimit(appDb, 'hepsiburada');
     entries.push([
       'hepsiburada',
@@ -335,12 +368,12 @@ async function buildCompetitorSources(
  */
 async function buildBrandCatalogueSources(
   appDb: AppDatabase,
-  adapters: MarketplaceAdapterRegistry,
+  marketplaces: ReadonlySet<MarketplaceCode>,
   browserUserAgent: string,
   honestUserAgent: string,
 ): Promise<BrandCatalogueSourceRegistry> {
   const entries: [MarketplaceCode, IBrandCatalogueSource][] = [];
-  if (adapters.has('trendyol')) {
+  if (marketplaces.has('trendyol')) {
     const rateLimit = await getScrapeRateLimit(appDb, 'trendyol');
     entries.push([
       'trendyol',
@@ -352,7 +385,7 @@ async function buildBrandCatalogueSources(
       }),
     ]);
   }
-  if (adapters.has('hepsiburada')) {
+  if (marketplaces.has('hepsiburada')) {
     // The **honest** agent, and no browser: `/ara?q=…` answered 200 to a request carrying
     // nothing but our own user agent (measured 2026-08-28). Trendyol above needs the browser
     // one because its bot detection fingerprints the TLS handshake; this page does not care,
@@ -383,11 +416,11 @@ async function buildBrandCatalogueSources(
  * the scrape rate is set for a throughput job, and this one runs when a person presses a button.
  */
 async function buildSellerIdentitySources(
-  adapters: MarketplaceAdapterRegistry,
+  marketplaces: ReadonlySet<MarketplaceCode>,
   browserUserAgent: string,
 ): Promise<SellerIdentitySourceRegistry> {
   const entries: [MarketplaceCode, ISellerIdentitySource][] = [];
-  if (adapters.has('trendyol')) {
+  if (marketplaces.has('trendyol')) {
     entries.push(['trendyol', new TrendyolSellerIdentitySource({ userAgent: browserUserAgent })]);
   }
   return buildSellerIdentitySourceRegistry(entries);
@@ -405,11 +438,11 @@ async function buildSellerIdentitySources(
  * is meant to be a drip that runs for days without ever competing with the sweep.
  */
 async function buildProductDetailSources(
-  adapters: MarketplaceAdapterRegistry,
+  marketplaces: ReadonlySet<MarketplaceCode>,
   honestUserAgent: string,
 ): Promise<ProductDetailSourceRegistry> {
   const entries: [MarketplaceCode, IProductDetailSource][] = [];
-  if (adapters.has('hepsiburada')) {
+  if (marketplaces.has('hepsiburada')) {
     entries.push(['hepsiburada', new HepsiburadaProductDetailSource({ userAgent: honestUserAgent })]);
   }
   return buildProductDetailSourceRegistry(entries);
@@ -501,23 +534,27 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   // Deliberately `let`: rebuilt in place by `reloadIfConfigChanged` below when the operator
   // configures a marketplace after this process booted, which on a fresh install is always.
   let adapters = await buildAdapters(appDb, secretStore);
+  let publicMarketplaces = await enabledMarketplaceCodes(appDb);
   // `SCRAPER_BROWSER_USER_AGENT` is the recorded exception for both reporting-only scrapers
   // (api-references §1.6, §2.11) — deployment configuration, not a constant.
   let competitorSources = await buildCompetitorSources(
     appDb,
-    adapters,
+    publicMarketplaces,
     env.SCRAPER_BROWSER_USER_AGENT,
     env.SCRAPER_USER_AGENT,
     env.HEPSIBURADA_IMPERSONATE_BROWSER === '1',
   );
   let brandCatalogueSources = await buildBrandCatalogueSources(
     appDb,
-    adapters,
+    publicMarketplaces,
     env.SCRAPER_BROWSER_USER_AGENT,
     env.SCRAPER_USER_AGENT,
   );
-  let sellerIdentitySources = await buildSellerIdentitySources(adapters, env.SCRAPER_BROWSER_USER_AGENT);
-  let productDetailSources = await buildProductDetailSources(adapters, env.SCRAPER_USER_AGENT);
+  let sellerIdentitySources = await buildSellerIdentitySources(
+    publicMarketplaces,
+    env.SCRAPER_BROWSER_USER_AGENT,
+  );
+  let productDetailSources = await buildProductDetailSources(publicMarketplaces, env.SCRAPER_USER_AGENT);
   let marketplaceConfig = await marketplaceConfigRevision(appDb);
 
   // Resolved once, at boot (doc 07 §8): a stored operator override if present, else
@@ -533,6 +570,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     scrapeCompetitorsCadence,
     sweepBrandCatalogueCadence,
     sweepTrackedProductsCadence,
+    sweepListedProductsCadence,
     resolveProductBarcodesCadence,
     evaluateBrandFindingsCadence,
     importStockItemsCadence,
@@ -547,6 +585,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     getJobCadenceMs(appDb, SCRAPE_COMPETITORS_JOB),
     getJobCadenceMs(appDb, SWEEP_BRAND_CATALOGUE_JOB),
     getJobCadenceMs(appDb, SWEEP_TRACKED_PRODUCTS_JOB),
+    getJobCadenceMs(appDb, SWEEP_LISTED_PRODUCTS_JOB),
     getJobCadenceMs(appDb, RESOLVE_PRODUCT_BARCODES_JOB),
     getJobCadenceMs(appDb, EVALUATE_BRAND_FINDINGS_JOB),
     getJobCadenceMs(appDb, IMPORT_STOCK_ITEMS_JOB),
@@ -563,6 +602,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   const scrapeCompetitorsCadenceMs = scrapeCompetitorsCadence ?? 60_000;
   const sweepBrandCatalogueCadenceMs = sweepBrandCatalogueCadence ?? 24 * 60 * 60_000;
   const sweepTrackedProductsCadenceMs = sweepTrackedProductsCadence ?? 60_000;
+  const sweepListedProductsCadenceMs = sweepListedProductsCadence ?? 30 * 60_000;
   const resolveProductBarcodesCadenceMs = resolveProductBarcodesCadence ?? 60 * 60_000;
   const evaluateBrandFindingsCadenceMs = evaluateBrandFindingsCadence ?? 6 * 60 * 60_000;
   const importStockItemsCadenceMs = importStockItemsCadence ?? 60_000;
@@ -580,11 +620,15 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     [SCRAPE_COMPETITORS_JOB, scrapeCompetitorsCadenceMs],
     [SWEEP_BRAND_CATALOGUE_JOB, sweepBrandCatalogueCadenceMs],
     [SWEEP_TRACKED_PRODUCTS_JOB, sweepTrackedProductsCadenceMs],
+    [SWEEP_LISTED_PRODUCTS_JOB, sweepListedProductsCadenceMs],
     [RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs],
     [EVALUATE_BRAND_FINDINGS_JOB, evaluateBrandFindingsCadenceMs],
     [IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs],
   ]);
 
+  // Names its host as well as its process, so a later worker on this machine can tell that the
+  // one which held a claim is gone (`releaseLocksOfDeadLocalWorkers`, packages/jobs).
+  const instanceId = workerInstanceId(process.pid, hostname(), Math.random().toString(36).slice(2, 8));
   const scheduler = new Scheduler({
     appDb,
     clock: systemClock,
@@ -593,7 +637,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     brandCatalogueSources,
     sellerIdentitySources,
     productDetailSources,
-    instanceId: `worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
+    instanceId,
     // A rejected tick must not become an unhandled rejection: in single-process mode that
     // terminates the web server too. Log it and let the next tick try again.
     onTickError: (error) => logger.error('scheduler.tickFailed', { error }),
@@ -632,6 +676,13 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     // which this handler's schema rejects for want of a marketplace.
     visibilityTimeoutMs: 6 * 60 * 60_000,
   });
+  // A listings pass finishes in minutes (doc 07 §7.5), not hours — a shorter timeout than the
+  // catalogue sweep's is enough, and a shorter one notices a genuinely dead worker sooner.
+  scheduler.register({
+    jobName: SWEEP_LISTED_PRODUCTS_JOB,
+    handler: sweepListedProducts,
+    visibilityTimeoutMs: 30 * 60_000,
+  });
   // Cadenced by the scheduler itself rather than by a ticker, like `PruneHistory`: it is global
   // rather than per marketplace — a finding belongs to a *brand*, and the job enumerates brands
   // — so a per-marketplace tick would evaluate every brand once per marketplace and open each
@@ -653,6 +704,16 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   scheduler.register({ jobName: SCRAPE_BRAND_SELLERS_JOB, handler: scrapeBrandSellers });
   scheduler.register({ jobName: RESOLVE_PRODUCT_BARCODES_JOB, handler: resolveProductBarcodes });
 
+  // Before the first tick: claims a previous worker on this machine held when it stopped would
+  // otherwise stay `locked` until their visibility timeout — up to six hours (see stale-locks.ts).
+  const releasedOwners = await releaseLocksOfDeadLocalWorkers(appDb, {
+    selfId: instanceId,
+    host: hostname(),
+    isPidAlive,
+    nowMs: systemClock.nowMs(),
+  });
+  if (releasedOwners.length > 0) logger.warn('worker.releasedDeadWorkerLocks', { owners: releasedOwners });
+
   scheduler.startLoop();
 
   // Read once at boot (see file doc comment's "Catch-up on boot"): the latest completed/failed
@@ -667,7 +728,12 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     return (lastRun.finishedAt ?? lastRun.startedAt) + cadenceMs <= nowMs;
   };
 
-  let marketplaceCodes = [...adapters.keys()];
+  // Who each ticker fires for depends on the job's module (doc 17 §1.2). A seller job needs a
+  // marketplace adapter — our own credentials — while a brand job reads public pages and needs
+  // only the marketplace to be enabled. One list for both left a brand-only install, which has
+  // no adapters, with nothing to tick at all.
+  let sellerMarketplaceCodes: readonly MarketplaceCode[] = [...adapters.keys()];
+  let brandMarketplaceCodes: readonly MarketplaceCode[] = [...publicMarketplaces];
   const tickers: ReturnType<typeof setInterval>[] = [];
   // Boot-time catch-up fires (see file doc comment) are awaited below, before `startWorker`
   // returns, rather than left fire-and-forget like the interval-triggered ones — otherwise a
@@ -691,8 +757,13 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     appliesTo: (marketplaceCode: MarketplaceCode) => boolean = () => true,
   ) => {
     const fire = async (): Promise<void> => {
+      // doc 17 §1.3 — a disabled module's jobs are not enqueued. The scheduler would refuse to
+      // claim them anyway; not enqueueing keeps the queue free of rows nothing will ever run.
+      if (!isJobDispatchable(jobName, await readDispatchGate(appDb))) return;
       // doc 12 6.9 "enable/disable" — an operator-disabled job simply doesn't fire.
       if (!(await isJobEnabled(appDb, jobName))) return;
+      const marketplaceCodes =
+        jobModule(jobName) === 'brand' ? brandMarketplaceCodes : sellerMarketplaceCodes;
       for (const marketplaceCode of marketplaceCodes) {
         if (!appliesTo(marketplaceCode)) continue;
         const payload = JSON.stringify({ marketplaceCode, ...extraPayload });
@@ -746,6 +817,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   // A pass takes hours, so this minute is only the gap between passes: `countActiveJobsForTarget`
   // above skips the tick while one is still walking (doc 07 §7.4).
   everyMarketplace(SWEEP_TRACKED_PRODUCTS_JOB, sweepTrackedProductsCadenceMs);
+  // Two lanes, one shared rate limiter (doc 07 §7.5): running both never raises the request rate,
+  // it only lets the listings lane skip the queue behind a catalogue pass.
+  everyMarketplace(SWEEP_LISTED_PRODUCTS_JOB, sweepListedProductsCadenceMs);
   // Only where a product-detail source exists — `productDetailSources` is rebuilt by
   // `reloadIfConfigChanged`, so this reads the live registry rather than a boot-time snapshot.
   everyMarketplace(RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs, {}, (code) =>
@@ -753,6 +827,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   );
 
   const fireImportStockItems = async (): Promise<void> => {
+    if (!isJobDispatchable(IMPORT_STOCK_ITEMS_JOB, await readDispatchGate(appDb))) return;
     if (!(await isJobEnabled(appDb, IMPORT_STOCK_ITEMS_JOB))) return;
     // `null` = nothing to run: wizard step 6 not completed, or a source with no batch behind it
     // (`manual`, doc 10 §4). Firing anyway is how this cadence spent every day since setup
@@ -807,24 +882,25 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     if (!scheduler.isIdle()) return;
 
     const nextAdapters = await buildAdapters(appDb, secretStore);
+    const nextPublicMarketplaces = await enabledMarketplaceCodes(appDb);
     const nextSources = await buildCompetitorSources(
       appDb,
-      nextAdapters,
+      nextPublicMarketplaces,
       env.SCRAPER_BROWSER_USER_AGENT,
       env.SCRAPER_USER_AGENT,
       env.HEPSIBURADA_IMPERSONATE_BROWSER === '1',
     );
     const nextCatalogueSources = await buildBrandCatalogueSources(
       appDb,
-      nextAdapters,
+      nextPublicMarketplaces,
       env.SCRAPER_BROWSER_USER_AGENT,
       env.SCRAPER_USER_AGENT,
     );
     const nextIdentitySources = await buildSellerIdentitySources(
-      nextAdapters,
+      nextPublicMarketplaces,
       env.SCRAPER_BROWSER_USER_AGENT,
     );
-    const nextDetailSources = await buildProductDetailSources(nextAdapters, env.SCRAPER_USER_AGENT);
+    const nextDetailSources = await buildProductDetailSources(nextPublicMarketplaces, env.SCRAPER_USER_AGENT);
     const outgoingSources = competitorSources;
     const outgoingCatalogueSources = brandCatalogueSources;
     const outgoingIdentitySources = sellerIdentitySources;
@@ -835,7 +911,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     brandCatalogueSources = nextCatalogueSources;
     sellerIdentitySources = nextIdentitySources;
     productDetailSources = nextDetailSources;
-    marketplaceCodes = [...nextAdapters.keys()];
+    publicMarketplaces = nextPublicMarketplaces;
+    sellerMarketplaceCodes = [...nextAdapters.keys()];
+    brandMarketplaceCodes = [...nextPublicMarketplaces];
     scheduler.setRegistries(
       nextAdapters,
       nextSources,
@@ -851,7 +929,10 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       ...[...outgoingIdentitySources.values()].map((source) => source.close?.()),
       ...[...outgoingDetailSources.values()].map((source) => source.close?.()),
     ]);
-    logger.info('worker.marketplacesReloaded', { marketplaces: marketplaceCodes });
+    logger.info('worker.marketplacesReloaded', {
+      sellerMarketplaces: sellerMarketplaceCodes,
+      brandMarketplaces: brandMarketplaceCodes,
+    });
   };
   tickers.push(
     setInterval(() => {

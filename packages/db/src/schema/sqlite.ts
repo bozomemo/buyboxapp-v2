@@ -812,6 +812,13 @@ export const trackedProducts = sqliteTable(
      */
     hasSellers: bool('has_sellers'),
     lastSellerSeenAt: timestampMs('last_seller_seen_at'),
+    /**
+     * Operator-set: puts the card in the brand module's İlanlar (doc 17 §4.1). Independent of any
+     * brand-product link on purpose — a favourite may be a competing brand's card the manager
+     * wants in view, which has no PSF, no band and so no alarm. No sweep writes it.
+     */
+    isFavourite: bool('is_favourite').notNull().default(false),
+    favouritedAt: timestampMs('favourited_at'),
   },
   (t) => [
     uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
@@ -945,7 +952,12 @@ export const trackedScrapePasses = sqliteTable(
     marketplaceCode: text('marketplace_code')
       .notNull()
       .references(() => marketplaces.code, { onDelete: 'cascade' }),
-    /** 1-based, per marketplace. Shown on the screens ("Tur #12") and orders the history. */
+    /**
+     * `all` (`SweepTrackedProducts`, doc 07 §7.4) or `listed` (`SweepListedProducts`, §7.5) — the
+     * two lanes number their passes independently and never share a row (doc 17 §4.2).
+     */
+    scope: text('scope').notNull().default('all'),
+    /** 1-based, per (marketplace, scope). Shown on the screens ("Tur #12") and orders the history. */
     passNo: integer('pass_no').notNull(),
     /** The cursor. See the table comment: this is the pass, the rest is bookkeeping. */
     startedAt: timestampMs('started_at').notNull(),
@@ -968,7 +980,7 @@ export const trackedScrapePasses = sqliteTable(
   },
   (t) => [
     index('tracked_scrape_passes_marketplace_started').on(t.marketplaceCode, t.startedAt),
-    uniqueIndex('tracked_scrape_passes_marketplace_no').on(t.marketplaceCode, t.passNo),
+    uniqueIndex('tracked_scrape_passes_marketplace_scope_no').on(t.marketplaceCode, t.scope, t.passNo),
   ],
 );
 
@@ -1302,5 +1314,78 @@ export const brandFindings = sqliteTable(
   (t) => [
     index('brand_findings_brand_state').on(t.watchedBrandId, t.state),
     index('brand_findings_key_state').on(t.findingKey, t.state),
+  ],
+);
+
+/**
+ * The brand manager's own products (doc 17 §2.1, Phase 11.2).
+ *
+ * A brand product is what the manager sells *as a product*, and it exists independently of any
+ * marketplace, because one product lives on Trendyol and Hepsiburada at once. Its own id is its
+ * identity: neither marketplace's product id can be, since each is private to its marketplace,
+ * and a barcode cannot either — `barcode` here feeds suggestions only (doc 17 §2.4) and is never
+ * a key.
+ *
+ * PSF, min and max are **per unit** of the product (doc 17 §2.2). A card selling a three-pack is
+ * compared against them by multiplying the threshold, never by dividing the price.
+ *
+ * `max_price` null means PSF is the upper bound. That default is **derived** in `packages/core`
+ * (`effectiveBand`) and never stored: a stored copy would go stale the first time PSF was edited.
+ */
+export const brandProducts = sqliteTable(
+  'brand_products',
+  {
+    id: text('id').primaryKey(),
+    /** Display only — never a matching key. Names differ by pack size and punctuation. */
+    name: text('name').notNull(),
+    /** PSF, per unit, kuruş. Required: it is what makes every product have an upper bound. */
+    referencePrice: money('reference_price').notNull(),
+    /** Per unit. Null = no lower-bound alarm. */
+    minPrice: money('min_price'),
+    /** Per unit. Null = PSF is the upper bound. */
+    maxPrice: money('max_price'),
+    barcode: text('barcode'),
+    /** `excel` | `manual` | `migration`. */
+    source: text('source').notNull(),
+    /** File name or list version the PSF came from, shown beside it. */
+    referencePriceSource: text('reference_price_source'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [index('brand_products_barcode').on(t.barcode), index('brand_products_name').on(t.name)],
+);
+
+/**
+ * "This card sells this product" (doc 17 §2.1). A card is a `tracked_products` row.
+ *
+ * - **A card belongs to at most one brand product** — the unique index on `tracked_product_id`.
+ *   Two would count the same seller's stock and the same buybox under two products.
+ * - **At most one primary per (brand product, marketplace)** is enforced by the repository
+ *   inside the write transaction, not by an index: it needs a partial unique index, and MySQL
+ *   has none (doc 05 §1). `marketplace_code` is denormalised from the card so that check needs
+ *   no join.
+ * - `unit_multiplier` is how many units of the product one purchase of the card delivers.
+ * - `link_source` (`excel` | `manual` | `barcodeSuggestion` | `migration`) records how the link
+ *   was made: an operator's link and a barcode match are different levels of certainty.
+ */
+export const brandProductCards = sqliteTable(
+  'brand_product_cards',
+  {
+    id: text('id').primaryKey(),
+    brandProductId: text('brand_product_id')
+      .notNull()
+      .references(() => brandProducts.id, { onDelete: 'cascade' }),
+    trackedProductId: text('tracked_product_id')
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    marketplaceCode: text('marketplace_code').notNull(),
+    unitMultiplier: integer('unit_multiplier').notNull(),
+    isPrimary: bool('is_primary').notNull(),
+    linkSource: text('link_source').notNull(),
+    linkedAt: timestampMs('linked_at').notNull(),
+  },
+  (t) => [
+    index('brand_product_cards_product').on(t.brandProductId),
+    uniqueIndex('brand_product_cards_tracked_product').on(t.trackedProductId),
   ],
 );

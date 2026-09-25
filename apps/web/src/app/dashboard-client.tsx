@@ -111,6 +111,8 @@ interface BrandAudit {
 }
 
 interface DashboardData {
+  /** Absent from a server older than doc 17 — read as both enabled, which is what that server ran. */
+  modules?: { seller: boolean; brand: boolean };
   brandAudit: BrandAudit | null;
   /** The "stop everything" control — genuinely separate from `globalKillSwitchEngaged` below. */
   systemPaused: boolean;
@@ -168,6 +170,10 @@ interface Attention {
  */
 function buildAttention(data: DashboardData, health: HealthData | undefined): Attention[] {
   const items: Attention[] = [];
+  // The seller's warnings — our listings' scrape, our alerts, our budget, our decisions — say
+  // nothing to an install that has the seller module off, and a stale-scrape warning about a job
+  // that is not supposed to run would be permanently, falsely red (doc 17 §1.3).
+  const seller = data.modules?.seller ?? true;
 
   if (health && health.database.configured && !health.database.reachable) {
     items.push({
@@ -199,7 +205,9 @@ function buildAttention(data: DashboardData, health: HealthData | undefined): At
       id: 'worker-down',
       severity: 'danger',
       title: 'Worker çalışmıyor',
-      detail: 'Kuyruktaki işleri alacak kimse yok — fiyat hesaplanmıyor ve gönderilmiyor.',
+      detail: seller
+        ? 'Kuyruktaki işleri alacak kimse yok — fiyat hesaplanmıyor ve gönderilmiyor.'
+        : 'Kuyruktaki işleri alacak kimse yok — markalar taranmıyor.',
       href: '/jobs',
       hrefLabel: 'İşler ekranı',
     });
@@ -224,7 +232,9 @@ function buildAttention(data: DashboardData, health: HealthData | undefined): At
       id: 'no-marketplaces',
       severity: 'danger',
       title: 'Etkin pazaryeri yok',
-      detail: 'Hiçbir pazaryeri açık değil, dolayısıyla fiyatlandırılacak ilan da yok.',
+      detail: seller
+        ? 'Hiçbir pazaryeri açık değil, dolayısıyla fiyatlandırılacak ilan da yok.'
+        : 'Hiçbir pazaryeri açık değil, dolayısıyla taranacak marka da yok.',
       href: '/settings/marketplaces',
       hrefLabel: 'Pazaryeri ekle',
     });
@@ -233,7 +243,7 @@ function buildAttention(data: DashboardData, health: HealthData | undefined): At
   // Stale scraping above the open-alert count, deliberately: zero open alerts behind a scraper
   // that has not succeeded in a day means "we have not looked", and that reads as "nothing is
   // wrong" unless something says otherwise first.
-  if (data.competitorAlerts.staleMarketplaces.length > 0) {
+  if (seller && data.competitorAlerts.staleMarketplaces.length > 0) {
     items.push({
       id: 'stale-scrape',
       severity: 'warning',
@@ -243,7 +253,7 @@ function buildAttention(data: DashboardData, health: HealthData | undefined): At
       hrefLabel: 'Tarama işleri',
     });
   }
-  if (data.competitorAlerts.open > 0) {
+  if (seller && data.competitorAlerts.open > 0) {
     items.push({
       id: 'open-alerts',
       severity: 'warning',
@@ -254,7 +264,7 @@ function buildAttention(data: DashboardData, health: HealthData | undefined): At
     });
   }
 
-  for (const m of data.marketplaces) {
+  for (const m of seller ? data.marketplaces : []) {
     if (!m.budget) continue;
     if (m.budget.allowance - m.budget.consumed <= 0) {
       items.push({
@@ -272,7 +282,7 @@ function buildAttention(data: DashboardData, health: HealthData | undefined): At
   // aggregate returns, not all of history, and the sentence says "son kararların" so the number
   // cannot be read as a total.
   const failed = data.recentDecisions.filter((d) => d.state === 'failed' || d.state === 'rejected');
-  if (failed.length > 0) {
+  if (seller && failed.length > 0) {
     items.push({
       id: 'failed-submissions',
       severity: 'warning',
@@ -284,7 +294,7 @@ function buildAttention(data: DashboardData, health: HealthData | undefined): At
   }
 
   const blocked = data.phaseDistribution.BLOCKED ?? 0;
-  if (blocked > 0) {
+  if (seller && blocked > 0) {
     items.push({
       id: 'blocked',
       severity: 'warning',
@@ -308,6 +318,10 @@ interface Verdict {
 /** The one sentence this screen exists to produce. */
 function buildVerdict(data: DashboardData, attention: Attention[]): Verdict {
   const critical = attention.filter((a) => a.severity === 'danger').length;
+  // Every sentence below is about prices unless the seller module is on to have any (doc 17 §1):
+  // a brand-only install told "fiyatlandırma ilerlemiyor" is being told about something it never
+  // had.
+  const seller = data.modules?.seller ?? true;
 
   // Checked first: a paused system is not broken, and reporting "nothing is running" as a fault
   // would alarm an operator who paused it on purpose thirty seconds ago.
@@ -315,8 +329,9 @@ function buildVerdict(data: DashboardData, attention: Attention[]): Verdict {
     return {
       tone: 'neutral',
       headline: 'Sistem duraklatıldı',
-      detail:
-        'İçe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi dahil hiçbir iş çalışmıyor. Bu, sistemin varsayılan güvenli durumudur — üst çubuktaki düğmeyle devam ettirebilirsiniz.',
+      detail: seller
+        ? 'İçe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi dahil hiçbir iş çalışmıyor. Bu, sistemin varsayılan güvenli durumudur — üst çubuktaki düğmeyle devam ettirebilirsiniz.'
+        : 'Katalog ve satıcı taramaları dahil hiçbir iş çalışmıyor. Üst çubuktaki düğmeyle devam ettirebilirsiniz.',
     };
   }
   if (critical > 0) {
@@ -326,7 +341,9 @@ function buildVerdict(data: DashboardData, attention: Attention[]): Verdict {
         critical === 1
           ? 'Sistem düzgün çalışmıyor'
           : `Sistem düzgün çalışmıyor — ${formatNumber(critical)} sorun`,
-      detail: 'Aşağıdakiler giderilene kadar fiyatlandırma güvenilir şekilde ilerlemiyor.',
+      detail: seller
+        ? 'Aşağıdakiler giderilene kadar fiyatlandırma güvenilir şekilde ilerlemiyor.'
+        : 'Aşağıdakiler giderilene kadar marka taramaları güvenilir şekilde ilerlemiyor.',
     };
   }
   if (attention.length > 0) {
@@ -339,9 +356,11 @@ function buildVerdict(data: DashboardData, attention: Attention[]): Verdict {
   return {
     tone: 'ok',
     headline: 'Her şey yolunda',
-    detail: data.globalKillSwitchEngaged
-      ? 'İşler çalışıyor ve müdahale gerektiren bir şey yok. Fiyat gönderimi kapalı olduğu için hesaplanan fiyatlar pazaryerlerine gitmiyor.'
-      : 'İşler çalışıyor, fiyatlar gönderiliyor ve müdahale gerektiren bir şey yok.',
+    detail: !seller
+      ? 'İşler çalışıyor ve müdahale gerektiren bir şey yok.'
+      : data.globalKillSwitchEngaged
+        ? 'İşler çalışıyor ve müdahale gerektiren bir şey yok. Fiyat gönderimi kapalı olduğu için hesaplanan fiyatlar pazaryerlerine gitmiyor.'
+        : 'İşler çalışıyor, fiyatlar gönderiliyor ve müdahale gerektiren bir şey yok.',
   };
 }
 
@@ -393,9 +412,11 @@ function VerdictBanner({
         <Chip tone={data.systemPaused ? 'neutral' : 'ok'}>
           İşler: {data.systemPaused ? 'duraklatıldı' : 'çalışıyor'}
         </Chip>
-        <Chip tone={data.globalKillSwitchEngaged ? 'neutral' : 'warn'}>
-          Fiyat gönderimi: {data.globalKillSwitchEngaged ? 'kapalı' : 'AÇIK'}
-        </Chip>
+        {(data.modules?.seller ?? true) && (
+          <Chip tone={data.globalKillSwitchEngaged ? 'neutral' : 'warn'}>
+            Fiyat gönderimi: {data.globalKillSwitchEngaged ? 'kapalı' : 'AÇIK'}
+          </Chip>
+        )}
         {health && (
           <Chip
             tone={health.worker.running ? 'ok' : 'danger'}
@@ -526,16 +547,20 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
  * operator ends up unsure which one they just used. This states what it is and says where it
  * lives.
  */
-function SystemPauseState({ paused }: { paused: boolean }) {
+function SystemPauseState({ paused, seller }: { paused: boolean; seller: boolean }) {
   return (
     <div className={`rounded border p-4 ${TONE_BOX.neutral}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-semibold">Genel durdurma {paused ? 'açık' : 'kapalı'}</div>
           <p className="mt-1 max-w-xl text-sm text-(--color-muted)">
-            {paused
-              ? 'İçe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi dahil hiçbir iş çalışmıyor.'
-              : 'İşler normal şekilde çalışıyor. Fiyat gönderimi bundan ayrı, yandaki anahtarla kontrol edilir.'}
+            {!seller
+              ? paused
+                ? 'Katalog ve satıcı taramaları dahil hiçbir iş çalışmıyor.'
+                : 'İşler normal şekilde çalışıyor.'
+              : paused
+                ? 'İçe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi dahil hiçbir iş çalışmıyor.'
+                : 'İşler normal şekilde çalışıyor. Fiyat gönderimi bundan ayrı, yandaki anahtarla kontrol edilir.'}
           </p>
         </div>
         <span className="flex-none text-xs text-(--color-muted)">Üst çubuktaki düğmeden değiştirilir ↗</span>
@@ -1138,6 +1163,7 @@ export function DashboardClient() {
 
   const attention = buildAttention(data, health);
   const verdict = buildVerdict(data, attention);
+  const modules = data.modules ?? { seller: true, brand: true };
   const coverageByCode = new Map(data.competitorAlerts.coverage.map((c) => [c.marketplaceCode, c]));
 
   return (
@@ -1166,63 +1192,69 @@ export function DashboardClient() {
 
       <Section id="safety" title="Güvenlik Anahtarları">
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <SystemPauseState paused={data.systemPaused} />
-          <PriceSubmissionSwitch engaged={data.globalKillSwitchEngaged} onChanged={load} />
+          <SystemPauseState paused={data.systemPaused} seller={modules.seller} />
+          {modules.seller && (
+            <PriceSubmissionSwitch engaged={data.globalKillSwitchEngaged} onChanged={load} />
+          )}
         </div>
       </Section>
 
-      <Section
-        id="marketplaces"
-        title="Pazaryerleri"
-        action={
-          <Link href="/settings/marketplaces" className="text-sm text-(--color-accent) hover:underline">
-            Pazaryeri ayarları →
-          </Link>
-        }
-      >
-        {data.marketplaces.length === 0 ? (
-          <p className="rounded border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
-            Henüz etkin pazaryeri yok. Ayarlar &gt; Pazaryerleri ekranından ekleyin.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {data.marketplaces.map((m) => (
-              <MarketplaceCard
-                key={m.code}
-                marketplace={m}
-                coverage={coverageByCode.get(m.code)}
-                onChanged={load}
-              />
-            ))}
-          </div>
-        )}
-      </Section>
+      {modules.seller && (
+        <>
+          <Section
+            id="marketplaces"
+            title="Pazaryerleri"
+            action={
+              <Link href="/settings/marketplaces" className="text-sm text-(--color-accent) hover:underline">
+                Pazaryeri ayarları →
+              </Link>
+            }
+          >
+            {data.marketplaces.length === 0 ? (
+              <p className="rounded border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
+                Henüz etkin pazaryeri yok. Ayarlar &gt; Pazaryerleri ekranından ekleyin.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {data.marketplaces.map((m) => (
+                  <MarketplaceCard
+                    key={m.code}
+                    marketplace={m}
+                    coverage={coverageByCode.get(m.code)}
+                    onChanged={load}
+                  />
+                ))}
+              </div>
+            )}
+          </Section>
 
-      <Section
-        id="phases"
-        title="İlanlar Ne Durumda"
-        action={
-          <Link href="/listings" className="text-sm text-(--color-accent) hover:underline">
-            Tüm ilanlar →
-          </Link>
-        }
-      >
-        <PhaseTiles distribution={data.phaseDistribution} />
-      </Section>
+          <Section
+            id="phases"
+            title="İlanlar Ne Durumda"
+            action={
+              <Link href="/listings" className="text-sm text-(--color-accent) hover:underline">
+                Tüm ilanlar →
+              </Link>
+            }
+          >
+            <PhaseTiles distribution={data.phaseDistribution} />
+          </Section>
 
-      <Section
-        id="decisions"
-        title="Son Fiyat Değişiklikleri"
-        action={
-          <span className="text-xs text-(--color-muted)">
-            Son {formatNumber(data.recentDecisions.length)} karar
-          </span>
-        }
-      >
-        <DecisionsTable decisions={data.recentDecisions} />
-      </Section>
+          <Section
+            id="decisions"
+            title="Son Fiyat Değişiklikleri"
+            action={
+              <span className="text-xs text-(--color-muted)">
+                Son {formatNumber(data.recentDecisions.length)} karar
+              </span>
+            }
+          >
+            <DecisionsTable decisions={data.recentDecisions} />
+          </Section>
+        </>
+      )}
 
-      {data.brandAudit && <BrandAuditSection audit={data.brandAudit} />}
+      {modules.brand && data.brandAudit && <BrandAuditSection audit={data.brandAudit} />}
 
       <EventLogSection events={data.alerts} />
     </div>

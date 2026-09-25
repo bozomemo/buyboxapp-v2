@@ -45,6 +45,7 @@
  */
 
 import type { SellerPolicyVerdict } from './seller-policy.js';
+import { isValidUnitMultiplier, scaleToCard } from './band.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -175,8 +176,14 @@ export interface AuditReferenceViolation {
   readonly sellerName: string;
   readonly trackedProductId: string;
   readonly productLabel: string;
-  /** Kuruş, as the operator's own list states it. Never observed, never inferred. */
-  readonly referencePrice: bigint;
+  /**
+   * PSF of the brand product the card is linked to, **per unit**, kuruş, as the manager stated
+   * it (doc 17 §2.5). Never observed, never inferred. An unlinked card has no PSF and never
+   * arrives here.
+   */
+  readonly unitReferencePrice: bigint;
+  /** Units of the product one purchase of the card delivers (doc 17 §2.1). */
+  readonly unitMultiplier: number;
   /** Kuruş — the lowest price this seller was seen at on this product in the window. */
   readonly lowestPrice: bigint;
   readonly looksBelow: number;
@@ -218,8 +225,26 @@ export interface AuditInput {
    * teach the operator to ignore the whole list. Faz 6's definition of done names this case.
    */
   readonly hasAuthorisedList: boolean;
+  /**
+   * Whether the brand was swept by a marketplace brand id at all.
+   *
+   * Gates `brandRefDisagreement` entirely, for the same reason `hasAuthorisedList` gates its
+   * signal: a brand added with only a search term (the id is optional, doc 06 §12.1) has every
+   * product search-term-only by construction. That is the absence of a comparison, not a
+   * disagreement — and without this gate a Hepsiburada brand swept that way opened one finding
+   * per product (2026-09-19).
+   */
+  readonly brandRefSearched: boolean;
   /** The window's end, and the reference point for "new". Core has no clock. */
   readonly nowMs: number;
+  /**
+   * When this brand's observations begin — its earliest look inside the window. `newSeller` is
+   * raised only for a seller first seen at least `newSellerDays` after it: "new" means "arrived
+   * while we were already watching". Without the baseline every seller of a brand added this
+   * week was new — thirty findings for Orijen within minutes of adding it (2026-09-25), each one
+   * a notification. Absent ⇒ no baseline is applied.
+   */
+  readonly watchStartedAt?: number | null;
 }
 
 export type AuditFindingKind =
@@ -284,9 +309,16 @@ export type AuditFinding =
       readonly sellerName: string;
       readonly sellerRef: string;
       readonly marketplaceCode: string;
-      /** Kuruş. Both are carried so the screen can show the arithmetic rather than only its result. */
+      /**
+       * Kuruş. Both are carried so the screen can show the arithmetic rather than only its
+       * result. `referencePrice` is the **card-level** price compared against — PSF × multiplier —
+       * so it is directly comparable with `lowestPrice`; the per-unit PSF and the multiplier it
+       * came from are carried beside it.
+       */
       readonly referencePrice: bigint;
       readonly lowestPrice: bigint;
+      readonly unitReferencePrice: bigint;
+      readonly unitMultiplier: number;
       /** Positive: how far under the published price the worst offer sat. */
       readonly shortfallPct: number;
       readonly looksBelow: number;
@@ -416,10 +448,14 @@ export function deriveAuditFindings(
    * price of zero cannot reach here (the importer refuses it) but is guarded anyway: it would
    * otherwise divide by zero and produce `Infinity`, which sorts above every real finding.
    */
+  //
+  // The comparison is against PSF × the card's unit multiplier (doc 17 §2.2): a three-pack is
+  // held to three units' PSF. Scaling multiplies the threshold rather than dividing the price, so
+  // it stays exact; an invalid multiplier is skipped rather than guessed at.
   for (const violation of input.referenceViolations ?? []) {
-    if (violation.referencePrice <= 0n) continue;
-    const shortfallPct =
-      Number(((violation.referencePrice - violation.lowestPrice) * 10_000n) / violation.referencePrice) / 100;
+    if (violation.unitReferencePrice <= 0n || !isValidUnitMultiplier(violation.unitMultiplier)) continue;
+    const referencePrice = scaleToCard(violation.unitReferencePrice, violation.unitMultiplier);
+    const shortfallPct = Number(((referencePrice - violation.lowestPrice) * 10_000n) / referencePrice) / 100;
     if (shortfallPct <= t.referenceBelowPct) continue;
     findings.push({
       kind: 'belowReferencePrice',
@@ -439,8 +475,10 @@ export function deriveAuditFindings(
       sellerName: violation.sellerName,
       sellerRef: violation.sellerRef,
       marketplaceCode: violation.marketplaceCode,
-      referencePrice: violation.referencePrice,
+      referencePrice,
       lowestPrice: violation.lowestPrice,
+      unitReferencePrice: violation.unitReferencePrice,
+      unitMultiplier: violation.unitMultiplier,
       shortfallPct,
       looksBelow: violation.looksBelow,
       lastBelowAt: violation.lastBelowAt,
@@ -539,7 +577,11 @@ export function deriveAuditFindings(
     }
 
     const ageMs = nowMs - seller.firstSeenAt;
-    if (ageMs >= 0 && ageMs <= t.newSellerDays * DAY_MS) {
+    const arrivedWhileWatched =
+      input.watchStartedAt === undefined ||
+      input.watchStartedAt === null ||
+      seller.firstSeenAt - input.watchStartedAt >= t.newSellerDays * DAY_MS;
+    if (ageMs >= 0 && ageMs <= t.newSellerDays * DAY_MS && arrivedWhileWatched) {
       findings.push({
         kind: 'newSeller',
         id: sellerId('newSeller', seller),
@@ -586,7 +628,7 @@ export function deriveAuditFindings(
     // it under someone else's brand, or someone else's product carries the name. Which of the
     // two it is, is precisely what the operator has to look at — so this is a finding rather
     // than a conclusion, and it is `measured` because it rests on a search term matching text.
-    if (product.viaSearchTerm && !product.viaBrandRef) {
+    if (input.brandRefSearched && product.viaSearchTerm && !product.viaBrandRef) {
       findings.push({
         kind: 'brandRefDisagreement',
         id: `brandRefDisagreement::${product.trackedProductId}`,

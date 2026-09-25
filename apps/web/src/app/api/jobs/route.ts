@@ -5,7 +5,7 @@
 import { NextResponse } from 'next/server';
 import { circuitBreakerRepo, configRepo, jobsRepo } from '@buybox/db';
 import { getJobCadenceMs, JOB_CATALOG, jobCadenceSettingKey, jobEnabledSettingKey } from '@buybox/jobs';
-import { isSystemPaused } from '@buybox/jobs';
+import { isJobDispatchable, isSystemPaused, jobModule, readDispatchGate } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
 import { getWorkerCadences, getWorkerStatus } from '@/lib/server/worker-status';
 
@@ -13,12 +13,13 @@ export async function GET() {
   const appDb = getAppDb();
   const nowMs = Date.now();
 
-  const [latestRuns, depth, active, runningRuns, circuitStates] = await Promise.all([
+  const [latestRuns, depth, active, runningRuns, circuitStates, gate] = await Promise.all([
     jobsRepo.latestJobRunPerJobName(appDb),
     jobsRepo.queueDepthByState(appDb),
     jobsRepo.listActiveJobs(appDb),
     jobsRepo.listRunningJobRuns(appDb),
     circuitBreakerRepo.listCircuitBreakerStates(appDb),
+    readDispatchGate(appDb),
   ]);
   const latestByName = new Map(latestRuns.map((r) => [r.jobName, r]));
   // What the worker is *actually* firing at, which is not necessarily what is stored: cadence is
@@ -61,8 +62,12 @@ export async function GET() {
       const liveCadenceMs = workerCadences.get(entry.jobName);
       const effectiveCadenceMs = liveCadenceMs ?? cadenceMs;
       const pendingRestart = liveCadenceMs !== undefined && cadenceMs !== null && liveCadenceMs !== cadenceMs;
+      // doc 17 §1.3: a job of a disabled module is not dispatched, whatever its own switch says.
+      // Reported separately from `enabled` so the screen can say *why* nothing will run, and so
+      // switching the module back on restores the operator's own per-job choice untouched.
+      const moduleDisabled = !isJobDispatchable(entry.jobName, gate);
       const nextRunAt =
-        effectiveCadenceMs !== null && enabled
+        effectiveCadenceMs !== null && enabled && !moduleDisabled
           ? (lastRun?.finishedAt ?? lastRun?.startedAt ?? nowMs) + effectiveCadenceMs
           : null;
       return {
@@ -78,6 +83,8 @@ export async function GET() {
         perMarketplace: entry.perMarketplace,
         defaultPayload: entry.defaultPayload,
         enabled,
+        module: jobModule(entry.jobName),
+        moduleDisabled,
         nextRunAt,
         queued: queuedByName.has(entry.jobName),
         activeRun: runningRun

@@ -21,7 +21,7 @@
  * rating-history samples both passes detect as changed.
  *
  * A whole-marketplace sweep already in flight also answers 409 for any brand it covers — see
- * `countActiveJobsForPayloadField`. Two *different* brands remain free to run concurrently; that
+ * `isSweepAlreadyCovering` below. Two *different* brands remain free to run concurrently; that
  * is safe now the shared Playwright page serialises its fetches (`playwright-fetch.ts`), and it
  * is how an operator gets through several brands without waiting on each.
  *
@@ -45,8 +45,40 @@
  */
 import { NextResponse } from 'next/server';
 import { DEFAULT_MAX_ATTEMPTS, SCRAPE_BRAND_SELLERS_JOB, SWEEP_BRAND_CATALOGUE_JOB } from '@buybox/jobs';
-import { jobsRepo, newId, watchedBrandsRepo } from '@buybox/db';
+import { jobsRepo, newId, watchedBrandsRepo, type AppDatabase } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+
+/**
+ * Whether a sweep already queued or running will read this brand.
+ *
+ * A row for this brand does; so does a whole-marketplace sweep of **this brand's marketplace**
+ * — but a whole-marketplace sweep *already running* only if it started after the brand was
+ * added, because it lists its brands once, when it starts. Both qualifications were missing
+ * (2026-09-25): a Trendyol pass answered 409 for a Hepsiburada brand, and for a brand created
+ * a minute into it that it was never going to reach.
+ */
+async function isSweepAlreadyCovering(
+  appDb: AppDatabase,
+  brand: { id: string; marketplaceCode: string; createdAt: number },
+): Promise<boolean> {
+  const covering = await jobsRepo.listActiveJobsCovering(appDb, SWEEP_BRAND_CATALOGUE_JOB, {
+    marketplaceCode: brand.marketplaceCode,
+    watchedBrandId: brand.id,
+  });
+  const runningWholeSweeps = covering.filter(
+    (row) => row.state === 'locked' && row.payload !== null && row.payload.watchedBrandId === undefined,
+  );
+  const startedAt = await jobsRepo.runningJobStartTimes(
+    appDb,
+    runningWholeSweeps.map((row) => row.id),
+  );
+  return covering.some((row) => {
+    if (!runningWholeSweeps.includes(row)) return true;
+    const start = startedAt.get(row.id);
+    // No run row yet means it has been claimed but has not listed its brands: it will see this one.
+    return start === undefined || start >= brand.createdAt;
+  });
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -61,13 +93,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const brand = await watchedBrandsRepo.getWatchedBrand(appDb, id);
   if (!brand) return NextResponse.json({ error: 'Marka bulunamadı.' }, { status: 404 });
 
-  const active = await jobsRepo.countActiveJobsForPayloadField(
-    appDb,
-    SWEEP_BRAND_CATALOGUE_JOB,
-    'watchedBrandId',
-    brand.id,
-  );
-  if (active > 0) {
+  if (await isSweepAlreadyCovering(appDb, brand)) {
     return NextResponse.json(
       { error: `${brand.label} için bir tarama zaten kuyrukta veya çalışıyor. İlerlemesi İşler ekranında.` },
       { status: 409 },

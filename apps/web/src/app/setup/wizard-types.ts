@@ -1,4 +1,5 @@
 /** Shared client-side state shape threaded through the setup wizard (doc 10 §6). */
+import type { EnabledModules } from '@buybox/shared';
 
 export interface MarketplaceDraft {
   code: 'trendyol' | 'hepsiburada';
@@ -11,6 +12,7 @@ export interface MarketplaceDraft {
 
 export const WIZARD_STEPS = [
   'database',
+  'purpose',
   'store-identity',
   'marketplaces',
   'fees',
@@ -24,6 +26,7 @@ export type WizardStep = (typeof WIZARD_STEPS)[number];
 
 export const STEP_LABELS: Record<WizardStep, string> = {
   database: 'Veritabanı',
+  purpose: 'Kullanım Amacı',
   'store-identity': 'Mağaza Kimliği',
   marketplaces: 'Pazaryerleri',
   fees: 'Ücret Ayarları',
@@ -32,6 +35,26 @@ export const STEP_LABELS: Record<WizardStep, string> = {
   erp: 'ERP Bağlantısı',
   review: 'Gözden Geçir ve Bitir',
 };
+
+/**
+ * Steps that configure only the seller module — our store, its fees and pricing policy, where
+ * its costs come from (doc 17 §1.2). A brand-only install never sees them, and never asks for
+ * seller credentials either: the marketplaces step shrinks to on/off switches (doc 17 §1.4).
+ *
+ * `purpose` comes right **after** `database`, not before it as doc 17 §1.4 first drew it: the
+ * choice is stored in `app_settings`, and there is no database to store it in until step 1 ran.
+ */
+const SELLER_ONLY_STEPS: ReadonlySet<WizardStep> = new Set<WizardStep>([
+  'store-identity',
+  'fees',
+  'policy',
+  'product-source',
+  'erp',
+]);
+
+export function visibleSteps(modules: EnabledModules): readonly WizardStep[] {
+  return WIZARD_STEPS.filter((step) => modules.seller || !SELLER_ONLY_STEPS.has(step));
+}
 
 /**
  * The wizard's *navigational* position only — never the data itself, which is always the server's
@@ -46,12 +69,16 @@ export const STEP_LABELS: Record<WizardStep, string> = {
  * prefill (each step's own `load()`) is still the source of truth for whether that step's value
  * already exists.
  */
-const PROGRESS_KEY = 'buybox.setup.wizard.progress.v1';
+// v2 since the purpose step (doc 17 §1.4): it shifted every later step by one, so a v1 position
+// restored as-is would land one step early. Starting over at step 1 is the safe reading of it.
+const PROGRESS_KEY = 'buybox.setup.wizard.progress.v2';
 
 export interface WizardProgress {
+  /** An index into `visibleSteps(modules)`, not into `WIZARD_STEPS`. */
   stepIndex: number;
   databaseReady: boolean;
   enabledMarketplaces: ('trendyol' | 'hepsiburada')[];
+  modules: EnabledModules;
 }
 
 /** Never throws: a private window, cleared site data or SSR (`window` undefined) all fall back to "no progress yet". */
@@ -68,10 +95,19 @@ export function loadWizardProgress(): WizardProgress | undefined {
     ) {
       return undefined;
     }
+    const modules =
+      parsed.modules &&
+      typeof parsed.modules.seller === 'boolean' &&
+      typeof parsed.modules.brand === 'boolean'
+        ? parsed.modules
+        : { seller: true, brand: true };
     return {
-      stepIndex: parsed.stepIndex,
+      // Clamped to the steps these modules actually show, so a stale position can never index
+      // past the end of a shorter, brand-only wizard.
+      stepIndex: Math.min(parsed.stepIndex, visibleSteps(modules).length - 1),
       databaseReady: parsed.databaseReady === true,
       enabledMarketplaces: Array.isArray(parsed.enabledMarketplaces) ? parsed.enabledMarketplaces : [],
+      modules,
     };
   } catch {
     return undefined;

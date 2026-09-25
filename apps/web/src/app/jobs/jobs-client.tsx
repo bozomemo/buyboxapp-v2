@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   type ColumnDef,
   ColumnMenu,
@@ -12,6 +13,7 @@ import {
   useColumnPrefs,
   usePagedRows,
 } from '@/components/table';
+import { SweepPassCard } from '@/components/sweep-pass-card';
 import { EmptyState, ErrorState, LoadingState, Section } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '@/lib/format';
@@ -61,6 +63,8 @@ interface JobRow {
   perMarketplace: boolean;
   defaultPayload: Record<string, unknown>;
   enabled: boolean;
+  /** doc 17 §1.3: the job belongs to a disabled module and is not dispatched, whatever `enabled` says. */
+  moduleDisabled?: boolean;
   nextRunAt: number | null;
   /** A `job_queue` row exists but no worker has claimed it yet. */
   queued: boolean;
@@ -405,6 +409,10 @@ export function JobsClient() {
   const [restartResult, setRestartResult] = useState<{ ok: boolean; message: string } | null>(null);
   /** Which job's detail panel is open, if any. One at a time — it is a drill-down, not a dashboard. */
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
+  // A disabled module's jobs are kept out of the way rather than removed (doc 17 §1.3): a
+  // brand-only install otherwise opened this screen on nine price jobs it will never run, with its
+  // own jobs below them.
+  const [showModuleDisabledJobs, setShowModuleDisabledJobs] = useState(false);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   /**
@@ -810,6 +818,10 @@ export function JobsClient() {
 
   const pendingRestartCount = overview.jobs.filter((job) => job.pendingRestart).length;
   const runningCount = overview.jobs.filter((job) => job.activeRun !== null).length;
+  const moduleDisabledCount = overview.jobs.filter((job) => job.moduleDisabled).length;
+  const catalogJobs = showModuleDisabledJobs
+    ? overview.jobs
+    : overview.jobs.filter((job) => !job.moduleDisabled);
 
   return (
     <div className="space-y-8">
@@ -829,6 +841,22 @@ export function JobsClient() {
         </p>
       )}
       <SchedulerBanner status={overview.scheduler} />
+
+      {/* Two lanes, one shared rate limiter (doc 07 §7.5, doc 17 §4.2): the catalogue sweep and
+          the İlanlar sweep number their passes separately, so each marketplace gets both bars. */}
+      {scrapeRates.length > 0 && (
+        <Section id="sweep-passes" title="Tarama Turları">
+          <div className="space-y-3">
+            {scrapeRates.map((rate) => (
+              <div key={rate.marketplaceCode} className="space-y-2">
+                <p className="text-xs font-medium text-(--color-muted)">{rate.marketplaceCode}</p>
+                <SweepPassCard marketplaceCode={rate.marketplaceCode} scope="all" label="Tarama turu" />
+                <SweepPassCard marketplaceCode={rate.marketplaceCode} scope="listed" label="İlanlar turu" />
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section id="job-catalog" title="İş Kataloğu">
         <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -880,7 +908,7 @@ export function JobsClient() {
               </tr>
             </thead>
             <tbody className="divide-y divide-(--color-border)">
-              {overview.jobs.map((job) => (
+              {catalogJobs.map((job) => (
                 <Fragment key={job.jobName}>
                   <tr className={expandedJob === job.jobName ? 'bg-(--color-surface)' : undefined}>
                     <td className="px-3 py-2 font-medium">{job.label}</td>
@@ -1001,6 +1029,15 @@ export function JobsClient() {
                       >
                         {job.enabled ? 'Etkin' : 'Devre dışı'}
                       </button>
+                      {job.moduleDisabled && (
+                        <Link
+                          href="/settings/modules"
+                          title="Bu iş kapalı bir modüle ait ve çalışmaz. Modül açıldığında kendi ayarıyla devam eder."
+                          className="ml-2 inline-block whitespace-nowrap rounded bg-(--color-chip-bg) px-2 py-1 text-xs text-(--color-chip-text) hover:underline"
+                        >
+                          Modül kapalı
+                        </Link>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
@@ -1029,6 +1066,7 @@ export function JobsClient() {
                           disabled={
                             busy === job.jobName ||
                             isJobBusy(job) ||
+                            job.moduleDisabled === true ||
                             (job.perMarketplace && marketplaces.length === 0)
                           }
                           onClick={() => runNow(job)}
@@ -1064,6 +1102,17 @@ export function JobsClient() {
             </tbody>
           </table>
         </TableFrame>
+        {moduleDisabledCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowModuleDisabledJobs((v) => !v)}
+            className="mt-2 text-xs text-(--color-accent) hover:underline"
+          >
+            {showModuleDisabledJobs
+              ? `Kapalı modüllerin işlerini gizle (${moduleDisabledCount})`
+              : `Kapalı modüllerin ${moduleDisabledCount} işi gizli — göster`}
+          </button>
+        )}
       </Section>
 
       {/* Ranked above queue depth: a tripped breaker is a direct answer to "is a job stuck, and
@@ -1145,7 +1194,8 @@ export function JobsClient() {
             istek hızını belirler; fiyatlandırma kararlarını etkilemez. 403 hataları sıklaşırsa istek/dakika
             değerini düşürün. <strong>Zaman aşımı</strong>, tek bir sayfanın açılması için tanınan süredir:
             olay günlüğünde “Timeout … exceeded” hataları görüyorsanız bu makine sayfaları bu sürede
-            yükleyemiyor demektir, değeri yükseltin. Değişiklik, worker bir sonraki başlatıldığında etkin olur.
+            yükleyemiyor demektir, değeri yükseltin. Değişiklik, worker bir sonraki başlatıldığında etkin
+            olur.
           </p>
           <TableFrame maxHeight="50vh">
             <table className="w-full text-sm">

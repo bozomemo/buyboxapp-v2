@@ -1281,12 +1281,16 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     });
     let outbox = await repricingRepo.drainOutbox(appDb, marketplaceCode, 10);
     expect(outbox.map((s) => s.id)).toContain(submissionId);
+    // Queued is not awaiting confirmation: nothing has reached the marketplace yet (doc 17 §1.3).
+    expect(await repricingRepo.countAwaitingConfirmation(appDb)).toBe(0);
 
     await repricingRepo.markSubmitted(appDb, submissionId, 'batch-1', NOW + 10);
     outbox = await repricingRepo.drainOutbox(appDb, marketplaceCode, 10);
     expect(outbox.map((s) => s.id)).not.toContain(submissionId); // no longer queued
+    expect(await repricingRepo.countAwaitingConfirmation(appDb)).toBe(1);
 
     await repricingRepo.markConfirmed(appDb, submissionId, NOW + 20);
+    expect(await repricingRepo.countAwaitingConfirmation(appDb)).toBe(0);
 
     // Listing detail's History panel (doc 06 §5): every submission for this listing, newest first.
     const history = await repricingRepo.listPriceSubmissionsForListing(appDb, listingId);

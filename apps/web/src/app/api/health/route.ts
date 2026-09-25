@@ -16,7 +16,8 @@
  */
 import { NextResponse } from 'next/server';
 import { checkSchemaVersion, configRepo, inferDialect, sqliteFilePath } from '@buybox/db';
-import { getAppDb, isBootstrapped, tryGetBootstrapEnv } from '@/lib/server/db';
+import { bootstrapEnvProblems, getAppDb, isBootstrapped, tryGetBootstrapEnv } from '@/lib/server/db';
+import { readModules } from '@/lib/server/modules';
 import { getWorkerStatus } from '@/lib/server/worker-status';
 
 export const dynamic = 'force-dynamic';
@@ -27,10 +28,23 @@ interface DatabaseReport {
   readonly dialect?: string;
   readonly schema?: { readonly drift: string; readonly applied: number; readonly expected: number };
   readonly error?: string;
+  /**
+   * Bootstrap variables that are set but unusable. Reported separately from `configured: false`
+   * because they are opposite situations: one is an install waiting for the wizard, the other is
+   * a deployment whose environment is wrong — and before this was reported, the second looked
+   * exactly like the first while every other route answered "Lisans geçersiz" (see
+   * `bootstrapEnvProblems`).
+   */
+  readonly envProblems?: readonly { readonly variable: string; readonly message: string }[];
 }
 
 async function describeDatabase(): Promise<DatabaseReport> {
-  if (!isBootstrapped()) return { configured: false, reachable: false };
+  if (!isBootstrapped()) {
+    const envProblems = bootstrapEnvProblems();
+    return envProblems.length > 0
+      ? { configured: false, reachable: false, envProblems }
+      : { configured: false, reachable: false };
+  }
   try {
     const appDb = getAppDb();
     const status = await checkSchemaVersion(appDb);
@@ -91,6 +105,16 @@ export async function GET() {
   const configured = configuredDatabaseTarget();
 
   const warnings: string[] = [];
+  // Named in the warnings too, not only inside `database`: the installer and the operator both
+  // read this list first, and "the database is not configured" is the wrong thing to act on when
+  // the truth is that one environment variable has a value the app cannot read.
+  for (const problem of database.envProblems ?? []) {
+    warnings.push(
+      `${problem.variable} ortam değişkeninin değeri geçersiz (${problem.message}). ` +
+        'Uygulama yapılandırmayı okuyamadığı için veritabanına bağlanmıyor ve her ekran lisans ' +
+        'hatası verir. .env.local dosyasındaki bu satırı düzeltip servisi yeniden başlatın.',
+    );
+  }
   // A worker on a different database than the web half is the failure this route exists to
   // make visible. It is a `degraded`, not a note: jobs queue up and nothing ever runs them.
   if (worker.running && configured && worker.databaseTarget !== configured) {
@@ -112,7 +136,12 @@ export async function GET() {
   // installer's `status: ok` check (§5 step 8) is unaffected. A brief window right after
   // enabling one is expected and correct — the worker rebuilds its registries within
   // `MARKETPLACE_RELOAD_INTERVAL_MS`, and jobs really do fail until it has.
-  const enabled = await enabledMarketplaceCodes();
+  //
+  // Seller module only (doc 17 §1): `worker.marketplaces` lists seller *adapters*, which exist
+  // only with stored credentials. A brand-only install enables marketplaces to scrape their
+  // public pages and never enters credentials, so without this guard it would report itself
+  // `degraded` — failing the installer's health check — for being configured exactly as intended.
+  const enabled = (await readModules()).seller ? await enabledMarketplaceCodes() : undefined;
   if (worker.running && enabled && worker.marketplaces) {
     const registered = new Set(worker.marketplaces);
     const missing = enabled.filter((code) => !registered.has(code));

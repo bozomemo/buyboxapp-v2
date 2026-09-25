@@ -20,6 +20,7 @@ import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { GLOBAL_KILL_SWITCH_SETTING_KEY, isKillSwitchEngaged } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
+import { readJsonObject } from '@/lib/server/request-body';
 
 export async function GET() {
   const appDb = getAppDb();
@@ -28,7 +29,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { engaged: boolean };
+  const raw = await readJsonObject(request);
+  if (raw === null || typeof raw.engaged !== 'boolean') {
+    return NextResponse.json({ error: '`engaged` true ya da false olmalı.' }, { status: 400 });
+  }
+  const body = { engaged: raw.engaged };
   const appDb = getAppDb();
   await configRepo.setAppSetting(
     appDb,

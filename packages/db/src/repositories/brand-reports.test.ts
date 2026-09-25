@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AppDatabase } from '../client.js';
 import { newId } from '../id.js';
 import { ALL_DIALECTS, createTestDb, type TestDb } from '../test-helpers.js';
+import * as brandProductsRepo from './brand-products.js';
 import * as brandReportsRepo from './brand-reports.js';
 import * as configRepo from './config.js';
 import * as trackedProductsRepo from './tracked-products.js';
@@ -356,14 +357,37 @@ for (const dialect of ALL_DIALECTS) {
     });
 
     describe('referencePriceViolations', () => {
-      async function priced(appDb: AppDatabase, brandId: string, ref: string, major: number) {
+      /** A card linked to a brand product whose per-unit PSF is `major` lira (doc 17 §2.5). */
+      async function priced(
+        appDb: AppDatabase,
+        brandId: string,
+        ref: string,
+        major: number,
+        unitMultiplier = 1,
+      ) {
         const id = await addProduct(appDb, brandId, ref);
-        await trackedProductsRepo.applyReferencePrices(
-          appDb,
-          [{ barcode: null, marketplaceCode: MARKETPLACE, productRef: ref, referencePrice: lira(major) }],
-          'liste.csv',
-          NOW,
-        );
+        const brandProductId = newId();
+        await brandProductsRepo.insertBrandProduct(appDb, {
+          id: brandProductId,
+          name: `Ürün ${ref}`,
+          referencePrice: lira(major),
+          minPrice: null,
+          maxPrice: null,
+          barcode: null,
+          source: 'manual',
+          referencePriceSource: 'liste.csv',
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+        await brandProductsRepo.linkCard(appDb, {
+          id: newId(),
+          brandProductId,
+          trackedProductId: id,
+          unitMultiplier,
+          isPrimary: true,
+          linkSource: 'manual',
+          linkedAt: NOW,
+        });
         return id;
       }
 
@@ -386,12 +410,39 @@ for (const dialect of ALL_DIALECTS) {
         expect(rows[0]).toMatchObject({
           sellerRef: 'cutter',
           trackedProductId: productId,
-          referencePrice: lira(100),
+          unitReferencePrice: lira(100),
+          unitMultiplier: 1,
           // The **worst** offer in the window, not the latest and not the mean: a list price is
           // a floor that was either respected or not.
           lowestPrice: lira(80),
           looksBelow: 2,
           lastBelowAt: NOW - DAY,
+        });
+      }, 30_000);
+
+      /**
+       * doc 17 §2.2: a ×3 card is held to three units' PSF. Against the bare per-unit PSF a
+       * three-pack at 100 would look 2.5 times *above* a 40 PSF, and the seller undercutting the
+       * pack would never be reported.
+       */
+      it('holds a multi-unit card to PSF times its multiplier', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await priced(db.appDb, brandId, '3lu', 40, 3);
+        await look(db.appDb, productId, NOW - DAY, [
+          ['cutter', 100],
+          ['at-psf', 120],
+          ['above', 125],
+        ]);
+
+        const rows = await brandReportsRepo.referencePriceViolations(db.appDb, WINDOW, { limit: 50 });
+
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          sellerRef: 'cutter',
+          unitReferencePrice: lira(40),
+          unitMultiplier: 3,
+          lowestPrice: lira(100),
         });
       }, 30_000);
 

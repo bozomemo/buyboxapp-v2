@@ -12,6 +12,7 @@
  */
 import {
   brandFindingsRepo,
+  brandProductsRepo,
   eventsRepo,
   jobsRepo,
   newId,
@@ -92,12 +93,29 @@ describe('EvaluateBrandFindings', () => {
       addedAt: NOW - 10 * DAY,
       watchedBrandId: brandId,
     });
-    await trackedProductsRepo.applyReferencePrices(
-      db.appDb,
-      [{ barcode: null, marketplaceCode: 'trendyol', productRef, referencePrice: 100_00n }],
-      'liste.csv',
-      NOW - 10 * DAY,
-    );
+    // PSF lives on a brand product the card is linked to (doc 17 §2.5).
+    const brandProductId = newId();
+    await brandProductsRepo.insertBrandProduct(db.appDb, {
+      id: brandProductId,
+      name: `Ürün ${productRef}`,
+      referencePrice: 100_00n,
+      minPrice: null,
+      maxPrice: null,
+      barcode: null,
+      source: 'manual',
+      referencePriceSource: 'liste.csv',
+      createdAt: NOW - 10 * DAY,
+      updatedAt: NOW - 10 * DAY,
+    });
+    await brandProductsRepo.linkCard(db.appDb, {
+      id: newId(),
+      brandProductId,
+      trackedProductId: productId,
+      unitMultiplier: 1,
+      isPrimary: true,
+      linkSource: 'manual',
+      linkedAt: NOW - 10 * DAY,
+    });
     await trackedProductsRepo.insertTrackedProductObservations(db.appDb, [
       {
         id: newId(),
@@ -234,11 +252,13 @@ describe('EvaluateBrandFindings', () => {
     const notifier = fakeNotifier();
     await evaluateBrandFindings(ctx(), { notifier });
 
-    // The list price is withdrawn — the finding cannot be derived any more.
+    // The card is unlinked from its brand product, so it has no PSF — the finding cannot be
+    // derived any more.
     const [product] = (await trackedProductsRepo.listTrackedProducts(db.appDb, {})).filter(
       (p) => p.productRef === '1',
     );
-    await trackedProductsRepo.clearReferencePrices(db.appDb, [product!.id]);
+    const links = await brandProductsRepo.cardLinksForTrackedProducts(db.appDb, [product!.id]);
+    await brandProductsRepo.unlinkCard(db.appDb, links.get(product!.id)!.cardId);
     clock.advance(6 * 60 * 60_000);
     await evaluateBrandFindings(ctx(), { notifier });
 
@@ -281,6 +301,59 @@ describe('EvaluateBrandFindings', () => {
     expect(result.itemsTotal).toBe(0);
     expect(await brandFindingsRepo.openFindings(db.appDb, brandId)).toHaveLength(0);
     expect(notifier.sent).toHaveLength(0);
+  });
+
+  /**
+   * A brand added with only a search term (the id is optional, doc 06 §12.1) has had no brand-id
+   * pass, so every one of its products is search-term-only. That is the absence of a comparison,
+   * not a disagreement — on 2026-09-19 it opened one finding per product.
+   */
+  it('raises no brand-id disagreement for a brand that has no brand id to disagree with', async () => {
+    async function sweptSearchOnly(watchedBrandId: string, productRef: string): Promise<void> {
+      await trackedProductsRepo.upsertSweptProducts(db.appDb, [
+        {
+          id: newId(),
+          marketplaceCode: 'trendyol',
+          productRef,
+          productUrl: `/p-${productRef}`,
+          label: `Ürün ${productRef}`,
+          watchedBrandId,
+          viaBrandRef: false,
+          viaSearchTerm: true,
+          brandName: null,
+          brandRef: null,
+          categoryRef: null,
+          categoryName: null,
+          ratingCount: null,
+          ratingAverage: null,
+          sweptAt: NOW,
+        },
+      ]);
+    }
+    const [group] = await watchedBrandsRepo.listWatchedBrandGroups(db.appDb);
+    const searchOnlyId = newId();
+    await watchedBrandsRepo.createWatchedBrand(db.appDb, {
+      id: searchOnlyId,
+      groupId: group!.id,
+      marketplaceCode: 'trendyol',
+      label: 'Acana',
+      brandRef: null,
+      searchTerm: 'acana',
+      isActive: true,
+      lastSweptAt: null,
+      lastSweepProductCount: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await sweptSearchOnly(brandId, 'W1');
+    await sweptSearchOnly(searchOnlyId, 'A1');
+
+    await evaluateBrandFindings(ctx(), { notifier: fakeNotifier() });
+
+    const kinds = async (id: string) =>
+      (await brandFindingsRepo.openFindings(db.appDb, id)).map((f) => f.kind);
+    expect(await kinds(brandId)).toContain('brandRefDisagreement');
+    expect(await kinds(searchOnlyId)).not.toContain('brandRefDisagreement');
   });
 
   it('records nothing and reports a clean run for a brand with no findings', async () => {

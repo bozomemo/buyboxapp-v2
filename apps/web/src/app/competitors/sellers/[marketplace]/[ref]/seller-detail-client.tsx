@@ -268,6 +268,9 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
   const [watchedBrandId, setWatchedBrandId] = useState(() => searchParams.get('watchedBrandId') ?? '');
   const [detail, setDetail] = useState<Detail | null>(null);
   const [groups, setGroups] = useState<GroupOption[]>([]);
+  // This page serves both modules (doc 17 §1.3). Assumed on until `/api/modules` says otherwise,
+  // so a seller install never flickers its own section away.
+  const [sellerModule, setSellerModule] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
@@ -286,13 +289,26 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Satıcı yüklenemedi.'))))
       .then((data: Detail) => setDetail(data))
       .catch((e: Error) => setError(e.message));
-    fetch('/api/competitors/sellers')
+    fetch('/api/competitors/sellers/group')
       .then((res) => (res.ok ? res.json() : undefined))
       .then((data: { groups: GroupOption[] } | undefined) => data && setGroups(data.groups))
       .catch(() => undefined);
   }, [marketplace, sellerRef, sinceMs, watchedBrandId]);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/modules')
+      .then((res) => (res.ok ? res.json() : undefined))
+      .then((data: { modules: { seller: boolean } } | undefined) => {
+        if (!cancelled && data) setSellerModule(data.modules.seller);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function post(body: unknown) {
     setBusy(true);
@@ -345,9 +361,15 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <Link className="text-sm text-(--color-accent) hover:underline" href="/competitors/sellers">
-            ← Rakip satıcılar
-          </Link>
+          {sellerModule ? (
+            <Link className="text-sm text-(--color-accent) hover:underline" href="/competitors/sellers">
+              ← Rakip satıcılar
+            </Link>
+          ) : (
+            <Link className="text-sm text-(--color-accent) hover:underline" href="/watched-brands/sellers">
+              ← Marka satıcıları
+            </Link>
+          )}
           <h1 className="mt-1 text-2xl font-semibold">
             {detail.seller.sellerName || detail.seller.sellerRef}
           </h1>
@@ -378,15 +400,22 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
 
       {error && <StatusBanner ok={false} message={error} />}
 
-      <CoverageBadge coverage={detail.coverage} sinceMs={detail.filters.sinceMs} />
+      {/* Both are about the seller's half: `coverage` is the competitor scrape of *our listings*,
+          which a brand-only install never runs, so its "hiç tarama yapılmamış" would be a
+          permanent red banner about a job that is not supposed to exist there. */}
+      {sellerModule && (
+        <>
+          <CoverageBadge coverage={detail.coverage} sinceMs={detail.filters.sinceMs} />
 
-      <p className="max-w-3xl text-sm text-(--color-muted)">
-        Bu firma iki ayrı arşivde kayıtlı olabilir ve ikisi farklı soruyu cevaplar:{' '}
-        <strong>sattığımız ürünlerde</strong> ne yaptığı, ve <strong>izlediğimiz markaların</strong>{' '}
-        ürünlerinde ne yaptığı. İkisi de aşağıda, ayrı ayrı. Bir marka sahibi için ikincisi çoğunlukla doludur
-        ve birincisi boştur — bu bir veri eksikliği değil, o firmayla ortak sattığımız ürün olmadığı anlamına
-        gelir.
-      </p>
+          <p className="max-w-3xl text-sm text-(--color-muted)">
+            Bu firma iki ayrı arşivde kayıtlı olabilir ve ikisi farklı soruyu cevaplar:{' '}
+            <strong>sattığımız ürünlerde</strong> ne yaptığı, ve <strong>izlediğimiz markaların</strong>{' '}
+            ürünlerinde ne yaptığı. İkisi de aşağıda, ayrı ayrı. Bir marka sahibi için ikincisi çoğunlukla
+            doludur ve birincisi boştur — bu bir veri eksikliği değil, o firmayla ortak sattığımız ürün
+            olmadığı anlamına gelir.
+          </p>
+        </>
+      )}
 
       <section className="rounded border border-(--color-border) p-4" aria-labelledby="identity-heading">
         <h2 id="identity-heading" className="text-lg font-medium">
@@ -460,109 +489,111 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
       </section>
 
       {/* ================= sattığımız ürünler ================= */}
-      <section className="space-y-3" aria-labelledby="our-listings-heading">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="our-listings-heading" className="text-lg font-medium">
-            Sattığımız ürünlerde
-          </h2>
-          <span className="text-xs text-(--color-muted)">
-            Rakip taramasından — bizim ilanlarımızın sayfalarında görülen teklifler
-          </span>
-        </div>
+      {sellerModule && (
+        <section className="space-y-3" aria-labelledby="our-listings-heading">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="our-listings-heading" className="text-lg font-medium">
+              Sattığımız ürünlerde
+            </h2>
+            <span className="text-xs text-(--color-muted)">
+              Rakip taramasından — bizim ilanlarımızın sayfalarında görülen teklifler
+            </span>
+          </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded border border-(--color-border) p-3">
-            <div className="text-xs text-(--color-muted)">Çakıştığımız ürün</div>
-            <div className="text-xl font-semibold">{formatNumber(detail.listings.length)}</div>
-          </div>
-          <div className="rounded border border-(--color-border) p-3">
-            <div className="text-xs text-(--color-muted)">Kayıtlı teklif</div>
-            <div className="text-xl font-semibold">{formatNumber(totalObservations)}</div>
-          </div>
-          <div className="rounded border border-(--color-border) p-3">
-            <div className="text-xs text-(--color-muted)">Buybox&apos;ta görüldüğü</div>
-            <div className="text-xl font-semibold">
-              {formatNumber(totalBuybox)}
-              <span className="ml-2 text-sm font-normal text-(--color-muted)">
-                {totalObservations > 0 ? formatPercent((totalBuybox / totalObservations) * 100) : '—'}
-              </span>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded border border-(--color-border) p-3">
+              <div className="text-xs text-(--color-muted)">Çakıştığımız ürün</div>
+              <div className="text-xl font-semibold">{formatNumber(detail.listings.length)}</div>
+            </div>
+            <div className="rounded border border-(--color-border) p-3">
+              <div className="text-xs text-(--color-muted)">Kayıtlı teklif</div>
+              <div className="text-xl font-semibold">{formatNumber(totalObservations)}</div>
+            </div>
+            <div className="rounded border border-(--color-border) p-3">
+              <div className="text-xs text-(--color-muted)">Buybox&apos;ta görüldüğü</div>
+              <div className="text-xl font-semibold">
+                {formatNumber(totalBuybox)}
+                <span className="ml-2 text-sm font-normal text-(--color-muted)">
+                  {totalObservations > 0 ? formatPercent((totalBuybox / totalObservations) * 100) : '—'}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="flex items-center justify-end gap-2">
-          <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
-          <button
-            type="button"
-            disabled={detail.listings.length === 0}
-            onClick={() =>
-              downloadCsv(
-                `rakip-satici-${detail.seller.sellerRef}.csv`,
-                detail.listings.map((l) => ({
-                  Ürün: l.productName,
-                  'Stok Kodu': l.baseStockCode ?? l.marketplaceListingId,
-                  'Bizim Fiyatımız': (Number(l.ourPrice) / 100).toFixed(2),
-                  'Min Fiyat': l.minPrice ? (Number(l.minPrice) / 100).toFixed(2) : '',
-                  'Max Fiyat': l.maxPrice ? (Number(l.maxPrice) / 100).toFixed(2) : '',
-                  Teklif: l.observationCount,
-                  Buybox: l.buyboxCount,
-                  'Ort. Sıra': l.avgRank ?? '',
-                  'İlk Görülme': formatDateTime(l.firstSeenAt),
-                  'Son Görülme': formatDateTime(l.lastSeenAt),
-                })),
-              )
-            }
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
-          >
-            Excel&apos;e Aktar
-          </button>
-        </div>
+          <div className="flex items-center justify-end gap-2">
+            <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+            <button
+              type="button"
+              disabled={detail.listings.length === 0}
+              onClick={() =>
+                downloadCsv(
+                  `rakip-satici-${detail.seller.sellerRef}.csv`,
+                  detail.listings.map((l) => ({
+                    Ürün: l.productName,
+                    'Stok Kodu': l.baseStockCode ?? l.marketplaceListingId,
+                    'Bizim Fiyatımız': (Number(l.ourPrice) / 100).toFixed(2),
+                    'Min Fiyat': l.minPrice ? (Number(l.minPrice) / 100).toFixed(2) : '',
+                    'Max Fiyat': l.maxPrice ? (Number(l.maxPrice) / 100).toFixed(2) : '',
+                    Teklif: l.observationCount,
+                    Buybox: l.buyboxCount,
+                    'Ort. Sıra': l.avgRank ?? '',
+                    'İlk Görülme': formatDateTime(l.firstSeenAt),
+                    'Son Görülme': formatDateTime(l.lastSeenAt),
+                  })),
+                )
+              }
+              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
+            >
+              Excel&apos;e Aktar
+            </button>
+          </div>
 
-        <TableFrame>
-          <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
-            <thead className={`${STICKY_HEAD} text-left`}>
-              <tr>
-                {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
-                  <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-3 py-2">
-                    {d.label}
-                  </ResizableTh>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {paged.rows.map((l) => (
-                <tr key={l.listingId} className="border-t border-(--color-border)">
+          <TableFrame>
+            <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
+              <thead className={`${STICKY_HEAD} text-left`}>
+                <tr>
                   {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
-                    <td key={d.id} className={`px-3 py-2 ${RIGHT_ALIGNED.has(d.id) ? 'text-right' : ''}`}>
-                      {renderListingCell(d.id, l)}
-                    </td>
+                    <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-3 py-2">
+                      {d.label}
+                    </ResizableTh>
                   ))}
                 </tr>
-              ))}
-              {detail.listings.length === 0 && (
-                <tr>
-                  <td
-                    className="px-3 py-6 text-center text-(--color-muted)"
-                    colSpan={COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).length}
-                  >
-                    {/* Says what the emptiness *means*. A brand-owner install reaches this page
+              </thead>
+              <tbody>
+                {paged.rows.map((l) => (
+                  <tr key={l.listingId} className="border-t border-(--color-border)">
+                    {COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).map((d) => (
+                      <td key={d.id} className={`px-3 py-2 ${RIGHT_ALIGNED.has(d.id) ? 'text-right' : ''}`}>
+                        {renderListingCell(d.id, l)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {detail.listings.length === 0 && (
+                  <tr>
+                    <td
+                      className="px-3 py-6 text-center text-(--color-muted)"
+                      colSpan={COLUMN_DEFS.filter((d) => columns.isVisible(d.id)).length}
+                    >
+                      {/* Says what the emptiness *means*. A brand-owner install reaches this page
                       from a finding about a seller we share no product with, and a bare "kayıt
                       yok" there reads as lost data rather than as the correct answer. */}
-                    <div>Bu dönemde bu satıcıyla çakıştığımız bir ürün yok.</div>
-                    <div className="mt-1 text-xs">
-                      {detail.trackedProducts.length > 0
-                        ? 'Bu firma bizim sattığımız ürünlerde görülmedi — aşağıdaki izlenen marka ürünlerinde görüldü.'
-                        : 'Bu satıcıyla ortak sattığımız bir ürün bulunmuyor.'}
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </TableFrame>
+                      <div>Bu dönemde bu satıcıyla çakıştığımız bir ürün yok.</div>
+                      <div className="mt-1 text-xs">
+                        {detail.trackedProducts.length > 0
+                          ? 'Bu firma bizim sattığımız ürünlerde görülmedi — aşağıdaki izlenen marka ürünlerinde görüldü.'
+                          : 'Bu satıcıyla ortak sattığımız bir ürün bulunmuyor.'}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </TableFrame>
 
-        <Pagination state={paged} label="ürün" />
-      </section>
+          <Pagination state={paged} label="ürün" />
+        </section>
+      )}
 
       {/* ================= izlenen marka ürünleri ================= */}
       <section className="space-y-3" aria-labelledby="tracked-products-heading">

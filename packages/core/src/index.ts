@@ -89,3 +89,44 @@ export type {
   AuditWorstProduct,
 } from './brand/audit-findings.js';
 export { auditFindingOrder, deriveAuditFindings, DEFAULT_AUDIT_THRESHOLDS } from './brand/audit-findings.js';
+
+export type {
+  BandEvaluation,
+  BandPriceSource,
+  BandStatus,
+  BandViolationKind,
+  BrandPriceCheck,
+  BrandPriceError,
+  BrandPriceWarning,
+  BrandProductPrices,
+  BuyboxPrice,
+  EffectiveBand,
+} from './brand/band.js';
+export {
+  cardBand,
+  checkBrandProductPrices,
+  effectiveBand,
+  evaluateBand,
+  isValidUnitMultiplier,
+  scaleToCard,
+  unitPriceForDisplay,
+} from './brand/band.js';
+
+export type {
+  AmountCell,
+  ExistingCard,
+  ImportContext,
+  ImportErrorCode,
+  ImportMarketplace,
+  ImportPlan,
+  ImportRowError,
+  ImportRowInput,
+  ImportRowPlan,
+  ImportWarningCode,
+  LinkCell,
+  PlannedFields,
+  PlannedLink,
+} from './brand/import-plan.js';
+export { cardKey, foldName, planBrandProductImport } from './brand/import-plan.js';
+export { classifyBarcode, isValidGtin } from './brand/barcode.js';
+export type { BarcodeKind } from './brand/barcode.js';

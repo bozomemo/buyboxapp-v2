@@ -3,7 +3,17 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import type { AppModule, EnabledModules } from '@buybox/shared';
 import { ConfirmButton } from '@/components/ui';
+import {
+  NAV_VIEW_OPTIONS,
+  readStoredNavView,
+  showsViewSwitch,
+  storeNavView,
+  visibleModules,
+  type ModulesState,
+  type NavView,
+} from '@/lib/nav-modules';
 import { ThemeToggle } from './theme-toggle';
 
 /**
@@ -55,14 +65,22 @@ function usePoll<T>(url: string): [Poll<T>, () => void] {
  * the product visible — **Satış** is what we sell, **Marka Denetimi** is what others sell of
  * ours, **Sistem** is the machinery.
  *
- * Deliberately not hidden per install type: an install can be both, the groups are not
- * mutually exclusive, and a nav item that appears only after some other screen has been used is
- * a feature nobody finds.
+ * **Hidden per module since 2026-09-19 (doc 17 §1.3).** This comment used to say the groups
+ * were deliberately *not* hidden per install type, because a nav item that appears only after
+ * some other screen has been used is a feature nobody finds. That holds for a feature; it does
+ * not hold for a module somebody switched off in setup, and a brand manager wading through the
+ * seller's pricing menus is exactly the confusion the brand module exists to remove. `module`
+ * below is which module a group belongs to; `null` is shown to everyone.
  */
-const NAV_GROUPS: { readonly title: string | null; readonly items: { href: string; label: string }[] }[] = [
-  { title: null, items: [{ href: '/', label: 'Panel' }] },
+const NAV_GROUPS: {
+  readonly title: string | null;
+  readonly module: AppModule | null;
+  readonly items: { href: string; label: string }[];
+}[] = [
+  { title: null, module: null, items: [{ href: '/', label: 'Panel' }] },
   {
     title: 'Satış',
+    module: 'seller',
     items: [
       { href: '/stock', label: 'Stok' },
       { href: '/listings', label: 'İlanlar' },
@@ -74,7 +92,10 @@ const NAV_GROUPS: { readonly title: string | null; readonly items: { href: strin
   },
   {
     title: 'Marka Denetimi',
+    module: 'brand',
     items: [
+      { href: '/brand/products', label: 'Stok' },
+      { href: '/brand/listings', label: 'İlanlar' },
       { href: '/watched-brands', label: 'İzlenen Markalar' },
       { href: '/tracked-products', label: 'Takip Edilen Ürünler' },
       { href: '/watched-brands/sellers', label: 'Marka Satıcıları' },
@@ -86,6 +107,7 @@ const NAV_GROUPS: { readonly title: string | null; readonly items: { href: strin
   },
   {
     title: 'Sistem',
+    module: null,
     items: [
       { href: '/jobs', label: 'İşler' },
       { href: '/events', label: 'Olaylar' },
@@ -229,9 +251,52 @@ function LicenseGraceBanner() {
   );
 }
 
+/**
+ * The header's Satış / Marka / Tümü switch (doc 17 §1.1). Offered only when both modules are
+ * installed, and a pure display preference — it hides a group, it never enables or stops
+ * anything, which is why it can sit one click away beside the theme toggle.
+ */
+function ViewSwitch({ view, onChange }: { view: NavView; onChange: (view: NavView) => void }) {
+  return (
+    <div
+      role="group"
+      aria-label="Menü görünümü"
+      className="flex overflow-hidden rounded border border-(--color-border) text-xs"
+    >
+      {NAV_VIEW_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          aria-pressed={view === opt.value}
+          className={`px-2.5 py-1.5 transition ${
+            view === opt.value
+              ? 'bg-(--color-accent) font-semibold text-(--color-accent-ink)'
+              : 'text-(--color-muted) hover:bg-(--color-hover)'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function NavShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isSetup = pathname?.startsWith('/setup');
+  const [modulesPoll] = usePoll<{ modules: EnabledModules }>('/api/modules');
+  const modulesState: ModulesState =
+    modulesPoll.status === 'ready'
+      ? { status: 'ready', modules: modulesPoll.data.modules }
+      : { status: modulesPoll.status };
+  // Read after mount, like the theme: `localStorage` does not exist during the server render.
+  const [view, setView] = useState<NavView>('all');
+  useEffect(() => {
+    setView(readStoredNavView());
+  }, []);
+  const shown = visibleModules(modulesState, view);
+  const groups = NAV_GROUPS.filter((group) => group.module === null || shown[group.module]);
   // Longest prefix wins, rather than every prefix matching. `/competitors/sellers` is a child
   // path of `/competitors`, so a plain `startsWith` per item lights up both rows at once and
   // the sidebar stops telling you where you are.
@@ -252,7 +317,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       <aside className="flex w-56 flex-none flex-col border-r border-(--color-border) bg-(--color-surface) p-4">
         <div className="mb-6 text-lg font-bold">BuyBoxApp</div>
         <nav className="flex flex-col gap-1">
-          {NAV_GROUPS.map((group, index) => (
+          {groups.map((group, index) => (
             <div key={group.title ?? 'root'} className={index === 0 ? '' : 'mt-4'}>
               {group.title && (
                 <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-(--color-muted)">
@@ -282,6 +347,15 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <LicenseGraceBanner />
         <header className="flex items-center justify-end gap-3 border-b border-(--color-border) bg-(--color-surface) px-6 py-3">
+          {showsViewSwitch(modulesState) && (
+            <ViewSwitch
+              view={view}
+              onChange={(next) => {
+                setView(next);
+                storeNavView(next);
+              }}
+            />
+          )}
           <ThemeToggle />
           <SystemPauseButton />
         </header>

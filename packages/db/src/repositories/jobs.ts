@@ -5,7 +5,7 @@
  * built on the enqueue/list/mark primitives below: `FOR UPDATE SKIP LOCKED` on Postgres
  * and MySQL (both support it), a single-writer transaction on SQLite (doc 10 §1.2).
  */
-import { and, asc, desc, eq, gte, inArray, lt, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, lte, ne } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -129,10 +129,36 @@ export async function countActiveJobsForPayloadField(
   field: string,
   value: string,
 ): Promise<number> {
+  return (await listActiveJobsCovering(appDb, jobName, { [field]: value })).length;
+}
+
+export interface CoveringJob {
+  readonly id: string;
+  readonly state: 'ready' | 'locked';
+  /** `null` when the payload could not be read — such a row covers everything. */
+  readonly payload: Record<string, unknown> | null;
+}
+
+/**
+ * Active rows for one job name that cover **every** field of `scope`: each field is either
+ * named with the same value or not named at all. `countActiveJobsForPayloadField` is the
+ * one-field case.
+ *
+ * More than one field is the point (2026-09-25). A brand sweep asked the one-field question —
+ * "is anything running without a `watchedBrandId`?" — and a whole-marketplace Trendyol sweep
+ * answered yes for a *Hepsiburada* brand, which it can never cover: the operator got 409 until
+ * the Trendyol pass finished. Asking for marketplace and brand together keeps the rule the doc
+ * comment above describes and loses the false match.
+ */
+export async function listActiveJobsCovering(
+  appDb: AppDatabase,
+  jobName: string,
+  scope: Readonly<Record<string, string>>,
+): Promise<CoveringJob[]> {
   const rows = await withDialect(appDb, {
     sqlite: (db) =>
       db
-        .select({ payload: sqliteSchema.jobQueue.payload })
+        .select({ id: sqliteSchema.jobQueue.id, state: sqliteSchema.jobQueue.state, payload: sqliteSchema.jobQueue.payload })
         .from(sqliteSchema.jobQueue)
         .where(
           and(
@@ -142,7 +168,7 @@ export async function countActiveJobsForPayloadField(
         ),
     postgres: (db) =>
       db
-        .select({ payload: postgresSchema.jobQueue.payload })
+        .select({ id: postgresSchema.jobQueue.id, state: postgresSchema.jobQueue.state, payload: postgresSchema.jobQueue.payload })
         .from(postgresSchema.jobQueue)
         .where(
           and(
@@ -152,7 +178,7 @@ export async function countActiveJobsForPayloadField(
         ),
     mysql: (db) =>
       db
-        .select({ payload: mysqlSchema.jobQueue.payload })
+        .select({ id: mysqlSchema.jobQueue.id, state: mysqlSchema.jobQueue.state, payload: mysqlSchema.jobQueue.payload })
         .from(mysqlSchema.jobQueue)
         .where(
           and(
@@ -165,22 +191,54 @@ export async function countActiveJobsForPayloadField(
   // Filtered here rather than in SQL: the payload is a JSON *document* and the three engines
   // disagree on how to reach into one. The candidate set is bounded by the guard this feeds —
   // active rows for a single job name — so it is a handful of rows, not a scan.
-  let count = 0;
-  for (const row of rows as { payload: string | null }[]) {
-    if (row.payload === null) {
-      count += 1;
-      continue;
-    }
+  const covering: CoveringJob[] = [];
+  for (const row of rows as { id: string; state: 'ready' | 'locked'; payload: string | null }[]) {
+    let parsed: Record<string, unknown> | null = null;
     try {
-      const parsed = JSON.parse(row.payload) as Record<string, unknown>;
-      if (parsed[field] === undefined || parsed[field] === value) {
-        count += 1;
-      }
+      parsed = row.payload === null ? null : (JSON.parse(row.payload) as Record<string, unknown>);
     } catch {
-      count += 1; // unreadable ⇒ suppress, per the note above
+      parsed = null; // unreadable ⇒ suppress, per the note above
     }
+    const covers =
+      parsed === null ||
+      Object.entries(scope).every(([field, value]) => parsed[field] === undefined || parsed[field] === value);
+    if (covers) covering.push({ id: row.id, state: row.state, payload: parsed });
   }
-  return count;
+  return covering;
+}
+
+/**
+ * When each of these queue rows' current run started, for the rows that have one running — so a
+ * caller can tell whether a run already in progress could have seen something created since.
+ */
+export async function runningJobStartTimes(
+  appDb: AppDatabase,
+  jobQueueIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (jobQueueIds.length === 0) return new Map();
+  const ids = [...jobQueueIds];
+  const rows = await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({ jobQueueId: sqliteSchema.jobRuns.jobQueueId, startedAt: sqliteSchema.jobRuns.startedAt })
+        .from(sqliteSchema.jobRuns)
+        .where(and(inArray(sqliteSchema.jobRuns.jobQueueId, ids), eq(sqliteSchema.jobRuns.state, 'running'))),
+    postgres: (db) =>
+      db
+        .select({ jobQueueId: postgresSchema.jobRuns.jobQueueId, startedAt: postgresSchema.jobRuns.startedAt })
+        .from(postgresSchema.jobRuns)
+        .where(and(inArray(postgresSchema.jobRuns.jobQueueId, ids), eq(postgresSchema.jobRuns.state, 'running'))),
+    mysql: (db) =>
+      db
+        .select({ jobQueueId: mysqlSchema.jobRuns.jobQueueId, startedAt: mysqlSchema.jobRuns.startedAt })
+        .from(mysqlSchema.jobRuns)
+        .where(and(inArray(mysqlSchema.jobRuns.jobQueueId, ids), eq(mysqlSchema.jobRuns.state, 'running'))),
+  });
+  const starts = new Map<string, number>();
+  for (const row of rows as { jobQueueId: string | null; startedAt: number }[]) {
+    if (row.jobQueueId !== null) starts.set(row.jobQueueId, Number(row.startedAt));
+  }
+  return starts;
 }
 
 /**
@@ -688,6 +746,85 @@ export async function renewJobLock(
             eq(mysqlSchema.jobQueue.id, id),
             eq(mysqlSchema.jobQueue.state, 'locked'),
             eq(mysqlSchema.jobQueue.lockedBy, workerId),
+          ),
+        ),
+  });
+}
+
+/**
+ * Every distinct worker id currently holding a claimed job — the scheduler's own lock row
+ * excluded. Read once at worker startup to find claims left behind by a worker that is gone
+ * (`releaseLocksOfDeadLocalWorkers`, packages/jobs).
+ */
+export async function listJobLockOwners(appDb: AppDatabase): Promise<string[]> {
+  const rows = await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .selectDistinct({ lockedBy: sqliteSchema.jobQueue.lockedBy })
+        .from(sqliteSchema.jobQueue)
+        .where(and(eq(sqliteSchema.jobQueue.state, 'locked'), ne(sqliteSchema.jobQueue.id, SCHEDULER_LOCK_ID))),
+    postgres: (db) =>
+      db
+        .selectDistinct({ lockedBy: postgresSchema.jobQueue.lockedBy })
+        .from(postgresSchema.jobQueue)
+        .where(and(eq(postgresSchema.jobQueue.state, 'locked'), ne(postgresSchema.jobQueue.id, SCHEDULER_LOCK_ID))),
+    mysql: (db) =>
+      db
+        .selectDistinct({ lockedBy: mysqlSchema.jobQueue.lockedBy })
+        .from(mysqlSchema.jobQueue)
+        .where(and(eq(mysqlSchema.jobQueue.state, 'locked'), ne(mysqlSchema.jobQueue.id, SCHEDULER_LOCK_ID))),
+  });
+  return (rows as { lockedBy: string | null }[])
+    .map((row) => row.lockedBy)
+    .filter((owner): owner is string => owner !== null);
+}
+
+/**
+ * Marks every claim held by `ownerId` as already expired, so the next `requeueExpiredJobs`
+ * returns it to `ready` (or `failed` at `maxAttempts`) and closes its `job_runs` row exactly as
+ * it would for a lock that ran out on its own. Deliberately does not requeue here itself: one
+ * path for "the worker holding this is gone", not two that could drift apart.
+ *
+ * Only for a worker known to be dead. The caller proves that; this function trusts it.
+ */
+export async function expireJobLocksHeldBy(
+  appDb: AppDatabase,
+  ownerId: string,
+  nowMs: number,
+): Promise<void> {
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .update(sqliteSchema.jobQueue)
+        .set({ lockedUntil: nowMs, updatedAt: nowMs })
+        .where(
+          and(
+            eq(sqliteSchema.jobQueue.state, 'locked'),
+            eq(sqliteSchema.jobQueue.lockedBy, ownerId),
+            ne(sqliteSchema.jobQueue.id, SCHEDULER_LOCK_ID),
+          ),
+        )
+        .run(),
+    postgres: (db) =>
+      db
+        .update(postgresSchema.jobQueue)
+        .set({ lockedUntil: nowMs, updatedAt: nowMs })
+        .where(
+          and(
+            eq(postgresSchema.jobQueue.state, 'locked'),
+            eq(postgresSchema.jobQueue.lockedBy, ownerId),
+            ne(postgresSchema.jobQueue.id, SCHEDULER_LOCK_ID),
+          ),
+        ),
+    mysql: (db) =>
+      db
+        .update(mysqlSchema.jobQueue)
+        .set({ lockedUntil: nowMs, updatedAt: nowMs })
+        .where(
+          and(
+            eq(mysqlSchema.jobQueue.state, 'locked'),
+            eq(mysqlSchema.jobQueue.lockedBy, ownerId),
+            ne(mysqlSchema.jobQueue.id, SCHEDULER_LOCK_ID),
           ),
         ),
   });

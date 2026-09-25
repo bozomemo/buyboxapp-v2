@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   getScrapeRateLimit,
   setScrapeRateLimit,
+  SCRAPE_BURST_MAX,
+  SCRAPE_RATE_MAX_PER_MINUTE,
   SCRAPE_TIMEOUT_MAX_MS,
   SCRAPE_TIMEOUT_MIN_MS,
 } from './scrape-rate-settings.js';
@@ -114,6 +116,26 @@ describe('scrape rate settings (doc 08 §12)', () => {
         newId(),
       );
       expect(await getScrapeRateLimit(appDb, 'trendyol')).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('clamps a stored rate above the ceiling instead of honouring it', async () => {
+    const { appDb, cleanup } = await createSqliteTestDb();
+    try {
+      await setScrapeRateLimit(
+        appDb,
+        'trendyol',
+        { requestsPerMinute: 100_000, burst: 500 },
+        'operator',
+        1000,
+        newId(),
+      );
+      expect(await getScrapeRateLimit(appDb, 'trendyol')).toEqual({
+        requestsPerMinute: SCRAPE_RATE_MAX_PER_MINUTE,
+        burst: SCRAPE_BURST_MAX,
+      });
     } finally {
       cleanup();
     }

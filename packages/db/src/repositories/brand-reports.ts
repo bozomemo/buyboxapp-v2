@@ -30,7 +30,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  lt,
   lte,
   not,
   or,
@@ -1470,8 +1469,10 @@ export interface ReferencePriceViolationRow {
   readonly observedName: string;
   readonly trackedProductId: string;
   readonly productLabel: string;
-  /** Kuruş, as the operator's own list states it. */
-  readonly referencePrice: bigint;
+  /** PSF of the card's brand product, per unit, kuruş (doc 17 §2.5). */
+  readonly unitReferencePrice: bigint;
+  /** The card's unit multiplier; the price compared against is PSF × this. */
+  readonly unitMultiplier: number;
   /** Kuruş — the lowest price this seller was seen at on this product in the window. */
   readonly lowestPrice: bigint;
   /** How many looks in the window had this seller below the list price. */
@@ -1491,7 +1492,8 @@ interface RawViolationRow {
   observedName: string | null;
   trackedProductId: string;
   productLabel: string | null;
-  referencePrice: unknown;
+  unitReferencePrice: unknown;
+  unitMultiplier: unknown;
   lowestPrice: unknown;
   looksBelow: unknown;
   lastBelowAt: unknown;
@@ -1501,19 +1503,20 @@ function toViolationRow(
   r: RawViolationRow,
   decode: (v: unknown) => bigint | null,
 ): ReferencePriceViolationRow | null {
-  const referencePrice = decode(r.referencePrice);
+  const unitReferencePrice = decode(r.unitReferencePrice);
   const lowestPrice = decode(r.lowestPrice);
   // Both are guaranteed non-null by the query's own predicates; a null here would mean the
   // decoding disagreed with the comparison, which is worth dropping rather than reporting as a
   // violation of an unknown price.
-  if (referencePrice === null || lowestPrice === null || referencePrice <= 0n) return null;
+  if (unitReferencePrice === null || lowestPrice === null || unitReferencePrice <= 0n) return null;
   return {
     marketplaceCode: r.marketplaceCode,
     sellerRef: r.sellerRef as string,
     observedName: r.observedName ?? '',
     trackedProductId: r.trackedProductId,
     productLabel: r.productLabel ?? '',
-    referencePrice,
+    unitReferencePrice,
+    unitMultiplier: Number(r.unitMultiplier),
     lowestPrice,
     looksBelow: Number(r.looksBelow),
     lastBelowAt: Number(r.lastBelowAt),
@@ -1541,6 +1544,14 @@ function toViolationRow(
  * Ordering is by the deepest cut, computed in SQL only to decide which rows survive `limit`. The
  * figure actually reported is recomputed from the exact kuruş values, because the SQL ratio goes
  * through floating point and a percentage shown next to two lira amounts has to agree with them.
+ *
+ * ## PSF comes from the card's brand product (doc 17 §2.5)
+ *
+ * Only a card **linked** to a brand product has a PSF; the inner joins drop every other card. PSF
+ * is per unit, so the pre-filter is `price < PSF × multiplier` — the threshold multiplied, never
+ * the price divided, so it stays an exact integer comparison on every engine (on SQLite through
+ * the integer decoding of the sortable money text). The core module does the same multiplication
+ * again for the figure it reports.
  */
 export async function referencePriceViolations(
   appDb: AppDatabase,
@@ -1551,7 +1562,10 @@ export async function referencePriceViolations(
     sqlite: async (db) => {
       const o = sqliteSchema.trackedProductObservations;
       const p = sqliteSchema.trackedProducts;
-      const ratio = sql<number>`min(${sqliteNumericPrice(o.price)}) * 100.0 / max(${sqliteNumericPrice(p.referencePrice)})`;
+      const c = sqliteSchema.brandProductCards;
+      const bp = sqliteSchema.brandProducts;
+      const ratio = sql<number>`min(${sqliteNumericPrice(o.price)}) * 100.0 / (max(${sqliteNumericPrice(bp.referencePrice)}) * max(${c.unitMultiplier}))`;
+      const below = sql`${sqliteNumericPrice(o.price)} < ${sqliteNumericPrice(bp.referencePrice)} * ${c.unitMultiplier}`;
       const rows = await db
         .select({
           marketplaceCode: p.marketplaceCode,
@@ -1559,19 +1573,21 @@ export async function referencePriceViolations(
           observedName: sql<string>`max(${o.sellerName})`,
           trackedProductId: o.trackedProductId,
           productLabel: sql<string>`max(${p.label})`,
-          referencePrice: sql<string>`max(${p.referencePrice})`,
+          unitReferencePrice: sql<string>`max(${bp.referencePrice})`,
+          unitMultiplier: sql<number>`max(${c.unitMultiplier})`,
           lowestPrice: sql<string>`min(${o.price})`,
           looksBelow: sql<number>`count(*)`,
           lastBelowAt: sql<number>`max(${o.observedAt})`,
         })
         .from(o)
         .innerJoin(p, eq(p.id, o.trackedProductId))
+        .innerJoin(c, eq(c.trackedProductId, p.id))
+        .innerJoin(bp, eq(bp.id, c.brandProductId))
         .where(
           and(
             priceRowsClause(o, window),
             isNotNull(o.sellerRef),
-            isNotNull(p.referencePrice),
-            lt(o.price, p.referencePrice),
+            below,
             brandScopeClause(p, window),
             excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
           ),
@@ -1587,7 +1603,10 @@ export async function referencePriceViolations(
     postgres: async (db) => {
       const o = postgresSchema.trackedProductObservations;
       const p = postgresSchema.trackedProducts;
-      const ratio = sql<number>`min(${o.price}) * 100.0 / max(${p.referencePrice})`;
+      const c = postgresSchema.brandProductCards;
+      const bp = postgresSchema.brandProducts;
+      const ratio = sql<number>`min(${o.price}) * 100.0 / (max(${bp.referencePrice}) * max(${c.unitMultiplier}))`;
+      const below = sql`${o.price} < ${bp.referencePrice} * ${c.unitMultiplier}`;
       const rows = await db
         .select({
           marketplaceCode: p.marketplaceCode,
@@ -1595,19 +1614,21 @@ export async function referencePriceViolations(
           observedName: sql<string>`max(${o.sellerName})`,
           trackedProductId: o.trackedProductId,
           productLabel: sql<string>`max(${p.label})`,
-          referencePrice: sql<string>`max(${p.referencePrice})`,
+          unitReferencePrice: sql<string>`max(${bp.referencePrice})`,
+          unitMultiplier: sql<number>`max(${c.unitMultiplier})`,
           lowestPrice: sql<string>`min(${o.price})`,
           looksBelow: sql<number>`count(*)`,
           lastBelowAt: sql<number>`max(${o.observedAt})`,
         })
         .from(o)
         .innerJoin(p, eq(p.id, o.trackedProductId))
+        .innerJoin(c, eq(c.trackedProductId, p.id))
+        .innerJoin(bp, eq(bp.id, c.brandProductId))
         .where(
           and(
             priceRowsClause(o, window),
             isNotNull(o.sellerRef),
-            isNotNull(p.referencePrice),
-            lt(o.price, p.referencePrice),
+            below,
             brandScopeClause(p, window),
             excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
           ),
@@ -1623,7 +1644,10 @@ export async function referencePriceViolations(
     mysql: async (db) => {
       const o = mysqlSchema.trackedProductObservations;
       const p = mysqlSchema.trackedProducts;
-      const ratio = sql<number>`min(${o.price}) * 100.0 / max(${p.referencePrice})`;
+      const c = mysqlSchema.brandProductCards;
+      const bp = mysqlSchema.brandProducts;
+      const ratio = sql<number>`min(${o.price}) * 100.0 / (max(${bp.referencePrice}) * max(${c.unitMultiplier}))`;
+      const below = sql`${o.price} < ${bp.referencePrice} * ${c.unitMultiplier}`;
       const rows = await db
         .select({
           marketplaceCode: p.marketplaceCode,
@@ -1631,19 +1655,21 @@ export async function referencePriceViolations(
           observedName: sql<string>`max(${o.sellerName})`,
           trackedProductId: o.trackedProductId,
           productLabel: sql<string>`max(${p.label})`,
-          referencePrice: sql<string>`max(${p.referencePrice})`,
+          unitReferencePrice: sql<string>`max(${bp.referencePrice})`,
+          unitMultiplier: sql<number>`max(${c.unitMultiplier})`,
           lowestPrice: sql<string>`min(${o.price})`,
           looksBelow: sql<number>`count(*)`,
           lastBelowAt: sql<number>`max(${o.observedAt})`,
         })
         .from(o)
         .innerJoin(p, eq(p.id, o.trackedProductId))
+        .innerJoin(c, eq(c.trackedProductId, p.id))
+        .innerJoin(bp, eq(bp.id, c.brandProductId))
         .where(
           and(
             priceRowsClause(o, window),
             isNotNull(o.sellerRef),
-            isNotNull(p.referencePrice),
-            lt(o.price, p.referencePrice),
+            below,
             brandScopeClause(p, window),
             excludeSellersClause(p.marketplaceCode, o.sellerRef, window),
           ),

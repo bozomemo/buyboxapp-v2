@@ -513,6 +513,10 @@ were there" is exactly the case where the flag must stay true. A **failed** look
 availability columns alone: a page we could not read is not evidence that nobody is selling, and
 writing `false` there would turn every network blip into a lost-shelf finding.
 
+> **Superseded 2026-09-19 (doc 17 §2.5).** PSF moves to `brand_products.reference_price`, per
+> unit. These three columns are migrated into brand products, every reader is repointed, and the
+> columns are dropped in a later migration. Do not add new readers.
+
 **The reference price is operator-owned**, like `competitor_sellers.tax_number`: no sweep and no
 scrape writes it. A marketplace has no idea what our list price is, and a value a nightly job
 could overwrite is one nobody would trust enough to write a notice from. It is also the **only
@@ -693,13 +697,15 @@ marketplace (doc 07 §7.4).
 |--------|------|-------|
 | `id` | text PK | |
 | `marketplace_code` | text FK, cascade | |
-| `pass_no` | int | 1-based per marketplace; unique with `marketplace_code`. Shown as "Tur #12" |
+| `pass_no` | int | 1-based per (marketplace, scope); unique with `marketplace_code`, `scope`. Shown as "Tur #12" |
 | `started_at` | bigint | **The cursor.** A product is owed a look while `last_scraped_at` is null or older than this |
 | `finished_at` | bigint nullable | Null while the pass is open; set when the candidate set empties |
-| `planned_count` | int | Active products when the pass opened — read once, never recomputed |
+| `planned_count` | int | Candidates when the pass opened — read once, never recomputed |
 | `done_count` / `ok_count` / `failed_count` / `changed_count` | int | Advanced per chunk |
+| `scope` | text | `all` \| `listed` — added 2026-09-19, built 2026-09-20 (migration 0023, doc 17 §4.2). `all` is `SweepTrackedProducts`'s whole-catalogue pass, `listed` is `SweepListedProducts`'s İlanlar-only pass. Existing rows migrate as `all`; the two scopes number their passes independently |
 
-Index `(marketplace_code, started_at)`; unique `(marketplace_code, pass_no)`.
+Index `(marketplace_code, scope, started_at)`; unique `(marketplace_code, scope, pass_no)` —
+pass numbering is per lane, so the two lanes' "Tur #12" never collide.
 
 Two properties are the whole point of the table. **`started_at` is not metadata, it is the work
 queue** — nothing records which products remain, because `last_scraped_at` already does, so a
@@ -747,6 +753,114 @@ occurrence unnotified, because the row would already be marked sent. At most one
 at 90 days and the numbers behind an old finding would otherwise simply vanish — the same
 argument `alerts.snapshot` makes. `notified_at` is a separate column, written **after** a
 successful send, so a finding whose notification failed is retried rather than lost.
+
+---
+
+### Brand module tables (doc 17, specified 2026-09-19)
+
+The brand module's own spine. Behaviour, and the reasons behind each rule, are in doc 17; this
+section is the schema.
+
+#### `app_settings` keys
+
+| Key | Value | Notes |
+|-----|-------|-------|
+| `modules.seller` | bool | Seller module enabled. Read **at job dispatch**, not at worker boot (doc 17 §1.3) |
+| `modules.brand` | bool | Brand module enabled. At least one of the two is true |
+| `notifications.email.recipients` | json string[] | Not a credential; SMTP credentials are env (doc 08 §14) |
+| `notifications.sms.recipients` | json string[] | Same |
+| `notifications.channels` | json | Which channels are on |
+
+No migration: an absent row reads as enabled, so an install that predates the modules keeps both
+(doc 17 §1.3).
+
+#### `tracked_products` additions
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `is_favourite` | int, default 0 | Operator-set. Puts the card in brand İlanlar (doc 17 §4.1). Independent of any link |
+| `favourited_at` | bigint nullable | |
+
+#### `brand_products`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | The product's own identity; marketplace-independent |
+| `name` | text | Display only, never a matching key |
+| `reference_price` | money | **PSF, per unit, required** |
+| `min_price` | money nullable | Per unit. Null = no lower-bound alarm |
+| `max_price` | money nullable | Per unit. Null = PSF is the upper bound — **derived in `packages/core`, never stored** |
+| `barcode` | text nullable | Suggestions only (doc 17 §2.4) |
+| `source` | text | `excel` \| `manual` \| `migration` |
+| `reference_price_source` | text nullable | File name or list version, as on `tracked_products` before |
+| `created_at`, `updated_at` | bigint | |
+
+Index `(barcode)`, `(name)`. On MySQL `name` is `varchar(255)` rather than `text`, because MySQL
+cannot index a `text` column without a prefix length; the migration truncates a longer legacy
+label to fit.
+
+#### `brand_product_cards`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `brand_product_id` | text FK, **cascade** | |
+| `tracked_product_id` | text FK, **cascade**, **unique** | A card belongs to at most one brand product |
+| `marketplace_code` | text | Denormalised from the card, so the primary rule below can be checked without a join |
+| `unit_multiplier` | int | ≥ 1. Units of the product one purchase of the card delivers |
+| `is_primary` | int | The card the Excel row named; the re-import key |
+| `link_source` | text | `excel` \| `manual` \| `barcodeSuggestion` \| `migration` |
+| `linked_at` | bigint | |
+
+Index `(brand_product_id)`; unique `(tracked_product_id)`.
+
+**At most one primary per (brand product, marketplace)** is enforced by the repository inside the
+write transaction, not by an index: it needs a partial unique index, and MySQL has none (§1).
+A new primary demotes the previous one to an ordinary card in the same transaction; on
+PostgreSQL and MySQL the product row is locked `FOR UPDATE` first, so two writes to one product's
+links serialise (`brand-products.ts`).
+
+#### `band_violations`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `brand_product_id` | text FK, cascade | |
+| `tracked_product_id` | text FK, cascade | The card |
+| `kind` | text | `belowMin` \| `aboveMax` |
+| `seller_ref`, `seller_name` | text | The buybox holder at opening |
+| `state` | text | `open` \| `resolved` |
+| `first_seen_at`, `last_seen_at`, `resolved_at` | bigint | |
+| `resolution` | text nullable | `inBand` \| `buyboxChanged` \| `noOffers` \| `thresholdRemoved` \| `unlinked` |
+| `threshold_applied` | money | The **card-level** bound measured against (unit bound × multiplier) |
+| `unit_multiplier` | int | As it was when opened |
+| `observed_price` | money | Latest confirmed buybox price |
+| `price_source` | text | `finalPrice` \| `price` |
+| `snapshot` | json | Offers of the opening look — observations are pruned at 90 days |
+
+Indexes `(state, first_seen_at)`, `(tracked_product_id, kind, state)`. At most one `open` row
+per `(tracked_product_id, kind)`, enforced by the repository.
+
+It is **not** an `alerts` row. `alerts.listing_id` references `listings`, and an alert belongs to
+an operator-written rule; a band violation belongs to no rule (every linked card has a band) and
+to a card that is never a listing. Bending `alerts` to carry both would make every one of its
+readers check which kind of row it holds.
+
+#### `notification_deliveries`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `subject_type` | text | `bandViolation` (others later) |
+| `subject_id` | text | |
+| `channel` | text | `webhook` \| `email` \| `sms` |
+| `state` | text | `pending` \| `sent` \| `failed` \| `suppressed` |
+| `attempts` | int | |
+| `last_error` | text nullable | |
+| `created_at`, `sent_at` | bigint | |
+
+Index `(state, created_at)`. `suppressed` is a violation reopened inside the re-notify quiet
+period (doc 17 §6.2): recorded, so the screen can say why nobody was told.
 
 ---
 
@@ -924,6 +1038,9 @@ re-probe the entire catalogue).
 | `job_queue` done/failed | 7 days |
 | `tracked_product_observations` | 90 days (added 2026-08-26) |
 | `brand_findings` | **indefinite** (added 2026-09-03) — one row per finding *span*, not per look; it is the record of what was already announced, and pruning it would re-announce old findings |
+| `band_violations` | resolved rows 365 days; open rows never (added 2026-09-19) |
+| `notification_deliveries` | 30 days (added 2026-09-19) |
+| `brand_products`, `brand_product_cards` | **indefinite** — operator data, removed only by the operator |
 | `tracked_product_metrics` | 365 days (added 2026-08-28) — longer because it is change-detected and therefore a fraction of the rows, and because "is this product moving?" needs more than a quarter to answer |
 
 A `PruneHistory` job enforces these nightly. Every retention window is configurable.

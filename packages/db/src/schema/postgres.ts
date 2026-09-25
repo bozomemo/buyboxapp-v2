@@ -646,6 +646,9 @@ export const trackedProducts = pgTable(
      */
     hasSellers: bool('has_sellers'),
     lastSellerSeenAt: timestampMs('last_seller_seen_at'),
+    /** See the doc comment on `isFavourite` in `schema/sqlite.ts`. */
+    isFavourite: bool('is_favourite').notNull().default(false),
+    favouritedAt: timestampMs('favourited_at'),
   },
   (t) => [
     uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
@@ -739,6 +742,8 @@ export const trackedScrapePasses = pgTable(
     marketplaceCode: text('marketplace_code')
       .notNull()
       .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    /** `all` or `listed` — see the doc comment on `schema/sqlite.ts`'s copy of this table. */
+    scope: text('scope').notNull().default('all'),
     passNo: integer('pass_no').notNull(),
     startedAt: timestampMs('started_at').notNull(),
     finishedAt: timestampMs('finished_at'),
@@ -750,7 +755,7 @@ export const trackedScrapePasses = pgTable(
   },
   (t) => [
     index('tracked_scrape_passes_marketplace_started').on(t.marketplaceCode, t.startedAt),
-    uniqueIndex('tracked_scrape_passes_marketplace_no').on(t.marketplaceCode, t.passNo),
+    uniqueIndex('tracked_scrape_passes_marketplace_scope_no').on(t.marketplaceCode, t.scope, t.passNo),
   ],
 );
 
@@ -1046,5 +1051,46 @@ export const brandFindings = pgTable(
   (t) => [
     index('brand_findings_brand_state').on(t.watchedBrandId, t.state),
     index('brand_findings_key_state').on(t.findingKey, t.state),
+  ],
+);
+
+/** See the doc comment on `brandProducts` in `schema/sqlite.ts`. */
+export const brandProducts = pgTable(
+  'brand_products',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    referencePrice: money('reference_price').notNull(),
+    minPrice: money('min_price'),
+    maxPrice: money('max_price'),
+    barcode: text('barcode'),
+    source: text('source').notNull(),
+    referencePriceSource: text('reference_price_source'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+  },
+  (t) => [index('brand_products_barcode').on(t.barcode), index('brand_products_name').on(t.name)],
+);
+
+/** See the doc comment on `brandProductCards` in `schema/sqlite.ts`. */
+export const brandProductCards = pgTable(
+  'brand_product_cards',
+  {
+    id: text('id').primaryKey(),
+    brandProductId: text('brand_product_id')
+      .notNull()
+      .references(() => brandProducts.id, { onDelete: 'cascade' }),
+    trackedProductId: text('tracked_product_id')
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    marketplaceCode: text('marketplace_code').notNull(),
+    unitMultiplier: integer('unit_multiplier').notNull(),
+    isPrimary: bool('is_primary').notNull(),
+    linkSource: text('link_source').notNull(),
+    linkedAt: timestampMs('linked_at').notNull(),
+  },
+  (t) => [
+    index('brand_product_cards_product').on(t.brandProductId),
+    uniqueIndex('brand_product_cards_tracked_product').on(t.trackedProductId),
   ],
 );

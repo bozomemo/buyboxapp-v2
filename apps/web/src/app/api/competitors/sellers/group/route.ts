@@ -74,6 +74,18 @@ async function audit(
   });
 }
 
+/**
+ * The groups a seller can be put in. The seller page used to take them from
+ * `/api/competitors/sellers`, which also aggregates our own listings' competitors and belongs to
+ * the seller module — so with only the brand module enabled the picker came up empty.
+ */
+export async function GET() {
+  const groups = await competitorSellersRepo.listSellerGroups(getAppDb());
+  return NextResponse.json({
+    groups: groups.map((g) => ({ id: g.id, displayName: g.displayName, note: g.note })),
+  });
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as Body;
   const appDb = getAppDb();

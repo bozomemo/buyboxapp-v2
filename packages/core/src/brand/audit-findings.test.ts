@@ -51,6 +51,7 @@ function input(over: Partial<AuditInput> = {}): AuditInput {
     categoryProductCounts: new Map([['cat-kedi-mamasi', 400]]),
     totalProductCount: 500,
     hasAuthorisedList: false,
+    brandRefSearched: true,
     nowMs: NOW,
     ...over,
   };
@@ -224,6 +225,36 @@ describe('persistentUndercut', () => {
   });
 });
 
+describe('newSeller — only against a watch baseline (2026-09-25)', () => {
+  it('stays quiet for every seller of a brand watched for less than the threshold', () => {
+    // Orijen, minutes after it was added: every seller's first look is the brand's first look.
+    const found = deriveAuditFindings(
+      input({
+        watchStartedAt: NOW - 1 * DAY,
+        sellers: [
+          seller({ sellerRef: 'a', firstSeenAt: NOW - 1 * DAY }),
+          seller({ sellerRef: 'b', firstSeenAt: NOW - 1 * DAY + 60_000 }),
+        ],
+      }),
+    );
+    expect(kinds(found)).toEqual([]);
+  });
+
+  it('fires for a seller who arrived a full threshold after watching began', () => {
+    const found = deriveAuditFindings(
+      input({ watchStartedAt: NOW - 30 * DAY, sellers: [seller({ firstSeenAt: NOW - 2 * DAY })] }),
+    );
+    expect(kinds(found)).toEqual(['newSeller']);
+  });
+
+  it('does not fire for one first seen inside the threshold of the baseline', () => {
+    const found = deriveAuditFindings(
+      input({ watchStartedAt: NOW - 10 * DAY, sellers: [seller({ firstSeenAt: NOW - 5 * DAY })] }),
+    );
+    expect(kinds(found)).toEqual([]);
+  });
+});
+
 describe('newSeller', () => {
   it('fires for a seller first seen inside the window', () => {
     const found = deriveAuditFindings(input({ sellers: [seller({ firstSeenAt: NOW - 2 * DAY })] }));
@@ -298,6 +329,13 @@ describe('product findings', () => {
       input({ products: [product({ viaBrandRef: false, viaSearchTerm: true })] }),
     );
     expect(kinds(found)).toEqual(['brandRefDisagreement']);
+  });
+
+  it('says nothing when the brand has no brand id — there was no comparison to disagree with', () => {
+    const found = deriveAuditFindings(
+      input({ brandRefSearched: false, products: [product({ viaBrandRef: false, viaSearchTerm: true })] }),
+    );
+    expect(kinds(found)).toEqual([]);
   });
 
   it('says nothing about a product both selectors agree on', () => {
@@ -411,7 +449,8 @@ function violation(over: Partial<AuditReferenceViolation> = {}): AuditReferenceV
     sellerName: 'Bir Mağaza',
     trackedProductId: 'p1',
     productLabel: 'Whiskas Ton Balıklı 85g',
-    referencePrice: 100_00n,
+    unitReferencePrice: 100_00n,
+    unitMultiplier: 1,
     lowestPrice: 80_00n,
     looksBelow: 3,
     lastBelowAt: NOW,
@@ -534,8 +573,43 @@ describe('below the reference price', () => {
    * a nonsense row at the top of the auditor's list.
    */
   it('ignores a product whose reference price is zero rather than dividing by it', () => {
-    const found = deriveAuditFindings(input({ referenceViolations: [violation({ referencePrice: 0n })] }));
+    const found = deriveAuditFindings(
+      input({ referenceViolations: [violation({ unitReferencePrice: 0n })] }),
+    );
     expect(found).toHaveLength(0);
+  });
+
+  /** doc 17 §2.2: a three-pack is held to three units' PSF, by multiplying the threshold. */
+  it('compares a multi-unit card against PSF times its multiplier', () => {
+    const found = deriveAuditFindings(
+      input({
+        referenceViolations: [
+          violation({ unitReferencePrice: 33_33n, unitMultiplier: 3, lowestPrice: 79_99n }),
+        ],
+      }),
+    );
+    expect(found[0]).toMatchObject({
+      referencePrice: 99_99n,
+      unitReferencePrice: 33_33n,
+      unitMultiplier: 3,
+      lowestPrice: 79_99n,
+      shortfallPct: 20,
+    });
+    // Per unit that is 26,66 against 33,33 — but a ×3 card at 99,00 is only 1% under, not a finding.
+    const near = deriveAuditFindings(
+      input({
+        referenceViolations: [
+          violation({ unitReferencePrice: 33_33n, unitMultiplier: 3, lowestPrice: 99_00n }),
+        ],
+      }),
+    );
+    expect(near).toHaveLength(0);
+  });
+
+  it('skips a violation whose multiplier is not a whole number of at least one', () => {
+    expect(
+      deriveAuditFindings(input({ referenceViolations: [violation({ unitMultiplier: 0 })] })),
+    ).toHaveLength(0);
   });
 
   it('raises nothing at all on an install that has imported no price list', () => {

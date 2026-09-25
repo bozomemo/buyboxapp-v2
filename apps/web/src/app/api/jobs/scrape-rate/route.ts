@@ -11,6 +11,8 @@ import { newId } from '@buybox/db';
 import {
   getScrapeRateLimit,
   setScrapeRateLimit,
+  SCRAPE_BURST_MAX,
+  SCRAPE_RATE_MAX_PER_MINUTE,
   SCRAPE_TIMEOUT_MAX_MS,
   SCRAPE_TIMEOUT_MIN_MS,
 } from '@buybox/jobs';
@@ -63,6 +65,14 @@ export async function POST(request: Request) {
     body.burst <= 0
   ) {
     return NextResponse.json({ error: 'İstek/dakika ve patlama pozitif olmalı' }, { status: 400 });
+  }
+  if (body.requestsPerMinute > SCRAPE_RATE_MAX_PER_MINUTE || body.burst > SCRAPE_BURST_MAX) {
+    return NextResponse.json(
+      {
+        error: `İstek/dakika en fazla ${SCRAPE_RATE_MAX_PER_MINUTE}, patlama en fazla ${SCRAPE_BURST_MAX} olabilir — daha hızlısı engellenme riski taşır.`,
+      },
+      { status: 400 },
+    );
   }
   // Absent is a legitimate answer — it means "leave each source on its own default" — so only a
   // value that was actually sent is range-checked.

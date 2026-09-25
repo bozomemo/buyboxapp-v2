@@ -86,6 +86,33 @@ describe('Scheduler', () => {
       }
     });
 
+    it('a long tick finishing late does not overwrite a newer tick with its stale start time', async () => {
+      const { appDb, cleanup } = await createSqliteTestDb();
+      try {
+        const clock = new FakeClock(1000);
+        let release: () => void = () => {};
+        const scheduler = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a' });
+        scheduler.register({
+          jobName: 'LongScrape',
+          handler: async () => {
+            await new Promise<void>((resolve) => (release = resolve));
+            return { itemsTotal: 1, itemsOk: 1, itemsFailed: 0 };
+          },
+        });
+        await scheduler.enqueueNow('LongScrape', '{}');
+        const long = scheduler.tick(); // started at 1000, blocked inside the job
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        clock.advance(120_000); // inside the job's visibility timeout, so nothing is requeued
+        await scheduler.tick(); // a later tick with nothing to claim
+        expect(scheduler.lastTickReport?.atMs).toBe(121_000);
+        release();
+        await long;
+        expect(scheduler.lastTickReport?.atMs).toBe(121_000);
+      } finally {
+        cleanup();
+      }
+    });
+
     it('reports `paused` — the state a fresh install starts in', async () => {
       const { appDb, cleanup } = await createUntouchedSqliteTestDb();
       try {

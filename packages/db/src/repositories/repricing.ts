@@ -395,6 +395,36 @@ export async function listSubmittedSubmissions(
   }) as Promise<PriceSubmissionRow[]>;
 }
 
+/**
+ * How many submissions, on every marketplace, the marketplace has accepted but not yet
+ * confirmed or rejected.
+ *
+ * The one reason `ConfirmSubmissions` still runs with the seller module disabled (doc 17 §1.3):
+ * a price change is recorded only once the marketplace confirms it (CLAUDE.md), so a batch
+ * abandoned here would be a price that changed on the marketplace with no record of it.
+ */
+export async function countAwaitingConfirmation(appDb: AppDatabase): Promise<number> {
+  const rows = await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({ n: sql<number>`count(*)` })
+        .from(sqliteSchema.priceSubmissions)
+        .where(eq(sqliteSchema.priceSubmissions.state, 'submitted')),
+    postgres: (db) =>
+      db
+        .select({ n: sql<number>`count(*)` })
+        .from(postgresSchema.priceSubmissions)
+        .where(eq(postgresSchema.priceSubmissions.state, 'submitted')),
+    mysql: (db) =>
+      db
+        .select({ n: sql<number>`count(*)` })
+        .from(mysqlSchema.priceSubmissions)
+        .where(eq(mysqlSchema.priceSubmissions.state, 'submitted')),
+  });
+  // PostgreSQL returns `count(*)` as a bigint string; the other two as a number.
+  return Number(rows[0]?.n ?? 0);
+}
+
 /** Recent decisions for the dashboard (doc 06 §2), newest first, joined with product name. */
 export async function listRecentDecisions(
   appDb: AppDatabase,

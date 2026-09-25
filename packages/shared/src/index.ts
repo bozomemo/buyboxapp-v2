@@ -46,3 +46,11 @@ export {
   signLicense,
   verifyLicense,
 } from './license/index.js';
+export type { AppModule, EnabledModules } from './modules.js';
+export {
+  ALL_MODULES_ENABLED,
+  APP_MODULES,
+  MODULE_LABELS,
+  MODULE_SETTING_KEYS,
+  parseEnabledModules,
+} from './modules.js';

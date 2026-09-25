@@ -32,7 +32,15 @@ export {
 } from './ports/competitor-source.js';
 export type { IProductSource, ProductSourceCode, StockItemInput } from './ports/product-source.js';
 export { NotImplementedError } from './ports/product-source.js';
-export { parseProductLink, type ParsedProductLink } from './parse-product-link.js';
+export { readXlsxTable, type SpreadsheetTable } from './spreadsheet.js';
+export {
+  hepsiburadaParentRef,
+  parseProductLink,
+  parseProductLinkForMarketplace,
+  type ParsedLinkForMarketplace,
+  type ParsedProductLink,
+  type ProductLinkProblem,
+} from './parse-product-link.js';
 
 // Contract test suites
 export {

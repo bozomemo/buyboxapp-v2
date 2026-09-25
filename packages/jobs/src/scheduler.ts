@@ -14,6 +14,7 @@ import type { MarketplaceAdapterRegistry } from './adapter-registry.js';
 import type { Clock } from './clock.js';
 import { isJobEnabled } from './job-catalog.js';
 import { isLicensed } from './license-gate.js';
+import { isJobDispatchable, readDispatchGate } from './modules.js';
 import { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_TIMEOUT_MS, type JobDefinition } from './job.js';
 import { JobRunner } from './runner.js';
 import type { BrandCatalogueSourceRegistry } from './brand-catalogue-source-registry.js';
@@ -230,7 +231,7 @@ export class Scheduler {
     );
     this.holdsLock = heldLock;
     if (!heldLock) {
-      this.lastTick = { atMs: nowMs, outcome: 'no-lock', ranCount: 0 };
+      this.recordTick({ atMs: nowMs, outcome: 'no-lock', ranCount: 0 });
       return { heldLock: false, paused: false, unlicensed: false, enqueued: [], ran: [] };
     }
 
@@ -239,7 +240,7 @@ export class Scheduler {
     // queued, of any kind. Deliberately separate from `SubmitPriceChanges`'s own, narrower
     // switch (see that job's doc comment): this one stops imports and observation too.
     if (await isSystemPaused(this.appDb)) {
-      this.lastTick = { atMs: nowMs, outcome: 'paused', ranCount: 0 };
+      this.recordTick({ atMs: nowMs, outcome: 'paused', ranCount: 0 });
       return { heldLock: true, paused: true, unlicensed: false, enqueued: [], ran: [] };
     }
 
@@ -248,13 +249,18 @@ export class Scheduler {
     // boot, so pasting a renewal restores the system within one interval and without a restart
     // (R-LIC-5). The process deliberately stays up and keeps ticking; it must not crash-loop.
     if (!(await isLicensed(this.appDb, nowMs))) {
-      this.lastTick = { atMs: nowMs, outcome: 'unlicensed', ranCount: 0 };
+      this.recordTick({ atMs: nowMs, outcome: 'unlicensed', ranCount: 0 });
       return { heldLock: true, paused: false, unlicensed: true, enqueued: [], ran: [] };
     }
+
+    // doc 17 §1.3: a disabled module's jobs are neither enqueued nor claimed. Read here, every
+    // tick, so disabling the seller module stops price writes within one tick, not one restart.
+    const gate = await readDispatchGate(this.appDb);
 
     const enqueued: string[] = [];
     for (const def of this.definitions.values()) {
       if (def.cadenceMs === undefined) continue;
+      if (!isJobDispatchable(def.jobName, gate)) continue;
       if (!(await isJobEnabled(this.appDb, def.jobName))) continue; // doc 12 6.9: operator disabled it
       // The cadence itself. Without this the only gate below is "nothing of this name is active",
       // which a job satisfies the moment its previous run finishes — so a six-hourly job was
@@ -272,14 +278,17 @@ export class Scheduler {
     await jobsRepo.requeueExpiredJobs(this.appDb, nowMs);
 
     const ran: { jobName: string; ok: boolean }[] = [];
-    const jobNames = [...this.definitions.keys()];
+    // Claiming is gated as well as enqueueing: a job queued before its module was disabled —
+    // a manual run, a retry, a ticker that fired a moment earlier — must not run after it.
+    // It stays `ready`, and runs if the module is enabled again.
+    const jobNames = [...this.definitions.keys()].filter((name) => isJobDispatchable(name, gate));
     // claimNextJob takes one visibility timeout per call, before it's known which job will be
     // claimed — use the longest configured timeout among registered jobs so none is under-covered.
     const visibilityTimeoutMs = Math.max(
       DEFAULT_VISIBILITY_TIMEOUT_MS,
       ...[...this.definitions.values()].map((d) => d.visibilityTimeoutMs ?? 0),
     );
-    for (let i = 0; i < this.maxClaimsPerTick; i += 1) {
+    for (let i = 0; jobNames.length > 0 && i < this.maxClaimsPerTick; i += 1) {
       const claimed = await jobsRepo.claimNextJob(this.appDb, {
         jobNames,
         workerId: this.instanceId,
@@ -296,13 +305,25 @@ export class Scheduler {
       await settled; // sequential within a tick — concurrency comes from calling tick() itself concurrently
     }
 
-    this.lastTick = { atMs: nowMs, outcome: 'ran', ranCount: ran.length };
+    this.recordTick({ atMs: nowMs, outcome: 'ran', ranCount: ran.length });
     return { heldLock: true, paused: false, unlicensed: false, enqueued, ran };
   }
 
   /** The last completed `tick()`, or `undefined` if none has finished yet. */
   get lastTickReport(): SchedulerTickReport | undefined {
     return this.lastTick;
+  }
+
+  /**
+   * Keeps the report of the most recently *started* tick. Ticks overlap — `startLoop` starts one
+   * every interval whether or not the last has finished — and a tick that spent six minutes on a
+   * brand seller scrape finishes long after the ticks that started behind it. Letting it write
+   * last stamped its six-minute-old start over their fresh ones, and `/api/health` then reported
+   * "Worker 346 saniyedir tick atmadı" about a worker ticking every two seconds (measured
+   * 2026-09-19).
+   */
+  private recordTick(report: SchedulerTickReport): void {
+    if (this.lastTick === undefined || report.atMs >= this.lastTick.atMs) this.lastTick = report;
   }
 
   /**
