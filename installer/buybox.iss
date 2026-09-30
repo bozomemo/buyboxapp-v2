@@ -515,8 +515,9 @@ procedure CurPageChanged(CurPageID: Integer);
 begin
   if (CurPageID = wpFinished) and (SetupToken <> '') and not InstallFailed then
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
-      'BuyBox ilk acildiginda yonetici hesabi olusturmak icin su kurulum anahtarini isteyecek:' +
-      #13#10#13#10 + SetupToken + #13#10#13#10 +
+      { No continuation line may start with '#': ISPP reads it as a preprocessor directive. }
+      'BuyBox ilk acildiginda yonetici hesabi olusturmak icin su kurulum anahtarini isteyecek:' + #13#10#13#10 +
+      SetupToken + #13#10#13#10 +
       'Anahtar ayrica su dosyada: ' + ExpandConstant('{#DataDir}') + '\bootstrap-token.txt';
 end;
 
