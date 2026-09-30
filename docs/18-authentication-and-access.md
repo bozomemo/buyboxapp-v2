@@ -174,7 +174,11 @@ that re-checks the session is not exposed to that class of bug.
 - **In addition, every state-changing API request is refused with `403` unless its `Origin`
   header matches:**
   - `PUBLIC_ORIGIN` on a network install;
-  - the request's own origin on a loopback install.
+  - the request's own origin on a loopback install — its scheme and the `Host` header it was
+    addressed to. **Not** the address the server listens on: Next's standalone server reports
+    `http://localhost:<port>` as its origin under `HOSTNAME=127.0.0.1`, which is not what a
+    browser opened on `http://127.0.0.1:<port>` sends (measured 2026-09-30; the installer's
+    shortcut opens exactly that address).
 - A request with no `Origin` header is refused as well.
 - **`GET` never changes state.** Phase 12 audits the existing routes against this rule, because
   `SameSite=Lax` still sends the cookie on a top-level cross-site `GET`.

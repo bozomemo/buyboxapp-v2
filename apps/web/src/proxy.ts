@@ -19,7 +19,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { isLicensedToRun } from '@buybox/shared';
-import { decideAccess, isAcceptableOrigin } from '@/lib/auth-access';
+import { decideAccess, isAcceptableOrigin, requestOwnOrigin } from '@/lib/auth-access';
 import { getCachedLicenseStatus } from '@/lib/server/license';
 import { getCachedModules } from '@/lib/server/modules';
 import { getAppDb } from '@/lib/server/db';
@@ -61,7 +61,10 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const config = getAuthConfig();
 
-  if (!isAcceptableOrigin(request.method, request.headers.get('origin'), config.publicOrigin ?? request.nextUrl.origin)) {
+  const expectedOrigin =
+    config.publicOrigin ??
+    requestOwnOrigin(request.nextUrl.protocol, request.headers.get('host'), request.nextUrl.origin);
+  if (!isAcceptableOrigin(request.method, request.headers.get('origin'), expectedOrigin)) {
     return NextResponse.json(
       { error: 'İstek bu uygulamanın kendi sayfasından gelmedi.', code: 'bad_origin' },
       { status: 403 },

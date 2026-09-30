@@ -127,3 +127,20 @@ export function isAcceptableOrigin(method: string, originHeader: string | null, 
   if (SAFE_METHODS.has(method.toUpperCase())) return true;
   return originHeader !== null && originHeader === expectedOrigin;
 }
+
+/**
+ * "The request's own origin" on a loopback install (doc 18 §4.3): its scheme and the `Host` it
+ * was addressed to — which is what a browser on that page sends back as `Origin`.
+ *
+ * Deliberately not `request.nextUrl.origin`. Next's standalone server builds that from the
+ * address it *listens* on, not the one the browser used: measured 2026-09-30 on the packaged
+ * build, `HOSTNAME=127.0.0.1` makes it `http://localhost:<port>` whatever the `Host`, so a browser
+ * on `http://127.0.0.1:<port>` — where the installer's shortcut opens it — had every POST refused,
+ * bootstrap and sign-in included. With `HOSTNAME` unset no origin matched at all.
+ *
+ * `fallback` is for a request that carries no `Host` header.
+ */
+export function requestOwnOrigin(protocol: string, hostHeader: string | null, fallback: string): string {
+  const host = hostHeader?.trim().toLowerCase() ?? '';
+  return host === '' ? fallback : `${protocol}//${host}`;
+}

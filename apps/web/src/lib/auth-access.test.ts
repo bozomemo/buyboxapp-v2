@@ -2,7 +2,7 @@
  * doc 18 §7.1's order of checks, before the licence and module gates.
  */
 import { describe, expect, it } from 'vitest';
-import { decideAccess, isAcceptableOrigin, safeNextPath, type AccessInput } from './auth-access';
+import { decideAccess, isAcceptableOrigin, requestOwnOrigin, safeNextPath, type AccessInput } from './auth-access';
 
 const signedIn = { mustChangePassword: false };
 const base: AccessInput = { pathname: '/', bootstrapMode: false, hasSetupAccess: false, session: signedIn };
@@ -79,5 +79,30 @@ describe('isAcceptableOrigin', () => {
   ];
   it.each(cases)('$method with Origin $header → $ok', ({ method, header, ok }) => {
     expect(isAcceptableOrigin(method, header, origin)).toBe(ok);
+  });
+});
+
+describe('requestOwnOrigin', () => {
+  // What Next's standalone server reports as `nextUrl.origin` under `HOSTNAME=127.0.0.1`.
+  const listening = 'http://localhost:3000';
+  const cases: readonly { host: string | null; expected: string }[] = [
+    { host: '127.0.0.1:3000', expected: 'http://127.0.0.1:3000' },
+    { host: 'localhost:3000', expected: 'http://localhost:3000' },
+    { host: '[::1]:3000', expected: 'http://[::1]:3000' },
+    { host: 'LocalHost:3000', expected: 'http://localhost:3000' },
+    { host: ' 127.0.0.1:3000 ', expected: 'http://127.0.0.1:3000' },
+    { host: null, expected: listening },
+    { host: '', expected: listening },
+  ];
+  it.each(cases)('Host $host → $expected', ({ host, expected }) => {
+    expect(requestOwnOrigin('http:', host, listening)).toBe(expected);
+  });
+
+  it('lets the installer shortcut\'s address sign in, and still refuses a foreign page', () => {
+    const own = requestOwnOrigin('http:', '127.0.0.1:3000', listening);
+    expect(isAcceptableOrigin('POST', 'http://127.0.0.1:3000', own)).toBe(true);
+    expect(isAcceptableOrigin('POST', 'http://localhost:3000', own)).toBe(false);
+    expect(isAcceptableOrigin('POST', 'https://evil.example', own)).toBe(false);
+    expect(isAcceptableOrigin('POST', null, own)).toBe(false);
   });
 });
