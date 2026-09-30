@@ -789,6 +789,7 @@ export const priceSubmissions = pgTable(
     rank: integer('rank'),
     commissionRate: real('commission_rate'),
     vatRate: integer('vat_rate'),
+    requestedBy: text('requested_by'),
   },
   (t) => [
     index('price_submissions_listing_decided').on(t.listingId, t.decidedAt),
@@ -1093,4 +1094,182 @@ export const brandProductCards = pgTable(
     index('brand_product_cards_product').on(t.brandProductId),
     uniqueIndex('brand_product_cards_tracked_product').on(t.trackedProductId),
   ],
+);
+
+// ── Users and access (doc 05 §7a, doc 18) ────────────────────────────────────────────────────
+//
+// Nothing below holds a usable secret. Passwords are scrypt verifiers; sessions, devices,
+// challenges and codes are stored as hashes; the TOTP secret is in the secret store, not here
+// (doc 18 §5.2). Roles are a column, not a table: they are fixed in code (doc 18 §6).
+// Enum-like text columns follow this schema's convention — validated in the repository, no
+// CHECK constraint.
+
+/**
+ * Never deleted, only disabled (doc 18 §3.1): the id is what every `user:<id>` actor points at.
+ * `username` is stored already normalised (`normaliseUsername`), so the unique index is the
+ * case-insensitive uniqueness rule without any locale-aware collation.
+ */
+export const users = pgTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    username: text('username').notNull(),
+    displayName: text('display_name').notNull(),
+    /** `admin` | `price_manager` | `viewer`. */
+    role: text('role').notNull(),
+    /** `active` | `disabled`. */
+    state: text('state').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    mustChangePassword: bool('must_change_password').notNull(),
+    passwordChangedAt: timestampMs('password_changed_at').notNull(),
+    totpEnabled: bool('totp_enabled').notNull(),
+    /** Last accepted TOTP time step — the replay guard (R-AUTH-6). */
+    totpLastStep: integer('totp_last_step'),
+    /** Set while an enrolment secret awaits its confirming code; discarded after 15 min. */
+    totpPendingSince: timestampMs('totp_pending_since'),
+    /** E.164. Cleared on disable (doc 18 §10). */
+    phoneE164: text('phone_e164'),
+    phoneVerifiedAt: timestampMs('phone_verified_at'),
+    smsEnabled: bool('sms_enabled').notNull(),
+    lockedUntil: timestampMs('locked_until'),
+    lastLoginAt: timestampMs('last_login_at'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+    createdBy: text('created_by').notNull(),
+    updatedBy: text('updated_by').notNull(),
+  },
+  (t) => [uniqueIndex('users_username').on(t.username)],
+);
+
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    /** SHA-256 of the cookie token, hex. */
+    tokenHash: text('token_hash').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestampMs('created_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    /** The absolute limit; idle expiry is computed from `last_seen_at`. */
+    expiresAt: timestampMs('expires_at').notNull(),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+  },
+  (t) => [uniqueIndex('sessions_token_hash').on(t.tokenHash), index('sessions_user').on(t.userId)],
+);
+
+export const trustedDevices = pgTable(
+  'trusted_devices',
+  {
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestampMs('created_at').notNull(),
+    expiresAt: timestampMs('expires_at').notNull(),
+    lastUsedAt: timestampMs('last_used_at'),
+    /** Shortened user agent, so the owner can recognise it on `/account`. */
+    label: text('label'),
+  },
+  (t) => [uniqueIndex('trusted_devices_token_hash').on(t.tokenHash), index('trusted_devices_user').on(t.userId)],
+);
+
+/** One per sign-in that has passed the password and awaits the second factor (doc 18 §5.1). */
+export const mfaChallenges = pgTable(
+  'mfa_challenges',
+  {
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestampMs('created_at').notNull(),
+    expiresAt: timestampMs('expires_at').notNull(),
+    attempts: integer('attempts').notNull(),
+    consumedAt: timestampMs('consumed_at'),
+  },
+  (t) => [uniqueIndex('mfa_challenges_token_hash').on(t.tokenHash), index('mfa_challenges_user').on(t.userId)],
+);
+
+/**
+ * `code_hmac` is keyed with a secret derived from `SECRET_STORE_KEY` — never stored here — and
+ * bound to the row id (doc 18 §5.3). `phone_e164` is the number actually sent to, which is
+ * what the per-number cap counts.
+ */
+export const smsCodes = pgTable(
+  'sms_codes',
+  {
+    id: text('id').primaryKey(),
+    /** `login` | `enrol`. */
+    purpose: text('purpose').notNull(),
+    challengeId: text('challenge_id').references(() => mfaChallenges.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    phoneE164: text('phone_e164').notNull(),
+    codeHmac: text('code_hmac').notNull(),
+    sentAt: timestampMs('sent_at').notNull(),
+    expiresAt: timestampMs('expires_at').notNull(),
+    attempts: integer('attempts').notNull(),
+    providerRef: text('provider_ref'),
+    /** `sent` | `failed` | `used` | `expired` | `replaced`. */
+    state: text('state').notNull(),
+  },
+  (t) => [
+    index('sms_codes_user_sent').on(t.userId, t.sentAt),
+    index('sms_codes_phone_sent').on(t.phoneE164, t.sentAt),
+    index('sms_codes_sent').on(t.sentAt),
+  ],
+);
+
+export const recoveryCodes = pgTable(
+  'recovery_codes',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    usedAt: timestampMs('used_at'),
+  },
+  (t) => [index('recovery_codes_user').on(t.userId)],
+);
+
+/** `username` is as typed (lower-cased) and may name no user — that is the point of counting it. */
+export const loginAttempts = pgTable(
+  'login_attempts',
+  {
+    id: text('id').primaryKey(),
+    at: timestampMs('at').notNull(),
+    username: text('username').notNull(),
+    ip: text('ip'),
+    succeeded: bool('succeeded').notNull(),
+  },
+  (t) => [index('login_attempts_username_at').on(t.username, t.at), index('login_attempts_ip_at').on(t.ip, t.at)],
+);
+
+/**
+ * The sign-in log (doc 18 §9.2). An audit record, kept a year — which is why it is not
+ * `app_events`, a diagnostic log kept days. `detail` never holds a password, code or token.
+ * `user_id` has no foreign key on purpose: a failed sign-in for a username that exists is
+ * recorded against it, one for a username that does not is recorded against nobody, and
+ * neither may fail to write.
+ */
+export const authEvents = pgTable(
+  'auth_events',
+  {
+    id: text('id').primaryKey(),
+    at: timestampMs('at').notNull(),
+    event: text('event').notNull(),
+    userId: text('user_id'),
+    actor: text('actor').notNull(),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    detail: json('detail'),
+  },
+  (t) => [index('auth_events_at').on(t.at), index('auth_events_user_at').on(t.userId, t.at)],
 );

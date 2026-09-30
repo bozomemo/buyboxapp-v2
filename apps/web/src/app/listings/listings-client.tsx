@@ -29,6 +29,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import { formatMoney, formatNumber } from '@/lib/format';
+import { NO_PERMISSION_TITLE, useCan } from '@/lib/permissions';
 import { labelOf, PHASE_LABELS } from '@/lib/labels';
 
 interface Row {
@@ -193,6 +194,7 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const canEdit = useCan()('prices.manage');
 
   async function submit() {
     setBusy(true);
@@ -215,6 +217,10 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
       setBusy(false);
     }
   }
+
+  // Read-only for a role without `prices.manage` (doc 06 §10.5): the price, not a button to a
+  // form whose submit would be refused.
+  if (!canEdit) return <span>{formatMoney(BigInt(row.price))}</span>;
 
   if (!editing) {
     return (
@@ -295,6 +301,7 @@ function MinMaxCell({ row, onChanged }: { row: Row; onChanged: () => void }) {
   const [max, setMax] = useState(row.maxPrice ? (Number(row.maxPrice) / 100).toFixed(2) : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const canEdit = useCan()('prices.manage');
 
   async function save() {
     setSaving(true);
@@ -330,7 +337,8 @@ function MinMaxCell({ row, onChanged }: { row: Row; onChanged: () => void }) {
           onChange={(e) => setMin(e.target.value)}
           onBlur={() => void save()}
           placeholder="min"
-          disabled={saving}
+          disabled={saving || !canEdit}
+          {...(canEdit ? {} : { title: NO_PERMISSION_TITLE })}
           className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
         />
         <input
@@ -338,7 +346,8 @@ function MinMaxCell({ row, onChanged }: { row: Row; onChanged: () => void }) {
           onChange={(e) => setMax(e.target.value)}
           onBlur={() => void save()}
           placeholder="max"
-          disabled={saving}
+          disabled={saving || !canEdit}
+          {...(canEdit ? {} : { title: NO_PERMISSION_TITLE })}
           className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
         />
       </div>
@@ -365,6 +374,7 @@ function ToggleCell({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const canEdit = useCan()('prices.manage');
 
   async function handleChange(next: boolean) {
     setBusy(true);
@@ -383,7 +393,8 @@ function ToggleCell({
       <input
         type="checkbox"
         checked={checked}
-        disabled={busy}
+        disabled={busy || !canEdit}
+        {...(canEdit ? {} : { title: NO_PERMISSION_TITLE })}
         aria-label={label}
         onChange={(e) => void handleChange(e.target.checked)}
       />
@@ -469,6 +480,7 @@ function renderCell(id: ColumnId, row: Row, onChanged: () => void): React.ReactN
 }
 
 export function ListingsClient() {
+  const canBulk = useCan()('prices.manage');
   // Read before the state below so an arrived-by-link filter is the grid's *first* query rather
   // than a second one after an unfiltered flash. See the brand filter's comment further down for
   // why cross-navigation seeds the visible control instead of filtering behind its back.
@@ -835,7 +847,7 @@ export function ListingsClient() {
         </div>
       </div>
 
-      {selected.size > 0 && (
+      {selected.size > 0 && canBulk && (
         <div className="flex flex-wrap items-center gap-2 rounded border border-(--color-accent) bg-(--color-accent-bg) px-3 py-2 text-sm">
           <span>{selected.size} ilan seçildi</span>
           {/* Asymmetric confirmation (§3.6): the direction that starts the bot moving prices

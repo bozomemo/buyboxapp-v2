@@ -19,6 +19,7 @@ import { competitorSellersRepo, jobsRepo, newId, sellerIdentitiesRepo } from '@b
 import { DEFAULT_MAX_ATTEMPTS, RESOLVE_SELLER_IDENTITY_JOB } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 interface SellerKeyParams {
   readonly marketplaceCode: string;
@@ -32,7 +33,7 @@ function readKey(params: URLSearchParams): SellerKeyParams | null {
   return { marketplaceCode, sellerRef };
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const key = readKey(new URL(request.url).searchParams);
   if (!key) {
     return NextResponse.json({ error: 'Pazaryeri ve satıcı kimliği gerekli.' }, { status: 400 });
@@ -62,7 +63,7 @@ export async function GET(request: Request) {
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<Partial<SellerKeyParams>>(request);
   if (body === null) return invalidBody();
   if (!body.marketplaceCode || !body.sellerRef) {
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
  * `competitor_sellers.tax_number`, which by then may be the key an authorised-seller entry is
  * matched on; that column is the operator's, and only the operator empties it.
  */
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request) {
   const key = readKey(new URL(request.url).searchParams);
   if (!key) {
     return NextResponse.json({ error: 'Pazaryeri ve satıcı kimliği gerekli.' }, { status: 400 });
@@ -137,3 +138,7 @@ export async function DELETE(request: Request) {
   await sellerIdentitiesRepo.deleteSellerIdentity(appDb, seller.id);
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('catalogue.manage', postHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);

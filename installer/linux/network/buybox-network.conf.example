@@ -1,0 +1,18 @@
+# Network mode for the BuyBox service (docs/14-deployment.md section 13.2, docs/18 section 1).
+#
+# Install as a systemd drop-in, not by editing the unit the package owns:
+#   sudo mkdir -p /etc/systemd/system/buybox.service.d
+#   sudo cp buybox-network.conf.example /etc/systemd/system/buybox.service.d/network.conf
+#   (edit PUBLIC_ORIGIN)
+#   sudo systemctl daemon-reload && sudo systemctl restart buybox
+#
+# The service refuses to start if PUBLIC_ORIGIN is not an https:// origin or HOSTNAME is not
+# loopback (R-DEP-16), and says which in `journalctl -u buybox`.
+
+[Service]
+# The address people type, exactly as the browser shows it: scheme and host, no path.
+Environment=PUBLIC_ORIGIN=https://fiyat.example.com.tr
+# Caddy on this machine appends the real client address to X-Forwarded-For; trust its last entry.
+Environment=TRUST_PROXY=1
+# Stays loopback: Caddy is the only thing listening on the network.
+Environment=HOSTNAME=127.0.0.1

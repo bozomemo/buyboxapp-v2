@@ -14,6 +14,7 @@ import { TEMPLATE_HEADERS } from '@/lib/brand-product-import';
 import { applyImport, planImport } from '@/lib/server/brand-import';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 interface ImportBody {
   readonly fileBase64?: string;
@@ -38,7 +39,7 @@ function warningRows(planned: Awaited<ReturnType<typeof planImport>>) {
   );
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<ImportBody>(request);
   if (body === null) return invalidBody();
   if (!body.fileBase64) return NextResponse.json({ error: 'Dosya gerekli.' }, { status: 400 });
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
   });
 }
 
-export function GET() {
+function getHandler() {
   // Semicolons and a BOM: Turkish Excel's list separator is `;` on a comma-decimal locale, and
   // without the BOM Excel reads `Ürün Adı` as mojibake (`lib/csv.ts` makes the same two choices).
   const example = [
@@ -104,3 +105,6 @@ export function GET() {
     },
   });
 }
+
+export const POST = withPermission('catalogue.manage', postHandler);
+export const GET = withPermission('view', getHandler);

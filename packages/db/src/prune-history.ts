@@ -21,6 +21,7 @@ import {
   pruneTrackedProductMetrics,
   pruneTrackedProductObservations,
 } from './repositories/tracked-products.js';
+import { pruneAuth } from './repositories/auth.js';
 
 export interface RetentionWindows {
   readonly priceSubmissionsDays: number;
@@ -32,6 +33,8 @@ export interface RetentionWindows {
   readonly appEventsWarnErrorDays: number;
   readonly jobRunsDays: number;
   readonly jobQueueFinishedDays: number;
+  /** The sign-in log (doc 18 §9.2). The other auth tables are working state with fixed windows — see `pruneAuth`. */
+  readonly authEventsDays: number;
 }
 
 /** doc 05 §10's defaults — a starting point, not a hard-coded policy; see the module note. */
@@ -57,6 +60,8 @@ export const DEFAULT_RETENTION_WINDOWS: RetentionWindows = {
   appEventsWarnErrorDays: 30,
   jobRunsDays: 90,
   jobQueueFinishedDays: 7,
+  // An audit record, not a diagnostic log — hence a year where `app_events` keeps days (doc 05 §10).
+  authEventsDays: 365,
 };
 
 function daysAgo(nowMs: number, days: number): number {
@@ -80,4 +85,5 @@ export async function pruneHistory(
   );
   await pruneJobRuns(appDb, daysAgo(nowMs, windows.jobRunsDays));
   await pruneFinishedJobs(appDb, daysAgo(nowMs, windows.jobQueueFinishedDays));
+  await pruneAuth(appDb, nowMs, daysAgo(nowMs, windows.authEventsDays));
 }

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { eventsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /**
  * How many of the newest matching events one response carries. Returned to the browser with the
@@ -10,7 +11,7 @@ import { getAppDb } from '@/lib/server/db';
  */
 const EVENT_LIMIT = 500;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const appDb = getAppDb();
   const url = new URL(request.url);
   const minLevel = url.searchParams.get('minLevel') as 'debug' | 'info' | 'warn' | 'error' | null;
@@ -36,3 +37,5 @@ export async function GET(request: Request) {
   );
   return NextResponse.json({ events, limit: EVENT_LIMIT });
 }
+
+export const GET = withPermission('view', getHandler);

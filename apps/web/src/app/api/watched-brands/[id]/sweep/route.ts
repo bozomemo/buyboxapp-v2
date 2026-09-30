@@ -47,6 +47,7 @@ import { NextResponse } from 'next/server';
 import { DEFAULT_MAX_ATTEMPTS, SCRAPE_BRAND_SELLERS_JOB, SWEEP_BRAND_CATALOGUE_JOB } from '@buybox/jobs';
 import { jobsRepo, newId, watchedBrandsRepo, type AppDatabase } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /**
  * Whether a sweep already queued or running will read this brand.
@@ -80,7 +81,7 @@ async function isSweepAlreadyCovering(
   });
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function postHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const appDb = getAppDb();
 
@@ -140,3 +141,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   });
   return NextResponse.json({ ok: true, jobId, withSellers });
 }
+
+export const POST = withPermission('jobs.operate', postHandler);

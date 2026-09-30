@@ -9,9 +9,18 @@ anlatılır, burada onların **nasıl uzaktan görüldüğü**.
 
 ## 1. Neden bir ajan, neden uygulamanın kendisi değil
 
-Uygulama `127.0.0.1` üzerinde ve kimlik doğrulaması olmadan dinler (doc 14 §4.4). Bu bilinçli bir
-karardır ve bu doküman onu değiştirmez. Dolayısıyla uzaktan görünürlük tek bir şekilde
-sağlanabilir: veriyi **dışarı iten** bir ajanla. İçeri açılan hiçbir port yoktur.
+Uygulama `127.0.0.1` üzerinde dinler (doc 14 §4.4). Bu bilinçli bir karardır ve bu doküman onu
+değiştirmez. Dolayısıyla uzaktan görünürlük tek bir şekilde sağlanabilir: veriyi **dışarı iten**
+bir ajanla. İçeri açılan hiçbir port yoktur.
+
+**2026-09-27 güncellemesi:**
+
+- Sunucu kurulumunda (doc 14 §13) kullanıcı arayüzü artık ters vekil sunucu (Caddy) üzerinden,
+  oturum açılarak dışarıdan erişilebilir (doc 18).
+- `/api/metrics` ve `/api/health` ise dışarıya **açılmaz**; ters vekil bu iki yolu 404 ile
+  reddeder.
+- Alloy metrikleri eskisi gibi makinenin içinden, `127.0.0.1` üzerinden okur. Bu dokümandaki
+  hiçbir şey değişmez.
 
 Ajan (Grafana Alloy) BuyBoxApp'ten **ayrı bir Windows servisi** olarak çalışır. Üç nedeni var ve
 üçü de ayrı ayrı önemlidir:

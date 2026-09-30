@@ -169,6 +169,13 @@
       "when": 1789920191007,
       "tag": "0023_lame_ego",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790512882166,
+      "tag": "0024_clean_snowbird",
+      "breakpoints": true
     }
   ]
 }

@@ -49,3 +49,4 @@ export * as jobsRepo from './repositories/jobs.js';
 export * as eventsRepo from './repositories/events.js';
 export * as circuitBreakerRepo from './repositories/circuit-breaker.js';
 export * as metricsRepo from './repositories/metrics.js';
+export * as authRepo from './repositories/auth.js';

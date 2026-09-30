@@ -25,6 +25,7 @@
 import { NextResponse } from 'next/server';
 import { brandReportsRepo, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -58,7 +59,7 @@ function windowAverage(points: readonly { avgPrice: bigint | null }[]): bigint |
   return total / BigInt(priced.length);
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
   const nowMs = Date.now();
@@ -142,3 +143,5 @@ export async function GET(request: Request) {
     hasCompetitorBrand: brands.some((b) => (b.isOwnBrand ?? true) === false),
   });
 }
+
+export const GET = withPermission('view', getHandler);

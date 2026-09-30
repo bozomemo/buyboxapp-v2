@@ -17,11 +17,12 @@ import {
 } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 /** Jobs with no cadence at all (`ImportBundles`) are not cadence-eligible — no source port exists yet (doc 07 §1.1). */
 const CADENCE_ELIGIBLE = JOB_CATALOG.filter((entry) => entry.cadenceMs !== null);
 
-export async function GET() {
+async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   const appDb = getAppDb();
   const jobs = await Promise.all(
     CADENCE_ELIGIBLE.map(async (entry) => {
@@ -39,7 +40,7 @@ export async function GET() {
   return NextResponse.json({ jobs });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<{ jobName: string; cadenceMs: number }>(request);
   if (body === null) return invalidBody();
   const entry = CADENCE_ELIGIBLE.find((e) => e.jobName === body.jobName);
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     {
       key: jobCadenceSettingKey(entry.jobName),
       value: JSON.stringify(body.cadenceMs),
-      updatedBy: 'operator',
+      updatedBy: auth.actor,
       updatedAt: Date.now(),
     },
     newId(),
@@ -66,13 +67,17 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request, _context: unknown, auth: AuthContext) {
   const jobName = new URL(request.url).searchParams.get('jobName');
   const entry = jobName ? CADENCE_ELIGIBLE.find((e) => e.jobName === jobName) : undefined;
   if (!entry) {
     return NextResponse.json({ error: `Sıklık ayarlanamayan iş: ${jobName}` }, { status: 400 });
   }
   const appDb = getAppDb();
-  await configRepo.deleteAppSetting(appDb, jobCadenceSettingKey(entry.jobName), 'operator', Date.now(), newId());
+  await configRepo.deleteAppSetting(appDb, jobCadenceSettingKey(entry.jobName), auth.actor, Date.now(), newId());
   return NextResponse.json({ ok: true, cadenceMs: jobDefaultCadenceMs(entry.jobName) });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('settings.manage', postHandler);
+export const DELETE = withPermission('settings.manage', deleteHandler);

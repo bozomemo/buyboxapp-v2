@@ -827,6 +827,7 @@ export const priceSubmissions = mysqlTable(
     rank: int('rank'),
     commissionRate: real('commission_rate'),
     vatRate: int('vat_rate'),
+    requestedBy: code('requested_by', 64),
   },
   (t) => [
     index('price_submissions_listing_decided').on(t.listingId, t.decidedAt),
@@ -1149,4 +1150,158 @@ export const brandProductCards = mysqlTable(
       foreignColumns: [trackedProducts.id],
     }).onDelete('cascade'),
   ],
+);
+
+// ── Users and access (doc 05 §7a, doc 18) ────────────────────────────────────────────────────
+// See the comments on these tables in `schema/sqlite.ts`. Foreign keys are named explicitly
+// throughout, for MySQL's 64-character identifier limit.
+
+export const users = mysqlTable(
+  'users',
+  {
+    id: code('id', 36).primaryKey(),
+    username: code('username', 32).notNull(),
+    displayName: text('display_name').notNull(),
+    role: code('role', 20).notNull(),
+    state: code('state', 16).notNull(),
+    passwordHash: text('password_hash').notNull(),
+    mustChangePassword: bool('must_change_password').notNull(),
+    passwordChangedAt: timestampMs('password_changed_at').notNull(),
+    totpEnabled: bool('totp_enabled').notNull(),
+    totpLastStep: int('totp_last_step'),
+    totpPendingSince: timestampMs('totp_pending_since'),
+    phoneE164: code('phone_e164', 16),
+    phoneVerifiedAt: timestampMs('phone_verified_at'),
+    smsEnabled: bool('sms_enabled').notNull(),
+    lockedUntil: timestampMs('locked_until'),
+    lastLoginAt: timestampMs('last_login_at'),
+    createdAt: timestampMs('created_at').notNull(),
+    updatedAt: timestampMs('updated_at').notNull(),
+    createdBy: code('created_by', 64).notNull(),
+    updatedBy: code('updated_by', 64).notNull(),
+  },
+  (t) => [uniqueIndex('users_username').on(t.username)],
+);
+
+export const sessions = mysqlTable(
+  'sessions',
+  {
+    id: code('id', 36).primaryKey(),
+    tokenHash: code('token_hash', 64).notNull(),
+    userId: code('user_id', 36).notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    expiresAt: timestampMs('expires_at').notNull(),
+    ip: code('ip', 64),
+    userAgent: text('user_agent'),
+  },
+  (t) => [
+    uniqueIndex('sessions_token_hash').on(t.tokenHash),
+    index('sessions_user').on(t.userId),
+    foreignKey({ name: 'fk_sessions_user_id', columns: [t.userId], foreignColumns: [users.id] }).onDelete('cascade'),
+  ],
+);
+
+export const trustedDevices = mysqlTable(
+  'trusted_devices',
+  {
+    id: code('id', 36).primaryKey(),
+    tokenHash: code('token_hash', 64).notNull(),
+    userId: code('user_id', 36).notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    expiresAt: timestampMs('expires_at').notNull(),
+    lastUsedAt: timestampMs('last_used_at'),
+    label: text('label'),
+  },
+  (t) => [
+    uniqueIndex('trusted_devices_token_hash').on(t.tokenHash),
+    index('trusted_devices_user').on(t.userId),
+    foreignKey({ name: 'fk_trusted_devices_user_id', columns: [t.userId], foreignColumns: [users.id] }).onDelete('cascade'),
+  ],
+);
+
+export const mfaChallenges = mysqlTable(
+  'mfa_challenges',
+  {
+    id: code('id', 36).primaryKey(),
+    tokenHash: code('token_hash', 64).notNull(),
+    userId: code('user_id', 36).notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    expiresAt: timestampMs('expires_at').notNull(),
+    attempts: int('attempts').notNull(),
+    consumedAt: timestampMs('consumed_at'),
+  },
+  (t) => [
+    uniqueIndex('mfa_challenges_token_hash').on(t.tokenHash),
+    index('mfa_challenges_user').on(t.userId),
+    foreignKey({ name: 'fk_mfa_challenges_user_id', columns: [t.userId], foreignColumns: [users.id] }).onDelete('cascade'),
+  ],
+);
+
+export const smsCodes = mysqlTable(
+  'sms_codes',
+  {
+    id: code('id', 36).primaryKey(),
+    purpose: code('purpose', 16).notNull(),
+    challengeId: code('challenge_id', 36),
+    userId: code('user_id', 36).notNull(),
+    phoneE164: code('phone_e164', 16).notNull(),
+    codeHmac: code('code_hmac', 64).notNull(),
+    sentAt: timestampMs('sent_at').notNull(),
+    expiresAt: timestampMs('expires_at').notNull(),
+    attempts: int('attempts').notNull(),
+    providerRef: text('provider_ref'),
+    state: code('state', 16).notNull(),
+  },
+  (t) => [
+    index('sms_codes_user_sent').on(t.userId, t.sentAt),
+    index('sms_codes_phone_sent').on(t.phoneE164, t.sentAt),
+    index('sms_codes_sent').on(t.sentAt),
+    foreignKey({ name: 'fk_sms_codes_challenge_id', columns: [t.challengeId], foreignColumns: [mfaChallenges.id] }).onDelete('cascade'),
+    foreignKey({ name: 'fk_sms_codes_user_id', columns: [t.userId], foreignColumns: [users.id] }).onDelete('cascade'),
+  ],
+);
+
+export const recoveryCodes = mysqlTable(
+  'recovery_codes',
+  {
+    id: code('id', 36).primaryKey(),
+    userId: code('user_id', 36).notNull(),
+    codeHash: code('code_hash', 64).notNull(),
+    createdAt: timestampMs('created_at').notNull(),
+    usedAt: timestampMs('used_at'),
+  },
+  (t) => [
+    index('recovery_codes_user').on(t.userId),
+    foreignKey({ name: 'fk_recovery_codes_user_id', columns: [t.userId], foreignColumns: [users.id] }).onDelete('cascade'),
+  ],
+);
+
+export const loginAttempts = mysqlTable(
+  'login_attempts',
+  {
+    id: code('id', 36).primaryKey(),
+    at: timestampMs('at').notNull(),
+    // Not the users.username width: this is what was typed, which may be anything up to the
+    // form's limit. The repository truncates to this length before writing.
+    username: code('username', 128).notNull(),
+    ip: code('ip', 64),
+    succeeded: bool('succeeded').notNull(),
+  },
+  (t) => [index('login_attempts_username_at').on(t.username, t.at), index('login_attempts_ip_at').on(t.ip, t.at)],
+);
+
+export const authEvents = mysqlTable(
+  'auth_events',
+  {
+    id: code('id', 36).primaryKey(),
+    at: timestampMs('at').notNull(),
+    event: code('event', 40).notNull(),
+    userId: code('user_id', 36),
+    actor: code('actor', 64).notNull(),
+    ip: code('ip', 64),
+    userAgent: text('user_agent'),
+    detail: json('detail'),
+  },
+  (t) => [index('auth_events_at').on(t.at), index('auth_events_user_at').on(t.userId, t.at)],
 );

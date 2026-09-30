@@ -17,8 +17,9 @@
  */
 import { NextResponse } from 'next/server';
 import { getWorkerStatus, restartWorker } from '@/lib/server/worker-status';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST() {
+async function postHandler() {
   // Nothing to restart: this process hosts no worker (a standalone `apps/worker` deployment, or
   // an embedded worker that never started because setup is unfinished). Say which, rather than
   // reporting a success that restarted nothing.
@@ -36,3 +37,5 @@ export async function POST() {
   const result = await restartWorker();
   return NextResponse.json(result, { status: result.ok ? 200 : 500 });
 }
+
+export const POST = withPermission('settings.manage', postHandler);

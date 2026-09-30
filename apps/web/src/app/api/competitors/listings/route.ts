@@ -6,8 +6,9 @@ import { NextResponse } from 'next/server';
 import { catalogRepo, listingsRepo } from '@buybox/db';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const url = new URL(request.url);
   const text = url.searchParams.get('text') ?? '';
   const appDb = getAppDb();
@@ -35,3 +36,5 @@ export async function GET(request: Request) {
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

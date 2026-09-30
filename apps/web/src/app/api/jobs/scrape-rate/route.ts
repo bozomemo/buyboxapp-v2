@@ -19,6 +19,7 @@ import {
 import { HEPSIBURADA_SCRAPE_DEFAULTS, TRENDYOL_SCRAPE_DEFAULTS } from '@buybox/adapters';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 const DEFAULTS = {
   trendyol: TRENDYOL_SCRAPE_DEFAULTS,
@@ -27,7 +28,7 @@ const DEFAULTS = {
 
 const MARKETPLACE_CODES = ['trendyol', 'hepsiburada'] as const;
 
-export async function GET() {
+async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   const appDb = getAppDb();
   const rates = await Promise.all(
     MARKETPLACE_CODES.map(async (code) => {
@@ -49,7 +50,7 @@ export async function GET() {
   return NextResponse.json({ rates });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<{
     marketplaceCode: string;
     requestsPerMinute: number;
@@ -101,9 +102,12 @@ export async function POST(request: Request) {
       burst: body.burst,
       ...(body.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: body.requestTimeoutMs }),
     },
-    'operator',
+    auth.actor,
     Date.now(),
     newId(),
   );
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('settings.manage', postHandler);

@@ -1,3 +1,4 @@
+import { requirePermission } from '@/lib/server/auth/page-guard';
 import { LicenseClient } from './license-client';
 
 /**
@@ -7,6 +8,8 @@ import { LicenseClient } from './license-client';
  */
 export const dynamic = 'force-dynamic';
 
-export default function LicensePage() {
+export default async function LicensePage() {
+  const gate = await requirePermission('view');
+  if (!gate.ok) return gate.element;
   return <LicenseClient />;
 }

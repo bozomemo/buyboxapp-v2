@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { configRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 function kurusToDecimalString(kurus: bigint): string {
   const negative = kurus < 0n;
@@ -11,7 +12,7 @@ function kurusToDecimalString(kurus: bigint): string {
   return `${negative ? '-' : ''}${whole}.${frac}`;
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const url = new URL(request.url);
   const marketplaceCode = url.searchParams.get('marketplaceCode');
   if (!marketplaceCode) return NextResponse.json({ error: 'marketplaceCode gerekli.' }, { status: 400 });
@@ -42,3 +43,5 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export const GET = withPermission('view', getHandler);

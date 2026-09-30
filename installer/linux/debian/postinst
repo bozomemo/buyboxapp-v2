@@ -66,6 +66,13 @@ case "$1" in
     fi
 
     echo "BuyBox kuruldu. http://127.0.0.1:$port adresinden erisin."
+    # Doc 18 section 8.1: while the install has no administrator the service writes a setup
+    # token on boot. Say where it is and how to read it -- never print the token itself: this
+    # output lands in apt's terminal log and in whatever automation captured it.
+    if [ -f "$DATA_DIR/bootstrap-token.txt" ]; then
+      echo "Ilk yonetici hesabini olusturmak icin kurulum anahtari gerekiyor:"
+      echo "  sudo cat $DATA_DIR/bootstrap-token.txt"
+    fi
     ;;
 esac
 

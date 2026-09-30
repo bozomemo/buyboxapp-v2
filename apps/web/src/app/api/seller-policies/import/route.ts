@@ -17,6 +17,7 @@ import { newId, sellerPoliciesRepo, watchedBrandsRepo } from '@buybox/db';
 import { parseSellerPolicyCsv, type ImportedStatus } from '@/lib/seller-policy-import';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 interface ImportBody {
   readonly watchedBrandId: string;
@@ -26,7 +27,7 @@ interface ImportBody {
   readonly csv: string;
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<ImportBody>(request);
   if (body === null) return invalidBody();
   const appDb = getAppDb();
@@ -81,3 +82,5 @@ export async function POST(request: Request) {
     total: parsed.rows.length,
   });
 }
+
+export const POST = withPermission('catalogue.manage', postHandler);

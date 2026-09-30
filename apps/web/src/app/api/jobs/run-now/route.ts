@@ -24,8 +24,9 @@ import {
 import { jobsRepo, newId } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ jobName: string; marketplaceCode?: string; payload?: unknown }>(request);
   if (body === null) return invalidBody();
   const entry = JOB_CATALOG.find((j) => j.jobName === body.jobName);
@@ -101,3 +102,5 @@ export async function POST(request: Request) {
   });
   return NextResponse.json({ ok: true, id });
 }
+
+export const POST = withPermission('jobs.operate', postHandler);

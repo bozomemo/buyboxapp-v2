@@ -20,6 +20,7 @@ import {
   type AppDatabase,
 } from '@buybox/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { GET as getProducts, POST as createProduct } from './route';
 import { GET as getProduct, PATCH as patchProduct } from './[id]/route';
 import { POST as linkCard, PATCH as patchCard, DELETE as unlinkCard } from './[id]/cards/route';
@@ -27,6 +28,10 @@ import { POST as linkCard, PATCH as patchCard, DELETE as unlinkCard } from './[i
 let dir: string;
 let appDb: AppDatabase;
 const savedEnv = { ...process.env };
+
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
 
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-brand-products-'));
@@ -38,6 +43,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
   await configRepo.upsertMarketplace(appDb, {
     code: 'trendyol',
     displayName: 'Trendyol',
@@ -58,7 +64,7 @@ afterEach(() => {
 });
 
 function post(url: string, body: unknown): Request {
-  return new Request(url, {
+  return authedRequest(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -66,7 +72,7 @@ function post(url: string, body: unknown): Request {
 }
 
 async function addProduct(body: Record<string, unknown>) {
-  const response = await createProduct(post('http://localhost/api/brand-products', body));
+  const response = await createProduct(post('http://localhost/api/brand-products', body), routeContext());
   return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 }
 
@@ -93,7 +99,7 @@ describe('POST /api/brand-products', () => {
     expect(created.status).toBe(200);
 
     const detail = await (
-      await getProduct(new Request('http://x'), params(created.body.id as string))
+      await getProduct(authedRequest('http://x'), params(created.body.id as string))
     ).json();
     expect(detail.product.referencePrice).toBe('124990');
   });
@@ -117,7 +123,7 @@ describe('POST /api/brand-products', () => {
 
   it('lists products with the card count that says whether they are wired up', async () => {
     await addProduct({ name: 'Bağsız', referencePrice: '10,00' });
-    const listed = await (await getProducts(new Request('http://localhost/api/brand-products'))).json();
+    const listed = await (await getProducts(authedRequest('http://localhost/api/brand-products'), routeContext())).json();
     expect(listed.total).toBe(1);
     expect(listed.products[0]).toMatchObject({ cardCount: 0, upperBoundIsReferencePrice: true });
   });
@@ -143,7 +149,7 @@ describe('POST /api/brand-products/[id]/cards', () => {
     const card = await addCard('3');
     await linkCard(post('http://x', { trackedProductId: card, unitMultiplier: 3 }), params(product));
 
-    const detail = await (await getProduct(new Request('http://x'), params(product))).json();
+    const detail = await (await getProduct(authedRequest('http://x'), params(product))).json();
     expect(detail.cards[0]).toMatchObject({
       unitMultiplier: 3,
       cardReferencePrice: '9999',
@@ -181,7 +187,7 @@ describe('POST /api/brand-products/[id]/cards', () => {
       params(product),
     );
 
-    const detail = await (await getProduct(new Request('http://x'), params(product))).json();
+    const detail = await (await getProduct(authedRequest('http://x'), params(product))).json();
     const byRef = new Map(
       detail.cards.map((c: { productRef: string; isPrimary: boolean }) => [c.productRef, c.isPrimary]),
     );
@@ -199,7 +205,7 @@ describe('POST /api/brand-products/[id]/cards', () => {
     );
 
     expect(response.status).toBe(200);
-    const detail = await (await getProduct(new Request('http://x'), params(product))).json();
+    const detail = await (await getProduct(authedRequest('http://x'), params(product))).json();
     expect(detail.cards[0].productRef).toBe('757251065');
     expect(await trackedProductsRepo.findTrackedProductByRef(appDb, 'trendyol', '757251065')).toBeDefined();
   });
@@ -211,12 +217,12 @@ describe('POST /api/brand-products/[id]/cards', () => {
       await linkCard(post('http://x', { trackedProductId: card, unitMultiplier: 1 }), params(product))
     ).json();
 
-    await patchCard(post('http://x', { cardId: linked.cardId, unitMultiplier: 4 }));
-    let detail = await (await getProduct(new Request('http://x'), params(product))).json();
+    await patchCard(post('http://x', { cardId: linked.cardId, unitMultiplier: 4 }), routeContext());
+    let detail = await (await getProduct(authedRequest('http://x'), params(product))).json();
     expect(detail.cards[0].unitMultiplier).toBe(4);
 
-    await unlinkCard(new Request(`http://x?cardId=${linked.cardId}`, { method: 'DELETE' }));
-    detail = await (await getProduct(new Request('http://x'), params(product))).json();
+    await unlinkCard(authedRequest(`http://x?cardId=${linked.cardId}`, { method: 'DELETE' }), routeContext());
+    detail = await (await getProduct(authedRequest('http://x'), params(product))).json();
     expect(detail.cards).toHaveLength(0);
     expect(await trackedProductsRepo.getTrackedProduct(appDb, card)).toBeDefined();
   });
@@ -225,7 +231,7 @@ describe('POST /api/brand-products/[id]/cards', () => {
 describe('PATCH /api/brand-products/[id]', () => {
   const patch = (id: string, body: unknown) =>
     patchProduct(
-      new Request('http://x', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      authedRequest('http://x', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
       params(id),
     );
 
@@ -243,12 +249,12 @@ describe('PATCH /api/brand-products/[id]', () => {
     ).body.id as string;
 
     expect((await patch(id, { name: 'Mama', referencePrice: '1.299,90', minPrice: '1.100,00', maxPrice: '1.300,50', barcode: '8690000000001' })).status).toBe(200);
-    let detail = (await (await getProduct(new Request('http://x'), params(id))).json()).product;
+    let detail = (await (await getProduct(authedRequest('http://x'), params(id))).json()).product;
     expect(detail.referencePrice).toBe('129990');
     expect(detail.referencePriceSource).toBe('2026 Eylül fiyat listesi');
 
     expect((await patch(id, { referencePrice: '1.199,90' })).status).toBe(200);
-    detail = (await (await getProduct(new Request('http://x'), params(id))).json()).product;
+    detail = (await (await getProduct(authedRequest('http://x'), params(id))).json()).product;
     expect(detail).toMatchObject({
       name: 'Mama',
       referencePrice: '119990',
@@ -262,7 +268,7 @@ describe('PATCH /api/brand-products/[id]', () => {
   it('clears a field only when it is sent empty', async () => {
     const id = (await addProduct({ name: 'Mama', referencePrice: '100', maxPrice: '120', barcode: '8690000000001' })).body.id as string;
     expect((await patch(id, { maxPrice: '', barcode: null })).status).toBe(200);
-    const detail = (await (await getProduct(new Request('http://x'), params(id))).json()).product;
+    const detail = (await (await getProduct(authedRequest('http://x'), params(id))).json()).product;
     expect(detail.maxPrice).toBeNull();
     expect(detail.barcode).toBeNull();
     expect(detail.referencePrice).toBe('10000');
@@ -295,7 +301,7 @@ describe('barcode on a manually entered product (2026-09-25)', () => {
       updatedAt: 0,
     });
     const res = await patchProduct(
-      new Request('http://x', {
+      authedRequest('http://x', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Eski', referencePrice: '110', minPrice: '', maxPrice: '', barcode: '8.69E+12' }),
@@ -318,7 +324,7 @@ describe('POST /api/brand-products/[id]/cards — links as this app shows them (
     const card = await addCard('1092756157');
     const res = await link(product, '/orijen/acana-kitten-p-1092756157?boutiqueId=61&merchantId=1114093');
     expect(res.status).toBe(200);
-    const detail = await (await getProduct(new Request('http://x'), params(product))).json();
+    const detail = await (await getProduct(authedRequest('http://x'), params(product))).json();
     expect(detail.cards[0].trackedProductId).toBe(card);
   });
 
@@ -344,7 +350,7 @@ describe('POST /api/brand-products/[id]/cards — links as this app shows them (
     const product = (await addProduct({ name: 'Ürün', referencePrice: '10,00' })).body.id as string;
 
     expect((await link(product, 'https://www.hepsiburada.com/orijen-kitten-pm-HBC00002GD91I')).status).toBe(200);
-    const detail = await (await getProduct(new Request('http://x'), params(product))).json();
+    const detail = await (await getProduct(authedRequest('http://x'), params(product))).json();
     expect(detail.cards[0].trackedProductId).toBe(variant);
 
     const unknown = await link(product, 'https://www.hepsiburada.com/baska-pm-HBC99999ZZZZZ');

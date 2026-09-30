@@ -136,6 +136,18 @@ IMarketplaceAdapter  IProductSource   repositories      IClock/ILogger
 **The dependency rule:** `core` depends on nothing. `adapters` and `db` depend on `core`.
 `web` and `worker` depend on everything. Nothing depends on `web` or `worker`.
 
+**Authentication and permissions (doc 18, added 2026-09-27)** sit across `web`, not inside
+`core`. Pricing does not know who is asking, and must not.
+
+| Where | What |
+|---|---|
+| `packages/shared/src/auth/` | The permission catalogue and role matrix, password hashing, TOTP. Pure computation over `node:crypto`; randomness and time are passed in, so all of it is table-testable |
+| `packages/db` | Repositories for the doc 05 §7a tables |
+| `packages/adapters` | The `SmsSender` port and its adapters, shared with doc 17 §6's SMS channel |
+| `apps/web/src/proxy.ts` | Session present? A redirect for convenience only (doc 18 §4.2, §7.1) |
+| `apps/web/src/lib/server/auth/` | Cookies, `withPermission` for route handlers and `requirePermission` for pages. **These are the protection** |
+| `apps/worker` | Nothing. Jobs act as `system` and are never signed in |
+
 ---
 
 ## 3. The marketplace port
@@ -343,7 +355,7 @@ Three layers:
 | Layer | Where | Contents |
 |-------|-------|----------|
 | Bootstrap | Environment variables | Database URL, secret-store key, `SINGLE_PROCESS` |
-| Secrets | Encrypted secret store (env-derived key locally; a managed manager on a server) | Marketplace credentials, ERP credentials |
+| Secrets | Encrypted secret store (env-derived key locally; a managed manager on a server) | Marketplace credentials, ERP credentials, users' TOTP secrets (doc 18 §5.2) |
 | Settings | Database, effective-dated where commercial | Fee settings, policies, product-source config, store identity |
 
 **No credential in source, in committed config, or in a plain-text database column.**

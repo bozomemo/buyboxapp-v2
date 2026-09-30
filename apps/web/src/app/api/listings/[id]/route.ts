@@ -25,10 +25,12 @@ import { Money } from '@buybox/shared';
 import { sellerAsOf } from '@/lib/price-chart-series';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
+import { resolveActorLabels } from '@/lib/server/auth/actors';
 
 const HISTORY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — the price chart's default span
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function getHandler(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const appDb = getAppDb();
   const nowMs = Date.now();
@@ -99,6 +101,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   // recent price_submission already carries this explanation (doc 03's engine writes it at
   // decision time); reusing it here rather than re-deriving avoids the two ever disagreeing.
   const lastDecision = submissions[0] ?? null;
+  const requesters = await resolveActorLabels(appDb, submissions.map((s) => s.requestedBy));
 
   const brandNames = await catalogRepo.brandNamesByListingIds(appDb, [listing.id]);
 
@@ -200,6 +203,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       : null,
     history: submissions.map((s) => ({
       id: s.id,
+      // Who asked, for a manual submission (doc 18 §9.1); null for the engine's own.
+      requestedBy: s.requestedBy ? (requesters.get(s.requestedBy) ?? null) : null,
       decidedAt: s.decidedAt,
       oldPrice: s.oldPrice.toString(),
       newPrice: s.newPrice.toString(),
@@ -218,3 +223,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

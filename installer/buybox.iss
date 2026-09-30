@@ -117,6 +117,10 @@ var
   MonitorPageB: TInputQueryWizardPage;
   { Set by CurStepChanged when a step of doc 14 section 5 failed. Read by ShouldLaunchApp. }
   InstallFailed: Boolean;
+  { Doc 18 section 8.1: the setup token the service writes on its first boot while the install has
+    no administrator. Read after the health check, shown on the finish page, never logged. Empty
+    on an upgrade of an install that already has one. }
+  SetupToken: string;
 
 function RunPowerShell(const ScriptPath, Args: string; var Output: string): Integer;
 var
@@ -413,6 +417,7 @@ end;
   re-running the installer is the recovery. }
 procedure CurStepChanged(CurStep: TSetupStep);
 var
+  RawToken: AnsiString;
   AppDirArg, DataDirArg: string;
   DefenderCode, MonitorCode: Integer;
   MonitorOutput: string;
@@ -453,6 +458,11 @@ begin
                  '-Port ' + GetPort('') + ' -DataDir ' + DataDirArg,
                  'BuyBox servisi calisir duruma gelmedi; kurulum tamamlanamadi.') then
     exit;
+
+  { The service is up, so its first boot has run, and a token exists if the install has no
+    administrator yet. Not Log()ged: the setup log is a file anyone reading the install can see. }
+  if LoadStringFromFile(ExpandConstant('{#DataDir}') + '\bootstrap-token.txt', RawToken) then
+    SetupToken := Trim(String(RawToken));
 
   { Doc 16 section 5. Deliberately LAST, and deliberately not checked with RunStep.
 
@@ -497,6 +507,17 @@ end;
 function ShouldLaunchApp(): Boolean;
 begin
   Result := not InstallFailed;
+end;
+
+{ Doc 18 section 8.1, doc 14 section 10 D-1: the finish page shows the setup token, because the
+  first thing the browser asks for is exactly this, and the operator is looking at this page. }
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and (SetupToken <> '') and not InstallFailed then
+    WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
+      'BuyBox ilk acildiginda yonetici hesabi olusturmak icin su kurulum anahtarini isteyecek:' +
+      #13#10#13#10 + SetupToken + #13#10#13#10 +
+      'Anahtar ayrica su dosyada: ' + ExpandConstant('{#DataDir}') + '\bootstrap-token.txt';
 end;
 
 { Doc 14 §10 D-6: data is kept unless the operator says otherwise, and the default answer is No. }

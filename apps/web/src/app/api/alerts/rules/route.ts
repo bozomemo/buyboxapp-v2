@@ -18,6 +18,7 @@ import {
   stockRepo,
 } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 const SCOPE_TYPES = ['listing', 'baseStockCode', 'marketplace', 'all'] as const;
 const SUBJECT_TYPES = ['seller', 'sellerGroup', 'any'] as const;
@@ -150,7 +151,7 @@ async function validateTargets(
   return null;
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   let body: RuleBody;
   try {
     body = (await request.json()) as RuleBody;
@@ -207,14 +208,14 @@ export async function POST(request: Request) {
       ? JSON.stringify({ ...existing, thresholdValue: existing.thresholdValue?.toString() ?? null })
       : null,
     newValue: JSON.stringify({ ...body, id }),
-    changedBy: 'operator',
+    changedBy: auth.actor,
     changedAt: nowMs,
   });
 
   return NextResponse.json({ ok: true, id });
 }
 
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request, _context: unknown, auth: AuthContext) {
   const id = new URL(request.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id gerekli.' }, { status: 400 });
 
@@ -229,8 +230,11 @@ export async function DELETE(request: Request) {
     field: 'delete',
     oldValue: id,
     newValue: null,
-    changedBy: 'operator',
+    changedBy: auth.actor,
     changedAt: Date.now(),
   });
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('catalogue.manage', postHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);

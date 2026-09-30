@@ -11,6 +11,7 @@ import { Money } from '@buybox/shared';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { pageLimit, pageOffset } from '@/lib/pagination';
+import { withPermission } from '@/lib/server/auth/guard';
 
 type RepricingPhase = listingsRepo.RepricingPhase;
 
@@ -75,7 +76,7 @@ function csvEscape(v: unknown): string {
   return `"${String(v ?? '').replace(/"/g, '""')}"`;
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const url = new URL(request.url);
   const params = url.searchParams;
   const appDb = getAppDb();
@@ -210,3 +211,5 @@ export async function GET(request: Request) {
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

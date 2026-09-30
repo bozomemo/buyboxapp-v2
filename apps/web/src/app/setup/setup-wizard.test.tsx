@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockNavigation, stubFetch } from '@/test-utils';
-import SetupWizard from './page';
+import SetupWizard from './setup-wizard';
 import { Step1Database } from './steps/step1-database';
 
 /**

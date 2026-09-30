@@ -6,14 +6,15 @@ import { NextResponse } from 'next/server';
 import { stockRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function GET() {
+async function getHandler() {
   const appDb = getAppDb();
   const bundles = await stockRepo.listBundles(appDb);
   return NextResponse.json({ bundles });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{
     bundleStockCode: string;
     name: string;
@@ -24,3 +25,6 @@ export async function POST(request: Request) {
   await stockRepo.replaceBundle(appDb, body.bundleStockCode, body.name, body.members, Date.now());
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('prices.manage', postHandler);

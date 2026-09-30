@@ -28,8 +28,9 @@ import { RESCAN_MAX_PRODUCTS, RESCAN_TRACKED_PRODUCTS_JOB } from '@buybox/jobs';
 import { jobsRepo, newId, trackedProductsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ ids?: unknown }>(request);
   if (body === null) return invalidBody();
   const ids = Array.isArray(body.ids)
@@ -114,3 +115,5 @@ export async function POST(request: Request) {
   const queued = [...byMarketplace.values()].reduce((sum, list) => sum + list.length, 0);
   return NextResponse.json({ ok: true, jobIds, queued, missing: ids.length - queued });
 }
+
+export const POST = withPermission('catalogue.manage', postHandler);

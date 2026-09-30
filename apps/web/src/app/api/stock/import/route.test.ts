@@ -13,11 +13,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createDb, eventsRepo, jobsRepo, runMigrations, type AppDatabase } from '@buybox/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { POST } from './route';
 
 let dir: string;
 let appDb: AppDatabase;
 const savedEnv = { ...process.env };
+
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
 
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-stock-import-'));
@@ -29,6 +34,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
 });
 
 afterEach(() => {
@@ -41,7 +47,7 @@ afterEach(() => {
 });
 
 function request(body: unknown): Request {
-  return new Request('http://localhost/api/stock/import', {
+  return authedRequest('http://localhost/api/stock/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -50,7 +56,7 @@ function request(body: unknown): Request {
 
 describe('POST /api/stock/import', () => {
   it('answers with counts for a source that has no bulk import, and records why', async () => {
-    const body = await (await POST(request({ sourceCode: 'manual', sourceConfig: {} }))).json();
+    const body = await (await POST(request({ sourceCode: 'manual', sourceConfig: {} }), routeContext())).json();
 
     expect(body).toEqual({ ok: true, itemsTotal: 0, itemsOk: 0, itemsFailed: 0 });
     const events = await eventsRepo.listEventsFiltered(appDb, {}, 10);
@@ -58,7 +64,7 @@ describe('POST /api/stock/import', () => {
   });
 
   it('records the run, so the event it logs has a job run to belong to', async () => {
-    await POST(request({ sourceCode: 'manual', sourceConfig: {} }));
+    await POST(request({ sourceCode: 'manual', sourceConfig: {} }), routeContext());
 
     const runs = await jobsRepo.listJobRuns(appDb, { jobName: 'ImportStockItems' }, 10);
     expect(runs).toHaveLength(1);
@@ -70,7 +76,7 @@ describe('POST /api/stock/import', () => {
 
   it('records a failed run rather than leaving one running for ever', async () => {
     // An unknown source fails the payload schema inside the handler.
-    const body = await (await POST(request({ sourceCode: 'nope', sourceConfig: {} }))).json();
+    const body = await (await POST(request({ sourceCode: 'nope', sourceConfig: {} }), routeContext())).json();
 
     expect(body.ok).toBe(false);
     const runs = await jobsRepo.listJobRuns(appDb, { jobName: 'ImportStockItems' }, 10);

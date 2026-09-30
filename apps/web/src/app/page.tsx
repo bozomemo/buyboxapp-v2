@@ -1,3 +1,4 @@
+import { requirePermission } from '@/lib/server/auth/page-guard';
 import { redirect } from 'next/navigation';
 import { configRepo } from '@buybox/db';
 import { getAppDb, isBootstrapped } from '@/lib/server/db';
@@ -16,6 +17,8 @@ async function isSetupComplete(): Promise<boolean> {
 }
 
 export default async function DashboardPage() {
+  const gate = await requirePermission('view');
+  if (!gate.ok) return gate.element;
   if (!(await isSetupComplete())) {
     redirect('/setup');
   }

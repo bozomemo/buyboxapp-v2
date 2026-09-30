@@ -1,0 +1,21 @@
+# BuyBox behind Caddy (docs/14-deployment.md section 13.2).
+#
+# Copy to /etc/caddy/Caddyfile, replace the domain, then: sudo systemctl reload caddy
+# Caddy obtains and renews the Let's Encrypt certificate itself; the domain's A record must point
+# at this server and ports 80 and 443 must be open (section 13.3).
+
+fiyat.example.com.tr {
+	# Machine-local endpoints: the installer, Alloy and the break-glass read these on
+	# 127.0.0.1:3000 directly. From outside they do not exist.
+	@internal path /api/health /api/health/* /api/metrics /api/metrics/*
+	respond @internal 404
+
+	header Strict-Transport-Security "max-age=31536000"
+	encode zstd gzip
+
+	# Optional: only the office may reach the application at all. Sign-in does not depend on it.
+	# @outside not remote_ip 203.0.113.10
+	# respond @outside 403
+
+	reverse_proxy 127.0.0.1:3000
+}

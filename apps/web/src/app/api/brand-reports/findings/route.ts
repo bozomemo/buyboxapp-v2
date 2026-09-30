@@ -26,10 +26,11 @@ import { collectBrandFindings } from '@buybox/jobs';
 import { brandFindingsRepo, watchedBrandsRepo } from '@buybox/db';
 import { readAuditThresholds } from '@/lib/server/audit-thresholds';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
   const nowMs = Date.now();
@@ -123,3 +124,5 @@ export async function GET(request: Request) {
     notificationsConfigured: Boolean(process.env.FINDINGS_WEBHOOK_URL),
   });
 }
+
+export const GET = withPermission('view', getHandler);

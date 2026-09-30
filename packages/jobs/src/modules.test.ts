@@ -205,7 +205,7 @@ describe('enableBrandScanJobsAtSetup', () => {
         newId(),
       );
 
-      const enabled = await enableBrandScanJobsAtSetup(appDb, NOW);
+      const enabled = await enableBrandScanJobsAtSetup(appDb, NOW, 'user:test');
 
       expect(enabled.sort()).toEqual([
         'ResolveProductBarcodes',
@@ -226,7 +226,7 @@ describe('enableBrandScanJobsAtSetup', () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {
       await setModule(appDb, 'brand', false);
-      expect(await enableBrandScanJobsAtSetup(appDb, NOW)).toEqual([]);
+      expect(await enableBrandScanJobsAtSetup(appDb, NOW, 'user:test')).toEqual([]);
       expect(await isJobEnabled(appDb, 'SweepTrackedProducts')).toBe(false);
     } finally {
       cleanup();

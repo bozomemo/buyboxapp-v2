@@ -1,3 +1,4 @@
+import { requirePermission } from '@/lib/server/auth/page-guard';
 import { Suspense } from 'react';
 import { SellerDetailClient } from './seller-detail-client';
 
@@ -8,6 +9,8 @@ export default async function SellerDetailPage({
 }: {
   params: Promise<{ marketplace: string; ref: string }>;
 }) {
+  const gate = await requirePermission('view');
+  if (!gate.ok) return gate.element;
   const { marketplace, ref } = await params;
   // The client reads `?watchedBrandId=` and `?sinceMs=` so a link from a brand-audit finding
   // lands on the rows that finding is about; `useSearchParams` must sit under a Suspense

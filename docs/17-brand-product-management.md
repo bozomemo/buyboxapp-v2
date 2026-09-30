@@ -486,7 +486,7 @@ A `NotificationChannel` port in `packages/adapters`, with one adapter per channe
 | Screen | always on, it is the violation list itself | — |
 | Webhook | built (Slack/Teams style, as today) | `ALERTS_WEBHOOK_URL` env |
 | E-mail | built, SMTP | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` env; recipients in settings |
-| SMS | **port and settings built; provider adapter built when a provider is chosen** (§7) | provider credentials in env; phone numbers in settings |
+| SMS | **port and settings built; provider adapter built when a provider is chosen** (§7). The `SmsSender` port exists as of 2026-09-27 (`packages/adapters/src/ports/sms.ts`, built for the second factor, doc 18 §5.3); 11.7 reuses it | provider credentials in env; phone numbers in settings |
 
 Credentials live in the environment (CLAUDE.md). Recipient addresses and phone numbers are not
 credentials and live in `app_settings`, edited from `/settings/notifications`, which also has a
@@ -514,7 +514,7 @@ _Test gönder_ button per channel.
 
 | Item | Blocks | Owner |
 |------|--------|-------|
-| **SMS provider** (e.g. Netgsm, İleti Merkezi) — choice, account, cost per message | the SMS adapter only; the port, settings and digest are built regardless | product owner |
+| **SMS provider** (e.g. Netgsm, İleti Merkezi) — choice, account, cost per message | the SMS adapter only; the port, settings and digest are built regardless. **Also used for the SMS second factor (doc 18 §5.3, 2026-09-27).** One `SmsSender` port serves both, and whichever of Phase 11.7 and Phase 12 lands first builds it | product owner |
 | **Hepsiburada link shapes** — Trendyol's are measured and recorded (api-references §1.6, 2026-09-20); Hepsiburada's are not, because this install has no Hepsiburada data. The `-p-{SKU}` and `-pm-{productId}` forms are handled from §2.11/§2.13's own examples; a campaign or short link may exist that is refused | nothing — an unrecognised link is a reported row, not a wrong import | product owner: send a few real HB links |
 | ~~**`.xlsx` reading library**~~ — **settled 2026-09-20**: `exceljs`, already a dependency for the Excel product source. `readXlsxTable` (`packages/adapters/src/spreadsheet.ts`) returns every cell as text — including a formula's result — so amounts reach the exact parser untouched | — | done |
 | **Empty link cell on re-import = no change** (§3.4) — decided while writing the spec, not in conversation | nothing, confirm or change | product owner |

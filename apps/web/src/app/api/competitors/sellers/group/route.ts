@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { competitorSellersRepo, configRepo, newId, sellerPoliciesRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 interface CreateGroupBody {
   readonly action: 'createGroup';
@@ -55,6 +56,7 @@ type Body = CreateGroupBody | AssignBody | NoteBody | DeleteGroupBody | TaxNumbe
 
 async function audit(
   appDb: ReturnType<typeof getAppDb>,
+  actor: string,
   entityId: string,
   oldValue: string | null,
   newValue: string | null,
@@ -70,7 +72,7 @@ async function audit(
     field,
     oldValue,
     newValue,
-    changedBy: 'operator',
+    changedBy: actor,
     changedAt: Date.now(),
   });
 }
@@ -80,14 +82,14 @@ async function audit(
  * `/api/competitors/sellers`, which also aggregates our own listings' competitors and belongs to
  * the seller module — so with only the brand module enabled the picker came up empty.
  */
-export async function GET() {
+async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   const groups = await competitorSellersRepo.listSellerGroups(getAppDb());
   return NextResponse.json({
     groups: groups.map((g) => ({ id: g.id, displayName: g.displayName, note: g.note })),
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<Body>(request);
   if (body === null) return invalidBody();
   const appDb = getAppDb();
@@ -106,7 +108,7 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     });
-    await audit(appDb, id, null, displayName);
+    await audit(appDb, auth.actor, id, null, displayName);
     return NextResponse.json({ ok: true, groupId: id });
   }
 
@@ -133,7 +135,7 @@ export async function POST(request: Request) {
       }
     }
     await competitorSellersRepo.setSellerGroup(appDb, seller.id, body.groupId);
-    await audit(appDb, seller.id, seller.groupId, body.groupId);
+    await audit(appDb, auth.actor, seller.id, seller.groupId, body.groupId);
     return NextResponse.json({ ok: true });
   }
 
@@ -150,7 +152,7 @@ export async function POST(request: Request) {
       );
     }
     await competitorSellersRepo.setSellerNote(appDb, seller.id, body.operatorNote);
-    await audit(appDb, seller.id, seller.operatorNote, body.operatorNote);
+    await audit(appDb, auth.actor, seller.id, seller.operatorNote, body.operatorNote);
     return NextResponse.json({ ok: true });
   }
 
@@ -171,7 +173,7 @@ export async function POST(request: Request) {
       { marketplaceCode: body.marketplaceCode, sellerRef: body.sellerRef },
       body.taxNumber,
     );
-    await audit(appDb, seller.id, seller.taxNumber, body.taxNumber, 'taxNumber');
+    await audit(appDb, auth.actor, seller.id, seller.taxNumber, body.taxNumber, 'taxNumber');
     return NextResponse.json({ ok: true });
   }
 
@@ -179,9 +181,12 @@ export async function POST(request: Request) {
     // Members are unlinked, not deleted (`on delete set null`): the sellers are observed facts,
     // the grouping is an opinion, and withdrawing the opinion must not erase the evidence.
     await competitorSellersRepo.deleteSellerGroup(appDb, body.groupId);
-    await audit(appDb, body.groupId, body.groupId, null);
+    await audit(appDb, auth.actor, body.groupId, body.groupId, null);
     return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: 'Bilinmeyen işlem.' }, { status: 400 });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('catalogue.manage', postHandler);

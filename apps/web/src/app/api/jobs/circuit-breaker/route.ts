@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server';
 import { circuitBreakerRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ marketplaceCode: string }>(request);
   if (body === null) return invalidBody();
   if (!body.marketplaceCode) {
@@ -14,3 +15,5 @@ export async function POST(request: Request) {
   await circuitBreakerRepo.resetCircuitBreaker(appDb, body.marketplaceCode, Date.now());
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('jobs.operate', postHandler);

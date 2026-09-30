@@ -12,9 +12,14 @@ install**: one office PC runs everything, and the operator uses it from a browse
 PC. Ubuntu is a stated future target and §11 records what changes for it, but nothing in §2–§10
 may assume more than one machine.
 
-Out of scope: multi-tenant hosting, high availability, and any deployment where the web app is
-reachable from another computer. §4.4 explains why the last one is *forbidden* for now rather
-than merely unimplemented.
+Out of scope: multi-tenant hosting and high availability.
+
+**Revised 2026-09-27: remote access is now in scope.** The product owner is moving the
+application to a VPS and using it from browsers on other computers. What made that forbidden
+until now was the absence of sign-in, which `docs/18-authentication-and-access.md` supplies.
+§13 describes the server deployment. It is **still one machine**: the VPS runs the service, the
+reverse proxy and the database together. §4.4 keeps the service itself on loopback in every
+install shape.
 
 Also out of scope, deliberately: **automatic self-update**. Decided 2026-08-24 — upgrades are
 manual for now, the vendor sends a new installer and the operator runs it. §12 records what was
@@ -165,6 +170,8 @@ The installer writes `C:\ProgramData\BuyBox\.env.local`:
 | `AUTO_MIGRATE` | `1` | §5.2. Written **only** by the installer — a development checkout never has it |
 | `APP_VERSION` | the installed version | Names the build in `/api/health` and in backup filenames |
 | `BUYBOX_DATA_DIR` | `C:\ProgramData\BuyBox` | The anchor a relative SQLite path resolves against (§8.3). Set on the **service**, not in `.env.local` |
+| `PUBLIC_ORIGIN` | **not written** on a local install | Setting it switches the install into network mode (§13, doc 18). Set on the service by the server setup, never by the Windows installer |
+| `TRUST_PROXY` | **not written** on a local install | `1` only behind the §13 reverse proxy, so the client address is read from `X-Forwarded-For` (doc 18 §3.3) |
 
 `SECRET_STORE_KEY` is generated per install and never ships in the package. A key baked into
 the installer would be one key protecting every customer's marketplace credentials, which is
@@ -200,14 +207,28 @@ let us update.
 
 ### 4.4 Loopback only, and why that is a requirement rather than a default
 
-`docs/11-rewrite-requirements.md` N-7 — authentication on the web app — is a *should*, and is
-not built. The application therefore trusts every request it receives.
-
-The service binds `127.0.0.1` and the installer creates **no** Windows Firewall rule. An install
+**Revised 2026-09-27.** The original reason still holds until Phase 12 is built. N-7 was a
+*should* and was not built, so the application trusted every request it received. An install
 reachable from the office LAN would let anyone on that LAN change prices on live marketplace
-listings with no credential at all. Binding to `0.0.0.0` is not a configuration option we expose
-until N-7 is implemented; when it is, that change belongs in this document's §11 and in a
-requirement of its own.
+listings with no credential at all.
+
+What changes with doc 18 is how remote access is allowed, not the binding:
+
+- **The service binds `127.0.0.1` in every install shape, and always will.** The installer
+  creates no Windows Firewall rule. Binding to `0.0.0.0` is still not a configuration option.
+- **Remote access goes through a TLS reverse proxy on the same machine (§13).** The proxy is the
+  only thing listening on the network. It terminates HTTPS, sets HSTS and forwards to
+  `127.0.0.1:<port>`.
+- **Sign-in is required even on a loopback-only install** (doc 18 §1). Loopback only limits who
+  can reach the service; it does not identify who is using it.
+
+Why the service never listens on the network itself, even with sign-in:
+
+- it would serve the session cookie over plain HTTP;
+- `/api/health` and `/api/metrics` would be reachable directly (doc 18 §7.3);
+- two ways in means two configurations to keep right.
+
+R-DEP-4 and R-DEP-16 hold this.
 
 ## 5. Installation sequence
 
@@ -775,7 +796,7 @@ so it is a development workaround and never a release check. D-1 still requires 
 
 | # | Check |
 |---|---|
-| D-1 | On a clean Windows 10/11 VM with no Node, no Chromium and no internet, the installer completes and the browser lands on `/license` |
+| D-1 | On a clean Windows 10/11 VM with no Node, no Chromium and no internet, the installer completes, its final page shows the setup token, and the browser lands on `/bootstrap` (doc 18 §8.1; was `/license` before 2026-09-27) |
 | D-2 | `SECRET_STORE_KEY` differs between two installs made from the same package |
 | D-3 | Rebooting the VM brings the service back without a login |
 | D-4 | Upgrading over an existing install preserves `SECRET_STORE_KEY`, `app.db`, `secrets.enc.json` and the licence, and applies pending migrations |
@@ -1104,6 +1125,10 @@ the Linux service binds `127.0.0.1` the same way, and `ufw`/`iptables` are not t
 `postinst`, matching D-7's requirement ("not reachable from a second machine on the same LAN")
 identically on both platforms.
 
+**Still true after 2026-09-27, with one addition.** The `.deb` still opens no port. Network access
+is a separate, deliberate step on a server: the §13 reverse proxy and firewall. It is not part of
+the package, so installing the package can never open a port.
+
 The one change: the absolute-path example text in
 `apps/web/src/app/api/setup/database/migrate/route.ts` and
 `apps/web/src/app/setup/steps/step1-database.tsx` (`C:\ProgramData\BuyBox\data\app.db`,
@@ -1154,7 +1179,7 @@ build, to catch a platform-specific regression in code that is supposed to have 
 
 | # | Check |
 |---|---|
-| D-U1 | On a clean Ubuntu 22.04 LTS container/VM with no Node, no Chromium and no internet after the `.deb` is copied in, `apt install ./buybox_<version>_amd64.deb` completes and the browser (or `curl`) reaches `/license` |
+| D-U1 | On a clean Ubuntu 22.04 LTS container/VM with no Node, no Chromium and no internet after the `.deb` is copied in, `apt install ./buybox_<version>_amd64.deb` completes, prints how to read the setup token, and the browser (or `curl`) reaches `/bootstrap` |
 | D-U2 | `SECRET_STORE_KEY` differs between two installs made from the same package (= D-2, re-run) |
 | D-U3 | Rebooting the machine brings the service back with no login (`systemctl is-enabled buybox` is `enabled`) |
 | D-U4 | `apt install` over an existing install preserves `SECRET_STORE_KEY`, `app.db`, `secrets.enc.json` and the licence, and applies pending migrations (= D-4, re-run) |
@@ -1235,3 +1260,197 @@ verification with no vendor call. An update check is not that, but it is still r
 contact: it would have to sit entirely outside the pricing path (a failure is recorded and the
 run continues, as with the reporting scrapers), send no licence id, and be exempt from the
 licence gate — otherwise an expired install could be stuck on a build that cannot be updated.
+
+## 13. Server (VPS) deployment
+
+Status: specification, added 2026-09-27. Not built. It depends on Phase 12 (sign-in,
+doc 18) and on §11.13 step 5 (the `.deb` proven on a real Ubuntu machine). Neither exists yet.
+
+The product owner is moving the application from a Windows machine in a data centre to a VPS,
+used from browsers on other computers (doc 18 §1). **Trendyol collection was measured to work
+from the VPS on 2026-09-27**, so the Playwright exception (api-references §1.6) needs no change
+for this move.
+
+### 13.1 Shape
+
+```
+internet ──443──▶ Caddy (TLS, HSTS) ──▶ 127.0.0.1:3000  BuyBox service (§11 .deb)
+         ──80───▶ Caddy (→ 443, ACME)                    ├─ app.db (SQLite)
+         ──22───▶ sshd (keys only)                       ├─ secrets.enc.json
+                                                         └─ Alloy ──push──▶ Grafana Cloud (doc 16)
+```
+
+- **Operating system: Ubuntu 22.04 or 24.04 LTS, using the §11 `.deb`.** A Windows VPS would
+  also work with the existing installer plus IIS or Caddy for Windows. It was not chosen because
+  §11 already describes the Linux service, and a Linux VPS is the common, cheaper product.
+- **Database: SQLite stays the default.** A handful of users adds almost no write load compared
+  with the jobs. PostgreSQL remains available through the setup wizard (doc 10 §7) if the product
+  owner wants the database on managed hosting.
+- **Reverse proxy: Caddy.** It obtains and renews the TLS certificate from Let's Encrypt itself,
+  with one short configuration file and no cron job. nginx with certbot is an acceptable
+  substitute; the requirements in §13.2 are what matter, not the product.
+- **A domain name is required** (for example `fiyat.<firma>.com.tr`), with an A record pointing
+  at the VPS. Let's Encrypt does not issue a certificate for a bare IP address. This is an open
+  item for the product owner (doc 18 §12).
+
+### 13.2 Reverse proxy and network mode
+
+`/etc/caddy/Caddyfile`:
+
+```
+fiyat.example.com.tr {
+    # Machine-local endpoints: the installer, Alloy and the break-glass read these on
+    # 127.0.0.1:3000 directly. From outside they do not exist.
+    @internal path /api/health /api/health/* /api/metrics /api/metrics/*
+    respond @internal 404
+
+    header Strict-Transport-Security "max-age=31536000"
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+Caddy sets `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` itself. If the
+office has a fixed address, an allow-list can go in the same site block (`@office
+remote_ip …`). It is optional; sign-in does not depend on it.
+
+Ready-to-edit copies of both files are in `installer/linux/network/` (`Caddyfile.example`, and
+`buybox-network.conf.example` for the drop-in below).
+
+Two service environment values switch the application into **network mode**. They are set in the
+systemd unit's drop-in (`systemctl edit buybox`), not in `.env.local`, for the reason §4.3 gives
+about deployment facts:
+
+| Key | Value | Effect |
+|---|---|---|
+| `PUBLIC_ORIGIN` | `https://fiyat.example.com.tr` | Network mode: `__Host-` Secure cookie, second factor required, and the Origin check compares against this value (doc 18 §4, §5.1) |
+| `TRUST_PROXY` | `1` | Client address taken from the last `X-Forwarded-For` entry (doc 18 §3.3) |
+
+`HOSTNAME` stays `127.0.0.1`. **The service refuses to boot when `PUBLIC_ORIGIN` is set and
+either `PUBLIC_ORIGIN` is not `https://` or `HOSTNAME` is not a loopback address** (R-DEP-16).
+A half-configured network mode fails at startup, not in production.
+
+### 13.3 Server hardening
+
+Only the minimum that the application's own security depends on. Doc 18 §2 makes shell access
+the root of trust, so this is part of the application's security, not optional extra.
+
+- **Firewall (`ufw`):** allow 22, 80 and 443; deny everything else inbound. If the office has a
+  fixed address, restrict 22 to it. Port 3000 is never opened. The service is on loopback anyway,
+  and this is the second lock.
+- **SSH:**
+  - `PasswordAuthentication no` and `PermitRootLogin no`.
+  - Sign in with keys, as a named sudo user.
+  - `fail2ban` or the provider's firewall is optional once passwords are off.
+- **Updates:** `unattended-upgrades` for security updates. The application itself is upgraded by
+  hand, as before (§12).
+- **Time:** the VPS clock is synchronised (`systemd-timesyncd`, on by default).
+  - TOTP codes are time-based (doc 18 §5.2) and the licence rejects a clock wound back
+    (doc 13 §4.3), so drift breaks sign-in first.
+  - The host time zone may stay UTC. D-S7 checks that nothing depends on it.
+- **Backups off the machine:**
+  - Losing the VPS must not lose the data. A nightly job copies an online SQLite backup
+    (`sqlite3 app.db ".backup …"`) and `secrets.enc.json` to storage **outside the VPS** (the
+    provider's backup product or object storage).
+  - `SECRET_STORE_KEY` is kept **separately** from those copies (a password manager), because a
+    backup holding both the encrypted file and its key is an unencrypted backup.
+  - This is new with the server. The Windows install relied on the machine it ran on (§5.2b).
+
+### 13.4 Moving the live install from Windows to the VPS
+
+The live install carries real sales history and real marketplace credentials. **Two instances
+able to submit prices at once is the one outcome this procedure exists to prevent**
+(R-DEP-17). Both would reprice the same listings against each other and spend the same daily
+update budget twice.
+
+1. **Prepare the VPS without data:** install the `.deb`, Caddy, the firewall and the network-mode
+   values (§13.2–§13.3). Confirm `https://<domain>/bootstrap` answers. **Do not complete
+   bootstrap**; the migrated database brings its own state.
+2. **On Windows: pause, then stop.**
+   - Engage the system pause from the UI, so the database leaves in a paused state.
+   - Stop the service and **disable** it (`sc config BuyBoxApp start= disabled`), so a reboot
+     cannot bring it back.
+3. **Stop the VPS service** (`systemctl stop buybox`), so it is not holding its empty
+   `app.db` open while that file is replaced. Then **copy, over SSH (`scp`), never by e-mail
+   or shared drive:**
+   - `C:\ProgramData\BuyBox\app.db` to `/var/lib/buybox/app.db`;
+   - `secrets.enc.json` to `/var/lib/buybox/`;
+   - the `SECRET_STORE_KEY` value from the Windows `.env.local`, into the VPS `.env.local`.
+     **Only that value.** Copying the whole file would bring a Windows `DATABASE_URL` with it.
+     Without the matching key, the copied secret store cannot be read, and the marketplace
+     credentials have to be entered again.
+
+   Then `chown buybox:buybox` and `chmod 600` the copied files.
+4. **First boot on the VPS:**
+   - `AUTO_MIGRATE` applies Phase 12's migrations (and backs up first, §5.2b). The database has no
+     users, so the install enters bootstrap mode (doc 18 §8.1).
+   - Create the first Yönetici with the token from `/var/lib/buybox/bootstrap-token.txt`, and
+     enrol a second factor.
+5. **Licence:** the install fingerprint changes with the machine, which shows a warning banner
+   and does not stop anything (doc 13 §5, R-LIC-7). Issue a licence for the new install when
+   convenient.
+6. **Verify while still paused:**
+   - `/api/health` is green on `127.0.0.1`;
+   - both marketplaces' _Bağlantıyı Test Et_ pass (the credentials survived the move);
+   - one Trendyol collection runs (D-S5);
+   - the listings and history look like they did on Windows.
+7. **Release the pause.** Only now can the VPS submit prices.
+8. **Keep the Windows install stopped and disabled, not uninstalled**, for a week as a rollback.
+   Rolling back is this procedure in reverse, including the pause on the side being left. Delete
+   the Windows data only after that week, because it holds live credentials.
+
+### 13.5 Definition of done
+
+| # | Check |
+|---|---|
+| D-S1 | `https://<domain>` serves `/login` with a valid certificate; `http://` redirects to it; the response carries HSTS |
+| D-S2 | From outside the VPS, `/api/health` and `/api/metrics` answer 404, and port 3000 does not answer at all. On the VPS, `curl 127.0.0.1:3000/api/health` is green and Alloy's metrics reach Grafana |
+| D-S3 | Starting the service with `PUBLIC_ORIGIN=http://…`, or with `HOSTNAME=0.0.0.0` in network mode, fails at boot with a named reason (R-DEP-16) |
+| D-S4 | A user without a second factor cannot reach any screen but enrolment; a viewer's price-edit request is refused with 403 (doc 18 R-AUTH-5, R-AUTH-10) |
+| D-S5 | Trendyol competitor collection succeeds on the VPS (= D-U7, and re-confirms the 2026-09-27 measurement from the installed package, not a development checkout) |
+| D-S6 | The nightly off-machine backup exists, and restoring it on a scratch VM with the separately kept `SECRET_STORE_KEY` produces a working install |
+| D-S7 | With the host time zone set to UTC, the daily update budget rolls over at midnight Europe/Istanbul, and dates on screen are Turkish local time |
+| D-S8 | During the §13.4 move, there is no moment at which both installs have the pause released (R-DEP-17) |
+
+### 13.6 Installing the sign-in release on an existing install
+
+Written 2026-09-27 for the live Windows install, which gets this release **before** it moves to
+the VPS (§13.4). It is the ordinary upgrade of §5; this section is only what is new about it.
+Rehearsed on a copy of a real database: the migration (22 → 25) kept every row, and the first
+administrator, sign-in, listings, licence and marketplace settings all worked.
+
+1. **Back up** `C:\ProgramData\BuyBox\app.db` and `secrets.enc.json` by hand, in addition to the
+   automatic pre-migration backup (§5.2b).
+2. **Run the installer.** The service restarts, applies migration 0024 (new tables only; nothing
+   existing changes), finds no administrator, and writes a setup token. **The installer's finish
+   page shows the token**, and the file is `C:\ProgramData\BuyBox\bootstrap-token.txt`.
+3. **Open BuyBox.** It opens on _İlk yönetici_. Enter the token, then create your own account:
+   a username, your name, and a password of at least 10 characters.
+4. **Licence and settings are as they were.** Nothing in them changes with this release. Every
+   change from now on is recorded against the person who made it; older records show
+   _Operatör (eski kayıt)_.
+5. **Set up the authenticator app** from _Hesabım_ (the name in the header) → _Doğrulama
+   uygulaması → Kur_, and save the ten recovery codes somewhere other than the phone.
+   - On this loopback install a second factor is optional unless _Ayarlar → Kullanıcılar →
+     İki adımlı doğrulama → Herkes için zorunlu_ is ticked.
+   - On the VPS (§13) it is always required.
+6. **Create the other users** in _Ayarlar → Kullanıcılar_ with a role and a temporary password
+   that you pass on yourself. Each changes it at first sign-in.
+7. **Keep the install on loopback** until the move of §13.4. Nothing about this release opens a
+   port.
+
+If the administrator's password or phone is lost, use the break-glass command (doc 18 §8.3). It
+ships bundled with the app as `app/admin.mjs` and reads `.env.local` from the directory it is run
+in, which must be the data directory:
+
+```
+Windows (PowerShell, as Administrator):
+  cd C:\ProgramData\BuyBox
+  & "C:\Program Files\BuyBox\node\node.exe" "C:\Program Files\BuyBox\app\admin.mjs" reset-password <user>
+
+Linux:
+  cd /var/lib/buybox && sudo -u buybox /opt/buybox/node/bin/node /opt/buybox/app/admin.mjs reset-password <user>
+```
+
+The commands are `list-users`, `create-admin <user>`, `reset-password <user>`, `reset-mfa <user>`
+and `unlock <user>`. In a development checkout it is `npm run admin -- <command>`.

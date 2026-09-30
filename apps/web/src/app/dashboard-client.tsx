@@ -13,6 +13,7 @@ import {
   PHASE_LABELS,
   SUBMISSION_STATE_LABELS,
 } from '@/lib/labels';
+import { NO_PERMISSION_TITLE, canToggleStop, useCan } from '@/lib/permissions';
 
 /**
  * The dashboard (doc 06 §2). Its one job is to answer, at a glance, the question the spec states
@@ -486,6 +487,7 @@ function AttentionList({ items }: { items: Attention[] }) {
  */
 function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const allowed = canToggleStop(useCan(), engaged);
   const [error, setError] = useState<string | undefined>();
 
   async function setEngaged(next: boolean) {
@@ -525,7 +527,8 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
           requireConfirm={engaged}
           confirmMessage="Fiyat gönderimini açmak üzeresiniz. Bundan sonra uygun ilanlar için gerçek fiyat güncellemeleri pazaryerlerine gönderilebilir. Emin misiniz?"
           onConfirmed={() => void setEngaged(!engaged)}
-          disabled={busy}
+          disabled={busy || !allowed}
+          {...(allowed ? {} : { title: NO_PERMISSION_TITLE })}
           className={`flex-none rounded px-3 py-2 text-sm font-semibold disabled:opacity-50 ${
             engaged
               ? 'border border-(--color-border) bg-(--color-surface) hover:bg-(--color-hover)'
@@ -597,6 +600,7 @@ function MarketplaceCard({
 }) {
   const [busy, setBusy] = useState(false);
   const m = marketplace;
+  const allowed = canToggleStop(useCan(), m.killSwitchEngaged);
 
   async function toggleKillSwitch() {
     setBusy(true);
@@ -633,7 +637,8 @@ function MarketplaceCard({
             requireConfirm={m.killSwitchEngaged}
             confirmMessage={`${m.displayName} için fiyat gönderimini açmak üzeresiniz. Bu pazaryerine gerçek fiyat güncellemeleri gönderilebilir. Emin misiniz?`}
             onConfirmed={() => void toggleKillSwitch()}
-            disabled={busy}
+            disabled={busy || !allowed}
+            {...(allowed ? {} : { title: NO_PERMISSION_TITLE })}
             aria-label={
               m.killSwitchEngaged
                 ? `${m.displayName} için fiyat gönderimini aç`

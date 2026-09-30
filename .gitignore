@@ -12,6 +12,10 @@ data/
 # Licence signing key — the vendor private key. NEVER commit; keep an offline backup.
 .license-keys/
 
+# The setup token (doc 18 §8.1). Written to the data directory while an install has no
+# administrator — on a development checkout that is apps/web itself — and deleted once one exists.
+bootstrap-token.txt
+
 # Installer build artefacts (installer/README-build.md). The staging tree and the compiled
 # package are outputs; the vendored WinSW binary is an input and IS committed.
 installer/staging/

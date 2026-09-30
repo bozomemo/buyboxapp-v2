@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { createDb } from '@buybox/db';
 import { sql } from 'drizzle-orm';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{
     engine: 'sqlite' | 'postgres' | 'mysql';
     connectionString: string;
@@ -30,3 +31,5 @@ export async function POST(request: Request) {
     appDb?.close();
   }
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

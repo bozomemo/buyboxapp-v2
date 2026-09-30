@@ -15,11 +15,12 @@ import { trackedProductsRepo } from '@buybox/db';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { seriesBySeller, summariseLooks } from '@/lib/tracked-product-sellers';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /** Same span the listing detail's price chart defaults to, for the same reason. */
 const HISTORY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function getHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const appDb = getAppDb();
   const nowMs = Date.now();
@@ -99,3 +100,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

@@ -16,6 +16,7 @@ import {
 } from '@buybox/shared';
 import { getAppDb, isBootstrapped } from '@/lib/server/db';
 import { invalidateModulesCache } from '@/lib/server/modules';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 async function state() {
   const appDb = getAppDb();
@@ -32,7 +33,7 @@ async function state() {
   };
 }
 
-export async function GET() {
+async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   // The navigation asks on every page, the setup wizard's included, and before the wizard's
   // database step there is no database to ask. Nothing has been chosen yet, so nothing is off.
   if (!isBootstrapped()) {
@@ -45,7 +46,7 @@ export async function GET() {
   return NextResponse.json(await state());
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   let body: unknown;
   try {
     body = await request.json();
@@ -88,10 +89,13 @@ export async function POST(request: Request) {
     if (before[module] === enabled) continue;
     await configRepo.setAppSetting(
       appDb,
-      { key: MODULE_SETTING_KEYS[module], value: String(enabled), updatedBy: 'operator', updatedAt: nowMs },
+      { key: MODULE_SETTING_KEYS[module], value: String(enabled), updatedBy: auth.actor, updatedAt: nowMs },
       newId(),
     );
   }
   invalidateModulesCache();
   return NextResponse.json(await state());
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('settings.manage', postHandler);

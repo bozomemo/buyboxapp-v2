@@ -15,6 +15,7 @@ interface Windows {
   appEventsWarnErrorDays: number;
   jobRunsDays: number;
   jobQueueFinishedDays: number;
+  authEventsDays: number;
 }
 
 const LABELS: { key: keyof Windows; label: string }[] = [
@@ -27,6 +28,7 @@ const LABELS: { key: keyof Windows; label: string }[] = [
   { key: 'appEventsWarnErrorDays', label: 'Uyarı/hata olayları (gün)' },
   { key: 'jobRunsDays', label: 'İş çalıştırma geçmişi (gün)' },
   { key: 'jobQueueFinishedDays', label: 'Tamamlanmış iş kuyruğu satırları (gün)' },
+  { key: 'authEventsDays', label: 'Giriş kayıtları (gün)' },
 ];
 
 export function RetentionClient() {

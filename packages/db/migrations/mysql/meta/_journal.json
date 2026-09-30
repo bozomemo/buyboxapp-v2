@@ -169,6 +169,13 @@
       "when": 1789920192170,
       "tag": "0023_faulty_tigra",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1790512883463,
+      "tag": "0024_calm_wolfsbane",
+      "breakpoints": true
     }
   ]
 }

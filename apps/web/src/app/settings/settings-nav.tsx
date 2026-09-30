@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { moduleForPath } from '@/lib/module-routes';
+import { useCan } from '@/lib/permissions';
 
 const TABS = [
   { href: '/settings/modules', label: 'Modüller' },
@@ -17,6 +18,8 @@ const TABS = [
   // lives outside `/settings` — this tab is only the everyday path to it for a licensed
   // operator checking days remaining or pasting a renewal ahead of expiry.
   { href: '/license', label: 'Lisans' },
+  // doc 06 §10.4 — shown only with `users.manage`; the page refuses anyone else regardless.
+  { href: '/settings/users', label: 'Kullanıcılar' },
 ];
 
 /**
@@ -40,7 +43,10 @@ export function SettingsNav() {
       cancelled = true;
     };
   }, []);
-  const tabs = TABS.filter((tab) => sellerEnabled || moduleForPath(tab.href) !== 'seller');
+  const can = useCan();
+  const tabs = TABS.filter((tab) => sellerEnabled || moduleForPath(tab.href) !== 'seller').filter(
+    (tab) => tab.href !== '/settings/users' || can('users.manage'),
+  );
   return (
     <nav className="flex flex-wrap gap-1 border-b border-(--color-border) pb-2">
       {tabs.map((tab) => (

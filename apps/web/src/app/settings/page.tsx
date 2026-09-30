@@ -1,8 +1,11 @@
+import { requirePermission } from '@/lib/server/auth/page-guard';
 import { SettingsNav } from './settings-nav';
 
 export const dynamic = 'force-dynamic';
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const gate = await requirePermission('view');
+  if (!gate.ok) return gate.element;
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Ayarlar</h1>

@@ -24,6 +24,7 @@ import { parseTurkishDecimal } from '@/lib/reference-price-import';
 import { getAppDb } from '@/lib/server/db';
 import { pageLimit, pageOffset } from '@/lib/pagination';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -141,7 +142,7 @@ export function serialiseBrandProduct(row: brandProductsRepo.BrandProductListRow
   };
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const limit = pageLimit(params.get('limit'), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const offset = pageOffset(params.get('offset'));
@@ -154,7 +155,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ total, limit, offset, products: rows.map(serialiseBrandProduct) });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<BrandProductBody>(request);
   if (body === null) return invalidBody();
   const parsed = parseBrandProductBody(body);
@@ -174,3 +175,6 @@ export async function POST(request: Request) {
   });
   return NextResponse.json({ ok: true, id, warnings: parsed.warnings });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('catalogue.manage', postHandler);

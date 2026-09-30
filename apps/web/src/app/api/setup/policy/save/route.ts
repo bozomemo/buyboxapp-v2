@@ -3,6 +3,7 @@ import { configRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 interface PolicyPayload {
   code: string;
@@ -25,7 +26,7 @@ interface PolicyPayload {
   budgetReservePct: string;
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<PolicyPayload>(request);
   if (body === null) return invalidBody();
   const appDb = getAppDb();
@@ -55,9 +56,11 @@ export async function POST(request: Request) {
     budgetReservePct: Number(body.budgetReservePct),
     // doc 10 §6 step 8 — everything starts DISABLED; the operator enables it deliberately later.
     enabled: false,
-    updatedBy: 'setup-wizard',
+    updatedBy: auth.actor,
     updatedAt: Date.now(),
   });
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

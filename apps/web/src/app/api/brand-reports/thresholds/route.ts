@@ -17,13 +17,14 @@ import {
 } from '@/lib/server/audit-thresholds';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonObject } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-export async function GET() {
+async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   const { thresholds, isDefault } = await readAuditThresholds();
   return NextResponse.json({ thresholds, defaults: DEFAULT_AUDIT_THRESHOLDS, isDefault });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonObject(request);
   if (body === null) return invalidBody();
   const parsed = parseAuditThresholds(body);
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     {
       key: AUDIT_THRESHOLDS_KEY,
       value: JSON.stringify(parsed.value),
-      updatedBy: 'operator',
+      updatedBy: auth.actor,
       updatedAt: Date.now(),
     },
     newId(),
@@ -47,7 +48,11 @@ export async function POST(request: Request) {
  * storing values that happen to equal them, which is the distinction `deleteAppSetting` exists
  * to preserve.
  */
-export async function DELETE() {
-  await configRepo.deleteAppSetting(getAppDb(), AUDIT_THRESHOLDS_KEY, 'operator', Date.now(), newId());
+async function deleteHandler(request: Request, _context: unknown, auth: AuthContext) {
+  await configRepo.deleteAppSetting(getAppDb(), AUDIT_THRESHOLDS_KEY, auth.actor, Date.now(), newId());
   return NextResponse.json({ ok: true, thresholds: DEFAULT_AUDIT_THRESHOLDS });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('catalogue.manage', postHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);

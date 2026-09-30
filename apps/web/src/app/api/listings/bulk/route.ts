@@ -9,6 +9,7 @@ import { Money } from '@buybox/shared';
 import { z } from 'zod';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonObject } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const BulkActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('enableAutomation'), ids: z.array(z.string()) }),
@@ -26,7 +27,7 @@ const BulkActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('forceReoptimize'), ids: z.array(z.string()) }),
 ]);
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   // `safeParse`: a malformed request is the caller's mistake, answered 400 — `parse` threw it into a 500.
   const raw = await readJsonObject(request);
   if (raw === null) return invalidBody();
@@ -62,3 +63,5 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true, affected: body.ids.length });
 }
+
+export const POST = withPermission('prices.manage', postHandler);

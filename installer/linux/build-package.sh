@@ -106,6 +106,11 @@ cp -a "$web_dir/.next/static" "$app_dir/.next/static"
 # implementation shared by both builds rather than two copies that could drift apart.
 cp "$repo_root/installer/boot.mjs" "$app_dir/boot.mjs"
 
+# The break-glass command (doc 18 section 8.3), bundled: the installed app has no repository to
+# import from. Beside server.js, so the native database drivers resolve from the app's own
+# node_modules. Run as the service user from /var/lib/buybox (doc 14 section 13.6).
+node "$repo_root/scripts/build-admin-cli.mjs" "$app_dir/admin.mjs"
+
 # !! Next's standalone output copies more of the developer's working tree than the package has
 # any business containing (doc 14 section 8.1 / 11.7 step 4). Same purge-and-assert rule as the
 # Windows build, unchanged: the failure mode (a shared SECRET_STORE_KEY, someone else's database)

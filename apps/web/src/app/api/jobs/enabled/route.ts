@@ -4,8 +4,9 @@ import { configRepo, newId } from '@buybox/db';
 import { JOB_CATALOG, jobEnabledSettingKey } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
 import { readJsonObject } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const raw = await readJsonObject(request);
   if (raw === null) return NextResponse.json({ error: 'Geçersiz istek gövdesi.' }, { status: 400 });
   if (!JOB_CATALOG.some((j) => j.jobName === raw.jobName)) {
@@ -23,10 +24,12 @@ export async function POST(request: Request) {
     {
       key: jobEnabledSettingKey(body.jobName),
       value: String(body.enabled),
-      updatedBy: 'operator',
+      updatedBy: auth.actor,
       updatedAt: Date.now(),
     },
     newId(),
   );
   return NextResponse.json({ ok: true, enabled: body.enabled });
 }
+
+export const POST = withPermission('jobs.operate', postHandler);

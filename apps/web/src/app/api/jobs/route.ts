@@ -8,8 +8,9 @@ import { getJobCadenceMs, JOB_CATALOG, jobCadenceSettingKey, jobEnabledSettingKe
 import { isJobDispatchable, isSystemPaused, jobModule, readDispatchGate } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
 import { getWorkerCadences, getWorkerStatus } from '@/lib/server/worker-status';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function GET() {
+async function getHandler() {
   const appDb = getAppDb();
   const nowMs = Date.now();
 
@@ -142,3 +143,5 @@ export async function GET() {
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

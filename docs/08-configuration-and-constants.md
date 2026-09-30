@@ -291,3 +291,29 @@ are `app_settings` rows (doc 05, brand module tables).
 | `ALERTS_WEBHOOK_URL` | *(unset)* | env | Webhook for band violations. Separate from `FINDINGS_WEBHOOK_URL` so audit findings and price alarms can go to different channels. A credential in URL form (§13). |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | *(unset)* | env | E-mail channel. Unset disables the channel; deliveries stay pending with the reason shown. |
 | `SMS_PROVIDER` + provider credentials | *(unset)* | env | **Provider not yet chosen** (doc 17 §7). The port and settings exist; the adapter is written for the chosen provider. |
+
+## 15. Authentication constants — **added 2026-09-27**
+
+Specified in doc 18. Deployment facts go in environment variables on the service. The one
+operator-editable switch is an `app_settings` row. None of these values is a secret. The SMS
+provider credentials are secrets, and live in the environment (§14).
+
+| Constant | Default | Where | Why this value |
+|----------|---------|-------|----------------|
+| `PUBLIC_ORIGIN` | *(unset)* | env, on the service | Setting it switches the install into **network mode** (doc 14 §13.2): Secure `__Host-` cookie, second factor required, and the Origin check compares against this value. Must be `https://`, or the service refuses to boot (R-DEP-16) |
+| `TRUST_PROXY` | *(unset)* | env, on the service | `1` only behind the doc 14 §13 reverse proxy. The client address is then the last `X-Forwarded-For` entry. Unset, the per-address lockout is off, rather than applied to `127.0.0.1` |
+| `AUTH_SESSION_IDLE_MS` | 8 h | env | A working day with a lunch break stays signed in; a browser left overnight does not |
+| `AUTH_SESSION_ABSOLUTE_MS` | 7 days | env | Re-authentication at least weekly, even for a tab that is never idle |
+| `AUTH_TRUSTED_DEVICE_DAYS` | 30 | env | Skips only the second factor, never the password (doc 18 §5.1). `0` removes the option |
+| `AUTH_LOCKOUT_ATTEMPTS` / `AUTH_LOCKOUT_WINDOW_MS` | 5 / 15 min | `packages/shared` | Per username. Second-factor failures count too |
+| `AUTH_IP_LOCKOUT_ATTEMPTS` | 20 in 15 min | `packages/shared` | Per source address, across usernames |
+| `AUTH_PASSWORD_MIN_LENGTH` | 10 | `packages/shared` | Length is what makes a password hard to guess. No composition rules, no expiry (doc 18 §3.2) |
+| `AUTH_SCRYPT_PARAMS` | `N=2^15, r=8, p=1`, 64-byte key | `packages/shared` | Stored in each hash, so raising them rehashes at the next sign-in |
+| `AUTH_MFA_CHALLENGE_TTL_MS` | 5 min | `packages/shared` | Between the password and the second factor |
+| `AUTH_SMS_CODE_TTL_MS` | 5 min | `packages/shared` | |
+| `AUTH_SMS_MAX_ATTEMPTS` | 5 | `packages/shared` | Per code |
+| `AUTH_SMS_RESEND_MS` | 60 s | `packages/shared` | |
+| `AUTH_SMS_PER_USER_HOURLY` / `AUTH_SMS_PER_PHONE_DAILY` | 5 / 10 | `packages/shared` | Anti-pumping (doc 18 §5.3) |
+| `AUTH_SMS_DAILY_CAP` | 200 | env | An install-wide ceiling on SMS spend. After it, SMS is refused until midnight Europe/Istanbul and an `error` event is written |
+| `auth.mfaRequired` | off | `app_settings` | **Loopback installs only.** A network install always requires a second factor, and ignores this setting (R-AUTH-5) |
+| `SMS_PROVIDER` | *(unset)* | env | Shared with the notification channel (§14). Unset means SMS is not offered as a second factor. `dev-console` is refused when `NODE_ENV=production` |

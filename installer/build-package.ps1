@@ -78,6 +78,12 @@ if (Test-Path $publicDir) { Copy-Item $publicDir (Join-Path $appDir 'public') -R
 
 Copy-Item (Join-Path $PSScriptRoot 'boot.mjs') (Join-Path $appDir 'boot.mjs') -Force
 
+# The break-glass command (doc 18 section 8.3), bundled into one file: the installed app has no
+# repository to import from. It sits beside server.js so the native database drivers resolve
+# from the app's own node_modules. Run from the data directory; doc 14 section 13.6 has the command.
+& node (Join-Path $repoRoot 'scripts\build-admin-cli.mjs') (Join-Path $appDir 'admin.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Bundling the admin command (scripts/build-admin-cli.mjs) failed.' }
+
 # !! Next's standalone output copies more of the developer's working tree than the package has
 # any business containing. Two separate leaks have been found this way, both on 2026-08-24:
 #

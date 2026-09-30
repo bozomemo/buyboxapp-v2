@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { ExcelProductSource } from '@buybox/adapters';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ sourceCode: string; sourceConfig: unknown }>(request);
   if (body === null) return invalidBody();
   if (body.sourceCode !== 'excel') {
@@ -24,3 +25,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) });
   }
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

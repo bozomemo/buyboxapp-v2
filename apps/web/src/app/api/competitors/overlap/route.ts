@@ -20,6 +20,7 @@ import { competitorReportsRepo, competitorSellersRepo } from '@buybox/db';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { resolveOwnSellers } from '@/lib/server/own-sellers';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -50,7 +51,7 @@ function toCsv(rows: OverlapRow[]): string {
   return lines.join('\n');
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
   const nowMs = Date.now();
@@ -160,3 +161,5 @@ export async function GET(request: Request) {
     productsOnMultipleMarketplaces: [...productMarketplaces.values()].filter((s) => s.size >= 2).length,
   });
 }
+
+export const GET = withPermission('view', getHandler);

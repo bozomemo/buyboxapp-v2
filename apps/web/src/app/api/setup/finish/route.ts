@@ -3,14 +3,15 @@ import { configRepo, newId } from '@buybox/db';
 import { enableBrandScanJobsAtSetup } from '@buybox/jobs';
 import { isKillSwitchEngaged, SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-export async function POST() {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const appDb = getAppDb();
   const now = Date.now();
 
   await configRepo.setAppSetting(
     appDb,
-    { key: 'setup.completed', value: 'true', updatedBy: 'setup-wizard', updatedAt: now },
+    { key: 'setup.completed', value: 'true', updatedBy: auth.actor, updatedAt: now },
     newId(),
   );
 
@@ -28,14 +29,14 @@ export async function POST() {
   if (pause === undefined) {
     await configRepo.setAppSetting(
       appDb,
-      { key: SYSTEM_PAUSE_SETTING_KEY, value: 'false', updatedBy: 'setup-wizard', updatedAt: now },
+      { key: SYSTEM_PAUSE_SETTING_KEY, value: 'false', updatedBy: auth.actor, updatedAt: now },
       newId(),
     );
   }
 
   // A brand install scans from the start (doc 17 §1.4): choosing the brand module in the wizard
   // is the explicit decision its public-page jobs otherwise wait for on the Jobs screen.
-  const enabledJobs = await enableBrandScanJobsAtSetup(appDb, now);
+  const enabledJobs = await enableBrandScanJobsAtSetup(appDb, now, auth.actor);
 
   return NextResponse.json({
     ok: true,
@@ -43,3 +44,5 @@ export async function POST() {
     systemPaused: isKillSwitchEngaged(pause?.value ?? 'false'),
   });
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

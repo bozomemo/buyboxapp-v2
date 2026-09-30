@@ -10,6 +10,7 @@ import { marketplaceCredentialsKey } from '@buybox/shared';
 import { mergeCredentials, missingTrendyolCredentials } from '@/lib/credential-merge';
 import { getSecretStore } from '@/lib/server/secrets';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /**
  * The credentials this test should actually use: what the operator just typed, over what is
@@ -25,7 +26,7 @@ async function resolveCredentials(
   return mergeCredentials(stored, posted);
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{
     marketplaceCode: 'trendyol' | 'hepsiburada';
     credentials: Record<string, string>;
@@ -87,3 +88,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : String(error) });
   }
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

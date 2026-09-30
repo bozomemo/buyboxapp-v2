@@ -6,11 +6,16 @@ import { configRepo, createDb, newId, runMigrations, type AppDatabase } from '@b
 import { jobEnabledSettingKey } from '@buybox/jobs';
 import { MODULE_SETTING_KEYS } from '@buybox/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { POST } from './route';
 
 let dir: string;
 let appDb: AppDatabase;
 const savedEnv = { ...process.env };
+
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
 
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-setup-finish-'));
@@ -22,6 +27,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
 });
 
 afterEach(() => {
@@ -45,7 +51,7 @@ describe('POST /api/setup/finish', () => {
       newId(),
     );
 
-    const body = await (await POST()).json();
+    const body = await (await POST(authedRequest('http://localhost/'), routeContext())).json();
 
     expect(body.enabledJobs.sort()).toEqual([
       'ResolveProductBarcodes',
@@ -64,7 +70,7 @@ describe('POST /api/setup/finish', () => {
       newId(),
     );
 
-    expect((await (await POST()).json()).enabledJobs).toEqual([]);
+    expect((await (await POST(authedRequest('http://localhost/'), routeContext())).json()).enabledJobs).toEqual([]);
     expect(await setting(jobEnabledSettingKey('SweepTrackedProducts'))).toBeUndefined();
   });
 });

@@ -250,3 +250,7 @@ export {
 } from './product-sources/marketplace-listing.js';
 export { ErpDatabaseProductSource, ErpDatabaseConfigSchema } from './product-sources/erp-database.js';
 export { ErpApiProductSource, ErpApiConfigSchema } from './product-sources/erp-api.js';
+
+// SMS (doc 18 §5.3, doc 17 §6.1)
+export type { SmsFailure, SmsFailureKind, SmsSender } from './ports/sms.js';
+export { DevConsoleSmsSender, DisabledSmsSender, SmsConfigurationError, createSmsSender } from './sms/senders.js';

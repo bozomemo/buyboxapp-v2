@@ -6,9 +6,12 @@
 import { NextResponse } from 'next/server';
 import { catalogRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function GET() {
+async function getHandler() {
   const appDb = getAppDb();
   const brands = await catalogRepo.listBrandsWithCounts(appDb);
   return NextResponse.json({ brands });
 }
+
+export const GET = withPermission('view', getHandler);

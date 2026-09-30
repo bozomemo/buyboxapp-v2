@@ -21,6 +21,8 @@ import { buildAdapterRegistry } from '../adapter-registry.js';
 import type { JobContext, JobProgress } from '../job.js';
 import { createSqliteTestDb, NOW, seedMarketplace, type TestDb } from '../test-helpers.js';
 import {
+  brandRefMismatch,
+  BrandRefMismatchError,
   completenessShortfall,
   mergeSelectorResults,
   sweepBrandCatalogue,
@@ -110,6 +112,33 @@ describe('sweepSelector', () => {
     const source = fakeSource({ byBrandRef: [[product('1'), product('2')]], total: 100 });
     const result = await sweepSelector(source, { brandRef: '104703', searchTerm: null }, 400);
     expect(result.products).toHaveLength(2);
+  });
+});
+
+describe('brandRefMismatch', () => {
+  const ua = { brandName: 'Under Armour', brandRef: '104189' };
+  it.each([
+    ['every card carries the requested brand', [product('1'), product('2')], null],
+    ['a stray card of another brand is tolerated', [product('1'), product('2'), product('3', ua)], null],
+    ['cards that state no brand are not evidence', [product('1', { brandRef: null })], null],
+    ['a page of another brand is refused', [product('1', ua), product('2', ua)], { brandRef: '104189', brandName: 'Under Armour' }],
+    ['a page mostly of another brand is refused', [product('1'), product('2', ua), product('3', ua)], { brandRef: '104189', brandName: 'Under Armour' }],
+  ] as const)('%s', (_label, products, expected) => {
+    expect(brandRefMismatch('104703', products)).toEqual(expected);
+  });
+
+  it('sweepSelector stops on the first page of a mismatched brand id', async () => {
+    const source = fakeSource({ byBrandRef: [[product('1', ua)], [product('2', ua)]] });
+    await expect(sweepSelector(source, { brandRef: '104703', searchTerm: null }, 400)).rejects.toBeInstanceOf(
+      BrandRefMismatchError,
+    );
+    expect(source.calls).toHaveLength(1);
+  });
+
+  it('never checks a search-term pass, whose foreign brands are the finding', async () => {
+    const source = fakeSource({ bySearchTerm: [[product('1', ua)]] });
+    const result = await sweepSelector(source, { brandRef: null, searchTerm: 'whiskas' }, 400);
+    expect(result.products).toHaveLength(1);
   });
 });
 
@@ -541,6 +570,34 @@ describe('the job', () => {
     const brand = await watchedBrandsRepo.getWatchedBrand(db.appDb, brandId);
     expect(brand!.lastSweptAt).toBeNull();
     expect(brand!.lastSweepProductCount).toBeNull();
+  });
+
+  it('refuses a brand id that answers with another brand’s catalogue, writing nothing', async () => {
+    // The 2026-09-26 production case: Orijen entered as 106105 instead of 106165, and Trendyol
+    // answered with Under Armour rather than an error.
+    const brandId = await seedBrand({ label: 'Orijen', brandRef: '106105', searchTerm: 'orijen' });
+    const underArmour = { brandName: 'Under Armour', brandRef: '104189' };
+    const orijen = { brandName: 'Orijen', brandRef: '106165' };
+    const source = fakeSource({
+      byBrandRef: [
+        [product('1', underArmour), product('2', underArmour)],
+        [product('3', underArmour)],
+      ],
+      bySearchTerm: [[product('10', orijen), product('11', orijen)]],
+    });
+    const result = await sweepBrandCatalogue(ctxFor(source, { marketplaceCode: 'trendyol' }));
+
+    expect(result).toMatchObject({ itemsTotal: 1, itemsOk: 0, itemsFailed: 1 });
+    expect(await trackedProductsRepo.listTrackedProducts(db.appDb)).toHaveLength(0);
+    // Stopped on the first page, plus one search page for the suggestion.
+    expect(source.calls.filter((c) => c.query.brandRef !== null)).toHaveLength(1);
+    expect(source.calls.filter((c) => c.query.searchTerm !== null)).toHaveLength(1);
+    const brand = await watchedBrandsRepo.getWatchedBrand(db.appDb, brandId);
+    expect(brand!.lastSweptAt).toBeNull();
+    const events = await eventsRepo.listRecentEvents(db.appDb, 10);
+    const event = events.find((e) => e.code === 'BrandRefMismatch');
+    expect(event?.message).toContain('Under Armour · 104189');
+    expect(event?.message).toContain('Orijen · 106165');
   });
 
   it('records a truncated sweep as an event', async () => {

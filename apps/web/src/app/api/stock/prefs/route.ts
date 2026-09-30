@@ -7,8 +7,9 @@ import { NextResponse } from 'next/server';
 import { stockRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<{
     baseStockCode: string;
     marketplaceCode: string;
@@ -23,14 +24,16 @@ export async function POST(request: Request) {
     marketplaceCode: body.marketplaceCode,
     priceMultiplier: body.priceMultiplier ?? 1,
     autoRepriceEnabled: body.autoRepriceEnabled ?? false,
-    updatedBy: 'operator',
+    updatedBy: auth.actor,
     updatedAt: nowMs,
   });
   await stockRepo.updateStockMarketplacePrefs(appDb, body.baseStockCode, body.marketplaceCode, {
     ...(body.priceMultiplier !== undefined ? { priceMultiplier: body.priceMultiplier } : {}),
     ...(body.autoRepriceEnabled !== undefined ? { autoRepriceEnabled: body.autoRepriceEnabled } : {}),
-    updatedBy: 'operator',
+    updatedBy: auth.actor,
     updatedAt: nowMs,
   });
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('prices.manage', postHandler);

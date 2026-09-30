@@ -110,6 +110,18 @@ Key/value for everything else: store identity, product-source configuration, UI 
 `id`, `entity`, `entity_id`, `field`, `old_value`, `new_value`, `changed_by`, `changed_at`.
 Written by the repository layer on every configuration change.
 
+**Actor columns (`changed_by`, `updated_by` everywhere), revised 2026-09-27.** They hold an
+actor value as doc 18 §9.1 defines it:
+
+- `user:<uuid>` for a signed-in user;
+- `system` for jobs;
+- `cli` for the break-glass command;
+- `operator` in rows written before sign-in existed.
+
+`operator` is kept, never rewritten, and never written again. The column type stays `text`, and
+no foreign key is added, because `system`, `cli` and `operator` are not users. The display joins
+`user:` values to `users.display_name`.
+
 ---
 
 ## 3. Products and stock
@@ -904,6 +916,7 @@ The audit trail, the idempotency memory, and the outbox — one table, one state
 | `failure_code`, `failure_message` | text nullable | raw marketplace values, retained |
 | `attempts` | int, default 0 |
 | Decision-time snapshot: `unit_cost`, `floor_price`, `buybox_price`, `second_price`, `rank`, `commission_rate`, `vat_rate` | | enough to replay the decision |
+| `requested_by` | text nullable | Actor (doc 18 §9.1) of a **manual** submission (`reason = 'manual'`); null for the engine's own. Added 2026-09-27 |
 
 Indexes `(listing_id, decided_at DESC)`, `(state, priority, decided_at)` for the outbox drain,
 `(marketplace_code, confirmed_at)` for budget accounting.
@@ -971,6 +984,116 @@ Indexes `(at DESC)`, `(level, at DESC)`, `(listing_id, at DESC)`.
 
 ### `schema_migrations`
 Managed by Drizzle Kit. The app reads it on boot to verify the version.
+
+---
+
+## 7a. Users and access (doc 18, specified 2026-09-27)
+
+Every table below is in all three dialects (migration 0024), and follows §1: UUID v7 text ids,
+epoch-ms `bigint` timestamps, `int` booleans, and text enums. As everywhere else in the schema,
+the enum values are validated in the repository (`repositories/auth.ts`), not by a CHECK
+constraint.
+
+**What is deliberately not here:**
+
+- **The TOTP secret.** It lives in the secret store under `user:<id>:totp` (N-1, doc 18 §5.2).
+- **Any password, code or token in plain form.**
+- **A roles table, or a role–permission table.** Roles and permissions are fixed in code
+  (doc 18 §6).
+
+### `users`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `username` | text, unique | Lower-case ASCII `[a-z0-9._-]{3,32}`, stored already normalised by `normaliseUsername` (`@buybox/shared`) |
+| `display_name` | text | |
+| `role` | text | `admin` \| `price_manager` \| `viewer` |
+| `state` | text | `active` \| `disabled` |
+| `password_hash` | text | `scrypt$<log2N>$<r>$<p>$<salt>$<hash>` (doc 18 §3.2) |
+| `must_change_password` | int | Set by an administrator reset or `cli reset-password` |
+| `password_changed_at` | bigint | |
+| `totp_enabled` | int | The secret itself is in the secret store |
+| `totp_last_step` | int nullable | Last accepted TOTP time step, the replay guard. Advanced by a conditional update, so of two concurrent uses of one code only one wins |
+| `totp_pending_since` | bigint nullable | Set while an enrolment secret awaits its confirming code; discarded after 15 minutes (doc 18 §5.2) |
+| `phone_e164` | text nullable | Cleared on disable (doc 18 §10) |
+| `phone_verified_at` | bigint nullable | SMS is usable only when set |
+| `sms_enabled` | int | |
+| `locked_until` | bigint nullable | Username lockout (doc 18 §3.3) |
+| `last_login_at` | bigint nullable | |
+| `created_at`, `updated_at` | bigint | |
+| `created_by`, `updated_by` | text | Actors |
+
+Username uniqueness is on the stored lower-case value. It is never compared with a
+locale-aware function (doc 18 §3.1).
+
+### `sessions`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `token_hash` | text, unique | SHA-256 of the cookie token, hex |
+| `user_id` | text FK → `users` ON DELETE CASCADE | |
+| `created_at`, `last_seen_at`, `expires_at` | bigint | `expires_at` = the absolute limit; idle expiry is computed from `last_seen_at` |
+| `ip`, `user_agent` | text nullable | Shown on `/account` so a user can recognise their own sessions |
+
+Index `(user_id)` so that all of a user's sessions can be revoked at once.
+
+### `trusted_devices`
+`id`, `token_hash` (unique), `user_id` FK, `created_at`, `expires_at`, `last_used_at`,
+`label` (shortened user agent). Revoked by deleting the row.
+
+### `mfa_challenges`
+One per sign-in attempt that has passed the password (doc 18 §5.1).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `token_hash` | text, unique | The challenge cookie |
+| `user_id` | text FK | |
+| `expires_at` | bigint | 5 minutes |
+| `attempts` | int | |
+| `consumed_at` | bigint nullable | Set on success; a consumed challenge is never reused |
+
+### `sms_codes`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `purpose` | text | `login` \| `enrol` |
+| `challenge_id` | text nullable FK → `mfa_challenges` | For `login` |
+| `user_id` | text FK | |
+| `phone_e164` | text | The number actually sent to, for the per-number cap |
+| `code_hmac` | text | HMAC-SHA-256 of `<row id>:<code>`, with a key derived from `SECRET_STORE_KEY`, which is never stored in the database (doc 18 §5.3) |
+| `sent_at`, `expires_at` | bigint | |
+| `attempts` | int | |
+| `provider_ref` | text nullable | The provider's message id |
+| `state` | text | `sent` \| `failed` \| `used` \| `expired` \| `replaced` |
+
+Indexes `(user_id, sent_at)` and `(phone_e164, sent_at)` for the send caps, and `(sent_at)` for
+the install-wide daily cap.
+
+### `recovery_codes`
+`id`, `user_id` FK, `code_hash` (SHA-256), `created_at`, `used_at` nullable. Regenerating the codes
+deletes the user's previous set.
+
+### `login_attempts`
+`id`, `at`, `username` (as typed, lower-cased, truncated to 128 characters; it may name no user),
+`ip` nullable, `succeeded`. Failures are counted only after the most recent success in the
+window.
+Indexes `(username, at)` and `(ip, at)` for the two lockout windows.
+
+### `auth_events`
+The sign-in log (doc 18 §9.2).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `at` | bigint | |
+| `event` | text | e.g. `login.succeeded`, `login.failed`, `login.locked`, `mfa.passed`, `mfa.failed`, `mfa.enrolled`, `mfa.removed`, `recovery.used`, `sms.sent`, `sms.failed`, `password.changed`, `password.reset`, `user.created`, `user.disabled`, `user.enabled`, `user.role_changed`, `bootstrap.completed`, `session.revoked` |
+| `user_id` | text nullable, **no FK** | Who it happened to. No foreign key on purpose: the log must accept a row for any sign-in attempt, and must never fail to write |
+| `actor` | text | Who did it: an actor value (§2), or `anonymous` for a failed sign-in |
+| `ip`, `user_agent` | text nullable | |
+| `detail` | text (JSON) nullable | e.g. `{ "from": "viewer", "to": "price_manager" }`. **Never a password, code or token** |
+
+Indexes `(at DESC)` and `(user_id, at DESC)`.
 
 ---
 
@@ -1042,6 +1165,11 @@ re-probe the entire catalogue).
 | `notification_deliveries` | 30 days (added 2026-09-19) |
 | `brand_products`, `brand_product_cards` | **indefinite** — operator data, removed only by the operator |
 | `tracked_product_metrics` | 365 days (added 2026-08-28) — longer because it is change-detected and therefore a fraction of the rows, and because "is this product moving?" needs more than a quarter to answer |
+| `users` | **indefinite**: disabled, never deleted (doc 18 §3.1) |
+| `sessions`, `trusted_devices` | deleted on expiry or revocation; `PruneHistory` removes expired rows daily (added 2026-09-27) |
+| `mfa_challenges`, `sms_codes` | 1 day after expiry (added 2026-09-27) |
+| `login_attempts` | 1 day. Only the lockout windows read it (added 2026-09-27) |
+| `auth_events` | 365 days (added 2026-09-27). This is an audit record, not the diagnostic log, which is why it is not in `app_events` (doc 18 §9.2) |
 
 A `PruneHistory` job enforces these nightly. Every retention window is configurable.
 

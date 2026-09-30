@@ -14,6 +14,7 @@ import {
   type ModulesState,
   type NavView,
 } from '@/lib/nav-modules';
+import { NO_PERMISSION_TITLE, PermissionsProvider, canToggleStop, useCan } from '@/lib/permissions';
 import { ThemeToggle } from './theme-toggle';
 
 /**
@@ -137,6 +138,7 @@ function SystemPauseButton() {
   const [poll, retry] = usePoll<{ engaged: boolean }>('/api/system-pause');
   const [busy, setBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | undefined>();
+  const can = useCan();
 
   if (poll.status === 'loading') {
     // A brief, unlabelled gap rather than a header that jumps as soon as the poll answers — this
@@ -190,8 +192,12 @@ function SystemPauseButton() {
         requireConfirm={engaged}
         confirmMessage="Sistemi devam ettirmek üzeresiniz. Tüm işler yeniden başlayacak. Emin misiniz?"
         onConfirmed={() => void toggle()}
-        disabled={busy}
-        title="Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur."
+        disabled={busy || !canToggleStop(can, engaged)}
+        title={
+          canToggleStop(can, engaged)
+            ? 'Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur.'
+            : NO_PERMISSION_TITLE
+        }
         className={`rounded px-3 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
           engaged
             ? 'border border-(--color-border) bg-(--color-surface) text-(--color-text) hover:bg-(--color-hover)'
@@ -282,9 +288,65 @@ function ViewSwitch({ view, onChange }: { view: NavView; onChange: (view: NavVie
   );
 }
 
+/** Rendered without the shell: doc 06 §10.1–§10.3. */
+const STANDALONE_PREFIXES = ['/login', '/bootstrap', '/account/password', '/account/mfa-setup'];
+
+interface Me {
+  readonly user: { readonly displayName: string; readonly roleLabel: string; readonly permissions: readonly string[] };
+}
+
+/**
+ * The signed-in user and _Çıkış yap_ (doc 06 §10.5). A failed read shows nothing rather than an
+ * error: the proxy has already decided this browser is signed in, and the one way this poll
+ * fails for a real reason — the session ended between page load and poll — sends the next click
+ * to the sign-in screen anyway.
+ */
+function UserMenu() {
+  const [poll] = usePoll<Me>('/api/auth/me');
+  const [signingOut, setSigningOut] = useState(false);
+  if (poll.status !== 'ready') return null;
+
+  async function signOut() {
+    setSigningOut(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      window.location.assign('/login');
+    }
+  }
+
+  const readOnly = !poll.data.user.permissions.some((p) => p !== 'view');
+
+  return (
+    <div className="flex items-center gap-2 border-l border-(--color-border) pl-3 text-sm">
+      {readOnly && (
+        <span
+          className="rounded bg-(--color-chip-bg) px-2 py-1 text-xs text-(--color-chip-text)"
+          title="Rolünüz yalnızca görüntülemeye izin veriyor; değişiklik yapamazsınız."
+        >
+          Salt okunur
+        </span>
+      )}
+      <Link href="/account" className="text-right leading-tight hover:underline" title="Hesabım">
+        <div className="font-medium">{poll.data.user.displayName}</div>
+        <div className="text-xs text-(--color-muted)">{poll.data.user.roleLabel}</div>
+      </Link>
+      <button
+        type="button"
+        onClick={signOut}
+        disabled={signingOut}
+        className="rounded border border-(--color-border) px-2.5 py-1.5 text-xs hover:bg-(--color-hover) disabled:opacity-50"
+      >
+        Çıkış yap
+      </button>
+    </div>
+  );
+}
+
 export function NavShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isSetup = pathname?.startsWith('/setup');
+  const isStandalone = isSetup || STANDALONE_PREFIXES.some((prefix) => pathname === prefix || pathname?.startsWith(`${prefix}/`));
   const [modulesPoll] = usePoll<{ modules: EnabledModules }>('/api/modules');
   const modulesState: ModulesState =
     modulesPoll.status === 'ready'
@@ -307,12 +369,14 @@ export function NavShell({ children }: { children: React.ReactNode }) {
           (a, b) => b.href.length - a.href.length,
         )[0]?.href;
 
-  if (isSetup) {
-    // The wizard is a full-bleed flow, not embedded in the operator's working shell.
+  if (isStandalone) {
+    // The wizard is a full-bleed flow, not embedded in the operator's working shell; the sign-in
+    // screens have nothing in the shell they could use (doc 06 §10.1).
     return <>{children}</>;
   }
 
   return (
+    <PermissionsProvider>
     <div className="flex min-h-screen">
       <aside className="flex w-56 flex-none flex-col border-r border-(--color-border) bg-(--color-surface) p-4">
         <div className="mb-6 text-lg font-bold">BuyBoxApp</div>
@@ -358,9 +422,11 @@ export function NavShell({ children }: { children: React.ReactNode }) {
           )}
           <ThemeToggle />
           <SystemPauseButton />
+          <UserMenu />
         </header>
         <main className="flex-1 overflow-x-auto p-6">{children}</main>
       </div>
     </div>
+    </PermissionsProvider>
   );
 }

@@ -18,6 +18,7 @@ import { EmptyState, ErrorState, LoadingState, Section } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '@/lib/format';
 import { CIRCUIT_LABELS, JOB_LABELS, JOB_RUN_STATE_LABELS, labelOf } from '@/lib/labels';
+import { NO_PERMISSION_TITLE, useCan } from '@/lib/permissions';
 
 /**
  * How often the Jobs screen re-reads the overview.
@@ -378,6 +379,7 @@ function RunDetailPanel({
 }
 
 export function JobsClient() {
+  const canRun = useCan()('jobs.operate');
   const [overview, setOverview] = useState<JobsOverview | null>(null);
   const [marketplaces, setMarketplaces] = useState<MarketplaceOption[]>([]);
   const [runHistory, setRunHistory] = useState<JobRunRow[]>([]);
@@ -1067,8 +1069,10 @@ export function JobsClient() {
                             busy === job.jobName ||
                             isJobBusy(job) ||
                             job.moduleDisabled === true ||
-                            (job.perMarketplace && marketplaces.length === 0)
+                            (job.perMarketplace && marketplaces.length === 0) ||
+                            !canRun
                           }
+                          {...(canRun ? {} : { title: NO_PERMISSION_TITLE })}
                           onClick={() => runNow(job)}
                           className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50"
                         >

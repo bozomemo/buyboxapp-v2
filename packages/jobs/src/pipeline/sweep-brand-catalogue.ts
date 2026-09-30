@@ -103,10 +103,76 @@ interface SelectorSweep {
 }
 
 /**
+ * The brand the cards of a page overwhelmingly carry, by their own storefront brand id.
+ * `null` when no card states a brand at all.
+ */
+export function dominantBrand(
+  products: readonly BrandCatalogueProduct[],
+): { readonly brandRef: string; readonly brandName: string | null; readonly count: number } | null {
+  const counts = new Map<string, { brandName: string | null; count: number }>();
+  for (const product of products) {
+    if (product.brandRef === null) continue;
+    const entry = counts.get(product.brandRef) ?? { brandName: product.brandName, count: 0 };
+    entry.count += 1;
+    counts.set(product.brandRef, entry);
+  }
+  let best: { brandRef: string; brandName: string | null; count: number } | null = null;
+  for (const [brandRef, { brandName, count }] of counts) {
+    if (best === null || count > best.count) best = { brandRef, brandName, count };
+  }
+  return best;
+}
+
+/**
+ * The brand-id pass answered with a catalogue that is not the brand it was asked for.
+ *
+ * Trendyol does **not** reject a storefront brand id it does not recognise: `wb=106105` — a
+ * one-digit typo of Orijen's `106165` — answered 200 with an 8,107-product Under Armour
+ * catalogue whose every card carried `webBrands[0].id` 104189 (measured 2026-09-26). Paged to
+ * exhaustion and written as tracked products, that is thousands of unrelated rows flagged as
+ * "found by the brand id", in a production install. The cards state their own brand, so the
+ * first page is enough to refuse the pass before it costs 200 more requests.
+ */
+export class BrandRefMismatchError extends Error {
+  constructor(
+    readonly requestedBrandRef: string,
+    readonly observed: { readonly brandRef: string; readonly brandName: string | null },
+    readonly suggested: { readonly brandRef: string; readonly brandName: string | null } | null = null,
+  ) {
+    super(
+      `marka id ${requestedBrandRef} returned products of another brand ` +
+        `(${observed.brandName ?? '?'} · ${observed.brandRef})`,
+    );
+    this.name = 'BrandRefMismatchError';
+  }
+}
+
+/**
+ * Whether a brand-id page belongs to the brand that was asked for. Cards that state no brand
+ * are not evidence either way; a page where fewer than half of those that do carry the
+ * requested id is refused. Returns the dominant foreign brand when refused.
+ */
+export function brandRefMismatch(
+  requestedBrandRef: string,
+  products: readonly BrandCatalogueProduct[],
+): { readonly brandRef: string; readonly brandName: string | null } | null {
+  const known = products.filter((product) => product.brandRef !== null);
+  if (known.length === 0) return null;
+  const matching = known.filter((product) => product.brandRef === requestedBrandRef).length;
+  if (matching * 2 >= known.length) return null;
+  const dominant = dominantBrand(known);
+  return dominant === null ? null : { brandRef: dominant.brandRef, brandName: dominant.brandName };
+}
+
+/**
  * Pages one selector to exhaustion.
+ *
+ * For a brand-id query, the first page is checked against the requested id before any further
+ * page is fetched — see `BrandRefMismatchError`.
  *
  * @throws {BrandCatalogueError} — the caller decides what a failed selector means for the
  * brand as a whole. It never escalates past that: a sweep failure must not fail the job.
+ * @throws {BrandRefMismatchError} when a brand-id pass answers with another brand's catalogue.
  */
 export async function sweepSelector(
   source: IBrandCatalogueSource,
@@ -117,6 +183,7 @@ export async function sweepSelector(
   const products: BrandCatalogueProduct[] = [];
   let totalProducts: number | null = null;
   let pagesFetched = 0;
+  const requestedBrandRef = query.brandRef?.trim() || null;
 
   for (let pageIndex = 1; pageIndex <= maxPages; pageIndex += 1) {
     const page = await source.fetchPage(query, pageIndex);
@@ -124,6 +191,10 @@ export async function sweepSelector(
     if (totalProducts === null) totalProducts = page.totalProducts;
     if (page.products.length === 0) {
       return { products, totalProducts, pagesFetched, truncated: false };
+    }
+    if (pageIndex === 1 && requestedBrandRef !== null) {
+      const foreign = brandRefMismatch(requestedBrandRef, page.products);
+      if (foreign !== null) throw new BrandRefMismatchError(requestedBrandRef, foreign);
     }
     products.push(...page.products);
     onPage?.(pageIndex, products.length);
@@ -181,6 +252,24 @@ export function completenessShortfall(
   return { selector, seen, claimed };
 }
 
+/**
+ * The storefront brand id the search term's first page mostly carries — a suggestion for an
+ * operator correcting a mistyped id, never applied automatically. A failure to fetch it only
+ * loses the suggestion.
+ */
+async function suggestBrandRef(
+  source: IBrandCatalogueSource,
+  searchTerm: string,
+): Promise<{ readonly brandRef: string; readonly brandName: string | null } | null> {
+  try {
+    const page = await source.fetchPage({ brandRef: null, searchTerm }, 1);
+    const dominant = dominantBrand(page.products);
+    return dominant === null ? null : { brandRef: dominant.brandRef, brandName: dominant.brandName };
+  } catch {
+    return null;
+  }
+}
+
 async function sweepOneBrand(
   ctx: JobContext,
   source: IBrandCatalogueSource,
@@ -205,12 +294,26 @@ async function sweepOneBrand(
   let bySearchTerm: SelectorSweep = { products: [], totalProducts: null, pagesFetched: 0, truncated: false };
 
   if (hasBrandRef) {
-    byBrandRef = await sweepSelector(
-      source,
-      { brandRef: brand.brandRef, searchTerm: null },
-      maxPages,
-      (_page, running) => reportProgress(`${brand.label} · marka id · ${running} ürün`),
-    );
+    try {
+      byBrandRef = await sweepSelector(
+        source,
+        { brandRef: brand.brandRef, searchTerm: null },
+        maxPages,
+        (_page, running) => reportProgress(`${brand.label} · marka id · ${running} ürün`),
+      );
+    } catch (error) {
+      // Nothing is written for a brand whose id is wrong — not even the search pass, which on
+      // its own would store every product as search-only, the misuse flag. One more request
+      // buys the operator the id to correct it with.
+      if (error instanceof BrandRefMismatchError && hasSearchTerm) {
+        throw new BrandRefMismatchError(
+          error.requestedBrandRef,
+          error.observed,
+          await suggestBrandRef(source, brand.searchTerm!),
+        );
+      }
+      throw error;
+    }
   }
   if (hasSearchTerm) {
     bySearchTerm = await sweepSelector(
@@ -460,6 +563,21 @@ export async function sweepBrandCatalogue(ctx: JobContext): Promise<JobResult> {
       // Per-brand failures are counted, never thrown: one brand's bad page must not fail the
       // run and make the queue retry every other brand's sweep with it (doc 07 §7).
       itemsFailed += 1;
+      if (error instanceof BrandRefMismatchError) {
+        const suggestion =
+          error.suggested === null
+            ? ''
+            : ` — the search term's products carry ${error.suggested.brandName ?? '?'} · ${error.suggested.brandRef}; correct the brand id`;
+        await noteSweepEvent(
+          ctx,
+          marketplaceCode,
+          'BrandRefMismatch',
+          `${brand.label} not swept: ${error.message}${suggestion}. Nothing was written — repricing is unaffected`,
+        );
+        done += 1;
+        ctx.reportProgress({ done, total: due.length, currentItem: null });
+        continue;
+      }
       const reason =
         error instanceof BrandCatalogueError
           ? `${error.kind}: ${error.message}`

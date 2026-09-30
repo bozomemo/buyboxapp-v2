@@ -20,11 +20,16 @@ import {
   type AppDatabase,
 } from '@buybox/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { GET, POST } from './route';
 
 let dir: string;
 let appDb: AppDatabase;
 const savedEnv = { ...process.env };
+
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
 
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-brand-import-'));
@@ -36,6 +41,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
   // Only Trendyol, so the "marketplace this install does not know" case below is real rather than
   // simulated. The tests that need Hepsiburada add it themselves.
   await addMarketplace('trendyol');
@@ -73,11 +79,11 @@ function csvFile(...lines: string[]): { fileBase64: string; fileName: string } {
 
 async function post(body: Record<string, unknown>) {
   const response = await POST(
-    new Request('http://localhost/api/brand-products/import', {
+    authedRequest('http://localhost/api/brand-products/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }),
+    }), routeContext()
   );
   return { status: response.status, body: (await response.json()) as Record<string, never> };
 }
@@ -255,14 +261,14 @@ describe('POST /api/brand-products/import — applying', () => {
 
 describe('GET /api/brand-products/import', () => {
   it('offers a template with the headers this importer reads', async () => {
-    const response = GET();
+    const response = await GET(authedRequest('http://localhost/'), routeContext());
     const text = await response.text();
 
     expect(response.headers.get('Content-Disposition')).toContain('stok-urun-sablonu.csv');
     expect(text).toContain('Ürün Adı;PSF;Min Fiyat;Max Fiyat;Trendyol Linki;Hepsiburada Linki;Barkod');
     // A BOM and semicolons, so Turkish Excel opens it as a table rather than one column. Checked
     // in bytes: `Response.text()` decodes as UTF-8, and a UTF-8 decoder strips a leading BOM.
-    const bytes = new Uint8Array(await GET().arrayBuffer());
+    const bytes = new Uint8Array(await (await GET(authedRequest('http://localhost/'), routeContext())).arrayBuffer());
     expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
   });
 });

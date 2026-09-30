@@ -30,6 +30,22 @@ const nextConfig: NextConfig = {
   outputFileTracingExcludes: {
     '/*': ['data/**/*'],
   },
+  // doc 18 §4.4. No framing, because a price edit that can be framed can be clicked by someone
+  // who cannot see it. HSTS is the reverse proxy's to set (doc 14 §13.2): only it knows the site
+  // is served over HTTPS, and a loopback install is plain HTTP.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+          { key: 'Referrer-Policy', value: 'same-origin' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

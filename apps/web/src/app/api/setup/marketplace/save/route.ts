@@ -4,6 +4,7 @@ import { marketplaceCredentialsKey } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { getSecretStore } from '@/lib/server/secrets';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const TITLES: Record<string, string> = { trendyol: 'Trendyol', hepsiburada: 'Hepsiburada' };
 
@@ -22,7 +23,7 @@ function deriveMerchantRef(code: string, credentials: Record<string, string>): s
   return value !== undefined && value.trim() !== '' ? value.trim() : null;
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{
     code: 'trendyol' | 'hepsiburada';
     enabled: boolean;
@@ -45,3 +46,5 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

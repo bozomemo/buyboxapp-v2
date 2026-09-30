@@ -53,6 +53,7 @@ Read the document that covers your task. Do not read all of them.
 | Installer, packaging, deployment | `docs/14-deployment.md` |
 | Remote logs/metrics, Grafana, Alloy | `docs/16-remote-observability.md` |
 | **Brand module:** modules, brand products, Excel import, band alarm, notifications | `docs/17-brand-product-management.md` |
+| **Sign-in, users, roles, MFA, permissions on routes** | `docs/18-authentication-and-access.md` |
 
 ## Rule: marketplace API work
 

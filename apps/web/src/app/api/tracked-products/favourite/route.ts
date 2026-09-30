@@ -10,8 +10,9 @@ import { NextResponse } from 'next/server';
 import { trackedProductsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ id?: string; isFavourite?: boolean }>(request);
   if (body === null) return invalidBody();
   const id = (body.id ?? '').trim();
@@ -26,3 +27,5 @@ export async function POST(request: Request) {
   await trackedProductsRepo.setTrackedProductFavourite(appDb, id, isFavourite, Date.now());
   return NextResponse.json({ ok: true, isFavourite });
 }
+
+export const POST = withPermission('catalogue.manage', postHandler);

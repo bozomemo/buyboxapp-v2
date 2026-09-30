@@ -24,6 +24,7 @@ operator already knows the app by them; the interface language is Turkish.
 | `/events`              | Event log          | Persisted, filterable operation log                                      |
 | `/settings/*`          | Settings           | Marketplaces, fees, policies, product sources, retention                 |
 | `/setup`               | Setup wizard       | First run and re-configuration (doc 10 §6)                               |
+| `/login`, `/account`, `/settings/users` | Sign-in and users | Sign-in, one's own account, user management (§10, doc 18). Added 2026-09-27 |
 
 **Two modules (doc 17 §1, 2026-09-19).** The routes above from `/stock` to `/alerts` belong to the
 **seller** module. The **brand** module adds:
@@ -592,6 +593,7 @@ marketplace, listing, job run, date range, code. Each row links to its listing o
 | Product sources | Choose and configure; column mapping for Excel; Test; ERP options shown disabled as "yakında"                                                                            |
 | Retention       | Per-table windows (doc 05 §10)                                                                                                                                           |
 | Database        | Engine, connection, schema version, migration status                                                                                                                     |
+| Users           | Users, roles, sign-in log — `users.manage` only (§10.4, doc 18). Added 2026-09-27                                                                                        |
 
 Every change is audited and shows who changed it, when, and from what.
 
@@ -701,6 +703,94 @@ Product naming (R-UI-14) is `lib/product-name.ts`'s `withBrand`, applied **serve
 routes**, not per screen: the brand lives on `listings.brand_id` (§12.1) while the title lives on
 `listings.product_name`, and composing once at the route means the grids, the detail screens and
 the CSV exports cannot drift apart. See §12.3.
+
+---
+
+## 10. Sign-in, account and users (doc 18, specified 2026-09-27)
+
+Not built; Phase 12. The rules behind every screen here are in doc 18. This section covers only
+what the screens show and ask.
+
+### 10.1 Sign-in (`/login`, `/login/mfa`)
+
+- **Sign-in:**
+  - Fields: _Kullanıcı adı_, _Parola_, button _Giriş yap_. Nothing else: no "forgot password"
+    link, because resetting a password is an administrator's job (doc 18 §1).
+  - A failure always shows _Kullanıcı adı veya parola hatalı._, including when the account is
+    locked (doc 18 §3.3).
+- **Second factor:**
+  - The user chooses among the methods they have enrolled: _Doğrulama uygulaması_ or
+    _SMS ile kod_. SMS is shown only when a provider is configured and the user's number is
+    verified. There is also _Kurtarma kodu kullan_.
+  - A 6-digit code field with `autocomplete="one-time-code"` and `inputmode="numeric"`.
+  - The SMS option shows the last two digits of the number (`+90 5•• ••• •• 47`) and a resend
+    button with a countdown.
+  - _Bu cihazı 30 gün hatırla_ is a checkbox, unticked by default.
+- **Mandatory enrolment:** a user who must have a second factor and has none (doc 18 §5.1) goes
+  straight from the password to enrolment. There is no way past it except _Çıkış yap_.
+- **Standalone layout.** These screens do not use the app shell: no navigation, no kill-switch
+  bar. Nothing on them is useful before sign-in.
+
+### 10.2 First administrator (`/bootstrap`)
+
+- **The explanation**, in Turkish: this install has no administrator yet. The setup token is in
+  `<data dir>/bootstrap-token.txt`; the page names the actual path on this platform.
+- **The form:** _Kurulum anahtarı_, _Kullanıcı adı_, _Ad Soyad_, _Parola_, _Parola (tekrar)_.
+- **After success:** sign in, then go to second-factor enrolment on a network install, or to
+  `/license` or `/setup` on a local one.
+
+### 10.3 Own account (`/account`)
+
+Reached from the user's name in the header. Four sections:
+
+- **Parola:** current password, new password, and the new one again. Saving signs the user out
+  of every other session, and says so first.
+- **İki adımlı doğrulama:**
+  - _Doğrulama uygulaması_: enrol with a QR code, the key as text and a confirmation code. Or
+    remove it.
+  - _SMS_: number entry, a verification code, then enabled. Or remove it. Hidden when no provider
+    is configured.
+  - _Kurtarma kodları_: how many remain, and _Yeniden oluştur_, which shows the new codes
+    **once**, with _Kopyala_ and _İndir (.txt)_.
+  - Removing the last method on a network install is refused, and the screen says why.
+- **Oturumlar ve cihazlar:** the user's sessions (shortened user agent, address, last seen) and
+  their trusted devices. Each can be ended, and _Tüm cihazlardan çıkış yap_ ends all of them.
+- **Summary:** role and last sign-in, read-only.
+
+### 10.4 Users (`/settings/users`, `users.manage`)
+
+- **The grid:** _Kullanıcı adı_, _Ad Soyad_, _Rol_, _Durum_, _2 adımlı_ (which methods), _Son
+  giriş_, _Kilitli_. Shared kit, R-UI-12 and R-UI-13, like every table screen.
+- **Actions per row:**
+  - _Rolü değiştir_.
+  - _Devre dışı bırak_ / _Etkinleştir_.
+  - _Parolayı sıfırla_: the administrator types a temporary password; the user must change it
+    at their next sign-in.
+  - _2 adımlı doğrulamayı sıfırla_.
+  - _Kilidi kaldır_.
+  - Each is confirmed (doc 15 §3.6), because each can lock someone out.
+  - The last-administrator rule (doc 18 §6.3) disables the controls that would break it, with
+    the reason in a tooltip. It does not hide them.
+- **_Yeni kullanıcı_:** username, display name, role and a temporary password. The phone number
+  is optional; the user verifies it themselves from `/account`.
+- **The roles, explained on the screen.** A short read-only table of the three roles and what
+  each can do (doc 18 §6.2), so that choosing a role does not require this document.
+- **_Giriş kayıtları_ (`/settings/users/activity`):** the `auth_events` log. It can be filtered
+  by user, event and date, and exported.
+
+### 10.5 Everywhere else
+
+- **The header** shows the user's display name and role, and _Çıkış yap_.
+- **Controls the user lacks permission for are not rendered**: a viewer sees no editable price
+  cell and no bulk actions. Where hiding would confuse, the control is disabled with
+  _Yetkiniz yok_. Either way this is a courtesy; the handler refuses regardless (doc 18 §7.2).
+- **The kill switch stays one click away** (R-UI-9) for the roles that hold `automation.stop`:
+  Yönetici and Fiyat Yöneticisi.
+  - A viewer sees the switch's state but cannot change it. The control is disabled, not
+    missing, so the viewer can see whether the bot is running.
+  - The product owner decided on 2026-09-27 that İzleyici cannot stop the bot.
+- **"Who changed this"** (§9, the settings audit, the listing's price history) shows display
+  names. Rows from before sign-in show _Operatör (eski kayıt)_.
 
 ---
 

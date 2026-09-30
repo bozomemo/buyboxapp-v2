@@ -5,6 +5,7 @@ import path from 'node:path';
 import { configRepo, createDb, jobsRepo, newId, runMigrations, watchedBrandsRepo, type AppDatabase } from '@buybox/db';
 import { SWEEP_BRAND_CATALOGUE_JOB } from '@buybox/jobs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { POST } from './route';
 
 /**
@@ -17,6 +18,10 @@ let appDb: AppDatabase;
 const savedEnv = { ...process.env };
 const T0 = 1_790_000_000_000;
 
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
+
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-sweep-route-'));
   const dbFile = path.join(dir, 'test.db');
@@ -27,6 +32,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
   for (const code of ['trendyol', 'hepsiburada']) {
     await configRepo.upsertMarketplace(appDb, {
       code,
@@ -112,7 +118,7 @@ async function seedSweep(payload: Record<string, unknown>, startedAt?: number): 
 
 async function press(brandId: string): Promise<number> {
   const res = await POST(
-    new Request('http://localhost/api', { method: 'POST', body: JSON.stringify({ withSellers: false }) }),
+    authedRequest('http://localhost/api', { method: 'POST', body: JSON.stringify({ withSellers: false }) }),
     { params: Promise.resolve({ id: brandId }) },
   );
   return res.status;

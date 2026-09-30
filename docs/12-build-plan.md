@@ -397,6 +397,77 @@ source's single rate limit.
 
 ---
 
+## Phase 12 — Users, sign-in and the server
+
+> Listed ahead of Phase 9 for the same reason as Phases 10 and 11: this document is ordered by
+> execution.
+
+Specification: **doc 18** (decisions of 2026-09-27). Tables are in doc 05 §7a, screens in doc 06
+§10, constants in doc 08 §15, and the server in doc 14 §13. Requirements: N-7 (now M),
+R-AUTH-1 … 17, R-DEP-4 (revised), R-DEP-16 and R-DEP-17.
+
+Estimated at 19–28 developer-days in total (2026-09-27), plus 1–2 once an SMS provider is
+chosen.
+
+| # | Task | Status |
+|---|------|--------|
+| 12.0 | **Spec.** Doc 18; N-7 raised to M; R-DEP-4 revised; doc 05 §7a, 06 §10, 08 §15, 10 §2, 14 §1/§4.4/§13, 13 §6 | ✅ 2026-09-27 |
+| 12.1 | **Core.** `packages/shared/src/auth/`: permission catalogue and role matrix; scrypt hash, verify and rehash; TOTP against the RFC 6238 vectors; recovery-code and token helpers. Every table-driven test | ✅ 2026-09-27: `packages/shared/src/auth/`: permissions and role matrix, the last-administrator guard, actors, scrypt (production parameters verified to run; corrupt or absurd stored parameters refused), password policy and the common-password list, TOTP against RFC 6238 Appendix B and RFC 4226 Appendix D, tokens, recovery codes, setup token, the SMS-code MAC, username and phone normalisation, session lifetime, the `X-Forwarded-For` rule. 152 tests |
+| 12.2 | **Tables.** Doc 05 §7a in all three dialects, one migration; `price_submissions.requested_by`; repositories; `PruneHistory` rows | ✅ 2026-09-27: migration 0024 (additive: 8 tables and 1 nullable column); `authRepo` (`repositories/auth.ts`) with the TOTP step, challenge and recovery code each spendable once through a conditional update, and every delete scoped to its user; `pruneAuth` inside `pruneHistory`; `authEventsDays` (365) on the retention screen. 14 tests × 3 dialects, green on SQLite, PostgreSQL and MySQL |
+| 12.3 | **Sign-in.** `/login`, sessions, cookies, lockout, the Origin check, response headers; the new proxy order (doc 18 §7.1), with the licence gate after sign-in; `/bootstrap` with the setup token; `scripts/admin.mjs` | ✅ 2026-09-27: `proxy.ts` rewritten around the pure `decideAccess` (`lib/auth-access.ts`); `lib/server/auth/` (config, bootstrap and setup token, sessions, the password step); `/api/auth/{login,logout,me,password}`, `/api/bootstrap{,/verify,/admin}`; `/login`, `/bootstrap`, `/account/password` outside the app shell, and the user and _Çıkış yap_ in the header; security headers in `next.config.ts`; `npm run admin` (`scripts/admin.mjs`: list-users, create-admin, reset-password, reset-mfa, unlock). Verified end to end against a real server on a scratch database. **The per-handler checks are 12.4. Until then the proxy is the only check, and the install stays on loopback** |
+| 12.4 | **Enforcement.** `withPermission` on all 83 route files, `requirePermission` on all 32 pages, the CI test that fails an unwrapped export (R-AUTH-2); audit that no `GET` handler writes; controls hidden by permission | ✅ 2026-09-27. **Guards:** `lib/server/auth/guard.ts` on 81 route files (the other 9 authenticate themselves: sign-in, bootstrap, health, metrics); `page-guard.tsx` on every page, with `/setup` split into a server shell and the client wizard. **Tests:** `route-guard.test.ts` imports every route and proves each export is wrapped, that every guarded export answers 401 without a session, that each role gets 403 exactly where §6.2 says, that a viewer cannot write anything, and that in bootstrap mode the setup token opens only `setup` and `license`; `page-guard.test.ts` does the same for pages. The existing route tests sign in as a real Yönetici, and `invalid-json.test.ts` now asserts it reaches the body rather than the guard. **Refusals** put the Turkish sentence in `error`, the field every screen already shows, and the reason in `code`. **Courtesy layer:** `lib/permissions.tsx` disables the stop controls, the listing price, bounds and automation controls and "run now", and shows a _Salt okunur_ badge for a viewer; other screens rely on the server's Turkish refusal. **Verified through a real server** with a viewer, a price manager and an administrator |
+| 12.5 | **Attribution.** The 16 route files writing `'operator'` take the actor instead; manual submissions record `requested_by`; "who" columns show display names; legacy rows show _Operatör (eski kayıt)_ | ✅ 2026-09-27. **Actors:** 22 route files now write the guard's `auth.actor`: 16 had written `'operator'` and 6 `'setup-wizard'`, including through two helpers and `enableBrandScanJobsAtSetup` in `packages/jobs`. **Manual prices:** a manual submission records `requested_by`, and the listing's _Fiyat Geçmişi_ gains a _Kim_ column (and CSV column) with the display name, or _Sistem_ for the engine. **Display:** `lib/server/auth/actors.ts` turns actor values into words; `system:<detail>` reads as _Sistem_. **Test:** `attribution.test.ts` fails if a route writes a fixed actor again, and checks a real write names the signed-in user |
+| 12.6 | **Users screen and account.** `/settings/users` (+ activity), `/account`, last-administrator guard, carrying the administrator across a database switch (doc 18 §8.2) | ✅ 2026-09-27. **Service:** `lib/server/auth/users.ts` (create with a temporary password; change role, disable, re-enable, reset password, reset second factor, unlock — each through the last-administrator rule, each logged, and every loss of access revoking sessions and devices at once; disable also clears the phone number). **Routes:** `/api/users`, `/api/users/[id]`, `/api/users/activity` (all `users.manage`), `/api/account` (self-service, scoped to the caller). **Screens:** `/settings/users` with the role table, `/settings/users/activity`, `/account` (sessions, devices, sign out everywhere; the second-factor part is 12.7); _Kullanıcılar_ tab for `users.manage` only; the header name links to `/account`. **Database switch:** the acting Yönetici and their session are carried into a target with no administrator. **Found by rendering through a real server:** a client component importing values from `@buybox/shared` pulls the Node-only secret store into the browser bundle; `client-imports.test.ts` now forbids it everywhere |
+| 12.7 | **TOTP and recovery codes.** Enrolment with QR, challenge, replay guard, trusted devices, mandatory enrolment in network mode | ✅ 2026-09-27. **Core:** `lib/server/auth/mfa.ts`: the policy (always on a network install; `auth.mfaRequired` on loopback, with a switch on `/settings/users`); the challenge, where every wrong code counts against the challenge (5) and against the username's lockout; TOTP, recovery code and challenge each spent atomically; enrolment via a pending secret confirmed by a code, with 10 recovery codes on the first method; trusted devices. **Enforcement:** mandatory enrolment in the proxy, the route guard and the page guard (`allowDuringEnrolment` opens only enrolment). **Screens:** `/login/mfa`, `/account/mfa-setup` (QR rendered server-side by `qrcode`, a new dependency), the account's second-factor section (remove and regenerate ask for the password again). **Tests:** 13 in `mfa.test.ts`. **Verified end to end through a real server:** forced enrolment, the challenge, a wrong code, a replayed code, a remembered device, a recovery code |
+| 12.8 | **SMS up to the provider.** `SmsSender` port (shared with 11.7), `DisabledSmsSender`, `DevConsoleSmsSender` with the production boot refusal, phone verification, codes, send caps. **Provider adapter: when the product owner chooses one** (doc 18 §12) | ✅ 2026-09-27, provider excepted. **Port and adapters:** `SmsSender` in `packages/adapters` (`ports/sms.ts`, `sms/senders.ts`), with `createSmsSender` refusing an unknown provider and `dev-console` in production. **Web:** `lib/server/auth/sms.ts`: codes stored only as an HMAC keyed from `SECRET_STORE_KEY` and bound to the row; one live code per purpose; resend spacing; the three caps (user/hour, number/day, install/Istanbul day, the last logged as `sms.capped`); phone enrolment where the number stays unverified until its code returns. **Routes:** `POST /api/auth/mfa/sms` sends only for an open challenge; the account route gains `smsStart`, `smsConfirm` and `smsRemove`; the account screen shows SMS only while a provider exists. **Tests:** 8 for the senders and 10 for the flow, with a recording sender. **Still to do:** the provider adapter and its response fixtures, when a provider is chosen |
+| 12.9 | **Network mode and server.** `PUBLIC_ORIGIN`/`TRUST_PROXY` with the boot checks (R-DEP-16); the Windows installer and `postinst` show the setup token. **Needs doc 14 §11.13 step 5 first** (the `.deb` proven on real Ubuntu) | ✅ 2026-09-27 for the application; the installers are edited but **not yet executed**. **Boot checks:** `authDeploymentProblems` (`@buybox/shared`) and the SMS setting are checked in `instrumentation.ts`; a problem is logged with its reason and the process exits. Verified against a real server: an `http://` origin and `dev-console` in production both refuse to start, and a correct network install serves the `__Host-` Secure cookie, refuses a foreign origin, and records the proxy-appended address. **Installers:** `buybox.iss` shows the token on the finish page (not compiled: Inno Setup is not on the development machine); `postinst` prints how to read it, never the token (`bash -n` clean). **Examples:** `installer/linux/network/Caddyfile.example` and `buybox-network.conf.example` (systemd drop-in) for install day. **A production `next build` succeeds for every page.** The doc 14 §11.13 step 5 prerequisite still stands for the `.deb` itself |
+| 12.10 | **Move the live install** to the VPS by doc 14 §13.4, then D-S1 … D-S8 | ⬜ — preceded by installing this release on the live Windows install, doc 14 §13.6 (rehearsed 2026-09-27 on a copy of a real database) |
+
+**Order:** 12.1 → 12.2 → 12.3 → 12.4 → 12.5 → 12.6 → 12.7 → 12.8, with 12.9 able to start in
+parallel from 12.3. 12.10 comes last.
+
+**Also done in Phase 12 (2026-09-27), found while building it:**
+
+- **Two settings routes stored whatever they were sent.**
+  - The fee routes (`settings/fees/save`, `setup/fees/save`, `settings/preview-impact`) did this
+    for fee settings, which feed the floor price.
+  - `settings/retention` did it for retention windows. A malformed row silently stopped the
+    nightly prune from enforcing any window.
+  - Both now validate: fees against a schema, retention against the prune job's own
+    `RetentionWindowsSchema`. Both answer a bad body with a 400 that names the field
+    (`settings-validation.test.ts`).
+- **The break-glass command was not in either package**, and could not have run there: it imported
+  workspace packages that an installed server does not have.
+  - It is now bundled by `scripts/build-admin-cli.mjs` into `app/admin.mjs` by both package
+    builds.
+  - It reads `.env.local` from the directory it runs in. It was verified by running the bundle
+    from a data directory.
+- **Rehearsed on copies of the real local database.**
+  - The 20 September backup migrated from 22 to 25 in 62 ms, with every row count unchanged.
+  - Today's copy went through first administrator, sign-in, listings, licence and marketplace
+    settings.
+  - Both copies were deleted afterwards, because they hold real credentials.
+
+**Nothing is exposed to the network before 12.4 and 12.7 are done.** Sign-in without per-route
+enforcement is a door that locks only through the front, and a network install without a second
+factor contradicts R-AUTH-5. Until then the application stays on loopback, exactly as it is today.
+
+**12.8 is not on the critical path for the move.** TOTP alone satisfies R-AUTH-5, so the server
+can go live before an SMS provider exists.
+
+Definition of done:
+
+- a viewer's write request to every mutating route is refused with 403 by the handler, proven
+  by the CI test and not by the UI;
+- a network install cannot be used without a second factor;
+- five wrong passwords lock the username, and the message never says so;
+- no password, code or token appears in any log line or `auth_events` row;
+- every settings, audit and manual-price row written after the upgrade names a user or `system`;
+- the live install runs on the VPS behind HTTPS, with the Windows copy stopped and disabled, and
+  there was never a moment when both could submit prices.
+
+---
+
 ## Phase 9 — MAY-ADD-LATER
 
 Not in scope. Recorded so they are not forgotten.

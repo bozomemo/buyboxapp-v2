@@ -21,6 +21,7 @@ import { getAppDb } from '@/lib/server/db';
 import { resolveProductLink } from '@/lib/server/product-link';
 import { pageLimit, pageOffset } from '@/lib/pagination';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -94,7 +95,7 @@ function optionalInt(params: URLSearchParams, key: string): number | undefined {
 const SORTS = ['label', 'ratingCount', 'categoryName', 'lastSweptAt', 'addedAt'] as const;
 type Sort = (typeof SORTS)[number];
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
 
@@ -274,7 +275,7 @@ export async function GET(request: Request) {
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ link?: string; label?: string }>(request);
   if (body === null) return invalidBody();
   const link = (body.link ?? '').trim();
@@ -318,7 +319,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, id });
 }
 
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request) {
   const url = new URL(request.url);
   const id = url.searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id gerekli.' }, { status: 400 });
@@ -333,7 +334,7 @@ export async function DELETE(request: Request) {
  * is a proxy for "nobody buys this", not proof of it, so the decision it drives has to be
  * reversible. The row and its history stay exactly where they were.
  */
-export async function PATCH(request: Request) {
+async function patchHandler(request: Request) {
   const body = await readJsonBody<{ ids?: string[]; isActive?: boolean }>(request);
   if (body === null) return invalidBody();
   const ids = Array.isArray(body.ids) ? body.ids.filter((id) => typeof id === 'string') : [];
@@ -345,3 +346,8 @@ export async function PATCH(request: Request) {
   await trackedProductsRepo.setTrackedProductsActive(getAppDb(), ids, body.isActive);
   return NextResponse.json({ ok: true, updated: ids.length });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('catalogue.manage', postHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);
+export const PATCH = withPermission('catalogue.manage', patchHandler);

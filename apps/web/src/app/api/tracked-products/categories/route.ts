@@ -10,8 +10,9 @@
 import { NextResponse } from 'next/server';
 import { trackedProductsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const watchedBrandId = new URL(request.url).searchParams.get('watchedBrandId');
   const categories = await trackedProductsRepo.trackedProductCategories(
     getAppDb(),
@@ -19,3 +20,5 @@ export async function GET(request: Request) {
   );
   return NextResponse.json({ categories });
 }
+
+export const GET = withPermission('view', getHandler);

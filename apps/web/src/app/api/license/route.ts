@@ -17,10 +17,11 @@ import {
 import { getAppDb, isBootstrapped, removeBootstrapEnv, writeBootstrapEnv } from '@/lib/server/db';
 import { invalidateLicenseCache, readLicenseStatus } from '@/lib/server/license';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   const status = await readLicenseStatus();
   return NextResponse.json({
     status,
@@ -31,7 +32,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<{ token?: unknown }>(request);
   if (body === null) return invalidBody();
   const token = typeof body.token === 'string' ? body.token.trim() : '';
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
     {
       key: LICENSE_TOKEN_SETTING_KEY,
       value: token,
-      updatedBy: 'operator',
+      updatedBy: auth.actor,
       updatedAt: Date.now(),
     },
     newId(),
@@ -72,3 +73,6 @@ export async function POST(request: Request) {
   invalidateLicenseCache();
   return NextResponse.json({ status, storedIn: 'database' });
 }
+
+export const GET = withPermission('view', getHandler, { allowSetupAccess: true });
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

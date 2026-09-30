@@ -11,6 +11,9 @@ import {
 import { LICENSE_TOKEN_SETTING_KEY } from '@buybox/shared';
 import { getAppDb, isBootstrapped, writeBootstrapEnv } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
+import { carryAdministratorForward } from '@/lib/server/auth/users';
+import { forgetAdminCache } from '@/lib/server/auth/bootstrap';
 
 /**
  * Carries the active licence into the database the operator is switching to.
@@ -26,7 +29,7 @@ import { invalidBody, readJsonBody } from '@/lib/server/request-body';
  * operator can always paste the token again — which is the situation this merely avoids, not a
  * state it must guarantee.
  */
-async function carryLicenceForward(target: ReturnType<typeof createDb>): Promise<void> {
+async function carryLicenceForward(target: ReturnType<typeof createDb>, actor: string): Promise<void> {
   if (!isBootstrapped()) return;
   try {
     const existing = await configRepo.getAppSetting(target, LICENSE_TOKEN_SETTING_KEY);
@@ -40,7 +43,7 @@ async function carryLicenceForward(target: ReturnType<typeof createDb>): Promise
       {
         key: LICENSE_TOKEN_SETTING_KEY,
         value: current.value,
-        updatedBy: 'setup-wizard',
+        updatedBy: actor,
         updatedAt: Date.now(),
       },
       newId(),
@@ -50,7 +53,7 @@ async function carryLicenceForward(target: ReturnType<typeof createDb>): Promise
   }
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<{
     engine: 'sqlite' | 'postgres' | 'mysql';
     connectionString: string;
@@ -84,7 +87,11 @@ export async function POST(request: Request) {
     }
 
     // Before `.env.local` is rewritten, while `getAppDb()` still opens the outgoing database.
-    await carryLicenceForward(appDb);
+    await carryLicenceForward(appDb, auth.actor);
+    // doc 18 §8.2: a target with no administrator would otherwise drop the operator into
+    // bootstrap mode halfway through the wizard. Only when a database is already open — a
+    // first-time database step (setup token, no users anywhere yet) has nobody to carry.
+    if (isBootstrapped()) await carryAdministratorForward(getAppDb(), appDb, auth);
 
     // Persist bootstrap config now that the database is confirmed reachable and migrated —
     // this is the app writing its own .env.local, not the operator editing a file (doc 12 6.2).
@@ -92,6 +99,7 @@ export async function POST(request: Request) {
       DATABASE_URL: body.connectionString,
       SECRET_STORE_KEY: process.env.SECRET_STORE_KEY ?? randomBytes(32).toString('hex'),
     });
+    forgetAdminCache();
 
     return NextResponse.json({
       ok: true,
@@ -104,3 +112,5 @@ export async function POST(request: Request) {
     appDb?.close();
   }
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

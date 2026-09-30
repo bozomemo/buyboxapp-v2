@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server';
 import { brandReportsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { pageLimit } from '@/lib/pagination';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -25,7 +26,7 @@ const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 50;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const nowMs = Date.now();
 
@@ -77,3 +78,5 @@ export async function GET(request: Request) {
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

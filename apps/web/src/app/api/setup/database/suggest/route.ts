@@ -24,10 +24,11 @@ import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { appDataDir } from '@buybox/db';
 import { tryGetBootstrapEnv } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 export const dynamic = 'force-dynamic';
 
-export function GET() {
+function getHandler() {
   const dataDir = appDataDir();
   const configured = tryGetBootstrapEnv()?.DATABASE_URL?.trim();
 
@@ -42,3 +43,5 @@ export function GET() {
   const file = isPackaged ? path.join(dataDir, 'app.db') : path.join(dataDir, 'data', 'app.db');
   return NextResponse.json({ sqlite: `file:${file}`, dataDir, configured: false });
 }
+
+export const GET = withPermission('settings.manage', getHandler, { allowSetupAccess: true });

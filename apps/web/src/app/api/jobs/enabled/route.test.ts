@@ -6,6 +6,7 @@ import { configRepo, createDb, runMigrations, type AppDatabase } from '@buybox/d
 import { isJobEnabled, jobEnabledSettingKey } from '@buybox/jobs';
 import { GLOBAL_KILL_SWITCH_SETTING_KEY, SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { POST as setJobEnabled } from './route';
 import { POST as setKillSwitch } from '../../kill-switch/route';
 import { POST as setMarketplaceKillSwitch } from '../../kill-switch/marketplace/route';
@@ -20,6 +21,10 @@ let dir: string;
 let appDb: AppDatabase;
 const savedEnv = { ...process.env };
 
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
+
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-switch-routes-'));
   const dbFile = path.join(dir, 'test.db');
@@ -30,6 +35,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
 });
 
 afterEach(() => {
@@ -42,7 +48,7 @@ afterEach(() => {
 });
 
 function post(body: string): Request {
-  return new Request('http://localhost/api', {
+  return authedRequest('http://localhost/api', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body,
@@ -53,28 +59,28 @@ describe('switch routes refuse anything that is not an explicit boolean', () => 
   const bad = ['{"jobName":"SubmitPriceChanges"}', '{"jobName":"SubmitPriceChanges","enabled":"true"}', 'not json', '[]'];
   for (const body of bad) {
     it(`/api/jobs/enabled 400s ${body} and stores nothing`, async () => {
-      const res = await setJobEnabled(post(body));
+      const res = await setJobEnabled(post(body), routeContext());
       expect(res.status).toBe(400);
       expect(await configRepo.getAppSetting(appDb, jobEnabledSettingKey('SubmitPriceChanges'))).toBeUndefined();
     });
   }
 
   it('/api/jobs/enabled still stores a real boolean', async () => {
-    const res = await setJobEnabled(post('{"jobName":"SubmitPriceChanges","enabled":false}'));
+    const res = await setJobEnabled(post('{"jobName":"SubmitPriceChanges","enabled":false}'), routeContext());
     expect(res.status).toBe(200);
     expect(await isJobEnabled(appDb, 'SubmitPriceChanges')).toBe(false);
   });
 
   it('/api/kill-switch and /api/system-pause 400 a missing `engaged` and store nothing', async () => {
-    expect((await setKillSwitch(post('{}'))).status).toBe(400);
-    expect((await setSystemPause(post('{"engaged":"false"}'))).status).toBe(400);
+    expect((await setKillSwitch(post('{}'), routeContext())).status).toBe(400);
+    expect((await setSystemPause(post('{"engaged":"false"}'), routeContext())).status).toBe(400);
     expect(await configRepo.getAppSetting(appDb, GLOBAL_KILL_SWITCH_SETTING_KEY)).toBeUndefined();
     expect(await configRepo.getAppSetting(appDb, SYSTEM_PAUSE_SETTING_KEY)).toBeUndefined();
   });
 
   it('/api/kill-switch/marketplace 400s an unknown marketplace', async () => {
-    expect((await setMarketplaceKillSwitch(post('{"engaged":true}'))).status).toBe(400);
-    expect((await setMarketplaceKillSwitch(post('{"marketplaceCode":"amazon","engaged":true}'))).status).toBe(400);
-    expect((await setMarketplaceKillSwitch(post('{"marketplaceCode":"trendyol","engaged":true}'))).status).toBe(200);
+    expect((await setMarketplaceKillSwitch(post('{"engaged":true}'), routeContext())).status).toBe(400);
+    expect((await setMarketplaceKillSwitch(post('{"marketplaceCode":"amazon","engaged":true}'), routeContext())).status).toBe(400);
+    expect((await setMarketplaceKillSwitch(post('{"marketplaceCode":"trendyol","engaged":true}'), routeContext())).status).toBe(200);
   });
 });

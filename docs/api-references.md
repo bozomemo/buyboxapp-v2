@@ -474,7 +474,7 @@ not needed is collecting it for every seller as a side effect of every scrape, w
 is an on-demand port and not a field on `CompetitorOffer`. The stored row is deletable on its own
 (doc 06 §12.4, "Kimliği unut").
 
-## 1.7 Public search / brand-listing page (reporting only) ⚠️ *(measured live 2026-08-27, re-measured 2026-08-28 and 2026-08-29)*
+## 1.7 Public search / brand-listing page (reporting only) ⚠️ *(measured live 2026-08-27, re-measured 2026-08-28, 2026-08-29 and 2026-09-26)*
 
 Enumerates every product Trendyol lists under a brand — the brand-owner audit module's cheap
 tier. Consumed by `packages/adapters/src/trendyol/brand-catalogue/` and the
@@ -515,6 +515,18 @@ With `sst=MOST_RECENT` a full brand sweep ends exactly on the marketplace's own 
 served a short page of 17, and 200 × 24 + 17 = 4,817 = `data.total`. `MOST_RECENT` is preferred
 over a price sort because listing date does not change while a sweep runs, whereas a
 competitor repricing mid-sweep would move a product between pages of a price-sorted catalogue.
+
+⚠️ **An unrecognised `wb` is not an error — it answers another brand's catalogue.** Measured
+2026-09-26 after a production install stored thousands of unrelated products under Orijen:
+`wb=106105` (a one-digit typo of Orijen's `106165`) answered 200 with an 8,107-product Under
+Armour catalogue, every card carrying `webBrands[0].id` 104189. There is no 404 and no empty
+page to catch it. `SweepBrandCatalogue` therefore checks the first `wb=` page's cards against
+the requested id and refuses the brand — writing nothing, recording `BrandRefMismatch` with the
+id the search term's first page suggests — when fewer than half of them carry it.
+
+**Page size is now 36, not 24** (every page of `wb=105401`, `wb=104703`, `wb=106105` and
+`q=orijen`, measured 2026-09-26). Nothing depends on it — paging ends on an empty page — but
+the "one request per 24 products" cost figures above are now one per 36.
 
 **The end of a brand is a 404, not an empty page.** Whiskas' page 38 of 37 and Royal Canin's
 page 210 of 203 both answer 404. The adapter normalises that to an empty page so a paging loop

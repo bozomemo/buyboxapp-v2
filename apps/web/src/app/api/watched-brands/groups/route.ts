@@ -10,8 +10,9 @@ import { NextResponse } from 'next/server';
 import { newId, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ name?: string; note?: string }>(request);
   if (body === null) return invalidBody();
   const name = (body.name ?? '').trim();
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, id });
 }
 
-export async function PATCH(request: Request) {
+async function patchHandler(request: Request) {
   const body = await readJsonBody<{ id?: string; name?: string; note?: string }>(request);
   if (body === null) return invalidBody();
   const id = (body.id ?? '').trim();
@@ -47,9 +48,13 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request) {
   const id = new URL(request.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id gerekli.' }, { status: 400 });
   await watchedBrandsRepo.deleteWatchedBrandGroup(getAppDb(), id);
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('catalogue.manage', postHandler);
+export const PATCH = withPermission('catalogue.manage', patchHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);

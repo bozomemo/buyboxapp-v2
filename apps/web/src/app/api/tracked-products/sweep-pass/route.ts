@@ -21,11 +21,12 @@ import { NextResponse } from 'next/server';
 import { trackedProductsRepo } from '@buybox/db';
 import { estimateFinishAtMs } from '@/lib/sweep-pass';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /** How many earlier passes to summarise beside the current one. */
 const HISTORY_LIMIT = 5;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const appDb = getAppDb();
   const params = new URL(request.url).searchParams;
   const marketplaceCode = params.get('marketplaceCode') ?? 'trendyol';
@@ -68,3 +69,5 @@ export async function GET(request: Request) {
       })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

@@ -150,6 +150,17 @@ and pasting a working key. This is deliberately the *only* enforcement point on 
 a dedicated licence step inside the wizard would be redundant with a gate the operator has
 already had to clear to reach the wizard at all.
 
+**Revised 2026-09-27: sign-in comes before the licence gate** (doc 18 §7.1).
+
+- The gate itself is unchanged. What changes is who can reach `/license`: it is now exempt from
+  the licence gate but **not** from sign-in, and entering a licence needs `settings.manage`.
+  - Before, anyone who could open the application could paste a licence. On a server that
+    would mean anyone on the internet.
+- A fresh install's order becomes bootstrap (first administrator), then sign-in, then `/license`,
+  then `/setup`.
+- An expired licence never prevents signing in, so the administrator can always reach
+  `/license` to fix it.
+
 ## 7. Issuing a licence (vendor side)
 
 `scripts/generate-license-keypair.mjs` creates the Ed25519 keypair once. The private key is

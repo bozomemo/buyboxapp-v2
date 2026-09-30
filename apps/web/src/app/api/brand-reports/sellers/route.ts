@@ -19,10 +19,11 @@ import { NextResponse } from 'next/server';
 import { resolveSellerPolicy, type SellerPolicyRule } from '@buybox/core';
 import { brandReportsRepo, competitorSellersRepo, sellerPoliciesRepo, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
   const nowMs = Date.now();
@@ -211,3 +212,5 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export const GET = withPermission('view', getHandler);

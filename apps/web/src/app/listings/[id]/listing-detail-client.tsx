@@ -12,6 +12,7 @@ import {
   PHASE_LABELS,
   SUBMISSION_STATE_LABELS as STATE_LABELS,
 } from '@/lib/labels';
+import { useCan } from '@/lib/permissions';
 
 interface Detail {
   listing: {
@@ -82,6 +83,8 @@ interface Detail {
   lastDecisionExplanation: { reason: string; explanation: string; decidedAt: number } | null;
   history: {
     id: string;
+    /** Display name of whoever asked for a manual submission; null for the engine's own. */
+    requestedBy: string | null;
     decidedAt: number;
     oldPrice: string;
     newPrice: string;
@@ -146,6 +149,9 @@ function PriceHistoryChart({
 const NO_ROWS: never[] = [];
 
 export function ListingDetailClient({ id }: { id: string }) {
+  // doc 06 §10.5: price controls are disabled for a role without `prices.manage`; the handler
+  // refuses regardless (doc 18 §7.2).
+  const canEdit = useCan()('prices.manage');
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [priceInput, setPriceInput] = useState('');
@@ -365,7 +371,7 @@ export function ListingDetailClient({ id }: { id: string }) {
             requireConfirm
             confirmMessage={`Fiyat ${priceInput} olarak gönderilsin mi? Bu, otomasyonu geçici olarak duraklatır.`}
             onConfirmed={() => void submitManualPrice()}
-            disabled={busy || !priceInput}
+            disabled={busy || !priceInput || !canEdit}
             className="rounded bg-(--color-accent) px-3 py-1 text-sm text-(--color-accent-ink) disabled:opacity-50"
           >
             Gönder
@@ -518,7 +524,7 @@ export function ListingDetailClient({ id }: { id: string }) {
               requireConfirm
               confirmMessage="Yeniden optimize edilsin mi? Bu, fiyatlamayı baştan aramaya döndürür."
               onConfirmed={() => void bulkOne('forceReoptimize', 'Yeniden optimize ediliyor…')}
-              disabled={busy}
+              disabled={busy || !canEdit}
               className="rounded border px-3 py-1 text-sm"
             >
               Yeniden Optimize Et
@@ -535,7 +541,7 @@ export function ListingDetailClient({ id }: { id: string }) {
                   listing.repriceEnabled ? 'Duraklatılıyor…' : 'Sürdürülüyor…',
                 )
               }
-              disabled={busy}
+              disabled={busy || !canEdit}
               className="rounded border px-3 py-1 text-sm"
             >
               {listing.repriceEnabled ? 'Otomasyonu Duraklat' : 'Otomasyonu Sürdür'}
@@ -568,7 +574,7 @@ export function ListingDetailClient({ id }: { id: string }) {
             </label>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !canEdit}
               onClick={() => void saveBounds()}
               className="rounded border px-3 py-1 text-sm"
             >
@@ -602,6 +608,7 @@ export function ListingDetailClient({ id }: { id: string }) {
                   'Eski Fiyat': (Number(h.oldPrice) / 100).toFixed(2),
                   'Yeni Fiyat': (Number(h.newPrice) / 100).toFixed(2),
                   Sebep: REASON_LABELS[h.reason] ?? h.reason,
+                  Kim: h.requestedBy ?? 'Sistem',
                   Durum: STATE_LABELS[h.state] ?? h.state,
                   'Dip Fiyat': h.floorPrice ? (Number(h.floorPrice) / 100).toFixed(2) : '',
                   Buybox: h.buyboxPrice ? (Number(h.buyboxPrice) / 100).toFixed(2) : '',
@@ -622,6 +629,7 @@ export function ListingDetailClient({ id }: { id: string }) {
                 <th className="px-2 py-1">Karar Zamanı</th>
                 <th className="px-2 py-1">Eski → Yeni</th>
                 <th className="px-2 py-1">Sebep</th>
+                <th className="px-2 py-1">Kim</th>
                 <th className="px-2 py-1">Durum</th>
                 <th className="px-2 py-1">Dip Fiyat</th>
                 <th className="px-2 py-1">Buybox</th>
@@ -639,6 +647,7 @@ export function ListingDetailClient({ id }: { id: string }) {
                   <td className="px-2 py-1" title={h.explanation}>
                     {REASON_LABELS[h.reason] ?? h.reason}
                   </td>
+                  <td className="px-2 py-1">{h.requestedBy ?? <span className="text-(--color-muted)">Sistem</span>}</td>
                   <td className="px-2 py-1">{STATE_LABELS[h.state] ?? h.state}</td>
                   <td className="px-2 py-1">{formatMoney(h.floorPrice ? BigInt(h.floorPrice) : null)}</td>
                   <td className="px-2 py-1">{formatMoney(h.buyboxPrice ? BigInt(h.buyboxPrice) : null)}</td>
@@ -650,7 +659,7 @@ export function ListingDetailClient({ id }: { id: string }) {
               ))}
               {history.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-2 py-4 text-center text-(--color-muted)">
+                  <td colSpan={9} className="px-2 py-4 text-center text-(--color-muted)">
                     Bu ilan için henüz fiyat gönderimi yok.
                   </td>
                 </tr>

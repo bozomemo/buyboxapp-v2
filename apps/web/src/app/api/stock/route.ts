@@ -8,8 +8,9 @@ import { configRepo, stockRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function GET() {
+async function getHandler() {
   const appDb = getAppDb();
   const [grid, marketplaces] = await Promise.all([
     stockRepo.listStockGrid(appDb),
@@ -29,7 +30,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{
     baseStockCode: string;
     name: string;
@@ -59,3 +60,6 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('prices.manage', postHandler);

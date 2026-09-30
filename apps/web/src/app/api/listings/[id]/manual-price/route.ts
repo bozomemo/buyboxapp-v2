@@ -11,8 +11,13 @@ import { configRepo, listingsRepo, newId, repricingRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function postHandler(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+  auth: AuthContext,
+) {
   const { id } = await params;
   const body = await readJsonBody<{ newPrice: string }>(request);
   if (body === null) return invalidBody();
@@ -54,6 +59,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     rank: null,
     commissionRate: listing.commissionRate,
     vatRate: listing.vatRate,
+    requestedBy: auth.actor,
   });
 
   const policy = await configRepo.getRepricingPolicy(appDb, listing.marketplaceCode);
@@ -84,3 +90,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   return NextResponse.json({ ok: true, pausedUntil: settleUntil });
 }
+
+export const POST = withPermission('prices.manage', postHandler);

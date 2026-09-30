@@ -22,6 +22,7 @@ import { marketSnapshot } from '@/lib/market-stats';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { pageLimit, pageOffset } from '@/lib/pagination';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -87,7 +88,7 @@ interface ListingRow {
   bandStatus: BandEvaluation['status'];
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
 
@@ -244,3 +245,5 @@ export async function GET(request: Request) {
 
   return NextResponse.json({ total, limit, offset, listings });
 }
+
+export const GET = withPermission('view', getHandler);

@@ -35,7 +35,7 @@ Two things make this non-trivial and are the heart of the system:
 
 | Actor | Description |
 |-------|-------------|
-| **Operator** | A single power user (the store owner/manager). Runs the desktop app, watches grids, overrides prices and stock by hand, toggles automation flags. No login, no roles, no audit of *who* did what. |
+| **Operator** | A single power user (the store owner/manager). Runs the desktop app, watches grids, overrides prices and stock by hand, toggles automation flags. No login, no roles, no audit of *who* did what. **The rewrite replaces this** with several named users, each signing in with a password and a second factor, in one of three roles (Yönetici, Fiyat Yöneticisi, İzleyici), with every change recorded against the user who made it: doc 18 (decided 2026-09-27). |
 | **Trendyol** | Marketplace. Provides a REST API for the seller's own listings. Competitor/buybox data is **not** in the API and is scraped from the public product page. |
 | **Hepsiburada** | Marketplace. Provides REST APIs for listings, buybox ordering (competitor ranking) and orders. |
 | **ERP / stock source** | An external MySQL database (`teyentegrasyon`) plus manually exported Excel files, providing physical stock quantity and unit cost per stock code. |

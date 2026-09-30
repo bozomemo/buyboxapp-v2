@@ -24,6 +24,7 @@ import {
 } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -48,7 +49,7 @@ function toRule(row: sellerPoliciesRepo.SellerPolicyRow): SellerPolicyRule | nul
   };
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
   const nowMs = Date.now();
@@ -159,7 +160,7 @@ interface UpsertBody {
   readonly note?: string | null;
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<UpsertBody>(request);
   if (body === null) return invalidBody();
   const appDb = getAppDb();
@@ -198,7 +199,7 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request) {
   const id = new URL(request.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'Kural kimliği gerekli.' }, { status: 400 });
   // The only way back to the third state: `undefined` is the absence of a rule, so "I no longer
@@ -206,3 +207,7 @@ export async function DELETE(request: Request) {
   await sellerPoliciesRepo.deleteSellerPolicy(getAppDb(), id);
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('catalogue.manage', postHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);

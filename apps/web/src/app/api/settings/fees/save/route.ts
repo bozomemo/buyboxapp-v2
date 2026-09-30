@@ -6,10 +6,11 @@
 import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
-import { feesPayloadToRow } from '@/app/api/setup/fees/to-row';
+import { FeesPayloadError, feesPayloadToRow } from '@/app/api/setup/fees/to-row';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<{ marketplaceCode: string }>(request);
   if (body === null) return invalidBody();
   if (!body.marketplaceCode) {
@@ -19,7 +20,13 @@ export async function POST(request: Request) {
   const nowMs = Date.now();
   const previous = await configRepo.getEffectiveFeeSettings(appDb, body.marketplaceCode, nowMs);
 
-  const row = feesPayloadToRow(body, body.marketplaceCode, nowMs);
+  let row;
+  try {
+    row = feesPayloadToRow(body, body.marketplaceCode, nowMs);
+  } catch (error) {
+    if (error instanceof FeesPayloadError) return NextResponse.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
   await configRepo.insertFeeSettings(appDb, row);
 
   await configRepo.recordSettingsAudit(appDb, {
@@ -29,9 +36,11 @@ export async function POST(request: Request) {
     field: 'all',
     oldValue: previous ? JSON.stringify(previous) : null,
     newValue: JSON.stringify(row),
-    changedBy: 'operator',
+    changedBy: auth.actor,
     changedAt: nowMs,
   });
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('settings.manage', postHandler);

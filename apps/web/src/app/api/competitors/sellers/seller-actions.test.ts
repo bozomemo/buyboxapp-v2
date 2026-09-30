@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { competitorSellersRepo, configRepo, createDb, runMigrations, type AppDatabase } from '@buybox/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { POST as groupAction } from './group/route';
 import { POST as resolveIdentity } from './identity/route';
 
@@ -11,6 +12,10 @@ import { POST as resolveIdentity } from './identity/route';
 let dir: string;
 let appDb: AppDatabase;
 const savedEnv = { ...process.env };
+
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
 
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-seller-actions-'));
@@ -22,6 +27,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
   await configRepo.upsertMarketplace(appDb, {
     code: 'trendyol',
     displayName: 'Trendyol',
@@ -44,19 +50,19 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const post = (body: unknown) => new Request('http://x', { method: 'POST', body: JSON.stringify(body) });
+const post = (body: unknown) => authedRequest('http://x', { method: 'POST', body: JSON.stringify(body) });
 
 describe('seller actions', () => {
   it('answers an unknown group with 404, not a 500', async () => {
     const res = await groupAction(
-      post({ action: 'assign', marketplaceCode: 'trendyol', sellerRef: '944528', groupId: 'nope' }),
+      post({ action: 'assign', marketplaceCode: 'trendyol', sellerRef: '944528', groupId: 'nope' }), routeContext()
     );
     expect(res.status).toBe(404);
   });
 
   it('queues one identity resolution per seller, however often it is pressed', async () => {
     const key = { marketplaceCode: 'trendyol', sellerRef: '944528' };
-    expect((await resolveIdentity(post(key))).status).toBe(200);
-    expect((await resolveIdentity(post(key))).status).toBe(409);
+    expect((await resolveIdentity(post(key), routeContext())).status).toBe(200);
+    expect((await resolveIdentity(post(key), routeContext())).status).toBe(409);
   });
 });

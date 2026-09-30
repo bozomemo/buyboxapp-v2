@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createDb, runMigrations } from '@buybox/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { signIn } from '@/lib/server/auth/test-auth';
+import { routePermission } from '@/lib/server/auth/guard';
 
 /**
  * Every handler that reads a JSON body answers a body that is not JSON with a 4xx, never a 500
@@ -27,6 +29,11 @@ const readsJson = routeFiles(API_DIR).filter((file) =>
 );
 
 let dir: string;
+/**
+ * Signed in as a Yönetici. Without it every guarded route answers 401 before reading the body,
+ * which is a 4xx and would pass this test while testing nothing (doc 18 §7.2).
+ */
+let cookie: string;
 const savedEnv = { ...process.env };
 
 beforeAll(async () => {
@@ -37,6 +44,7 @@ beforeAll(async () => {
   process.env.SECRET_STORE_PATH = path.join(dir, 'secrets.enc.json');
   const migrating = createDb(`file:${dbFile}`, 'sqlite');
   await runMigrations(migrating);
+  cookie = await signIn(migrating);
   migrating.close();
 }, 30_000);
 
@@ -62,13 +70,18 @@ describe('a body that is not JSON is a 4xx on every route that reads one', () =>
         if (typeof handler !== 'function') continue;
         const request = new Request('http://localhost/api/x?cardId=x&id=x', {
           method,
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', cookie, origin: 'http://localhost' },
           body: 'not json',
         });
         const params = { params: Promise.resolve({ id: 'x', marketplace: 'trendyol', ref: 'x', code: 'x' }) };
         const response = (await handler(request, params)) as Response;
         expect(response.status, `${method} ${name}`).toBeGreaterThanOrEqual(400);
         expect(response.status, `${method} ${name}`).toBeLessThan(500);
+        // Guarded routes only: the sign-in and bootstrap routes check their own credentials first,
+        // and refusing a stranger before reading the body is their job.
+        if (routePermission(handler) !== undefined) {
+          expect([401, 403], `${method} ${name} must reach the body, not stop at the guard`).not.toContain(response.status);
+        }
       }
     });
   }

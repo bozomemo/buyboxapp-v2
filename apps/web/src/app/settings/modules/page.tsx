@@ -1,3 +1,4 @@
+import { requirePermission } from '@/lib/server/auth/page-guard';
 import { SettingsNav } from '../settings-nav';
 import { ModulesClient } from './modules-client';
 
@@ -13,6 +14,8 @@ export default async function SettingsModulesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const gate = await requirePermission('view');
+  if (!gate.ok) return gate.element;
   const { disabled } = await searchParams;
   const redirectedFrom = disabled === 'seller' || disabled === 'brand' ? disabled : null;
   return (

@@ -9,8 +9,9 @@ import { watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { watchedBrandSelectorProblem } from '@/lib/watched-brand-selector';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await readJsonBody<{
     label?: string;
@@ -56,8 +57,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function deleteHandler(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await watchedBrandsRepo.deleteWatchedBrand(getAppDb(), id);
   return NextResponse.json({ ok: true });
 }
+
+export const PATCH = withPermission('catalogue.manage', patchHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);

@@ -34,6 +34,7 @@ import {
 } from '@buybox/shared';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /** The span the brand trend covers. Matches the findings window, so the two agree on "lately". */
 const BRAND_TREND_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -42,7 +43,7 @@ function usageDateKey(nowMs: number): string {
   return new Date(nowMs).toISOString().slice(0, 10);
 }
 
-export async function GET() {
+async function getHandler() {
   const appDb = getAppDb();
   const nowMs = Date.now();
 
@@ -237,3 +238,5 @@ export async function GET() {
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

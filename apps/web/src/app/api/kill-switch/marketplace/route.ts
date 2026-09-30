@@ -8,8 +8,9 @@ import { configRepo, newId } from '@buybox/db';
 import { marketplaceKillSwitchSetting } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
 import { readJsonObject } from '@/lib/server/request-body';
+import { refuseRelease, withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const raw = await readJsonObject(request);
   if (
     raw === null ||
@@ -22,16 +23,20 @@ export async function POST(request: Request) {
     );
   }
   const body = { marketplaceCode: raw.marketplaceCode, engaged: raw.engaged };
+  const refused = refuseRelease(auth, body.engaged);
+  if (refused !== null) return refused;
   const appDb = getAppDb();
   await configRepo.setAppSetting(
     appDb,
     {
       key: marketplaceKillSwitchSetting(body.marketplaceCode),
       value: String(body.engaged),
-      updatedBy: 'operator',
+      updatedBy: auth.actor,
       updatedAt: Date.now(),
     },
     newId(),
   );
   return NextResponse.json({ engaged: body.engaged });
 }
+
+export const POST = withPermission('automation.stop', postHandler);

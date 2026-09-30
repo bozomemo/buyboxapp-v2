@@ -24,6 +24,27 @@ export async function register(): Promise<void> {
   const { registerCrashHandlers } = await import('./instrumentation-process-errors');
   registerCrashHandlers();
 
+  // R-DEP-16: a deployment that would serve sign-in insecurely does not start (exits here).
+  const { refuseInvalidDeployment } = await import('./instrumentation-deployment');
+  await refuseInvalidDeployment(logger);
+
+  // doc 18 §8.1: an install with no administrator gets a fresh setup token on every boot. The
+  // log names the file, never the token — logs are shipped to Grafana (doc 16).
+  try {
+    const { ensureSetupToken, isBootstrapMode } = await import('./lib/server/auth/bootstrap');
+    if (await isBootstrapMode()) {
+      const file = await ensureSetupToken({ regenerate: true });
+      // `setupFile`, not a name with "token" in it: the logger redacts values by key name, and
+      // this value is a path, which the operator needs to see.
+      logger.warn('auth.bootstrapMode', {
+        hint: 'Bu kurulumda henüz yönetici yok. /bootstrap ekranını açın; kurulum anahtarı bu dosyada.',
+        setupFile: file,
+      });
+    }
+  } catch (error) {
+    logger.error('auth.setupTokenFailed', { error });
+  }
+
   if (process.env.SINGLE_PROCESS === '1') {
     const { startWorker } = await import('@buybox/worker');
     try {

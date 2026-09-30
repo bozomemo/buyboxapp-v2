@@ -54,3 +54,4 @@ export {
   MODULE_SETTING_KEYS,
   parseEnabledModules,
 } from './modules.js';
+export * from './auth/index.js';

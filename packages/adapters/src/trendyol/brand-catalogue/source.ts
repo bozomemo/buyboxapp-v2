@@ -40,8 +40,12 @@ import {
 
 export const TRENDYOL_PUBLIC_BASE_URL = 'https://www.trendyol.com';
 
-/** Cards per page, as Trendyol serves them. Not configurable — it is the site's own page size. */
-export const TRENDYOL_BRAND_CATALOGUE_PAGE_SIZE = 24;
+/**
+ * Cards per page, as Trendyol serves them. Not configurable — it is the site's own page size,
+ * and it changes: 24 when measured 2026-08-27, 36 on 2026-09-26. Informational only; paging
+ * ends on an empty page, never on this.
+ */
+export const TRENDYOL_BRAND_CATALOGUE_PAGE_SIZE = 36;
 
 /**
  * The sort `/sr` is asked for on every page, and the reason a sweep is complete.

@@ -20,12 +20,17 @@ import {
   type AppDatabase,
 } from '@buybox/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { GET } from './route';
 
 let dir: string;
 let appDb: AppDatabase;
 const savedEnv = { ...process.env };
 const NOW = 1_750_000_000_000;
+
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
 
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-brand-listings-'));
@@ -37,6 +42,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
   await configRepo.upsertMarketplace(appDb, {
     code: 'trendyol',
     displayName: 'Trendyol',
@@ -76,7 +82,7 @@ interface ListingResponse {
 }
 
 async function listings(query = ''): Promise<ListingResponse> {
-  const response = await GET(new Request(`http://localhost/api/brand/listings${query}`));
+  const response = await GET(authedRequest(`http://localhost/api/brand/listings${query}`), routeContext());
   return (await response.json()) as ListingResponse;
 }
 
@@ -302,7 +308,7 @@ describe('GET /api/brand/listings — export', () => {
     await linkTo('exported', 'Mama 6lı', { referencePrice: 49_90n }, 6);
     await look('exported', [{ rank: 1, seller: 'Bayi', price: 299_40n }]);
 
-    const response = await GET(new Request('http://localhost/api/brand/listings?format=csv'));
+    const response = await GET(authedRequest('http://localhost/api/brand/listings?format=csv'), routeContext());
     const text = await response.text();
 
     expect(response.headers.get('Content-Disposition')).toContain('ilanlar.csv');
@@ -312,7 +318,7 @@ describe('GET /api/brand/listings — export', () => {
     expect(text).toContain('"Aralıkta"');
     // A BOM, checked in bytes: `Response.text()` decodes UTF-8 and strips a leading BOM.
     const bytes = new Uint8Array(
-      await (await GET(new Request('http://localhost/api/brand/listings?format=csv'))).arrayBuffer(),
+      await (await GET(authedRequest('http://localhost/api/brand/listings?format=csv'), routeContext())).arrayBuffer(),
     );
     expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
   });

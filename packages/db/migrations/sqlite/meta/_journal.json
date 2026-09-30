@@ -169,6 +169,13 @@
       "when": 1789920181603,
       "tag": "0023_mute_mach_iv",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1790512880879,
+      "tag": "0024_misty_agent_brand",
+      "breakpoints": true
     }
   ]
 }

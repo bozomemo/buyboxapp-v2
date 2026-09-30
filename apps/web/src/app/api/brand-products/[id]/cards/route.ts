@@ -16,6 +16,7 @@ import { brandProductsRepo, configRepo, newId, trackedProductsRepo } from '@buyb
 import { getAppDb } from '@/lib/server/db';
 import { resolveProductLink } from '@/lib/server/product-link';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const MULTIPLIER_ERROR = `Adet çarpanı 1 ile ${BRAND_UNIT_MULTIPLIER_MAX} arasında bir tam sayı olmalı.`;
 
@@ -34,7 +35,7 @@ const LINK_FAILURES: Record<string, { status: number; message: string }> = {
   cardNotFound: { status: 404, message: 'Kart bulunamadı.' },
 };
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function postHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await readJsonBody<LinkBody>(request);
   if (body === null) return invalidBody();
@@ -131,7 +132,7 @@ interface CardPatchBody {
 }
 
 /** Changes one link: its multiplier, or which card is the product's primary on its marketplace. */
-export async function PATCH(request: Request) {
+async function patchHandler(request: Request) {
   const body = await readJsonBody<CardPatchBody>(request);
   if (body === null) return invalidBody();
   const cardId = (body.cardId ?? '').trim();
@@ -164,9 +165,13 @@ export async function PATCH(request: Request) {
  * longer one of this product's cards. Resolving its open band violations with reason `unlinked`
  * joins here once `band_violations` exists (doc 17 §5.3, Phase 11.6).
  */
-export async function DELETE(request: Request) {
+async function deleteHandler(request: Request) {
   const cardId = new URL(request.url).searchParams.get('cardId');
   if (!cardId) return NextResponse.json({ error: 'Kart bağı gerekli.' }, { status: 400 });
   await brandProductsRepo.unlinkCard(getAppDb(), cardId);
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('catalogue.manage', postHandler);
+export const PATCH = withPermission('catalogue.manage', patchHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);

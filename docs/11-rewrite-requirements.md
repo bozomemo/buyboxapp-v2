@@ -145,7 +145,7 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | N-4 | M | Commercial parameters effective-dated | 02 §3 |
 | N-5 | M | One source of truth for store identity per marketplace; merchant id preferred over name | 08 §3 |
 | N-6 | M | All configuration changes audited (who, when, old, new) | 05 §2 |
-| N-7 | S | Authentication on the web app; separate view and change-price permissions | 10 §2 |
+| N-7 | M | Authentication on the web app; separate view and change-price permissions. **Raised from S to M on 2026-09-27**, because the application moves to a server that other computers reach. Detailed as R-AUTH-1 … R-AUTH-17 (§9c) | 18 |
 
 ## 9a. Licensing
 
@@ -153,7 +153,7 @@ Added 2026-08-23. Full detail, including why each rule exists, is in `docs/13-li
 
 | ID | Pri | Requirement | Spec |
 |----|-----|-------------|------|
-| R-LIC-1 | M | A fresh install with no licence reaches only `/license`; every route redirects there, the scheduler enqueues and runs nothing | 13 §6, §4 |
+| R-LIC-1 | M | A fresh install with no licence reaches only `/license`, and before that sign-in and bootstrap (18 §7.1). Every other route redirects there, and the scheduler enqueues and runs nothing | 13 §6, §4 |
 | R-LIC-2 | M | A tampered payload, wrong-key signature, unknown format prefix, and truncated token are all rejected as invalid | 13 §4, §8 |
 | R-LIC-3 | M | An expired licence within the 7-day grace window keeps running, with a visible countdown | 13 §4.1 |
 | R-LIC-4 | M | An expired licence past grace stops every job and gates the UI | 13 §4.2 |
@@ -170,7 +170,7 @@ Added 2026-08-23. Full detail, including the rejected alternatives, is in `docs/
 | R-DEP-1 | M | A single installer executable installs on a clean Windows machine with no Node, no Chromium and no internet connection | 14 §3, §5 |
 | R-DEP-2 | M | Code and data live in separate directories; an upgrade replaces code and never touches data | 14 §4 |
 | R-DEP-3 | M | `SECRET_STORE_KEY` is generated per install and preserved across upgrades | 14 §4.3, §5 step 4 |
-| R-DEP-4 | M | The service binds `127.0.0.1` only, and no firewall rule is created, until N-7 (authentication) exists | 14 §4.4 |
+| R-DEP-4 | M | The service binds `127.0.0.1` only, in every install shape, and never terminates TLS itself. Remote access exists only through a TLS reverse proxy on the same machine, and only once N-7 is built. **Revised 2026-09-27**; the earlier text forbade remote access outright "until N-7 exists" | 14 §4.4, §13 |
 | R-DEP-5 | M | The install fails, visibly and with a named log file, if the service does not answer `/api/health` | 14 §5 step 8 |
 | R-DEP-6 | M | The service starts automatically after a reboot with no login | 14 §5 step 7 |
 | R-DEP-7 | M | The installer collects no business configuration and no licence key; both are entered in the browser | 14 §2, §7 |
@@ -182,9 +182,36 @@ Added 2026-08-23. Full detail, including the rejected alternatives, is in `docs/
 | R-DEP-13 | M | A SQLite database is backed up before any automatic migration; on PostgreSQL/MySQL the absence of a backup is logged | 14 §5.2b |
 | R-DEP-14 | M | A failed migration stops the service and is reported by `/api/health`; a half-migrated schema never serves traffic | 14 §5.2d |
 | R-DEP-15 | M | Only one process migrates at a time | 14 §5.2c |
+| R-DEP-16 | M | A network install (`PUBLIC_ORIGIN` set) refuses to boot unless `PUBLIC_ORIGIN` is `https://` and `HOSTNAME` is loopback; the reverse proxy forwards neither `/api/health` nor `/api/metrics` | 14 §13 |
+| R-DEP-17 | M | Moving an install to a new machine never leaves two instances able to submit prices. The old one is stopped and disabled before the new one's price jobs are released | 14 §13.4 |
 
 Automatic self-update is **out of scope** (decided 2026-08-24); doc 14 §12 records the conditions
 under which it would be reconsidered.
+
+## 9c. Authentication and access
+
+Added 2026-09-27. Full detail, including why each rule exists, is in
+`docs/18-authentication-and-access.md`.
+
+| ID | Pri | Requirement | Spec |
+|----|-----|-------------|------|
+| R-AUTH-1 | M | Every route and page except the exempt list requires a signed-in user, checked in the handler as well as the proxy | 18 §4.2, §7 |
+| R-AUTH-2 | M | Every route export is wrapped with a permission, enforced by a CI test | 18 §7.2 |
+| R-AUTH-3 | M | Passwords are hashed with scrypt; sessions and codes are stored only as hashes; no password, code or token is ever logged | 18 §3.2, §4.1, §9.2 |
+| R-AUTH-4 | M | Five failed attempts lock a username for 15 minutes; the failure message never says which part was wrong | 18 §3.3 |
+| R-AUTH-5 | M | A network install requires a second factor for every user, with no way to turn it off | 18 §5.1 |
+| R-AUTH-6 | M | TOTP passes the RFC 6238 test vectors and refuses a replayed code | 18 §5.2 |
+| R-AUTH-7 | M | The TOTP secret lives in the secret store, never in a database column | 18 §5.2 |
+| R-AUTH-8 | M | With no SMS provider configured, SMS is not offered anywhere, and nothing else depends on it | 18 §5.3 |
+| R-AUTH-9 | M | No SMS is sent before a password has been verified; per-user, per-number and daily caps hold | 18 §5.3 |
+| R-AUTH-10 | M | The three roles grant exactly the role matrix; a viewer's write request is refused with 403 by the handler | 18 §6 |
+| R-AUTH-11 | M | No action leaves the install without an active Yönetici | 18 §6.3 |
+| R-AUTH-12 | M | A state-changing request with a foreign or missing `Origin` is refused | 18 §4.3 |
+| R-AUTH-13 | M | Every write records the acting user, and a manual price submission records who requested it | 18 §9.1 |
+| R-AUTH-14 | M | Bootstrap needs the setup token from the data directory, which is never logged, and ends once an administrator exists | 18 §8.1 |
+| R-AUTH-15 | M | The break-glass command can reset a password or second factor using only access to the machine | 18 §8.3 |
+| R-AUTH-16 | S | Switching database carries the acting administrator into a target that has none | 18 §8.2 |
+| R-AUTH-17 | S | Trusted devices skip only the second factor, never the password, and are revoked by a password change | 18 §5.1 |
 
 ## 10. Quality
 

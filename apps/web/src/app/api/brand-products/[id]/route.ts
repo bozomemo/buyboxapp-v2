@@ -11,6 +11,7 @@ import { brandProductsRepo } from '@buybox/db';
 import { parseBrandProductBody, type BrandProductBody } from '../route';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /** Kuruş → the `1249.90` form `parseTurkishDecimal` reads back exactly. */
 function formatKurus(kurus: bigint): string {
@@ -19,7 +20,7 @@ function formatKurus(kurus: bigint): string {
   return `${whole}.${fraction}`;
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function getHandler(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const appDb = getAppDb();
   const product = await brandProductsRepo.getBrandProduct(appDb, id);
@@ -72,7 +73,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   });
 }
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const appDb = getAppDb();
   const existing = await brandProductsRepo.getBrandProduct(appDb, id);
@@ -108,8 +109,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
  * Deletes the product. Its links go with it (cascade) and the cards stay tracked — deleting a
  * product of your own says nothing about whether the marketplace pages should still be watched.
  */
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function deleteHandler(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await brandProductsRepo.deleteBrandProduct(getAppDb(), id);
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withPermission('view', getHandler);
+export const PATCH = withPermission('catalogue.manage', patchHandler);
+export const DELETE = withPermission('catalogue.manage', deleteHandler);

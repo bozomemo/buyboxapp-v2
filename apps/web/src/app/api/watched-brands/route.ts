@@ -15,6 +15,7 @@ import { configRepo, newId, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { watchedBrandSelectorProblem } from '@/lib/watched-brand-selector';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /**
  * How dominant a brand id must be among a brand's swept products before it is offered as a
@@ -27,7 +28,7 @@ import { watchedBrandSelectorProblem } from '@/lib/watched-brand-selector';
  */
 const BRAND_REF_SUGGESTION_MIN_SHARE = 0.6;
 
-export async function GET() {
+async function getHandler() {
   const appDb = getAppDb();
   const [groups, brands, counts, suggestions] = await Promise.all([
     watchedBrandsRepo.listWatchedBrandGroups(appDb),
@@ -84,7 +85,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{
     groupId?: string;
     marketplaceCode?: string;
@@ -152,3 +153,6 @@ export async function POST(request: Request) {
   }
   return NextResponse.json({ ok: true, id });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('catalogue.manage', postHandler);

@@ -11,10 +11,11 @@ import { NextResponse } from 'next/server';
 import { catalogRepo, competitionRepo, competitorReportsRepo, repricingRepo } from '@buybox/db';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const url = new URL(request.url);
   const params = url.searchParams;
   const appDb = getAppDb();
@@ -257,3 +258,5 @@ export async function GET(request: Request) {
     observationCoverage,
   });
 }
+
+export const GET = withPermission('view', getHandler);

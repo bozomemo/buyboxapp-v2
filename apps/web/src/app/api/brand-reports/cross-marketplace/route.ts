@@ -15,11 +15,12 @@ import { NextResponse } from 'next/server';
 import { productBarcodesRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { pageLimit } from '@/lib/pagination';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const left = params.get('left') ?? 'trendyol';
   const right = params.get('right') ?? 'hepsiburada';
@@ -40,3 +41,5 @@ export async function GET(request: Request) {
     truncated: matches.length >= limit,
   });
 }
+
+export const GET = withPermission('view', getHandler);

@@ -9,6 +9,7 @@ import { configRepo, newId } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 interface PolicyPayload {
   code: string;
@@ -32,7 +33,7 @@ interface PolicyPayload {
   enabled: boolean;
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<PolicyPayload>(request);
   if (body === null) return invalidBody();
   if (!body.code) return NextResponse.json({ error: 'code gerekli.' }, { status: 400 });
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
     dailyUpdateAllowanceFormula: previous?.dailyUpdateAllowanceFormula ?? '',
     budgetReservePct: Number(body.budgetReservePct),
     enabled: body.enabled,
-    updatedBy: 'operator',
+    updatedBy: auth.actor,
     updatedAt: nowMs,
   };
   await configRepo.upsertRepricingPolicy(appDb, row);
@@ -78,9 +79,11 @@ export async function POST(request: Request) {
       ? JSON.stringify(previous, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))
       : null,
     newValue: JSON.stringify(row, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
-    changedBy: 'operator',
+    changedBy: auth.actor,
     changedAt: nowMs,
   });
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('settings.manage', postHandler);

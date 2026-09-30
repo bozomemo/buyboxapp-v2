@@ -10,10 +10,11 @@
 import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 const TITLES: Record<string, string> = { trendyol: 'Trendyol', hepsiburada: 'Hepsiburada' };
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = (await request.json().catch(() => undefined)) as
     { code?: unknown; enabled?: unknown } | undefined;
   const code = body?.code;
@@ -45,8 +46,10 @@ export async function POST(request: Request) {
     field: 'enabled',
     oldValue: existing ? JSON.stringify({ enabled: existing.enabled }) : null,
     newValue: JSON.stringify({ enabled: body.enabled }),
-    changedBy: 'setup-wizard',
+    changedBy: auth.actor,
     changedAt: nowMs,
   });
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

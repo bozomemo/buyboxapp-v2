@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { configRepo, createDb, newId, runMigrations, watchedBrandsRepo, type AppDatabase } from '@buybox/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { POST } from './route';
 import { PATCH } from './[id]/route';
 
@@ -17,6 +18,10 @@ let appDb: AppDatabase;
 let groupId: string;
 const savedEnv = { ...process.env };
 
+/** Signed in as a Yönetici: these tests are about the route, the guard has its own (doc 18 §7.2). */
+let cookie: string;
+const authedRequest = (input: string, init?: RequestInit): Request => withCookie(new Request(input, init), cookie);
+
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'buybox-watched-brands-'));
   const dbFile = path.join(dir, 'test.db');
@@ -27,6 +32,7 @@ beforeEach(async () => {
   await runMigrations(migrating);
   migrating.close();
   appDb = createDb(`file:${dbFile}`, 'sqlite');
+  cookie = await signIn(appDb);
   for (const code of ['trendyol', 'hepsiburada']) {
     await configRepo.upsertMarketplace(appDb, {
       code,
@@ -51,7 +57,7 @@ afterEach(() => {
 });
 
 async function add(body: Record<string, unknown>) {
-  const res = await POST(new Request('http://x', { method: 'POST', body: JSON.stringify({ groupId, ...body }) }));
+  const res = await POST(authedRequest('http://x', { method: 'POST', body: JSON.stringify({ groupId, ...body }) }), routeContext());
   return { status: res.status, body: (await res.json()) as { error?: string; id?: string } };
 }
 
@@ -81,7 +87,7 @@ describe('PATCH /api/watched-brands/[id]', () => {
   it('refuses to strip a Hepsiburada brand of its search term, in Turkish', async () => {
     const created = await add({ marketplaceCode: 'hepsiburada', label: 'Orijen', searchTerm: 'orijen' });
     const res = await PATCH(
-      new Request('http://x', { method: 'PATCH', body: JSON.stringify({ searchTerm: '', brandRef: '9' }) }),
+      authedRequest('http://x', { method: 'PATCH', body: JSON.stringify({ searchTerm: '', brandRef: '9' }) }),
       { params: Promise.resolve({ id: created.body.id! }) },
     );
     expect(res.status).toBe(400);

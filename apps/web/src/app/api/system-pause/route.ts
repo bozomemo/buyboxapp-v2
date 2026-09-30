@@ -14,29 +14,35 @@ import { configRepo, newId } from '@buybox/db';
 import { isKillSwitchEngaged, SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { readJsonObject } from '@/lib/server/request-body';
+import { refuseRelease, withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-export async function GET() {
+async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   const appDb = getAppDb();
   const setting = await configRepo.getAppSetting(appDb, SYSTEM_PAUSE_SETTING_KEY);
   return NextResponse.json({ engaged: isKillSwitchEngaged(setting?.value) });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const raw = await readJsonObject(request);
   if (raw === null || typeof raw.engaged !== 'boolean') {
     return NextResponse.json({ error: '`engaged` true ya da false olmalı.' }, { status: 400 });
   }
   const body = { engaged: raw.engaged };
+  const refused = refuseRelease(auth, body.engaged);
+  if (refused !== null) return refused;
   const appDb = getAppDb();
   await configRepo.setAppSetting(
     appDb,
     {
       key: SYSTEM_PAUSE_SETTING_KEY,
       value: String(body.engaged),
-      updatedBy: 'operator',
+      updatedBy: auth.actor,
       updatedAt: Date.now(),
     },
     newId(),
   );
   return NextResponse.json({ engaged: body.engaged });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('automation.stop', postHandler);

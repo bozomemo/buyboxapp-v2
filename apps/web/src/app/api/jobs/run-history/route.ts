@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { jobsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /**
  * How many of the newest matching runs one response carries. Sent to the browser with the rows so
@@ -10,7 +11,7 @@ import { getAppDb } from '@/lib/server/db';
  */
 const RUN_HISTORY_LIMIT = 200;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const appDb = getAppDb();
   const url = new URL(request.url);
   const jobName = url.searchParams.get('jobName') ?? undefined;
@@ -38,3 +39,5 @@ export async function GET(request: Request) {
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

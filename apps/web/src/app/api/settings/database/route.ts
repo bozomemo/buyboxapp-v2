@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { checkSchemaVersion } from '@buybox/db';
 import { getAppDb, getBootstrapEnv } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /** Strips credentials from a connection string, leaving only host/db name for display. */
 function redactConnectionString(url: string): string {
@@ -14,7 +15,7 @@ function redactConnectionString(url: string): string {
   }
 }
 
-export async function GET() {
+async function getHandler() {
   const appDb = getAppDb();
   const env = getBootstrapEnv();
   const versionStatus = await checkSchemaVersion(appDb);
@@ -24,3 +25,5 @@ export async function GET() {
     schemaVersion: versionStatus,
   });
 }
+
+export const GET = withPermission('view', getHandler);

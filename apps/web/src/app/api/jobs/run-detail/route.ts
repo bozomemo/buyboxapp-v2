@@ -11,11 +11,12 @@
 import { NextResponse } from 'next/server';
 import { eventsRepo, jobsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /** Enough to cover a full `SCRAPE_MAX_LISTINGS_PER_RUN` sweep's debug lines without unbounded growth. */
 const MAX_EVENTS = 300;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const appDb = getAppDb();
   const runId = new URL(request.url).searchParams.get('runId');
   if (!runId) {
@@ -56,3 +57,5 @@ export async function GET(request: Request) {
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

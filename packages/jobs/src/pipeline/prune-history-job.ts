@@ -8,7 +8,8 @@ import type { JobContext, JobResult } from '../job.js';
 
 export const PRUNE_HISTORY_JOB = 'PruneHistory';
 
-const RetentionWindowsSchema = z.object({
+/** Exported so the retention settings screen validates with exactly what this job will parse. */
+export const RetentionWindowsSchema = z.object({
   priceSubmissionsDays: z.number().int().min(1),
   buyboxObservationsDays: z.number().int().min(1),
   // Defaulted, not required, unlike its neighbours: this window was added after installs were
@@ -25,6 +26,8 @@ const RetentionWindowsSchema = z.object({
   appEventsWarnErrorDays: z.number().int().min(1),
   jobRunsDays: z.number().int().min(1),
   jobQueueFinishedDays: z.number().int().min(1),
+  // Defaulted like the windows above: added 2026-09-27, after installs already stored this setting.
+  authEventsDays: z.number().int().min(1).default(365),
 });
 
 export const PruneHistoryPayloadSchema = z.object({

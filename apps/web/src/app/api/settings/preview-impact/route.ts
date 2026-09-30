@@ -27,8 +27,9 @@ import { mapFeeSettings, mapPolicy, preloadCostDeps } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
-import { feesPayloadToRow } from '@/app/api/setup/fees/to-row';
+import { FeesPayloadError, feesPayloadToRow } from '@/app/api/setup/fees/to-row';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
 async function loadState(appDb: ReturnType<typeof getAppDb>, listingId: string): Promise<RepricingState> {
   const row = await repricingRepo.getRepricingState(appDb, listingId);
@@ -79,7 +80,7 @@ async function loadState(appDb: ReturnType<typeof getAppDb>, listingId: string):
   };
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ fees?: unknown; policy?: unknown }>(request);
   if (body === null) return invalidBody();
   const marketplaceCode = (body.fees as { marketplaceCode?: string } | undefined)?.marketplaceCode as
@@ -91,7 +92,13 @@ export async function POST(request: Request) {
   const nowMs = Date.now();
   const now = new Date(nowMs);
 
-  const feeRow = feesPayloadToRow(body.fees, marketplaceCode, nowMs);
+  let feeRow;
+  try {
+    feeRow = feesPayloadToRow(body.fees, marketplaceCode, nowMs);
+  } catch (error) {
+    if (error instanceof FeesPayloadError) return NextResponse.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
   const fees = mapFeeSettings(feeRow);
 
   const policyPayload = body.policy as {
@@ -264,3 +271,5 @@ export async function POST(request: Request) {
     })),
   });
 }
+
+export const POST = withPermission('settings.manage', postHandler);

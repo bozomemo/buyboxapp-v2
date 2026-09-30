@@ -18,10 +18,11 @@ import {
 import { ALERT_DEFAULT_QUIET_PERIOD_MS, ALERT_STALE_AFTER_MS } from '@buybox/jobs';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const COVERAGE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const state = (params.get('state') ?? 'open') as 'open' | 'resolved' | 'all';
   const appDb = getAppDb();
@@ -181,3 +182,5 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export const GET = withPermission('view', getHandler);

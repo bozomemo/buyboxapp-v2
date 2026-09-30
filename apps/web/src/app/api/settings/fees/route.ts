@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { configRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 /** Kuruş → an editable decimal major-units string ("1100" → "11.00") — the form input's own format, not locale-formatted. */
 function kurusToDecimalString(kurus: string): string {
@@ -29,7 +30,7 @@ function toBandsPayload(
   }));
 }
 
-export async function GET(request: Request) {
+async function getHandler(request: Request) {
   const url = new URL(request.url);
   const marketplaceCode = url.searchParams.get('marketplaceCode');
   if (!marketplaceCode) return NextResponse.json({ error: 'marketplaceCode gerekli.' }, { status: 400 });
@@ -66,3 +67,5 @@ export async function GET(request: Request) {
     })),
   });
 }
+
+export const GET = withPermission('view', getHandler);

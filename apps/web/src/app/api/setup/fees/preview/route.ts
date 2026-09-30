@@ -5,8 +5,9 @@ import { Money } from '@buybox/shared';
 import { formatMoneyValue } from '@/lib/format';
 import { feesPayloadToRow } from '../to-row';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ fees: unknown; sampleCost: string; sampleVatRate: number }>(request);
   if (body === null) return invalidBody();
   try {
@@ -31,3 +32,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) });
   }
 }
+
+export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });

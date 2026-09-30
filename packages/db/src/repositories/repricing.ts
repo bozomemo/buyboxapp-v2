@@ -175,6 +175,11 @@ export interface PriceSubmissionRow {
   readonly rank: number | null;
   readonly commissionRate: number | null;
   readonly vatRate: number | null;
+  /**
+   * Who asked for a **manual** submission (doc 18 §9.1): an actor value, `user:<id>`. Absent or
+   * null for the engine's own decisions — optional so the engine's writers need not mention it.
+   */
+  readonly requestedBy?: string | null;
 }
 
 /** The audit trail is only ever appended to (doc 05 §6) — never updated after insert

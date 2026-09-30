@@ -129,7 +129,8 @@ export const BRAND_SCAN_JOBS: readonly string[] = JOB_CATALOG.filter(
  * Only where no setting is stored: re-running the wizard must never re-enable a job somebody
  * switched off on purpose. Returns the jobs it switched on.
  */
-export async function enableBrandScanJobsAtSetup(appDb: AppDatabase, nowMs: number): Promise<string[]> {
+/** `actor` is who finished the wizard (doc 18 §9.1) — a user, or `bootstrap` before one exists. */
+export async function enableBrandScanJobsAtSetup(appDb: AppDatabase, nowMs: number, actor: string): Promise<string[]> {
   if (!(await readEnabledModules(appDb)).brand) return [];
   const enabled: string[] = [];
   for (const jobName of BRAND_SCAN_JOBS) {
@@ -137,7 +138,7 @@ export async function enableBrandScanJobsAtSetup(appDb: AppDatabase, nowMs: numb
     if ((await configRepo.getAppSetting(appDb, key)) !== undefined) continue;
     await configRepo.setAppSetting(
       appDb,
-      { key, value: 'true', updatedBy: 'setup-wizard', updatedAt: nowMs },
+      { key, value: 'true', updatedBy: actor, updatedAt: nowMs },
       newId(),
     );
     enabled.push(jobName);

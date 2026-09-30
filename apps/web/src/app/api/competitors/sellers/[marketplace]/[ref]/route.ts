@@ -32,6 +32,7 @@ import {
 } from '@buybox/db';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
+import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -46,7 +47,7 @@ const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  */
 const TRACKED_ROW_LIMIT = 500;
 
-export async function GET(
+async function getHandler(
   request: Request,
   { params }: { params: Promise<{ marketplace: string; ref: string }> },
 ) {
@@ -167,3 +168,5 @@ export async function GET(
     coverage,
   });
 }
+
+export const GET = withPermission('view', getHandler);

@@ -25,6 +25,7 @@ const WINDOWS = {
   appEventsWarnErrorDays: 90,
   jobRunsDays: 30,
   jobQueueFinishedDays: 7,
+  authEventsDays: 365,
 };
 
 describe('RetentionClient', () => {

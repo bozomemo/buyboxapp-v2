@@ -5,10 +5,11 @@ import { marketplaceCredentialsKey } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { getSecretStore } from '@/lib/server/secrets';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
 const TITLES: Record<string, string> = { trendyol: 'Trendyol', hepsiburada: 'Hepsiburada' };
 
-export async function GET() {
+async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   const appDb = getAppDb();
   const marketplaces = await configRepo.listMarketplaces(appDb);
   return NextResponse.json({
@@ -22,7 +23,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request, _context: unknown, auth: AuthContext) {
   const body = await readJsonBody<{
     code: 'trendyol' | 'hepsiburada';
     enabled: boolean;
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     field: 'enabled',
     oldValue: previous ? JSON.stringify({ enabled: previous.enabled }) : null,
     newValue: JSON.stringify({ enabled: body.enabled }),
-    changedBy: 'operator',
+    changedBy: auth.actor,
     changedAt: nowMs,
   });
 
@@ -73,3 +74,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withPermission('view', getHandler);
+export const POST = withPermission('settings.manage', postHandler);

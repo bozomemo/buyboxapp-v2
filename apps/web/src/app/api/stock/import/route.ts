@@ -20,8 +20,9 @@ import { buildAdapterRegistry, IMPORT_STOCK_ITEMS_JOB, importStockItems, systemC
 import { jobsRepo, newId } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
+import { withPermission } from '@/lib/server/auth/guard';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const body = await readJsonBody<{ sourceCode: string; sourceConfig: unknown }>(request);
   if (body === null) return invalidBody();
   const appDb = getAppDb();
@@ -80,3 +81,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: message });
   }
 }
+
+export const POST = withPermission('prices.manage', postHandler);

@@ -89,7 +89,7 @@ export {
   resetBudget,
   type ResetBudgetPayload,
 } from './pipeline/reset-budget.js';
-export { PRUNE_HISTORY_JOB, pruneHistoryJob } from './pipeline/prune-history-job.js';
+export { PRUNE_HISTORY_JOB, RetentionWindowsSchema, pruneHistoryJob } from './pipeline/prune-history-job.js';
 export {
   SCRAPE_COMPETITORS_JOB,
   ScrapeCompetitorsPayloadSchema,
