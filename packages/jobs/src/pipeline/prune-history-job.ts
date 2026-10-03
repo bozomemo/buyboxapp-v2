@@ -1,12 +1,29 @@
 /**
  * `PruneHistory` (doc 07 §1) — the nightly job wrapper around `packages/db`'s
  * `pruneHistory`, which already implements every retention window in doc 05 §10.
+ *
+ * Which windows apply, first match wins: a `windows` object in the payload (a manual run), the
+ * operator's `retention.windows` setting (Settings > Retention, doc 06 §9), doc 05 §10's
+ * defaults. The middle step was missing until 2026-10-03: the scheduler enqueues this job with
+ * `'{}'`, so every nightly run fell through to the defaults and the settings screen saved windows
+ * nothing ever read — showing an operator a retention policy the install was not applying.
  */
-import { DEFAULT_RETENTION_WINDOWS, pruneHistory, type RetentionWindows } from '@buybox/db';
+import {
+  configRepo,
+  DEFAULT_RETENTION_WINDOWS,
+  eventsRepo,
+  newId,
+  pruneHistory,
+  type AppDatabase,
+  type RetentionWindows,
+} from '@buybox/db';
 import { z } from 'zod';
 import type { JobContext, JobResult } from '../job.js';
 
 export const PRUNE_HISTORY_JOB = 'PruneHistory';
+
+/** The `app_settings` key Settings > Retention writes and this job reads. */
+export const RETENTION_WINDOWS_SETTING_KEY = 'retention.windows';
 
 /** Exported so the retention settings screen validates with exactly what this job will parse. */
 export const RetentionWindowsSchema = z.object({
@@ -31,12 +48,48 @@ export const RetentionWindowsSchema = z.object({
 });
 
 export const PruneHistoryPayloadSchema = z.object({
-  windows: RetentionWindowsSchema.default(DEFAULT_RETENTION_WINDOWS),
+  windows: RetentionWindowsSchema.optional(),
 });
+
+/**
+ * The operator's stored windows, parsed with the schema the settings route validates with, so a
+ * window added after the setting was saved takes its default rather than `undefined`.
+ * `undefined` when nothing is stored, or when what is stored no longer parses — the second is
+ * also written to `app_events`, because falling back silently is exactly how this setting went
+ * unread for a week without anyone noticing.
+ */
+export async function readRetentionWindowsSetting(
+  appDb: AppDatabase,
+  nowMs: number,
+): Promise<RetentionWindows | undefined> {
+  const setting = await configRepo.getAppSetting(appDb, RETENTION_WINDOWS_SETTING_KEY);
+  if (!setting) return undefined;
+  let parsed: ReturnType<typeof RetentionWindowsSchema.safeParse> | undefined;
+  try {
+    parsed = RetentionWindowsSchema.safeParse(JSON.parse(setting.value));
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed?.success) return parsed.data;
+  await eventsRepo.logEvent(appDb, {
+    id: newId(),
+    at: nowMs,
+    level: 'warn',
+    marketplaceCode: null,
+    listingId: null,
+    jobRunId: null,
+    code: 'RetentionSettingInvalid',
+    message: 'Kayıtlı saklama süreleri okunamadı; geçmiş temizliği varsayılan sürelerle çalıştı.',
+    context: JSON.stringify({ key: RETENTION_WINDOWS_SETTING_KEY }),
+  });
+  return undefined;
+}
 
 export async function pruneHistoryJob(ctx: JobContext): Promise<JobResult> {
   const payload = PruneHistoryPayloadSchema.parse(JSON.parse(ctx.payload || '{}'));
-  const windows: RetentionWindows = payload.windows;
-  await pruneHistory(ctx.appDb, windows, ctx.clock.nowMs());
+  const nowMs = ctx.clock.nowMs();
+  const windows: RetentionWindows =
+    payload.windows ?? (await readRetentionWindowsSetting(ctx.appDb, nowMs)) ?? DEFAULT_RETENTION_WINDOWS;
+  await pruneHistory(ctx.appDb, windows, nowMs);
   return { itemsTotal: 1, itemsOk: 1, itemsFailed: 0 };
 }

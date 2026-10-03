@@ -2,12 +2,13 @@
 import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { DEFAULT_RETENTION_WINDOWS, type RetentionWindows } from '@buybox/db';
-import { RetentionWindowsSchema } from '@buybox/jobs';
+import { RETENTION_WINDOWS_SETTING_KEY, RetentionWindowsSchema } from '@buybox/jobs';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
-const SETTING_KEY = 'retention.windows';
+// The nightly `PruneHistory` reads this same key (`readRetentionWindowsSetting`).
+const SETTING_KEY = RETENTION_WINDOWS_SETTING_KEY;
 
 async function getHandler(request: Request, _context: unknown, auth: AuthContext) {
   const appDb = getAppDb();
