@@ -34,16 +34,22 @@
        its lock. Killing it mid-submission is what leaves a price change unconfirmed. -->
   <stoptimeout>45 sec</stoptimeout>
 
-  <!-- The file half of the log record (doc 14 section 5 step 7). Rolls at 10 MB *or* midnight and
-       keeps 30 files, which is deliberately the same reach back as `app_events`' warn/error
-       retention (doc 05 section 10, 30 days since 2026-09-03): "how far back can I look?" should
-       not have two different answers. stdout carries debug/info, stderr warn/error, one JSON
-       object per line. Do not shorten `keepFiles` without moving that retention window with it. -->
+  <!-- The file half of the log record (doc 14 section 5 step 7). Rolls at 10 MB and keeps 30
+       files, so it reaches back at least as far as `app_events`' warn/error retention (doc 05
+       section 10, 30 days): at the ~230 KB a day measured in production a file holds weeks.
+       stdout carries debug/info, stderr warn/error, one JSON object per line.
+
+       Deliberately no <autoRollAtTime>. WinSW 2.12's timed roll crashed the wrapper every night
+       (production, 2026-09-27 to 2026-10-03): `ObjectDisposedException: Cannot access a closed
+       file` in `RollingSizeTimeLogAppender.CopyStreamWithRotation`, the roll closing the file
+       under the thread still copying the child's output into it. The wrapper died without
+       stopping node.exe, the orphan kept port 3000, and every restart failed with EADDRINUSE
+       until the orphan exited ~3 minutes later — killing whatever job it was running. Do not
+       add a timed roll back without first proving the WinSW version in vendor\ survives one. -->
   <logpath>{{DATA_DIR}}\logs</logpath>
   <log mode="roll-by-size-time">
     <sizeThreshold>10240</sizeThreshold>
     <pattern>yyyyMMdd</pattern>
-    <autoRollAtTime>00:00:00</autoRollAtTime>
     <keepFiles>30</keepFiles>
   </log>
 

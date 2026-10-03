@@ -6,6 +6,8 @@ export type { Logger, LogLevel, LogFields, LogSink, LoggerOptions } from './logg
 export { createLogger, sanitiseLogValue } from './logger.js';
 export type { FatalKind, ProcessErrorHandlerOptions } from './process-errors.js';
 export { registerProcessErrorHandlers } from './process-errors.js';
+export type { ParentWatchOptions } from './parent-watch.js';
+export { isProcessAlive, watchParentProcess } from './parent-watch.js';
 export type { BootstrapEnv } from './config/env.js';
 export { BootstrapEnvSchema, parseBootstrapEnv } from './config/env.js';
 export type { ISecretStore } from './secrets/store.js';

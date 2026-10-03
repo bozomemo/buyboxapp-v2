@@ -4,7 +4,7 @@
  * directly from `instrumentation.ts` in-process instead.
  */
 import { eventsRepo, newId } from '@buybox/db';
-import { createLogger, registerProcessErrorHandlers } from '@buybox/shared';
+import { createLogger, registerProcessErrorHandlers, watchParentProcess } from '@buybox/shared';
 import { startWorker } from './index.js';
 
 const logger = createLogger({ name: 'worker.main' });
@@ -37,12 +37,23 @@ async function main(): Promise<void> {
     marketplaces: [...handle.adapters.keys()],
   });
 
+  let shuttingDown = false;
   const shutdown = async (): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     await handle.shutdown();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
+  // A supervisor that dies without stopping us leaves an orphan nobody restarts or stops; drain
+  // and exit instead, the same as on SIGTERM (see `watchParentProcess`).
+  watchParentProcess({
+    onOrphaned: (parentPid) => {
+      logger.warn('process.parentExited', { parentPid, action: 'shutting down gracefully' });
+      void shutdown();
+    },
+  });
 }
 
 void main();

@@ -291,8 +291,19 @@ elevation (it writes to `Program Files` and registers a service).
    |---|---|---|
    | Where | `ProgramData\BuyBox\logs\BuyBoxApp.out.log` / `.err.log` | the database, `/events` screen |
    | What | every line the process wrote to stdout/stderr — one JSON object per line, plus anything a dependency prints | only what the app chose to record, with `code`, `marketplaceCode`, `listingId`, `jobRunId` |
-   | Rotation | WinSW `roll-by-size-time`: rolls at 10 MB **or** midnight, keeps 30 files | `PruneHistory` nightly: info/debug 3 days, warn/error 30 days (doc 05 §10) |
+   | Rotation | WinSW `roll-by-size-time`: rolls at 10 MB, keeps 30 files — **no timed roll** (see below) | `PruneHistory` nightly: info/debug 3 days, warn/error 30 days (doc 05 §10) |
    | Answers | "the process died / a dependency complained / nothing reached the database" | "which listing, which job, which marketplace" |
+
+   **Why there is no midnight roll** (found in production 2026-10-03). The template used to set
+   `<autoRollAtTime>00:00:00</autoRollAtTime>`. WinSW 2.12's timed roll crashes the wrapper
+   (`ObjectDisposedException: Cannot access a closed file` in
+   `RollingSizeTimeLogAppender.CopyStreamWithRotation`, Windows Application log, `.NET Runtime`
+   event 1026). The wrapper dies **without stopping `node.exe`**: the orphan keeps port 3000, each
+   restart WinSW attempts exits with `EADDRINUSE`, and the service only comes back when the
+   orphan exits a few minutes later — killing whatever job it held. It happened every night from
+   the first one after install. The process side now shuts down gracefully when orphaned (see
+   `apps/web/src/instrumentation-orphan.ts`), but the cause is removed here: a size-only roll at
+   the measured ~230 KB/day keeps well over the 30 days `app_events` keeps.
 
    Stdout carries `debug`/`info`, stderr `warn`/`error` (`packages/shared/src/logger.ts`), so
    `BuyBoxApp.err.log` alone is usually the whole investigation. Every line is a single JSON

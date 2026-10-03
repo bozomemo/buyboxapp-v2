@@ -9,7 +9,8 @@
  * This file is bundled for both the Node.js and Edge runtimes (Next's instrumentation.js doc,
  * "Specifying the runtime"), so it must contain no Node-only API itself — only the
  * `NEXT_RUNTIME === 'nodejs'` guard and dynamic imports. The actual Node-only wiring lives in
- * `instrumentation-shutdown.ts` and `instrumentation-process-errors.ts`, reached only via
+ * `instrumentation-shutdown.ts`, `instrumentation-process-errors.ts` and
+ * `instrumentation-orphan.ts`, reached only via
  * `import()` below.
  */
 export async function register(): Promise<void> {
@@ -23,6 +24,11 @@ export async function register(): Promise<void> {
   // finished and which therefore never starts a worker at all.
   const { registerCrashHandlers } = await import('./instrumentation-process-errors');
   registerCrashHandlers();
+
+  // Same placement and reasoning as the crash net: a process its service wrapper abandoned must
+  // free the port whether or not it ever started a worker (see `instrumentation-orphan.ts`).
+  const { registerOrphanWatch } = await import('./instrumentation-orphan');
+  registerOrphanWatch();
 
   // R-DEP-16: a deployment that would serve sign-in insecurely does not start (exits here).
   const { refuseInvalidDeployment } = await import('./instrumentation-deployment');

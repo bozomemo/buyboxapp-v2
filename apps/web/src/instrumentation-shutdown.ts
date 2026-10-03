@@ -29,32 +29,44 @@ import { createLogger } from '@buybox/shared';
 
 const logger = createLogger({ name: 'web.shutdown' });
 
-export function registerShutdown(getHandle: () => { shutdown: () => Promise<void> } | undefined): void {
-  let shuttingDown = false;
-  const shutdown = (signal: NodeJS.Signals) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    const forceExit = setTimeout(() => {
-      logger.warn('worker.shutdownTimedOut', { signal, action: 'exiting anyway' });
-      process.exit(0);
-    }, 5000);
-    forceExit.unref();
-    // No worker registered (a restart failed, or one is mid-flight) — nothing to drain, but the
-    // process must still exit, since registering a listener suppressed Node's own default.
-    const handle = getHandle();
-    if (!handle) {
+/** The worker to drain, as of the moment a shutdown starts. Unset until `registerShutdown`. */
+let currentHandle: () => { shutdown: () => Promise<void> } | undefined = () => undefined;
+let shuttingDown = false;
+
+/**
+ * Drains the embedded worker, if there is one, and exits. One path for every reason the process
+ * stops on purpose — a signal, or the parent having gone (`instrumentation-orphan.ts`) — so each
+ * gets the same drain and the same bound.
+ */
+export function shutdownProcess(reason: string): void {
+  // A second signal, or Next's own handler for the same one, re-entering mid-cleanup.
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const forceExit = setTimeout(() => {
+    logger.warn('worker.shutdownTimedOut', { reason, action: 'exiting anyway' });
+    process.exit(0);
+  }, 5000);
+  forceExit.unref();
+  // No worker registered (setup unfinished, a restart failed, or one is mid-flight) — nothing to
+  // drain, but the process must still exit, since registering a listener suppressed Node's own
+  // default.
+  const handle = currentHandle();
+  if (!handle) {
+    clearTimeout(forceExit);
+    process.exit(0);
+    return;
+  }
+  void handle
+    .shutdown()
+    .catch((error) => logger.error('worker.shutdownFailed', { error }))
+    .finally(() => {
       clearTimeout(forceExit);
       process.exit(0);
-      return;
-    }
-    void handle
-      .shutdown()
-      .catch((error) => logger.error('worker.shutdownFailed', { error }))
-      .finally(() => {
-        clearTimeout(forceExit);
-        process.exit(0);
-      });
-  };
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+    });
+}
+
+export function registerShutdown(getHandle: () => { shutdown: () => Promise<void> } | undefined): void {
+  currentHandle = getHandle;
+  process.on('SIGINT', () => shutdownProcess('SIGINT'));
+  process.on('SIGTERM', () => shutdownProcess('SIGTERM'));
 }
