@@ -28,17 +28,17 @@
  * since cadence became operator-editable (doc 07 §8.1), whose 10 s floor is well under a real
  * catalogue import.
  *
- * Catch-up on boot: `setInterval` only fires after a full `intervalMs` has elapsed, so a plain
- * `setInterval(fn, cadenceMs)` would make every job wait a whole fresh cadence period after each
- * restart before its first automatic run — even if the previous run finished long enough ago
- * that the job was already due. `isTickerDue` below checks each job's last completed run
- * (`job_runs`, read once at boot alongside the cadences above) against its cadence and fires the
- * ticker body immediately when it's overdue, in addition to scheduling the normal interval. A
- * job that has never run at all counts as due, so a fresh install doesn't wait a full cadence
- * for its first run either. Granularity is per job name, not per marketplace — the same
- * granularity the ticker itself already fires at (every marketplace together, every tick).
+ * Due time, not interval: each ticker keeps *when its job is next due* — one cadence after the
+ * last run **started**, read from `job_runs` at boot — and checks it every minute (or every
+ * cadence, if shorter). A restart therefore costs at most one check. It used to be
+ * `setInterval(fn, cadenceMs)` plus a boot-time "last run *finished* + cadence" check, and
+ * nightly restarts in production turned that into a daily job running every other day: see
+ * `cadence-clock.ts`. A job that has never run counts as due, so a fresh install doesn't wait a
+ * full cadence for its first run. Granularity is per job name, not per marketplace — the same
+ * granularity the ticker itself fires at (every marketplace together).
  */
 import { hostname } from 'node:os';
+import { checkEveryMs, createCadenceClock } from './cadence-clock.js';
 import type { MarketplaceCode } from '@buybox/core';
 import {
   autoMigrate,
@@ -722,10 +722,42 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   const latestRunByName = new Map(
     (await jobsRepo.latestJobRunPerJobName(appDb)).map((run) => [run.jobName, run]),
   );
-  const isTickerDue = (jobName: string, cadenceMs: number, nowMs: number): boolean => {
-    const lastRun = latestRunByName.get(jobName);
-    if (!lastRun) return true; // never run — don't make a fresh install wait a full cadence
-    return (lastRun.finishedAt ?? lastRun.startedAt) + cadenceMs <= nowMs;
+  /**
+   * Runs `fire` whenever `jobName`'s cadence has elapsed since its last run *started*, checking
+   * every `checkEveryMs(cadenceMs)` — see `cadence-clock.ts` for why this is not a plain
+   * `setInterval(fire, cadenceMs)`. Fires once at boot if already due, and that fire is awaited
+   * with the others before `startWorker` returns (`catchUpFires`).
+   */
+  const startTicker = (jobName: string, cadenceMs: number, fire: () => Promise<void>): void => {
+    const clock = createCadenceClock(cadenceMs, latestRunByName.get(jobName)?.startedAt);
+    // A check that lands while the previous fire is still awaiting the database must not fire
+    // again: `countActiveJobsForTarget` only sees a job once it has been enqueued.
+    let firing = false;
+    const fireIfDue = async (): Promise<void> => {
+      const nowMs = Date.now();
+      if (firing || !clock.isDue(nowMs)) return;
+      firing = true;
+      try {
+        await fire();
+        // Only after `fire` resolved: one that threw is retried at the next check rather than
+        // a whole cadence later.
+        clock.markFired(nowMs);
+      } finally {
+        firing = false;
+      }
+    };
+    if (clock.isDue(Date.now())) {
+      catchUpFires.push(fireIfDue().catch((error) => logger.warn('ticker.catchUpFailed', { jobName, error })));
+    }
+    // Caught, not `void fire()`: an interval callback's rejection is an unhandled rejection,
+    // which Node terminates the process for — taking the web server down with it in
+    // single-process mode over one transient database error. Same reasoning as
+    // `Scheduler.startLoop`'s `onTickError`.
+    tickers.push(
+      setInterval(() => {
+        void fireIfDue().catch((error: unknown) => logger.error('ticker.fireFailed', { jobName, error }));
+      }, checkEveryMs(cadenceMs)),
+    );
   };
 
   // Who each ticker fires for depends on the job's module (doc 17 §1.2). A seller job needs a
@@ -783,18 +815,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         await scheduler.enqueueNow(jobName, payload);
       }
     };
-    if (isTickerDue(jobName, intervalMs, Date.now())) {
-      catchUpFires.push(fire().catch((error) => logger.warn('ticker.catchUpFailed', { jobName, error })));
-    }
-    // Caught, not `void fire()`: an interval callback's rejection is an unhandled rejection,
-    // which Node terminates the process for — taking the web server down with it in
-    // single-process mode over one transient database error. Same reasoning as
-    // `Scheduler.startLoop`'s `onTickError`.
-    tickers.push(
-      setInterval(() => {
-        void fire().catch((error: unknown) => logger.error('ticker.fireFailed', { jobName, error }));
-      }, intervalMs),
-    );
+    startTicker(jobName, intervalMs, fire);
   };
   everyMarketplace(IMPORT_LISTINGS_JOB, importListingsCadenceMs);
   // No cycle field is passed: the tier cadences are **absolute durations** resolved from each
@@ -845,19 +866,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     }
     await scheduler.enqueueNow(IMPORT_STOCK_ITEMS_JOB, payload);
   };
-  if (isTickerDue(IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs, Date.now())) {
-    catchUpFires.push(
-      fireImportStockItems().catch((error) =>
-        logger.warn('ticker.catchUpFailed', { jobName: IMPORT_STOCK_ITEMS_JOB, error }),
-      ),
-    );
-  }
-  const importStockItemsTicker = setInterval(() => {
-    void fireImportStockItems().catch((error: unknown) =>
-      logger.error('ticker.fireFailed', { jobName: IMPORT_STOCK_ITEMS_JOB, error }),
-    );
-  }, importStockItemsCadenceMs);
-  tickers.push(importStockItemsTicker);
+  startTicker(IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs, fireImportStockItems);
 
   /**
    * Picks up marketplace configuration entered after this process booted.
