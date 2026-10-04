@@ -402,7 +402,7 @@ more reason a competitor price is never derived from it.
 
 | Constraint | Where it lives |
 |---|---|
-| Rate limiting, independent of the Seller API limiters | `TrendyolPublicPageSource` (30 req/min, burst 5 — doc 08) |
+| Rate limiting, independent of the Seller API limiters | `TrendyolPublicPageSource` (30 req/min, burst 5 — doc 08). **Adaptive since 2026-10-04** (doc 07 §7.7): the configured rate is a ceiling; a `429` halves it (floor 3/min) and pauses every request for `Retry-After` or 60 s, and each quiet 3 minutes adds 1/min back. Measured on the production install 2026-10-03/04: a fixed 30/min collected 3,040 `429`s in a day, in daytime blocks of five to fourteen hours, from a VPS address. |
 | Caching of identical requests | same, 10-minute TTL keyed by resolved URL |
 | Tiered polling by listing importance | `ScrapeCompetitors` (doc 07 §4, §7) |
 | Browser-identifying `User-Agent` | `SCRAPER_BROWSER_USER_AGENT` (doc 08) — an honest agent got a 403 from Trendyol's bot detection even at a conservative request rate; confirmed 2026-08-17 when the operator's own browser reached the same product page without incident from the same network. The product owner authorised the same reporting-only exception already recorded for Hepsiburada (§2.11, 2026-08-13). |

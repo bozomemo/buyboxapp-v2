@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { Money } from '@buybox/shared';
 import { describe, expect, it } from 'vitest';
 import { CompetitorSourceError } from '../../ports/competitor-source.js';
+import type { AdaptiveRateChange } from '../../reliability/adaptive-rate.js';
 import { normalizeTrendyolPage, TrendyolPageSchemaError } from './normalize.js';
 import { extractSharedProps, readBalancedObject, SharedPropsNotFoundError } from './shared-props.js';
 import { TrendyolPublicPageSource } from './source.js';
@@ -19,8 +20,9 @@ function htmlResponse(
   body: string,
   status = 200,
   url = 'https://www.trendyol.com/dyson/v12-p-757251065',
+  extraHeaders: Record<string, string> = {},
 ): Response {
-  const response = new Response(body, { status, headers: { 'Content-Type': 'text/html' } });
+  const response = new Response(body, { status, headers: { 'Content-Type': 'text/html', ...extraHeaders } });
   Object.defineProperty(response, 'url', { value: url });
   return response;
 }
@@ -230,14 +232,20 @@ describe('TrendyolPublicPageSource (doc 07 §7)', () => {
     readonly nowMs?: () => number;
     readonly cacheTtlMs?: number;
     readonly retryOn403MaxAttempts?: number;
+    /** Sent as `Retry-After` on every 429. */
+    readonly retryAfter?: string;
+    readonly onRateChange?: (change: AdaptiveRateChange) => void;
   }) {
     const calls: string[] = [];
+    const sleeps: number[] = [];
     const fetchFn: typeof fetch = async (input) => {
       calls.push(typeof input === 'string' ? input : input.toString());
       const status = options.statuses
         ? (options.statuses[Math.min(calls.length - 1, options.statuses.length - 1)] ?? 200)
         : (options.status ?? 200);
-      return htmlResponse(options.html ?? pageHtml, status);
+      const headers: Record<string, string> =
+        status === 429 && options.retryAfter !== undefined ? { 'Retry-After': options.retryAfter } : {};
+      return htmlResponse(options.html ?? pageHtml, status, undefined, headers);
     };
     const source = new TrendyolPublicPageSource({
       fetchFn,
@@ -250,9 +258,12 @@ describe('TrendyolPublicPageSource (doc 07 §7)', () => {
       nowMs: options.nowMs,
       retryOn403MaxAttempts: options.retryOn403MaxAttempts,
       // Retries would otherwise wait on a real timer (doc 08 §12 measurement backoff).
-      sleep: async () => {},
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      onRateChange: options.onRateChange,
     });
-    return { source, calls };
+    return { source, calls, sleeps };
   }
 
   it('builds the product URL from contentId when no productUrl was captured (doc 04 §1.5)', () => {
@@ -366,6 +377,89 @@ describe('TrendyolPublicPageSource (doc 07 §7)', () => {
       httpStatus: 403,
     });
     expect(calls).toHaveLength(2);
+  });
+
+  /**
+   * The adaptive rate (doc 07 §7.7, 2026-10-04): 3,040 `429`s in a day on the production install
+   * at a fixed 30/min. A throttle now lowers the rate and pauses the source before the retry.
+   */
+  it('lowers the rate on a 429 and waits out the Retry-After before retrying', async () => {
+    const changes: AdaptiveRateChange[] = [];
+    const { source, calls, sleeps } = build({
+      statuses: [429, 200],
+      retryAfter: '20',
+      onRateChange: (change) => changes.push(change),
+    });
+    const snapshot = await source.fetchProductOffers({ url: null, contentId: '1' });
+    expect(snapshot.offers).toHaveLength(5);
+    expect(calls).toHaveLength(2);
+    expect(changes).toEqual([
+      expect.objectContaining({
+        direction: 'decrease',
+        fromPerMinute: 600_000,
+        toPerMinute: 300_000,
+        pauseMs: 20_000,
+      }),
+    ]);
+    expect(source.currentRatePerMinute).toBe(300_000);
+    // The retry waited out (most of) the 20 s pause, not just the short backoff.
+    expect(Math.max(...sleeps)).toBeGreaterThan(19_000);
+  });
+
+  it('holds back a request already queued for a token when another lane is throttled (2026-10-05)', async () => {
+    // One token per 200 ms, burst 1: the second request queues for a token while the first is in
+    // flight, and the first comes back 429 asking for 1 s before the second's token is due.
+    const sleeps: number[] = [];
+    let call = 0;
+    const fetchFn: typeof fetch = async () => {
+      call += 1;
+      if (call === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return htmlResponse(pageHtml, 429, undefined, { 'Retry-After': '1' });
+      }
+      return htmlResponse(pageHtml, 200);
+    };
+    const source = new TrendyolPublicPageSource({
+      fetchFn,
+      userAgent: 'BuyBoxApp/1.0 (+reporting)',
+      requestsPerMinute: 300,
+      burst: 1,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    await Promise.all([
+      source.fetchProductOffers({ url: null, contentId: '1' }),
+      source.fetchProductOffers({ url: null, contentId: '2' }),
+    ]);
+    // Both the throttled request's retry and the queued request sat out the pause.
+    expect(sleeps.filter((ms) => ms > 500)).toHaveLength(2);
+  });
+
+  it.each([403, 503])('does not lower the rate on a %d — not a statement about the rate', async (status) => {
+    const changes: AdaptiveRateChange[] = [];
+    const { source } = build({ statuses: [status, 200], onRateChange: (change) => changes.push(change) });
+    await source.fetchProductOffers({ url: null, contentId: '1' });
+    expect(changes).toEqual([]);
+    expect(source.currentRatePerMinute).toBe(600_000);
+  });
+
+  it('keeps the lowered rate across later fetches — it lives as long as the source', async () => {
+    const { source } = build({ statuses: [429, 200], retryAfter: '1' });
+    await source.fetchProductOffers({ url: null, contentId: '1' });
+    await source.fetchProductOffers({ url: null, contentId: '2' });
+    expect(source.currentRatePerMinute).toBe(300_000);
+  });
+
+  it('a throwing onRateChange never fails the fetch', async () => {
+    const { source } = build({
+      statuses: [429, 200],
+      retryAfter: '1',
+      onRateChange: () => {
+        throw new Error('event log down');
+      },
+    });
+    await expect(source.fetchProductOffers({ url: null, contentId: '1' })).resolves.toBeDefined();
   });
 
   it('raises parseFailed — distinct from fetchFailed — when the page shape changed', async () => {

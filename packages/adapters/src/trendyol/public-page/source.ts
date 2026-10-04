@@ -26,6 +26,13 @@ import {
   type ICompetitorSource,
   type ProductPageRef,
 } from '../../ports/competitor-source.js';
+import {
+  ADAPTIVE_RATE_DEFAULTS,
+  AdaptiveRateController,
+  parseRetryAfterMs,
+  type AdaptiveRateChange,
+  type AdaptiveRateConfig,
+} from '../../reliability/adaptive-rate.js';
 import { RateLimiter } from '../../reliability/rate-limiter.js';
 import { realSleep, retryAsync } from '../../reliability/retry.js';
 import type { NodeFetchInit, NodeFetchResponse } from './node-https-fetch.js';
@@ -108,6 +115,16 @@ export interface TrendyolPublicPageSourceConfig {
   readonly retryOn403BaseMs?: number;
   /** Injectable so tests never wait on a real timer. */
   readonly sleep?: (ms: number) => Promise<void>;
+  /**
+   * Overrides for the adaptive rate (doc 07 §7.7). `requestsPerMinute` is always its ceiling;
+   * these only tune how it backs off and recovers. Tests use them; production takes the defaults.
+   */
+  readonly adaptiveRate?: Partial<Omit<AdaptiveRateConfig, 'ceilingPerMinute'>>;
+  /**
+   * Told every time the adaptive rate moves, so the worker can put it in the event log. Called
+   * synchronously and must not throw; a throw is swallowed rather than allowed to fail a fetch.
+   */
+  readonly onRateChange?: (change: AdaptiveRateChange) => void;
 }
 
 interface CacheEntry {
@@ -133,6 +150,10 @@ const RATE_LIMIT_BUCKET = 'publicPage';
  * them instead). 500 is deliberately absent too — an unconditional server error on one specific
  * product is not known to be transient here, and a retry that cannot help is a request that
  * costs a token and buys nothing.
+ *
+ * A `429` retry no longer waits only for the short backoff below (2026-10-04): the throttle
+ * also pauses the whole source and lowers its rate (`observeResponse`), and the retry waits out
+ * that pause in `waitForToken` like every other request.
  */
 const RETRYABLE_HTTP_STATUSES: ReadonlySet<number> = new Set([403, 429, 502, 503, 504]);
 
@@ -153,6 +174,10 @@ export class TrendyolPublicPageSource implements ICompetitorSource {
   private readonly requestTimeoutMs: number;
   private readonly nowMs: () => number;
   private readonly rateLimiter: RateLimiter;
+  /** See `AdaptiveRateController`: the configured rate is its ceiling, not a fixed pace. */
+  private readonly adaptiveRate: AdaptiveRateController;
+  private readonly burst: number;
+  private readonly onRateChange: ((change: AdaptiveRateChange) => void) | undefined;
   private readonly cache = new Map<string, CacheEntry>();
   private readonly retryOn403MaxAttempts: number;
   private readonly retryOn403BaseMs: number;
@@ -182,12 +207,56 @@ export class TrendyolPublicPageSource implements ICompetitorSource {
     this.retryOn403BaseMs = config.retryOn403BaseMs ?? TRENDYOL_SCRAPE_DEFAULTS.retryOn403BaseMs;
     this.sleep = config.sleep ?? realSleep;
     const perMinute = config.requestsPerMinute ?? TRENDYOL_SCRAPE_DEFAULTS.requestsPerMinute;
+    this.burst = config.burst ?? TRENDYOL_SCRAPE_DEFAULTS.burst;
     this.rateLimiter = new RateLimiter({
       [RATE_LIMIT_BUCKET]: {
-        capacity: config.burst ?? TRENDYOL_SCRAPE_DEFAULTS.burst,
+        capacity: this.burst,
         refillPerMs: perMinute / 60_000,
       },
     });
+    this.adaptiveRate = new AdaptiveRateController({
+      ...ADAPTIVE_RATE_DEFAULTS,
+      ...config.adaptiveRate,
+      ceilingPerMinute: perMinute,
+    });
+    this.onRateChange = config.onRateChange;
+  }
+
+  /** The rate the source is currently allowed, at or below the configured one (doc 07 §7.7). */
+  get currentRatePerMinute(): number {
+    return this.adaptiveRate.ratePerMinute;
+  }
+
+  /**
+   * Feeds one response into the adaptive rate and applies any change to the limiter.
+   *
+   * Only a `429` slows the source. A 403 is Cloudflare scoring one request (see
+   * `TRENDYOL_SCRAPE_DEFAULTS`), a 503 has been a scattered per-product trickle, and a timeout
+   * or a crashed renderer is this machine — none of them says the *rate* is wrong, and slowing
+   * the whole catalogue for them would only cost coverage. Any other answer counts as quiet.
+   */
+  private observeResponse(status: number, retryAfter: string | null | undefined): void {
+    const nowMs = this.nowMs();
+    const change =
+      status === 429
+        ? this.adaptiveRate.onThrottled(nowMs, parseRetryAfterMs(retryAfter, nowMs))
+        : this.adaptiveRate.onAnswered(nowMs);
+    if (!change) return;
+    // While recovering the bucket holds a single token: a source just told to slow down must
+    // not open with a burst, least of all straight after its pause.
+    this.rateLimiter.reconfigure(
+      RATE_LIMIT_BUCKET,
+      {
+        capacity: this.adaptiveRate.isReduced ? 1 : this.burst,
+        refillPerMs: change.toPerMinute / 60_000,
+      },
+      nowMs,
+    );
+    try {
+      this.onRateChange?.(change);
+    } catch {
+      // Reporting the change is best-effort; the change itself has already been applied.
+    }
   }
 
   /**
@@ -222,7 +291,21 @@ export class TrendyolPublicPageSource implements ICompetitorSource {
   }
 
   private async waitForToken(): Promise<void> {
+    // A throttle pause holds back every request, retries included — that is the point of it.
+    // Checked on every pass of the loop, not only on entry: a request already queued for a token
+    // when another lane's 429 arms a pause must sit that pause out too. Measured 2026-10-05
+    // against a local fake server: checked on entry only, a queued request went out 1.95 s after
+    // a 429 that asked for 4 s. Each pause is waited out once (`honouredUntil`), so an injected
+    // clock that never advances cannot spin here.
+    let honouredUntil = 0;
     for (;;) {
+      const pausedUntil = this.adaptiveRate.pausedUntil;
+      if (pausedUntil > honouredUntil) {
+        honouredUntil = pausedUntil;
+        const pauseMs = this.adaptiveRate.pauseRemainingMs(this.nowMs());
+        if (pauseMs > 0) await this.sleep(pauseMs);
+        continue;
+      }
       const result = this.rateLimiter.tryAcquire(RATE_LIMIT_BUCKET, this.nowMs());
       if (result.allowed) return;
       await realSleep(result.retryAfterMs);
@@ -260,6 +343,7 @@ export class TrendyolPublicPageSource implements ICompetitorSource {
           signal: AbortSignal.timeout(this.requestTimeoutMs),
           timeoutMs: this.requestTimeoutMs,
         });
+        this.observeResponse(response.status, response.headers?.get('retry-after'));
         if (!response.ok) {
           throw new CompetitorSourceError(
             `Trendyol public page ${response.status} for ${url}`,

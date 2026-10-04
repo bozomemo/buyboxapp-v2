@@ -45,8 +45,10 @@ import {
   checkSchemaVersion,
   configRepo,
   createDb,
+  eventsRepo,
   inferDialect,
   jobsRepo,
+  newId,
   sqliteFilePath,
   type AppDatabase,
 } from '@buybox/db';
@@ -61,6 +63,7 @@ import {
   TrendyolBrandCatalogueSource,
   TrendyolSellerIdentitySource,
   TrendyolPublicPageSource,
+  type AdaptiveRateChange,
   type IBrandCatalogueSource,
   type IProductDetailSource,
   type ISellerIdentitySource,
@@ -278,6 +281,38 @@ async function enabledMarketplaceCodes(appDb: AppDatabase): Promise<ReadonlySet<
 }
 
 /**
+ * Puts each move of a source's adaptive rate in the event log (doc 07 §7.7).
+ *
+ * A decrease is `warn`: the system changed its own pace because the marketplace pushed back, and
+ * an operator wondering why a sweep slowed down has to be able to find out. An increase is
+ * `info` — it is the expected recovery, one per quiet interval.
+ *
+ * Fire-and-forget because the source calls this synchronously from inside a fetch; a failed
+ * write is logged to the process log and never reaches the scrape.
+ */
+function logRateChange(appDb: AppDatabase, marketplaceCode: MarketplaceCode) {
+  return (change: AdaptiveRateChange): void => {
+    const decrease = change.direction === 'decrease';
+    const message = decrease
+      ? `Scrape rate for ${marketplaceCode} lowered ${change.fromPerMinute} → ${change.toPerMinute}/min after HTTP 429; requests paused ${Math.round(change.pauseMs / 1000)} s (ceiling ${change.ceilingPerMinute}/min)`
+      : `Scrape rate for ${marketplaceCode} raised ${change.fromPerMinute} → ${change.toPerMinute}/min after a quiet interval (ceiling ${change.ceilingPerMinute}/min)`;
+    eventsRepo
+      .logEvent(appDb, {
+        id: newId(),
+        at: Date.now(),
+        level: decrease ? 'warn' : 'info',
+        marketplaceCode,
+        listingId: null,
+        jobRunId: null,
+        code: decrease ? 'ScrapeRateLowered' : 'ScrapeRateRaised',
+        message,
+        context: JSON.stringify(change),
+      })
+      .catch((error: unknown) => logger.warn('scrapeRate.logFailed', { marketplaceCode, error }));
+  };
+}
+
+/**
  * Reporting-only competitor sources (doc 07 §7, api-references §1.6). Built for every enabled
  * marketplace that has a scraper, independently of the marketplace adapters: this registry
  * exists so competitor *history* can be collected, and nothing on the control path reads it.
@@ -312,6 +347,10 @@ async function enabledMarketplaceCodes(appDb: AppDatabase): Promise<ReadonlySet<
  * marketplace answered normally — and an operator who has decided their box is slow has said
  * something true of every page it fetches. Left unset, each source keeps its own compiled
  * default, which is not the same number for a product page and a catalogue page.
+ *
+ * For Trendyol's product page the stored rate is a **ceiling** since 2026-10-04 (doc 07 §7.7):
+ * the source halves it on a `429` and steps back up while the marketplace stays quiet, and each
+ * move lands in the event log through `logRateChange`.
  */
 async function buildCompetitorSources(
   appDb: AppDatabase,
@@ -330,6 +369,7 @@ async function buildCompetitorSources(
         requestsPerMinute: rateLimit?.requestsPerMinute,
         burst: rateLimit?.burst,
         requestTimeoutMs: rateLimit?.requestTimeoutMs,
+        onRateChange: logRateChange(appDb, 'trendyol'),
       }),
     ]);
   }
@@ -747,7 +787,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       }
     };
     if (clock.isDue(Date.now())) {
-      catchUpFires.push(fireIfDue().catch((error) => logger.warn('ticker.catchUpFailed', { jobName, error })));
+      catchUpFires.push(
+        fireIfDue().catch((error) => logger.warn('ticker.catchUpFailed', { jobName, error })),
+      );
     }
     // Caught, not `void fire()`: an interval callback's rejection is an unhandled rejection,
     // which Node terminates the process for — taking the web server down with it in

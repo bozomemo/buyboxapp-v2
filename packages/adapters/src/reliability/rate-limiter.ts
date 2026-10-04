@@ -27,12 +27,39 @@ interface BucketState {
 
 export class RateLimiter {
   private readonly buckets = new Map<string, BucketState>();
+  private readonly configs: Map<string, TokenBucketConfig>;
 
-  constructor(private readonly configs: Readonly<Record<string, TokenBucketConfig>>) {}
+  constructor(configs: Readonly<Record<string, TokenBucketConfig>>) {
+    this.configs = new Map(Object.entries(configs));
+  }
+
+  /**
+   * Changes `key`'s rate and capacity from `nowMs` on (doc 07 §7.7: the adaptive rate).
+   *
+   * Tokens earned before `nowMs` are settled at the **old** rate first, so a change never
+   * rewrites the past; the balance is then clamped to the new capacity, so lowering the burst
+   * takes effect at once instead of after the old surplus has been spent.
+   */
+  reconfigure(key: string, config: TokenBucketConfig, nowMs: number): void {
+    const previousConfig = this.configs.get(key);
+    if (!previousConfig) {
+      throw new RangeError(`RateLimiter: unknown bucket "${key}"`);
+    }
+    const previous = this.buckets.get(key);
+    if (previous) {
+      const elapsedMs = Math.max(0, nowMs - previous.updatedAtMs);
+      const settled = Math.min(
+        previousConfig.capacity,
+        previous.tokens + elapsedMs * previousConfig.refillPerMs,
+      );
+      this.buckets.set(key, { tokens: Math.min(config.capacity, settled), updatedAtMs: nowMs });
+    }
+    this.configs.set(key, config);
+  }
 
   /** Attempts to take one token from `key`'s bucket as of `nowMs`. Does not sleep or retry. */
   tryAcquire(key: string, nowMs: number): AcquireResult {
-    const config = this.configs[key];
+    const config = this.configs.get(key);
     if (!config) {
       throw new RangeError(`RateLimiter: unknown bucket "${key}"`);
     }

@@ -800,6 +800,42 @@ Specified 2026-09-19 (doc 17 §6). Runs every minute in both modules.
 - Enqueuing (in §7.5) checks the re-notify quiet period: a violation for the same (card, kind,
   seller) resolved within `BAND_RENOTIFY_QUIET_MS` enqueues its delivery as `suppressed`.
 
+### 7.7 Adaptive scrape rate (Trendyol product page)
+
+Added 2026-10-04 at the operator's request. Applies to `TrendyolPublicPageSource`, and therefore
+to every job that reads the Trendyol product page through it (`ScrapeCompetitors`,
+`SweepTrackedProducts`, `SweepListedProducts`, `RescanTrackedProducts`, `ScrapeBrandSellers`).
+
+**Why.** On 2026-10-03/04 the production install read the product page at a fixed 30/min around
+the clock from a VPS address and collected 3,040 `429 Too Many Requests` in a day, in daytime
+blocks of five to fourteen hours. The fixed rate could not respond, and §7.4's consecutive-failure
+halt made it worse: the halted run was replaced a minute later at the same rate, so the throttled
+address met a fresh burst roughly every three minutes.
+
+**Rule (AIMD).** The operator's `scrape.trendyol.rateLimit.requestsPerMinute` is the **ceiling**
+and the starting rate.
+
+- A `429` halves the rate (rounded up, never below the floor), at most once per cooldown, and
+  pauses every request for the response's `Retry-After` or a default, capped. A retry waits out
+  the pause like any other request.
+- Every quiet interval without a `429` adds one request a minute, up to the ceiling.
+- While below the ceiling the limiter's burst is one token.
+- Only `429` moves the rate. A 403, a 5xx, a timeout or a crashed renderer says nothing about the
+  rate and leaves it alone.
+
+The constants are in doc 08 §12 (*adaptive rate*).
+
+**Lifetime.** The controller lives as long as the source — one per worker process — so a lowered
+rate survives the halt-and-restart between job runs, which is what breaks the burst cycle above.
+A worker restart (or a marketplace-config reload, which rebuilds the sources) starts again at the
+ceiling; the first `429` brings it straight back down, so the state is not persisted.
+
+**Visibility.** Each move is an `app_events` row: `ScrapeRateLowered` at `warn` (the system changed
+its own pace because the marketplace pushed back) and `ScrapeRateRaised` at `info`, with the
+from/to rates, the ceiling and the pause in `context`.
+
+**Reporting only**, on §7's terms: nothing on the pricing path reads the rate or the events.
+
 ---
 
 ## 8. Scheduling and concurrency

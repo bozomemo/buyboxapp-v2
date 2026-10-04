@@ -55,6 +55,13 @@ export {
 // Reliability primitives
 export { RateLimiter, type AcquireResult, type TokenBucketConfig } from './reliability/rate-limiter.js';
 export {
+  ADAPTIVE_RATE_DEFAULTS,
+  AdaptiveRateController,
+  parseRetryAfterMs,
+  type AdaptiveRateChange,
+  type AdaptiveRateConfig,
+} from './reliability/adaptive-rate.js';
+export {
   CircuitBreaker,
   type CircuitBreakerConfig,
   type CircuitState,

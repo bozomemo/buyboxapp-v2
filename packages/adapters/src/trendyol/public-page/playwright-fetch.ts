@@ -350,10 +350,13 @@ export function createPlaywrightFetcher(launch: PlaywrightLauncher = launchChrom
         // Doc 07 §7's inline `__envoy__SHARED_PROPS` script is a DOM text node either way, so the
         // parser sees the same content it would have from the raw response.
         const body = await tracked.session.page.content();
+        // Playwright lower-cases header names; `Retry-After` is the only one read (doc 07 §7.7).
+        const headers = response.headers();
         return {
           ok: status >= 200 && status < 300,
           status,
           url: response.url(),
+          headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
           text: async () => body,
         };
       });

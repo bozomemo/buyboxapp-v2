@@ -37,6 +37,11 @@ export interface NodeFetchResponse {
   readonly ok: boolean;
   readonly status: number;
   readonly url: string;
+  /**
+   * Response headers, when the transport exposes them. Optional because only `Retry-After` is
+   * read (doc 07 §7.7) and a transport without it simply falls back to the default pause.
+   */
+  readonly headers?: { get(name: string): string | null };
   text(): Promise<string>;
 }
 
@@ -47,7 +52,11 @@ export function nodeHttpsFetch(url: string, init: NodeFetchInit): Promise<NodeFe
   return followRedirects(url, init, MAX_REDIRECTS);
 }
 
-function followRedirects(url: string, init: NodeFetchInit, redirectsLeft: number): Promise<NodeFetchResponse> {
+function followRedirects(
+  url: string,
+  init: NodeFetchInit,
+  redirectsLeft: number,
+): Promise<NodeFetchResponse> {
   return new Promise((resolve, reject) => {
     if (init.signal?.aborted) {
       reject(new Error('The operation was aborted'));

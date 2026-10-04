@@ -1196,7 +1196,10 @@ export function JobsClient() {
           <p className="mb-2 text-xs text-(--color-muted)">
             Bu değerler yalnızca raporlama amaçlı rakip taramasının (ScrapeCompetitors) pazaryerine gönderdiği
             istek hızını belirler; fiyatlandırma kararlarını etkilemez. 403 hataları sıklaşırsa istek/dakika
-            değerini düşürün. <strong>Zaman aşımı</strong>, tek bir sayfanın açılması için tanınan süredir:
+            değerini düşürün. Trendyol için istek/dakika bir <strong>üst sınırdır</strong>: pazaryeri 429 (çok
+            fazla istek) döndürdüğünde tarama hızı kendiliğinden yarıya iner, sorunsuz geçen her 3 dakikada
+            yeniden artar; her değişiklik Olaylar ekranına yazılır. <strong>Zaman aşımı</strong>, tek bir
+            sayfanın açılması için tanınan süredir:
             olay günlüğünde “Timeout … exceeded” hataları görüyorsanız bu makine sayfaları bu sürede
             yükleyemiyor demektir, değeri yükseltin. Değişiklik, worker bir sonraki başlatıldığında etkin
             olur.

@@ -89,7 +89,9 @@ describe('createPlaywrightFetcher', () => {
   it('sends the given User-Agent to the server (fresh fetcher — the page is created on first use and reused after)', async () => {
     const freshFetcher = createPlaywrightFetcher();
     try {
-      await freshFetcher.fetch(`${baseUrl}/target`, { headers: { 'User-Agent': 'BuyBoxApp/1.0 (+reporting)' } });
+      await freshFetcher.fetch(`${baseUrl}/target`, {
+        headers: { 'User-Agent': 'BuyBoxApp/1.0 (+reporting)' },
+      });
       expect(lastUserAgent).toBe('BuyBoxApp/1.0 (+reporting)');
     } finally {
       await freshFetcher.close();
@@ -149,7 +151,7 @@ describe('createPlaywrightFetcher', () => {
         abortingSession(() => {
           attempts += 1;
           if (attempts === 1) throw new Error('page.goto: net::ERR_ABORTED at http://x/');
-          return { status: () => 200, url: () => 'http://x/' };
+          return { status: () => 200, url: () => 'http://x/', headers: () => ({}) };
         }),
       );
 
@@ -228,7 +230,7 @@ describe('createPlaywrightFetcher', () => {
         launches += 1;
         const state = { connected: true, closed: false };
         states.push(state);
-        return stubSession(state, () => ({ status: () => 200, url: () => 'http://x/' }));
+        return stubSession(state, () => ({ status: () => 200, url: () => 'http://x/', headers: () => ({}) }));
       });
 
       await solo.fetch('http://x/', { headers: {} });
@@ -252,7 +254,7 @@ describe('createPlaywrightFetcher', () => {
         launches += 1;
         const state = { connected: true, closed: false };
         states.push(state);
-        return stubSession(state, () => ({ status: () => 200, url: () => 'http://x/' }));
+        return stubSession(state, () => ({ status: () => 200, url: () => 'http://x/', headers: () => ({}) }));
       });
 
       await solo.fetch('http://x/', { headers: {} });
@@ -285,6 +287,7 @@ describe('createPlaywrightFetcher', () => {
         return stubSession({ connected: true, closed: false }, () => ({
           status: () => 200,
           url: () => 'http://x/',
+          headers: () => ({}),
         }));
       });
 
@@ -347,7 +350,7 @@ describe('createPlaywrightFetcher', () => {
     }
 
     it('retries the navigation once on a fresh session rather than failing the item', async () => {
-      const ok = () => ({ status: () => 200, url: () => 'http://x/' });
+      const ok = () => ({ status: () => 200, url: () => 'http://x/', headers: () => ({}) });
       const { fetcher: solo, launchCount } = fetcherOver([
         () => {
           throw new Error('page.goto: Page crashed at http://x/');
@@ -363,7 +366,7 @@ describe('createPlaywrightFetcher', () => {
     });
 
     it('does not hand the crashed session to the next fetch — the bug behind the 20-hour outage', async () => {
-      const ok = () => ({ status: () => 200, url: () => 'http://x/' });
+      const ok = () => ({ status: () => 200, url: () => 'http://x/', headers: () => ({}) });
       let firstGotos = 0;
       const { fetcher: solo, launchCount } = fetcherOver([
         () => {
@@ -397,7 +400,7 @@ describe('createPlaywrightFetcher', () => {
     });
 
     it("replaces a session whose page emitted 'crash' between two fetches", async () => {
-      const ok = () => ({ status: () => 200, url: () => 'http://x/' });
+      const ok = () => ({ status: () => 200, url: () => 'http://x/', headers: () => ({}) });
       const { fetcher: solo, states, launchCount } = fetcherOver([ok, ok]);
 
       await solo.fetch('http://x/', { headers: {} });
@@ -413,7 +416,7 @@ describe('createPlaywrightFetcher', () => {
     });
 
     it('recycles the page before it can crash, after enough navigations', async () => {
-      const ok = () => ({ status: () => 200, url: () => 'http://x/' });
+      const ok = () => ({ status: () => 200, url: () => 'http://x/', headers: () => ({}) });
       const { fetcher: solo, launchCount } = fetcherOver(Array.from({ length: 4 }, () => ok));
 
       // One page serves many navigations; the recycle threshold is high enough that an ordinary
@@ -427,7 +430,7 @@ describe('createPlaywrightFetcher', () => {
     });
   });
 
-  it('never serves one caller another caller\'s body, however many fetch at once', async () => {
+  it("never serves one caller another caller's body, however many fetch at once", async () => {
     // Two `SweepBrandCatalogue` runs share one source, and a sweep pass reads three products at a
     // time through it. Before a page was held for the whole navigate-then-read, the second
     // navigation on a page either aborted the first (`net::ERR_ABORTED`) or replaced the page it
@@ -484,7 +487,7 @@ describe('createPlaywrightFetcher', () => {
               peak = Math.max(peak, current);
               await new Promise<void>((resolve) => releases.push(resolve));
               current -= 1;
-              return { status: () => 200, url: () => 'http://x/' };
+              return { status: () => 200, url: () => 'http://x/', headers: () => ({}) };
             },
             content: async () => `<html><body>lane-${index}</body></html>`,
           },
