@@ -1,6 +1,6 @@
 {
   "name": "buybox-app",
-  "version": "0.1.16",
+  "version": "0.1.18",
   "private": true,
   "type": "module",
   "description": "Marketplace repricing and listing-management system for Trendyol and Hepsiburada.",
