@@ -130,9 +130,13 @@ export function EventsClient() {
       // no suggestions show, so it is left un-alarmed rather than routed through the retry banner
       // that a failed primary load gets (doc 15 §3.2 governs the primary load, not every request).
       fetch(`/api/competitors/listings?text=${encodeURIComponent(listingQuery)}`)
-        .then((r) => r.json())
-        .then((data: { rows: ListingOption[] }) => setListingOptions(data.rows))
-        .catch(() => undefined);
+        // An error response carries no `rows`; treating it as "no suggestions" keeps an
+        // `undefined` out of state, where the dropdown's `.length` would crash the whole screen.
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: { rows?: ListingOption[] } | null) =>
+          setListingOptions(Array.isArray(data?.rows) ? data.rows : []),
+        )
+        .catch(() => setListingOptions([]));
     }, 250);
     return () => clearTimeout(handle);
   }, [listingQuery]);

@@ -108,8 +108,12 @@ export function CompetitorsClient() {
     }
     const handle = setTimeout(() => {
       fetch(`/api/competitors/listings?text=${encodeURIComponent(listingQuery)}`)
-        .then((r) => r.json())
-        .then((d: { rows: ListingOption[] }) => setListingOptions(d.rows));
+        // An error response carries no `rows`; keep `undefined` out of state (see /events).
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { rows?: ListingOption[] } | null) =>
+          setListingOptions(Array.isArray(d?.rows) ? d.rows : []),
+        )
+        .catch(() => setListingOptions([]));
     }, 250);
     return () => clearTimeout(handle);
   }, [listingQuery]);
