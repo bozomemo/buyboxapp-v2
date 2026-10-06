@@ -100,6 +100,10 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
  * - A network install whose service is not bound to loopback. The reverse proxy is the only
  *   thing that may listen on the network (doc 14 §4.4); `HOSTNAME` unset is not loopback, because
  *   Next then binds every interface.
+ * - A production loopback install (no `PUBLIC_ORIGIN`) that is not bound to loopback. Loopback
+ *   mode means plain-HTTP cookies and an optional second factor; reached over the network it
+ *   would hand both to anyone on the path, so "no domain yet, open it on the IP" must not boot.
+ *   Development (`next dev`, which binds every interface by default) is exempt.
  *
  * Pure: the caller decides what "refuse" means (the web process logs and exits).
  */
@@ -114,6 +118,11 @@ export function authDeploymentProblems(env: NodeJS.ProcessEnv): string[] {
   if (networkMode && !LOOPBACK_HOSTS.has(hostname)) {
     problems.push(
       `HOSTNAME="${hostname}" with PUBLIC_ORIGIN set: a network install must bind 127.0.0.1 and be reached through the reverse proxy (doc 14 §4.4, §13.2).`,
+    );
+  }
+  if (!networkMode && env.NODE_ENV === 'production' && !LOOPBACK_HOSTS.has(hostname)) {
+    problems.push(
+      `HOSTNAME="${hostname}" without PUBLIC_ORIGIN: a loopback install serves sign-in over plain HTTP and must bind 127.0.0.1. To serve the network, set PUBLIC_ORIGIN to an https:// origin behind the reverse proxy (doc 14 §13.2).`,
     );
   }
   return problems;

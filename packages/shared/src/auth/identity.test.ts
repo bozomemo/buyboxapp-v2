@@ -122,6 +122,12 @@ describe('authDeploymentProblems (R-DEP-16)', () => {
     { name: 'network install bound to every interface', env: { PUBLIC_ORIGIN: 'https://fiyat.example.com.tr', HOSTNAME: '0.0.0.0' }, problems: 1 },
     { name: 'network install with HOSTNAME unset (Next binds everything)', env: { PUBLIC_ORIGIN: 'https://fiyat.example.com.tr' }, problems: 1 },
     { name: 'a non-numeric session lifetime', env: { AUTH_SESSION_IDLE_MS: 'eight hours' }, problems: 1 },
+    { name: 'production loopback install bound to loopback', env: { NODE_ENV: 'production', HOSTNAME: '127.0.0.1' }, problems: 0 },
+    { name: 'production loopback install bound to every interface', env: { NODE_ENV: 'production', HOSTNAME: '0.0.0.0' }, problems: 1 },
+    { name: 'production loopback install with HOSTNAME unset (Next binds everything)', env: { NODE_ENV: 'production' }, problems: 1 },
+    { name: 'production loopback install bound to a LAN address', env: { NODE_ENV: 'production', HOSTNAME: '192.168.1.10' }, problems: 1 },
+    { name: 'development may bind every interface', env: { NODE_ENV: 'development', HOSTNAME: '0.0.0.0' }, problems: 0 },
+    { name: 'production network install, loopback bind', env: { NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://fiyat.example.com.tr', HOSTNAME: '127.0.0.1' }, problems: 0 },
   ];
   it.each(cases)('$name → $problems problem(s)', ({ env, problems }) => {
     expect(authDeploymentProblems(env)).toHaveLength(problems);

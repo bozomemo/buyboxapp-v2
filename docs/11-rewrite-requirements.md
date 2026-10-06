@@ -182,7 +182,7 @@ Added 2026-08-23. Full detail, including the rejected alternatives, is in `docs/
 | R-DEP-13 | M | A SQLite database is backed up before any automatic migration; on PostgreSQL/MySQL the absence of a backup is logged | 14 §5.2b |
 | R-DEP-14 | M | A failed migration stops the service and is reported by `/api/health`; a half-migrated schema never serves traffic | 14 §5.2d |
 | R-DEP-15 | M | Only one process migrates at a time | 14 §5.2c |
-| R-DEP-16 | M | A network install (`PUBLIC_ORIGIN` set) refuses to boot unless `PUBLIC_ORIGIN` is `https://` and `HOSTNAME` is loopback; the reverse proxy forwards neither `/api/health` nor `/api/metrics` | 14 §13 |
+| R-DEP-16 | M | A network install (`PUBLIC_ORIGIN` set) refuses to boot unless `PUBLIC_ORIGIN` is `https://` and `HOSTNAME` is loopback; a production install without `PUBLIC_ORIGIN` refuses to boot unless `HOSTNAME` is loopback; the reverse proxy forwards neither `/api/health` nor `/api/metrics` | 14 §13 |
 | R-DEP-17 | M | Moving an install to a new machine never leaves two instances able to submit prices. The old one is stopped and disabled before the new one's price jobs are released | 14 §13.4 |
 
 Automatic self-update is **out of scope** (decided 2026-08-24); doc 14 §12 records the conditions

@@ -1340,6 +1340,10 @@ about deployment facts:
 `HOSTNAME` stays `127.0.0.1`. **The service refuses to boot when `PUBLIC_ORIGIN` is set and
 either `PUBLIC_ORIGIN` is not `https://` or `HOSTNAME` is not a loopback address** (R-DEP-16).
 A half-configured network mode fails at startup, not in production.
+The converse holds too: **a production install without `PUBLIC_ORIGIN` refuses to boot unless
+`HOSTNAME` is loopback.** Without `PUBLIC_ORIGIN` the session cookie is not `Secure` and the
+second factor is optional, so serving that mode on an IP address over plain HTTP would expose
+both. `next dev` is exempt; it binds every interface by default.
 
 ### 13.3 Server hardening
 
@@ -1416,7 +1420,7 @@ update budget twice.
 |---|---|
 | D-S1 | `https://<domain>` serves `/login` with a valid certificate; `http://` redirects to it; the response carries HSTS |
 | D-S2 | From outside the VPS, `/api/health` and `/api/metrics` answer 404, and port 3000 does not answer at all. On the VPS, `curl 127.0.0.1:3000/api/health` is green and Alloy's metrics reach Grafana |
-| D-S3 | Starting the service with `PUBLIC_ORIGIN=http://…`, or with `HOSTNAME=0.0.0.0` in network mode, fails at boot with a named reason (R-DEP-16) |
+| D-S3 | Starting the service with `PUBLIC_ORIGIN=http://…`, with `HOSTNAME=0.0.0.0` in network mode, or with `HOSTNAME=0.0.0.0` and no `PUBLIC_ORIGIN`, fails at boot with a named reason (R-DEP-16) |
 | D-S4 | A user without a second factor cannot reach any screen but enrolment; a viewer's price-edit request is refused with 403 (doc 18 R-AUTH-5, R-AUTH-10) |
 | D-S5 | Trendyol competitor collection succeeds on the VPS (= D-U7, and re-confirms the 2026-09-27 measurement from the installed package, not a development checkout) |
 | D-S6 | The nightly off-machine backup exists, and restoring it on a scratch VM with the separately kept `SECRET_STORE_KEY` produces a working install |
