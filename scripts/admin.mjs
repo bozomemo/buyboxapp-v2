@@ -68,21 +68,25 @@ function fail(message) {
   process.exit(1);
 }
 
-function ask(question, { hidden = false } = {}) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  if (hidden) {
-    // Echo nothing after the prompt itself: the password must not land in a terminal scrollback.
-    rl._writeToOutput = (text) => {
-      if (text.includes(question)) process.stdout.write(question);
-    };
+// One reader for the whole run. A reader per question loses input piped on stdin: the first one
+// buffers every line and takes them with it when it closes, and the next question waits forever.
+let reader;
+let lines;
+
+async function ask(question, { hidden = false } = {}) {
+  if (reader === undefined) {
+    reader = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY === true });
+    lines = reader[Symbol.asyncIterator]();
   }
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      if (hidden) process.stdout.write('\n');
-      resolve(answer);
-    });
-  });
+  process.stdout.write(question);
+  // Echo nothing while a password is typed: it must not land in a terminal scrollback.
+  if (hidden) reader._writeToOutput = () => {};
+  const { value, done } = await lines.next();
+  if (hidden) {
+    delete reader._writeToOutput;
+    process.stdout.write('\n');
+  }
+  return done ? '' : value;
 }
 
 /** 16 base32 characters — 80 bits, typeable, and shown once. */
@@ -218,5 +222,6 @@ try {
     console.log(`Unlocked "${user.username}".`);
   }
 } finally {
+  reader?.close();
   await appDb.close();
 }
