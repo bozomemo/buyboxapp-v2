@@ -1,19 +1,8 @@
 /** Settings > Database (doc 06 §9): engine, schema version, migration status — no credentials ever returned. */
 import { NextResponse } from 'next/server';
-import { checkSchemaVersion } from '@buybox/db';
+import { checkSchemaVersion, redactDatabaseUrl } from '@buybox/db';
 import { getAppDb, getBootstrapEnv } from '@/lib/server/db';
 import { withPermission } from '@/lib/server/auth/guard';
-
-/** Strips credentials from a connection string, leaving only host/db name for display. */
-function redactConnectionString(url: string): string {
-  try {
-    const parsed = new URL(url.replace(/^sqlite:/, 'file:'));
-    if (parsed.protocol === 'file:') return url; // a filesystem path, nothing to redact
-    return `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ''}${parsed.pathname}`;
-  } catch {
-    return '(ayrıştırılamadı)';
-  }
-}
 
 async function getHandler() {
   const appDb = getAppDb();
@@ -21,7 +10,7 @@ async function getHandler() {
   const versionStatus = await checkSchemaVersion(appDb);
   return NextResponse.json({
     dialect: appDb.dialect,
-    connection: redactConnectionString(env.DATABASE_URL),
+    connection: redactDatabaseUrl(env.DATABASE_URL),
     schemaVersion: versionStatus,
   });
 }

@@ -140,6 +140,7 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | ID | Pri | Requirement | Spec |
 |----|-----|-------------|------|
 | N-1 | M | No credential in source, committed config, or a database column | 10 §8 |
+| N-1a | M | A database connection string is never shown on a screen, returned by an API or written to a log with its password; it is redacted to `***` first (`redactDatabaseUrl`). Added 2026-10-15 after the worker's raw PostgreSQL URL was found on the dashboard, the Jobs screen and `/api/health` of a network install | 14 §13.7 |
 | N-2 | M | All legacy credentials rotated before the repository is shared | 09 §1, 12 Phase 0 |
 | N-3 | M | Every commercial and policy constant configurable at runtime | 08, 10 §8 |
 | N-4 | M | Commercial parameters effective-dated | 02 §3 |
@@ -184,6 +185,7 @@ Added 2026-08-23. Full detail, including the rejected alternatives, is in `docs/
 | R-DEP-15 | M | Only one process migrates at a time | 14 §5.2c |
 | R-DEP-16 | M | A network install (`PUBLIC_ORIGIN` set) refuses to boot unless `PUBLIC_ORIGIN` is `https://` and `HOSTNAME` is loopback; a production install without `PUBLIC_ORIGIN` refuses to boot unless `HOSTNAME` is loopback; the reverse proxy forwards neither `/api/health` nor `/api/metrics` | 14 §13 |
 | R-DEP-17 | M | Moving an install to a new machine never leaves two instances able to submit prices. The old one is stopped and disabled before the new one's price jobs are released | 14 §13.4 |
+| R-DEP-18 | M | An upgrade keeps a network install in network mode: `PUBLIC_ORIGIN` and `TRUST_PROXY` set on the service survive it, and an upgrade that cannot read them stops rather than dropping them | 14 §13.7 |
 
 Automatic self-update is **out of scope** (decided 2026-08-24); doc 14 §12 records the conditions
 under which it would be reconsidered.

@@ -45,11 +45,10 @@ import {
   checkSchemaVersion,
   configRepo,
   createDb,
+  describeDatabaseTarget,
   eventsRepo,
-  inferDialect,
   jobsRepo,
   newId,
-  sqliteFilePath,
   type AppDatabase,
 } from '@buybox/db';
 import {
@@ -176,14 +175,12 @@ export interface WorkerHandle {
   shutdown(): Promise<void>;
 }
 
-/** Absolute file path for SQLite, the URL itself otherwise — something two processes can compare. */
-export function describeDatabaseTarget(databaseUrl: string): string {
-  try {
-    return inferDialect(databaseUrl) === 'sqlite' ? sqliteFilePath(databaseUrl) : databaseUrl;
-  } catch {
-    return databaseUrl;
-  }
-}
+/**
+ * Absolute file path for SQLite, the URL with its password redacted otherwise — something two
+ * processes can compare and a screen can show. Lives in `@buybox/db` so `/api/health` computes the
+ * configured side with the same function.
+ */
+export { describeDatabaseTarget };
 
 async function buildAdapter(
   code: MarketplaceCode,

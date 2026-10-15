@@ -15,7 +15,7 @@
  * this build, `degraded` while anything below that is still true.
  */
 import { NextResponse } from 'next/server';
-import { checkSchemaVersion, configRepo, inferDialect, sqliteFilePath } from '@buybox/db';
+import { checkSchemaVersion, configRepo, describeDatabaseTarget } from '@buybox/db';
 import { bootstrapEnvProblems, getAppDb, isBootstrapped, tryGetBootstrapEnv } from '@/lib/server/db';
 import { readModules } from '@/lib/server/modules';
 import { getWorkerStatus } from '@/lib/server/worker-status';
@@ -72,14 +72,7 @@ async function describeDatabase(): Promise<DatabaseReport> {
  */
 function configuredDatabaseTarget(): string | undefined {
   const env = tryGetBootstrapEnv();
-  if (!env) return undefined;
-  try {
-    return inferDialect(env.DATABASE_URL) === 'sqlite'
-      ? sqliteFilePath(env.DATABASE_URL)
-      : env.DATABASE_URL;
-  } catch {
-    return env.DATABASE_URL;
-  }
+  return env ? describeDatabaseTarget(env.DATABASE_URL) : undefined;
 }
 
 /**

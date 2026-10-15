@@ -6,7 +6,14 @@ export * as postgresSchema from './schema/postgres.js';
 export * as mysqlSchema from './schema/mysql.js';
 
 export type { Dialect } from './dialect.js';
-export { appDataDir, inferDialect, isRelativeSqlitePath, sqliteFilePath } from './dialect.js';
+export {
+  appDataDir,
+  describeDatabaseTarget,
+  inferDialect,
+  isRelativeSqlitePath,
+  redactDatabaseUrl,
+  sqliteFilePath,
+} from './dialect.js';
 
 export type { AppDatabase } from './client.js';
 export { createDb } from './client.js';

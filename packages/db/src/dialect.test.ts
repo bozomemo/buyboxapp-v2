@@ -14,7 +14,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { appDataDir, inferDialect, isRelativeSqlitePath, sqliteFilePath } from './dialect.js';
+import {
+  appDataDir,
+  describeDatabaseTarget,
+  inferDialect,
+  isRelativeSqlitePath,
+  redactDatabaseUrl,
+  sqliteFilePath,
+} from './dialect.js';
 
 const ORIGINAL = process.env.BUYBOX_DATA_DIR;
 afterEach(() => {
@@ -36,6 +43,47 @@ describe('inferDialect', () => {
 
   it('refuses a URL it cannot classify rather than guessing', () => {
     expect(() => inferDialect('mongodb://localhost')).toThrow(RangeError);
+  });
+
+  it('does not repeat the password in its error', () => {
+    expect(() => inferDialect('postgress://buybox:s3cret@localhost/db')).toThrow(
+      'postgress://buybox:***@localhost/db',
+    );
+  });
+});
+
+describe('redactDatabaseUrl', () => {
+  it.each([
+    ['postgres://buybox:s3cret@localhost:5432/buybox', 'postgres://buybox:***@localhost:5432/buybox'],
+    ['postgresql://u:p@h/db', 'postgresql://u:***@h/db'],
+    ['mysql://root:pw@db.internal:3306/app', 'mysql://root:***@db.internal:3306/app'],
+    // An unencoded `@` in the password must not leave its tail behind.
+    ['postgres://u:p@ss@w0rd@h:5432/db', 'postgres://u:***@h:5432/db'],
+    ['postgres://u:p%40ss@h/db', 'postgres://u:***@h/db'],
+    ['postgres://h/db?user=u&password=s3cret&sslmode=require', 'postgres://h/db?user=u&password=***&sslmode=require'],
+    // Nothing secret to hide: unchanged.
+    ['postgres://u@h/db', 'postgres://u@h/db'],
+    ['postgres://h:5432/db', 'postgres://h:5432/db'],
+    ['file:./data/app.db', 'file:./data/app.db'],
+  ])('%s -> %s', (url, expected) => {
+    expect(redactDatabaseUrl(url)).toBe(expected);
+  });
+});
+
+describe('describeDatabaseTarget', () => {
+  it('never carries the password of a server database — the 2026-10-15 exposure', () => {
+    const target = describeDatabaseTarget('postgres://buybox:LmaKs1@localhost:5432/buybox');
+    expect(target).toBe('postgres://buybox:***@localhost:5432/buybox');
+    expect(target).not.toContain('LmaKs1');
+  });
+
+  it('is the absolute file for SQLite, so the split stays detectable', () => {
+    const dir = path.join(path.sep, 'data', 'buybox');
+    expect(describeDatabaseTarget('file:./app.db', dir)).toBe(path.resolve(dir, 'app.db'));
+  });
+
+  it('redacts even a URL it cannot classify', () => {
+    expect(describeDatabaseTarget('postgress://u:s3cret@h/db')).toBe('postgress://u:***@h/db');
   });
 });
 

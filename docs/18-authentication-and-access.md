@@ -636,7 +636,7 @@ The header shows the signed-in user's display name and role, with a sign-out but
 | **SMS provider**: choice, account, sender name (_başlık_) registration, cost per message. Shared with doc 17 §7 | The SMS adapter only. Everything else in §5.3 is built regardless | product owner |
 | **İYS**: confirm with the provider that a transactional one-time code needs no İYS consent | Sending SMS in production | product owner |
 | **KVKK disclosure** to employees whose names, numbers and addresses are recorded (§10) | Go-live on the server | product owner |
-| **Domain name and TLS certificate** for the server (doc 14 §13) | Network mode | product owner |
+| ~~**Domain name and TLS certificate** for the server (doc 14 §13)~~ Resolved 2026-10-15: `takipsistemi.arosiapet.com`, Let's Encrypt through Caddy (doc 14 §13.7) | — | product owner |
 
 ## 13. Out of scope
 

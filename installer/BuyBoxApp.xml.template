@@ -55,7 +55,9 @@
 
   <env name="NODE_ENV" value="production" />
   <env name="PORT" value="{{PORT}}" />
-  <!-- Loopback only, until authentication exists (doc 14 §4.4). -->
+  <!-- Loopback only, always. A server reaches the network through a reverse proxy, and its
+       PUBLIC_ORIGIN / TRUST_PROXY are added to the rendered file by hand; install-service.ps1
+       carries them over on upgrade (doc 14 §4.4, §13.7). -->
   <env name="HOSTNAME" value="127.0.0.1" />
   <env name="AUTO_MIGRATE" value="1" />
   <env name="APP_VERSION" value="{{VERSION}}" />

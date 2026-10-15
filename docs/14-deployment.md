@@ -1274,8 +1274,10 @@ licence gate — otherwise an expired install could be stuck on a build that can
 
 ## 13. Server (VPS) deployment
 
-Status: specification, added 2026-09-27. Not built. It depends on Phase 12 (sign-in,
-doc 18) and on §11.13 step 5 (the `.deb` proven on a real Ubuntu machine). Neither exists yet.
+Status: specification, added 2026-09-27. Sign-in (doc 18) and the network-mode boot guard
+(R-DEP-16) are built. **The production server turned out to be a Windows Server, not an Ubuntu
+VPS:** it went on the network as `https://takipsistemi.arosiapet.com` on 2026-10-15, and §13.7
+records how that differs from the Linux shape below. §13.1–§13.4 still describe the Ubuntu path.
 
 The product owner is moving the application from a Windows machine in a data centre to a VPS,
 used from browsers on other computers (doc 18 §1). **Trendyol collection was measured to work
@@ -1301,8 +1303,8 @@ internet ──443──▶ Caddy (TLS, HSTS) ──▶ 127.0.0.1:3000  BuyBox s
   with one short configuration file and no cron job. nginx with certbot is an acceptable
   substitute; the requirements in §13.2 are what matter, not the product.
 - **A domain name is required** (for example `fiyat.<firma>.com.tr`), with an A record pointing
-  at the VPS. Let's Encrypt does not issue a certificate for a bare IP address. This is an open
-  item for the product owner (doc 18 §12).
+  at the VPS. Let's Encrypt does not issue a certificate for a bare IP address. Resolved
+  2026-10-15: `takipsistemi.arosiapet.com` (§13.7).
 
 ### 13.2 Reverse proxy and network mode
 
@@ -1469,3 +1471,71 @@ Linux:
 
 The commands are `list-users`, `create-admin <user>`, `reset-password <user>`, `reset-mfa <user>`
 and `unlock <user>`. In a development checkout it is `npm run admin -- <command>`.
+
+### 13.7 Network mode on Windows Server
+
+Written 2026-10-15, the day the production install went on the network. The server is a Windows
+Server the customer provides, not the Ubuntu VPS of §13.1, so the live install stayed where it
+was and §13.4's move did not happen. Everything in §13.2 holds; this section is only what is
+different on Windows.
+
+**Shape as built:**
+
+```
+internet ──▶ customer NAT firewall ──80/443──▶ 192.168.16.103  Caddy (Windows service)
+                                                                 └─▶ 127.0.0.1:3000  BuyBoxApp (WinSW)
+                                                                                      └─ PostgreSQL, localhost:5432
+```
+
+- **The server is behind NAT.** Its own address is private, its outbound address and the public
+  address that reaches it are different IPs, and only the customer's IT can forward ports. The
+  A record must name the address that is *forwarded*, not the one `api.ipify.org` reports from
+  the server. Port 80 must be forwarded with no source restriction: Let's Encrypt validates and
+  renews through it.
+- **Caddy for Windows** from the project's GitHub releases (checksum checked against the
+  release's `checksums.txt`), in `C:\Caddy\` — never under `C:\Program Files\BuyBox`, which an
+  upgrade empties (§5 step 3). Registered with `sc.exe create caddy start= auto binPath=
+  "C:\Caddy\caddy.exe run --config C:\Caddy\Caddyfile"`; `caddy.exe` speaks the service protocol
+  itself. The Caddyfile is `installer/linux/network/Caddyfile.example` with the domain replaced.
+  Caddy is server infrastructure and is not vendored into the installer: the installer never
+  opens a port (§11.9).
+- **IIS is often preinstalled and holds port 80** through HTTP.sys (the listener shows as PID 4,
+  `System`), and Caddy then exits with `bind: … access … not permitted`. On this server it held
+  only the default page, so `W3SVC` and `WAS` were stopped and disabled, and IIS's firewall
+  rules disabled with them. A server that really serves something from IIS needs a different
+  arrangement; do not stop it unexamined.
+- **Windows Firewall:** inbound allow rules for `C:\Caddy\caddy.exe` on TCP 80/443 and UDP 443.
+  No rule for the application port. Remote Desktop is restricted at the customer's firewall to
+  named addresses.
+
+**Network mode on WinSW.** There is no systemd drop-in, so `PUBLIC_ORIGIN` and `TRUST_PROXY` are
+`<env>` entries added by hand to `C:\Program Files\BuyBox\service\BuyBoxApp.xml`, next to
+`HOSTNAME`. `install-service.ps1` re-renders that file from the template on every upgrade (§5
+step 7), which until 0.1.21 dropped both entries with no error: the upgraded service booted in
+loopback mode — the R-DEP-16 guard cannot catch this, because `HOSTNAME` is still loopback —
+with a non-`Secure` cookie, an optional second factor, and every client counted as `127.0.0.1`
+by the lockout. From 0.1.21 the script reads exactly these two keys from the previous file and
+writes them back, and stops the upgrade if the previous file cannot be parsed (R-DEP-18). It is
+an explicit list on purpose: a key a later template removes must not survive as if an operator
+had set it.
+
+**The database connection string is never displayed with its password (N-1a).** The live install
+is on PostgreSQL. Its worker reported the raw `DATABASE_URL` as its database target, and that
+string reached the dashboard, the Jobs screen, `/api/health` and the log — readable by every
+signed-in user once the install was on the network. `redactDatabaseUrl` in `packages/db` now
+replaces the password with `***` wherever a connection string is shown, returned or logged,
+and the worker and `/api/health` compute their database targets with the same function so the
+2026-08-24 split check still compares like with like. **A password that was exposed this way is
+rotated**, not merely hidden: change it in PostgreSQL and in the `.env.local` `DATABASE_URL`,
+then restart the service.
+
+**Backups:** §13.3's off-machine copy applies unchanged, except that a PostgreSQL install backs up
+with `pg_dump`, not `sqlite3 .backup`, plus `secrets.enc.json`; `SECRET_STORE_KEY` is kept apart.
+
+**Checks** are D-S1, D-S2, D-S4, D-S6 and D-S7 of §13.5, plus:
+
+| # | Check |
+|---|---|
+| D-W1 | Upgrading a network install keeps both `PUBLIC_ORIGIN` and `TRUST_PROXY` in `BuyBoxApp.xml`, once each, and the installer log names them ("Ag ayari korundu") |
+| D-W2 | No screen, API response or log line carries the database password; the Jobs screen shows `postgres://<user>:***@…` |
+| D-W3 | From outside, only 80 and 443 answer; 3000, 5432 and Caddy's admin port 2019 do not |

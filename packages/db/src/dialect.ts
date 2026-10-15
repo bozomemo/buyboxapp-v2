@@ -13,7 +13,51 @@ export function inferDialect(databaseUrl: string): Dialect {
   if (databaseUrl.startsWith('sqlite://') || databaseUrl.startsWith('file:') || databaseUrl === ':memory:') {
     return 'sqlite';
   }
-  throw new RangeError(`Cannot infer database dialect from URL: "${databaseUrl}"`);
+  throw new RangeError(`Cannot infer database dialect from URL: "${redactDatabaseUrl(databaseUrl)}"`);
+}
+
+const REDACTED_PASSWORD = '***';
+
+/**
+ * A connection string with its password replaced by `***`, for anything a person or a log will
+ * read. The user, host, port and database stay, because they are what tells two targets apart.
+ *
+ * Until 2026-10-15 the worker's database target was the raw `DATABASE_URL`, and it was shown on
+ * the dashboard and the Jobs screen, returned by `/api/health` and written to the log — so on a
+ * PostgreSQL install every signed-in user, İzleyici included, could read the database password
+ * the day the install went on the network.
+ *
+ * The userinfo is taken up to the *last* `@` before the path, so a password containing an
+ * unencoded `@` is still hidden whole. A `password=` query parameter is hidden too.
+ */
+export function redactDatabaseUrl(databaseUrl: string): string {
+  return databaseUrl
+    .replace(/^([a-z][a-z0-9+.-]*:\/\/)([^/?#]*)@/i, (_match, scheme: string, userinfo: string) => {
+      const colon = userinfo.indexOf(':');
+      return colon === -1
+        ? `${scheme}${userinfo}@`
+        : `${scheme}${userinfo.slice(0, colon)}:${REDACTED_PASSWORD}@`;
+    })
+    .replace(/([?&]password=)[^&#]*/gi, `$1${REDACTED_PASSWORD}`);
+}
+
+/**
+ * The database a connection string names, in a form two processes can compare and a person can
+ * read: the absolute file path for SQLite, the redacted URL (`redactDatabaseUrl`) otherwise.
+ *
+ * The worker reports this for the database it opened at boot and `/api/health` computes it for
+ * the database the configuration names now; a difference between the two is the 2026-08-24
+ * split. Two URLs differing only in password therefore compare equal, which is correct — they
+ * name the same database.
+ */
+export function describeDatabaseTarget(databaseUrl: string, dataDir?: string): string {
+  try {
+    return inferDialect(databaseUrl) === 'sqlite'
+      ? sqliteFilePath(databaseUrl, dataDir)
+      : redactDatabaseUrl(databaseUrl);
+  } catch {
+    return redactDatabaseUrl(databaseUrl);
+  }
 }
 
 /**

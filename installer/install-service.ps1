@@ -25,12 +25,45 @@ foreach ($dir in @($DataDir, (Join-Path $DataDir 'logs'))) {
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 }
 
-(Get-Content $template -Raw).
+# Network mode (doc 14 section 13.7). These are set by hand on a server that is reached through a
+# reverse proxy, in the BuyBoxApp.xml this script is about to overwrite. Until 0.1.21 the rewrite
+# dropped them: the next upgrade silently put a network install back into loopback mode -- cookie
+# not Secure, second factor optional, every client seen as 127.0.0.1 -- and nothing failed.
+#
+# An explicit list, not "every env the template lacks": a key a later template removes on purpose
+# must not come back as if an operator had set it.
+$carriedEnvNames = @('PUBLIC_ORIGIN', 'TRUST_PROXY')
+$carriedEnv = @()
+if (Test-Path $configPath) {
+  try {
+    [xml]$previous = Get-Content $configPath -Raw
+    foreach ($node in $previous.service.env) {
+      if ($carriedEnvNames -contains $node.name) { $carriedEnv += $node }
+    }
+  } catch {
+    # Unreadable is not ignorable: a network install would come back up in loopback mode.
+    throw "Mevcut servis tanimi okunamadi ($configPath): $($_.Exception.Message). Ag ayarlari (PUBLIC_ORIGIN, TRUST_PROXY) kaybolmasin diye kurulum durduruldu."
+  }
+}
+
+$rendered = (Get-Content $template -Raw).
   Replace('{{INSTALL_DIR}}', $InstallDir).
   Replace('{{DATA_DIR}}', $DataDir).
   Replace('{{PORT}}', "$Port").
-  Replace('{{VERSION}}', $Version) |
-  Set-Content -Path $configPath -Encoding utf8
+  Replace('{{VERSION}}', $Version)
+
+if ($carriedEnv.Count -gt 0) {
+  $lines = @('  <!-- Network mode, carried over from the previous definition (doc 14 section 13.7). -->')
+  foreach ($node in $carriedEnv) {
+    $lines += ('  <env name="{0}" value="{1}" />' -f $node.name, [System.Security.SecurityElement]::Escape($node.value))
+    Write-Output ("Ag ayari korundu: {0}={1}" -f $node.name, $node.value)
+  }
+  $closing = $rendered.LastIndexOf('</service>')
+  if ($closing -lt 0) { throw "Servis sablonunda </service> bulunamadi: $template" }
+  $rendered = $rendered.Insert($closing, (($lines -join "`r`n") + "`r`n"))
+}
+
+$rendered | Set-Content -Path $configPath -Encoding utf8
 
 $existing = Get-Service -Name 'BuyBoxApp' -ErrorAction SilentlyContinue
 if ($existing) {
