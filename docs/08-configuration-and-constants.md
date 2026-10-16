@@ -320,5 +320,5 @@ provider credentials are secrets, and live in the environment (§14).
 | `AUTH_SMS_RESEND_MS` | 60 s | `packages/shared` | |
 | `AUTH_SMS_PER_USER_HOURLY` / `AUTH_SMS_PER_PHONE_DAILY` | 5 / 10 | `packages/shared` | Anti-pumping (doc 18 §5.3) |
 | `AUTH_SMS_DAILY_CAP` | 200 | env | An install-wide ceiling on SMS spend. After it, SMS is refused until midnight Europe/Istanbul and an `error` event is written |
-| `auth.mfaRequired` | off | `app_settings` | **Loopback installs only.** A network install always requires a second factor, and ignores this setting (R-AUTH-5) |
+| `auth.mfaRequired` | off | `app_settings` | Whether every user must have a second factor, on a loopback and a network install alike (R-AUTH-5). Until 2026-10-16 a network install ignored it and always required one |
 | `SMS_PROVIDER` | *(unset)* | env | Shared with the notification channel (§14). Unset means SMS is not offered as a second factor. `dev-console` is refused when `NODE_ENV=production` |

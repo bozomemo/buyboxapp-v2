@@ -38,12 +38,11 @@ declare global {
 const POLICY_CACHE_MS = 30_000;
 
 /**
- * doc 18 §5.1: a network install always requires a second factor, and no setting changes that
- * (R-AUTH-5). A loopback install requires one when `auth.mfaRequired` says so. Cached briefly
- * because the proxy asks on every request; `forgetMfaPolicy` drops it when the setting changes.
+ * doc 18 §5.1: a second factor is required for everyone when `auth.mfaRequired` says so, on a
+ * loopback and a network install alike (R-AUTH-5). Cached briefly because the proxy asks on every
+ * request; `forgetMfaPolicy` drops it when the setting changes.
  */
 export async function isMfaRequired(appDb: AppDatabase): Promise<boolean> {
-  if (getAuthConfig().networkMode) return true;
   const cached = globalThis.__buyboxMfaRequired;
   const nowMs = Date.now();
   if (cached && nowMs - cached.atMs < POLICY_CACHE_MS) return cached.value;
@@ -51,7 +50,7 @@ export async function isMfaRequired(appDb: AppDatabase): Promise<boolean> {
   try {
     value = (await configRepo.getAppSetting(appDb, AUTH_MFA_REQUIRED_SETTING_KEY))?.value === 'true';
   } catch {
-    // An unreadable setting on a loopback install means optional — the network case never gets here.
+    // An unreadable setting means optional, the setting's default.
   }
   globalThis.__buyboxMfaRequired = { value, atMs: nowMs };
   return value;

@@ -459,7 +459,8 @@ Definition of done:
 
 - a viewer's write request to every mutating route is refused with 403 by the handler, proven
   by the CI test and not by the UI;
-- a network install cannot be used without a second factor;
+- a network install cannot be used without a second factor (withdrawn 2026-10-16 at the
+  customer's request; the second factor is now `auth.mfaRequired` on every install, doc 18 §5.1);
 - five wrong passwords lock the username, and the message never says so;
 - no password, code or token appears in any log line or `auth_events` row;
 - every settings, audit and manual-price row written after the upgrade names a user or `system`;

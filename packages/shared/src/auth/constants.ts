@@ -37,7 +37,7 @@ export const AUTH_SMS_DAILY_CAP_DEFAULT = 200;
 
 export const AUTH_RECOVERY_CODE_COUNT = 10;
 
-/** `app_settings` key — loopback installs only; a network install ignores it (R-AUTH-5). */
+/** `app_settings` key — whether every user must have a second factor, on any install (R-AUTH-5). */
 export const AUTH_MFA_REQUIRED_SETTING_KEY = 'auth.mfaRequired';
 
 /** Secret-store key for a user's TOTP secret (doc 18 §5.2, never a database column). */

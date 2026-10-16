@@ -1336,16 +1336,15 @@ about deployment facts:
 
 | Key | Value | Effect |
 |---|---|---|
-| `PUBLIC_ORIGIN` | `https://fiyat.example.com.tr` | Network mode: `__Host-` Secure cookie, second factor required, and the Origin check compares against this value (doc 18 §4, §5.1) |
+| `PUBLIC_ORIGIN` | `https://fiyat.example.com.tr` | Network mode: `__Host-` Secure cookie, and the Origin check compares against this value (doc 18 §4, §5.1) |
 | `TRUST_PROXY` | `1` | Client address taken from the last `X-Forwarded-For` entry (doc 18 §3.3) |
 
 `HOSTNAME` stays `127.0.0.1`. **The service refuses to boot when `PUBLIC_ORIGIN` is set and
 either `PUBLIC_ORIGIN` is not `https://` or `HOSTNAME` is not a loopback address** (R-DEP-16).
 A half-configured network mode fails at startup, not in production.
 The converse holds too: **a production install without `PUBLIC_ORIGIN` refuses to boot unless
-`HOSTNAME` is loopback.** Without `PUBLIC_ORIGIN` the session cookie is not `Secure` and the
-second factor is optional, so serving that mode on an IP address over plain HTTP would expose
-both. `next dev` is exempt; it binds every interface by default.
+`HOSTNAME` is loopback.** Without `PUBLIC_ORIGIN` the session cookie is not `Secure`, so serving
+that mode on an IP address over plain HTTP would expose it. `next dev` is exempt; it binds every interface by default.
 
 ### 13.3 Server hardening
 
@@ -1402,7 +1401,7 @@ update budget twice.
    - `AUTO_MIGRATE` applies Phase 12's migrations (and backs up first, §5.2b). The database has no
      users, so the install enters bootstrap mode (doc 18 §8.1).
    - Create the first Yönetici with the token from `/var/lib/buybox/bootstrap-token.txt`, and
-     enrol a second factor.
+     enrol a second factor if the install will require one (doc 18 §5.1).
 5. **Licence:** the install fingerprint changes with the machine, which shows a warning banner
    and does not stop anything (doc 13 §5, R-LIC-7). Issue a licence for the new install when
    convenient.
@@ -1423,7 +1422,7 @@ update budget twice.
 | D-S1 | `https://<domain>` serves `/login` with a valid certificate; `http://` redirects to it; the response carries HSTS |
 | D-S2 | From outside the VPS, `/api/health` and `/api/metrics` answer 404, and port 3000 does not answer at all. On the VPS, `curl 127.0.0.1:3000/api/health` is green and Alloy's metrics reach Grafana |
 | D-S3 | Starting the service with `PUBLIC_ORIGIN=http://…`, with `HOSTNAME=0.0.0.0` in network mode, or with `HOSTNAME=0.0.0.0` and no `PUBLIC_ORIGIN`, fails at boot with a named reason (R-DEP-16) |
-| D-S4 | A user without a second factor cannot reach any screen but enrolment; a viewer's price-edit request is refused with 403 (doc 18 R-AUTH-5, R-AUTH-10) |
+| D-S4 | With `auth.mfaRequired` on, a user without a second factor cannot reach any screen but enrolment; with it off, they sign in with the password alone; a viewer's price-edit request is refused with 403 (doc 18 R-AUTH-5, R-AUTH-10) |
 | D-S5 | Trendyol competitor collection succeeds on the VPS (= D-U7, and re-confirms the 2026-09-27 measurement from the installed package, not a development checkout) |
 | D-S6 | The nightly off-machine backup exists, and restoring it on a scratch VM with the separately kept `SECRET_STORE_KEY` produces a working install |
 | D-S7 | With the host time zone set to UTC, the daily update budget rolls over at midnight Europe/Istanbul, and dates on screen are Turkish local time |
@@ -1448,9 +1447,8 @@ administrator, sign-in, listings, licence and marketplace settings all worked.
    _Operatör (eski kayıt)_.
 5. **Set up the authenticator app** from _Hesabım_ (the name in the header) → _Doğrulama
    uygulaması → Kur_, and save the ten recovery codes somewhere other than the phone.
-   - On this loopback install a second factor is optional unless _Ayarlar → Kullanıcılar →
-     İki adımlı doğrulama → Herkes için zorunlu_ is ticked.
-   - On the VPS (§13) it is always required.
+   - A second factor is optional, on this loopback install and on the VPS (§13) alike, unless
+     _Ayarlar → Kullanıcılar → İki adımlı doğrulama → Herkes için zorunlu_ is ticked.
 6. **Create the other users** in _Ayarlar → Kullanıcılar_ with a role and a temporary password
    that you pass on yourself. Each changes it at first sign-in.
 7. **Keep the install on loopback** until the move of §13.4. Nothing about this release opens a

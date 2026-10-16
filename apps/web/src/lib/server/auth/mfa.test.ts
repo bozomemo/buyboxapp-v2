@@ -87,6 +87,11 @@ async function user() {
   return (await authRepo.getUserById(appDb, userId))!;
 }
 
+async function setMfaRequired(required: boolean): Promise<void> {
+  await configRepo.setAppSetting(appDb, { key: AUTH_MFA_REQUIRED_SETTING_KEY, value: String(required), updatedBy: 'test', updatedAt: NOW }, newId());
+  globalThis.__buyboxMfaRequired = undefined;
+}
+
 /** Enrols TOTP at `NOW` and returns the secret the app would hold. */
 async function enrol(): Promise<{ secret: Buffer; codes: string[] | null }> {
   const u = await user();
@@ -191,24 +196,27 @@ describe('trusted devices (doc 18 §5.1)', () => {
 });
 
 describe('policy (doc 18 §5.1, R-AUTH-5)', () => {
-  it('optional on loopback unless the setting says so; always required on a network install', async () => {
+  it.each([
+    ['loopback', undefined],
+    ['network', 'https://fiyat.example.com.tr'],
+  ])('optional on a %s install unless the setting says so', async (_install, publicOrigin) => {
+    if (publicOrigin === undefined) delete process.env.PUBLIC_ORIGIN;
+    else process.env.PUBLIC_ORIGIN = publicOrigin;
     expect(await isMfaRequired(appDb)).toBe(false);
-    await configRepo.setAppSetting(appDb, { key: AUTH_MFA_REQUIRED_SETTING_KEY, value: 'true', updatedBy: 'test', updatedAt: NOW }, newId());
-    globalThis.__buyboxMfaRequired = undefined;
+    await setMfaRequired(true);
     expect(await isMfaRequired(appDb)).toBe(true);
-    await configRepo.setAppSetting(appDb, { key: AUTH_MFA_REQUIRED_SETTING_KEY, value: 'false', updatedBy: 'test', updatedAt: NOW }, newId());
-    globalThis.__buyboxMfaRequired = undefined;
-    process.env.PUBLIC_ORIGIN = 'https://fiyat.example.com.tr';
-    expect(await isMfaRequired(appDb)).toBe(true);
+    await setMfaRequired(false);
+    expect(await isMfaRequired(appDb)).toBe(false);
+    delete process.env.PUBLIC_ORIGIN;
   });
 
   it('the last method cannot be removed where a second factor is required, and can where it is not', async () => {
     await enrol();
-    process.env.PUBLIC_ORIGIN = 'https://fiyat.example.com.tr';
+    await setMfaRequired(true);
     await expect(removeTotp(appDb, store, userId, meta, NOW)).rejects.toThrow(/zorunlu/);
     expect((await user()).totpEnabled).toBe(true);
 
-    delete process.env.PUBLIC_ORIGIN;
+    await setMfaRequired(false);
     await removeTotp(appDb, store, userId, meta, NOW);
     expect((await user()).totpEnabled).toBe(false);
     expect(await store.get(totpSecretKey(userId))).toBeUndefined();

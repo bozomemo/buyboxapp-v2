@@ -340,9 +340,8 @@ function NewUserForm({ roleOptions, onDone }: { roleOptions: RoleOptions; onDone
 }
 
 /**
- * doc 18 §5.1: on a network install always required, shown locked; on a loopback install the
- * administrator's choice. Turning it on sends every user without a second factor to enrolment at
- * their next request.
+ * doc 18 §5.1: the administrator's choice on every install. Turning it on sends every user without
+ * a second factor to enrolment at their next request.
  */
 function MfaPolicy({ onDone }: { onDone: (error: string | null, success: string) => void }) {
   const [policy, setPolicy] = useState<{ networkMode: boolean; mfaRequired: boolean } | null>(null);
@@ -369,14 +368,14 @@ function MfaPolicy({ onDone }: { onDone: (error: string | null, success: string)
         type="checkbox"
         className="mt-1"
         checked={policy.mfaRequired}
-        disabled={busy || policy.networkMode}
+        disabled={busy}
         onChange={(e) => void toggle(e.target.checked)}
       />
       <span>
         Herkes için zorunlu
         <span className="block text-xs text-(--color-muted)">
-          {policy.networkMode
-            ? 'Bu kurulum ağ üzerinden erişildiği için her zaman zorunludur.'
+          {policy.networkMode && !policy.mfaRequired
+            ? 'Bu kurulum ağ üzerinden erişiliyor ve kullanıcılar yalnızca parolayla girebiliyor. Açılırsa iki adımlı doğrulaması olmayan her kullanıcı bir sonraki işleminde kurulum ekranına yönlendirilir.'
             : 'Açılırsa iki adımlı doğrulaması olmayan her kullanıcı bir sonraki işleminde kurulum ekranına yönlendirilir.'}
         </span>
       </span>

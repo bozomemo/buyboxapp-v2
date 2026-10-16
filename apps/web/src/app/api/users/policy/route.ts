@@ -1,7 +1,6 @@
 /**
- * Whether a second factor is required for everyone (doc 18 §5.1). On a network install it always
- * is and this route refuses to say otherwise (R-AUTH-5); on a loopback install it is the
- * `auth.mfaRequired` setting. `users.manage` only.
+ * Whether a second factor is required for everyone (doc 18 §5.1): the `auth.mfaRequired`
+ * setting, on a loopback and a network install alike (R-AUTH-5). `users.manage` only.
  */
 import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
@@ -22,12 +21,6 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
   const body = await readJsonObject(request);
   if (body === null || typeof body.mfaRequired !== 'boolean') {
     return NextResponse.json({ error: '`mfaRequired` true ya da false olmalı.' }, { status: 400 });
-  }
-  if (getAuthConfig().networkMode && !body.mfaRequired) {
-    return NextResponse.json(
-      { error: 'Ağ üzerinden erişilen kurulumda iki adımlı doğrulama her zaman zorunludur.' },
-      { status: 409 },
-    );
   }
   await configRepo.setAppSetting(
     getAppDb(),

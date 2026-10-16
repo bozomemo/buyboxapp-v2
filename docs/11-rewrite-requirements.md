@@ -201,7 +201,7 @@ Added 2026-09-27. Full detail, including why each rule exists, is in
 | R-AUTH-2 | M | Every route export is wrapped with a permission, enforced by a CI test | 18 §7.2 |
 | R-AUTH-3 | M | Passwords are hashed with scrypt; sessions and codes are stored only as hashes; no password, code or token is ever logged | 18 §3.2, §4.1, §9.2 |
 | R-AUTH-4 | M | Five failed attempts lock a username for 15 minutes; the failure message never says which part was wrong | 18 §3.3 |
-| R-AUTH-5 | M | A network install requires a second factor for every user, with no way to turn it off | 18 §5.1 |
+| R-AUTH-5 | M | A second factor is required for every user exactly when `auth.mfaRequired` is on, on a loopback and a network install alike; while it is off a user with nothing enrolled signs in with the password alone | 18 §5.1 |
 | R-AUTH-6 | M | TOTP passes the RFC 6238 test vectors and refuses a replayed code | 18 §5.2 |
 | R-AUTH-7 | M | The TOTP secret lives in the secret store, never in a database column | 18 §5.2 |
 | R-AUTH-8 | M | With no SMS provider configured, SMS is not offered anywhere, and nothing else depends on it | 18 §5.3 |

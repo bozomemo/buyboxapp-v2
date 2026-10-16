@@ -19,6 +19,7 @@ Decisions of the product owner, 2026-09-27:
 | **More than one user**, each signing in with a username and password | §3, §4 |
 | **The three proposed roles are enough**: Yönetici, Fiyat Yöneticisi, İzleyici. No per-marketplace permissions | Roles are fixed in code, not edited in a screen (§6). "Role management" means giving each user a role |
 | **Second factor: an authenticator app (TOTP) and SMS are both acceptable.** No SMS provider has been chosen | TOTP is built in full. SMS is built up to the provider boundary and stays unavailable until a provider adapter exists (§5.3) |
+| **The second factor is optional on a network install too** (2026-10-16, at the customer's request: they sign in with a password alone) | Replaces the earlier rule that a network install always required one. `auth.mfaRequired` governs every install, default off (§5.1, R-AUTH-5). A network install without it rests on the password, lockout and rate limits (§3.3) and TLS — the administrator can turn it on at any time |
 
 Also decided while writing this, and recorded so each can be challenged:
 
@@ -41,7 +42,7 @@ Also decided while writing this, and recorded so each can be challenged:
 | Protects against | How |
 |---|---|
 | Anyone on the internet reaching the price controls | Sign-in on every route (§7); TLS at the reverse proxy |
-| A guessed or leaked password | Required second factor on a network install (§5.1); lockout and rate limits (§3.3) |
+| A guessed or leaked password | Lockout and rate limits (§3.3); a second factor, required for everyone when the administrator turns it on (§5.1) |
 | A colleague doing more than their job needs | Roles (§6) |
 | "Who changed this?" having no answer | Every change records the user who made it (§9) |
 | A malicious page making a signed-in browser change a price | SameSite cookie plus an Origin check (§4.3); no framing (§4.4) |
@@ -199,11 +200,14 @@ HTTPS.
 
 ### 5.1 Policy
 
-- **Network install:** a second factor is **required for every user, and this cannot be turned
-  off.** A user who has none enrolled is sent to enrol it right after the password step, and can
-  do nothing else until they have.
-- **Loopback install:** a second factor is optional. It is controlled by `auth.mfaRequired` in
-  `app_settings`, default off.
+- **Every install, loopback or network:** a second factor is required for everyone only when
+  `auth.mfaRequired` in `app_settings` is on. It is off by default, and a Yönetici changes it in
+  _Ayarlar → Kullanıcılar_. While it is on, a user who has none enrolled is sent to enrol it right
+  after the password step, and can do nothing else until they have.
+- **While it is off,** a user with nothing enrolled signs in with the password alone. A user who
+  has enrolled a method is still asked for it, and may remove it from _Hesabım_.
+- Until 2026-10-16 a network install required a second factor with no way to turn it off. The
+  customer asked to sign in with a password alone, and the rule was withdrawn (§1).
 - **Methods:** a user may enrol TOTP, SMS or both, and chooses one at each sign-in.
 - **Recovery codes (§5.4)** are issued with the first method enrolled.
 
@@ -493,8 +497,8 @@ to the first version with sign-in. It is how the live install will get its first
      creates a Yönetici.
    - The token is compared in constant time.
    - Five wrong tokens from one address lock the form for 15 minutes, as in §3.3.
-4. **On success:** the token file is deleted and the administrator is signed in. On a network
-   install they are then taken to enrol a second factor (§5.1).
+4. **On success:** the token file is deleted and the administrator is signed in. When
+   `auth.mfaRequired` is on they are then taken to enrol a second factor (§5.1).
 
 After bootstrap, a fresh install continues as before: licence, then the setup wizard. The
 wizard is now used by a signed-in administrator.
@@ -658,7 +662,7 @@ sections.
 | R-AUTH-2 | M | Every route export is wrapped with a permission, enforced by a CI test | §7.2 |
 | R-AUTH-3 | M | Passwords are hashed with scrypt; sessions and codes are stored only as hashes; no password, code or token is ever logged | §3.2, §4.1, §9.2 |
 | R-AUTH-4 | M | Five failed attempts lock a username for 15 minutes; the failure message never says which part was wrong | §3.3 |
-| R-AUTH-5 | M | A network install requires a second factor for every user, with no way to turn it off | §5.1 |
+| R-AUTH-5 | M | A second factor is required for every user exactly when `auth.mfaRequired` is on, on a loopback and a network install alike; while it is off a user with nothing enrolled signs in with the password alone | §5.1 |
 | R-AUTH-6 | M | TOTP passes the RFC 6238 test vectors and refuses a replayed code | §5.2 |
 | R-AUTH-7 | M | The TOTP secret lives in the secret store, never in a database column | §5.2 |
 | R-AUTH-8 | M | With no SMS provider configured, SMS is not offered anywhere, and nothing else depends on it | §5.3 |
