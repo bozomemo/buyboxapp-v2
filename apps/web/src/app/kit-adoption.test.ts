@@ -22,6 +22,8 @@ export const CONVERTED: readonly string[] = ['dashboard-client.tsx', 'tracked-pr
   'watched-brands/sellers/seller-identity-panel.tsx',
   'watched-brands/watched-brands-client.tsx',
   'watched-brands/policy/policy-client.tsx',
+  'watched-brands/cross-marketplace/cross-marketplace-client.tsx',
+  'watched-brands/comparison/brand-comparison-client.tsx',
 ];
 
 const NON_TEXT_INPUT = /type=["'](checkbox|radio|file|hidden)["']/;

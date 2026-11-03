@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { BrandComparisonClient } from './brand-comparison-client';
@@ -82,5 +82,19 @@ describe('BrandComparisonClient', () => {
     // "Whiskas" renders twice — once as the filter chip, once as the summary row's link — so
     // assert on the row link specifically rather than the ambiguous text.
     expect(await screen.findByRole('link', { name: 'Whiskas' })).toBeTruthy();
+  });
+
+  describe('redesign (plan 2026-11-03 phase 2, Task 8)', () => {
+    it('comparison summary is a region and period a segmented filter', async () => {
+      stubFetch({
+        [ROUTE]: {
+          body: { window: { sinceMs: 0, untilMs: 1 }, brands: [], series: [], index: null, hasCompetitorBrand: false },
+        },
+      });
+      render(<BrandComparisonClient />);
+      expect(await screen.findByRole('region', { name: 'Dönem özeti' })).toBeTruthy();
+      expect(within(screen.getByRole('group', { name: 'Dönem' })).getByRole('button', { name: 'Son 30 gün' })).toBeTruthy();
+      expect(screen.getByRole('navigation', { name: 'Konum' })).toBeTruthy();
+    });
   });
 });

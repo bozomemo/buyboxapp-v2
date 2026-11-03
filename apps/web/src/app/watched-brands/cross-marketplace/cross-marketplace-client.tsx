@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { EmptyState, ErrorState, LoadingState, PageHeader, Section } from '@/components/ui';
+import { Search } from '@/components/icon';
+import { Button, EmptyState, ErrorState, LoadingState, PageHeader, Section, TextInput } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatNumber, formatPercent } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
@@ -52,9 +53,9 @@ function marketplaceLabel(code: string): string {
 function CoverageCard({ code, coverage }: { readonly code: string; readonly coverage: Coverage }) {
   const share = coverage.total === 0 ? 0 : coverage.resolved / coverage.total;
   return (
-    <div className="rounded border border-(--color-border) p-3">
-      <h3 className="text-sm font-medium">{marketplaceLabel(code)}</h3>
-      <p className="mt-1 text-2xl tabular-nums">{formatPercent(share)}</p>
+    <div className="rounded-xl border border-(--color-border) bg-(--color-surface) px-5 py-4 shadow-(--shadow-card)">
+      <h3 className="text-[13px] font-medium text-(--color-muted)">{marketplaceLabel(code)}</h3>
+      <p className="tabular-figures mt-1.5 text-3xl font-semibold">{formatPercent(share)}</p>
       <p className="text-xs text-(--color-muted)">
         {formatNumber(coverage.resolved)} / {formatNumber(coverage.total)} üründe barkod biliniyor
       </p>
@@ -125,6 +126,7 @@ export function CrossMarketplaceClient() {
     <div className="space-y-4">
       <PageHeader
         title="Pazaryeri Eşleşmesi"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Pazaryeri Eşleşmesi' }]}
         description={
           <>
             Aynı ürünün iki pazaryerindeki karşılıkları. Eşleşme <strong>yalnızca barkodla</strong> kurulur —
@@ -167,22 +169,17 @@ export function CrossMarketplaceClient() {
             }
           >
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <input
+              <TextInput
                 type="search"
+                icon={Search}
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="Barkod veya ürün adı"
                 aria-label="Barkod veya ürün adına göre filtrele"
-                className="rounded border border-(--color-border) px-2 py-1 text-sm"
               />
-              <button
-                type="button"
-                onClick={exportCsv}
-                disabled={matches.length === 0}
-                className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
-              >
+              <Button variant="secondary" size="sm" type="button" onClick={exportCsv} disabled={matches.length === 0}>
                 Excel&apos;e aktar
-              </button>
+              </Button>
             </div>
 
             {matches.length === 0 && (

@@ -88,4 +88,22 @@ describe('CrossMarketplaceClient', () => {
 
     expect(await screen.findByText('8690000000001')).toBeTruthy();
   });
+
+  describe('redesign (plan 2026-11-03 phase 2, Task 8)', () => {
+    it('search box and breadcrumb', async () => {
+      stubFetch({
+        [ROUTE]: {
+          body: {
+            left: { marketplaceCode: 'trendyol', coverage: emptyCoverage },
+            right: { marketplaceCode: 'hepsiburada', coverage: emptyCoverage },
+            matches: [],
+            truncated: false,
+          },
+        },
+      });
+      render(<CrossMarketplaceClient />);
+      expect(await screen.findByRole('searchbox', { name: 'Barkod veya ürün adına göre filtrele' })).toBeTruthy();
+      expect(screen.getByRole('navigation', { name: 'Konum' })).toBeTruthy();
+    });
+  });
 });

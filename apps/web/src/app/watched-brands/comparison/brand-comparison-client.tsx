@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Ago, ErrorState, LoadingState, PageHeader } from '@/components/ui';
+import { Ago, Button, ErrorState, LoadingState, PageHeader, Section, SegmentedFilter } from '@/components/ui';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { alignBrandSeries, COMPARISON_COLORS } from '@/lib/brand-comparison';
@@ -82,9 +82,10 @@ export function BrandComparisonClient() {
   const indexByBrand = new Map((report?.index?.brands ?? []).map((b) => [b.id, b.indexPct]));
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <PageHeader
         title="Marka Karşılaştırması"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Marka Karşılaştırması' }]}
         description={
           <>
             İzlenen markaların dönem içindeki ortalama piyasa fiyatı. Bir markayı{' '}
@@ -97,26 +98,30 @@ export function BrandComparisonClient() {
         }
       />
 
-      <div className="flex flex-wrap items-end gap-3 rounded border border-(--color-border) p-3 text-sm">
-        <label className="flex flex-col text-xs">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 text-sm shadow-(--shadow-card)">
+        <div className="flex flex-col gap-1 text-xs">
           Dönem
-          <select
+          <SegmentedFilter
+            label="Dönem"
             value={String(sinceMs)}
-            onChange={(e) => setSinceMs(Number(e.target.value))}
-            className="rounded border border-(--color-border) px-2 py-1 text-sm"
-          >
-            <option value={String(daysAgo(7))}>Son 7 gün</option>
-            <option value={String(daysAgo(30))}>Son 30 gün</option>
-            <option value={String(daysAgo(90))}>Son 90 gün</option>
-          </select>
-        </label>
+            onChange={(v) => setSinceMs(Number(v))}
+            options={[
+              { value: String(daysAgo(7)), label: 'Son 7 gün' },
+              { value: String(daysAgo(30)), label: 'Son 30 gün' },
+              { value: String(daysAgo(90)), label: 'Son 90 gün' },
+            ]}
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           {(report?.brands ?? []).map((brand) => {
             const on = selected.length === 0 || selected.includes(brand.id);
             return (
-              <button
+              <Button
                 key={brand.id}
+                variant={on ? 'primary' : 'secondary'}
+                size="sm"
                 type="button"
+                aria-pressed={on}
                 onClick={() =>
                   setSelected((current) =>
                     current.includes(brand.id)
@@ -124,25 +129,16 @@ export function BrandComparisonClient() {
                       : [...current, brand.id],
                   )
                 }
-                className={`rounded border px-2 py-1 text-xs ${
-                  on
-                    ? 'border-(--color-accent) text-(--color-accent)'
-                    : 'border-(--color-border) text-(--color-muted)'
-                }`}
               >
                 {brand.label}
-                <span className="ml-1 text-(--color-muted)">{brand.isOwnBrand ? 'bizim' : 'rakip'}</span>
-              </button>
+                <span className="opacity-75">{brand.isOwnBrand ? 'bizim' : 'rakip'}</span>
+              </Button>
             );
           })}
           {selected.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSelected([])}
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-            >
+            <Button variant="ghost" size="sm" type="button" onClick={() => setSelected([])}>
               Tümü
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -151,7 +147,7 @@ export function BrandComparisonClient() {
       {loading && !error && <LoadingState message="Karşılaştırma yükleniyor…" />}
 
       {report && !report.hasCompetitorBrand && (
-        <div className="rounded border border-(--color-border) p-3 text-sm text-(--color-muted)">
+        <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
           Hiç <strong>rakip marka</strong> izlenmiyor, bu yüzden endeks hesaplanmıyor. Rakip bir markayı da
           izlemeye almak, aynı süpürmenin sizin markanız için zaten yaptığı işi onun için de yapar — ve
           denetim bulguları üretilmez, çünkü &quot;yetkili satıcı&quot; bizim markamız hakkında bir ifadedir.
@@ -159,13 +155,13 @@ export function BrandComparisonClient() {
       )}
 
       {report && report.index && (
-        <div className="rounded border border-(--color-border) p-4">
+        <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
           <div className="mb-2 text-sm">
             <strong>{report.index.baselineLabel}</strong> tabanına göre fiyat endeksi
           </div>
           <div className="flex flex-wrap gap-4">
             {report.index.brands.map((b) => (
-              <div key={b.id} className="rounded border border-(--color-border) px-3 py-2">
+              <div key={b.id} className="rounded-lg border border-(--color-border) bg-(--color-bg) px-3 py-2">
                 <div className="text-xs text-(--color-muted)">{b.label}</div>
                 <div className="text-xl font-bold tabular-nums">{b.indexPct.toFixed(1)}</div>
                 <div className="text-xs text-(--color-muted)">
@@ -186,7 +182,7 @@ export function BrandComparisonClient() {
       )}
 
       {aligned.timestamps.length > 1 && (
-        <div className="rounded border border-(--color-border) p-4">
+        <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
           <div className="mb-2 text-xs text-(--color-muted)">Ortalama piyasa fiyatı — günlük</div>
           <PriceChart
             timestamps={[...aligned.timestamps]}
@@ -200,10 +196,13 @@ export function BrandComparisonClient() {
         </div>
       )}
 
-      <section className="rounded border border-(--color-border) p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-medium">Dönem özeti</h2>
-          <button
+      <Section
+        id="comparison-summary"
+        title="Dönem özeti"
+        action={
+          <Button
+            variant="secondary"
+            size="sm"
             type="button"
             disabled={(report?.series.length ?? 0) === 0}
             onClick={() =>
@@ -219,11 +218,11 @@ export function BrandComparisonClient() {
                 })),
               )
             }
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
           >
             Excel&apos;e Aktar
-          </button>
-        </div>
+          </Button>
+        }
+      >
         <TableFrame maxHeight="50vh">
           <table className="w-full text-sm">
             <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
@@ -276,7 +275,7 @@ export function BrandComparisonClient() {
             </tbody>
           </table>
         </TableFrame>
-      </section>
+      </Section>
     </div>
   );
 }
