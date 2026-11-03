@@ -4,11 +4,17 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import {
+  Button,
   Chip,
   EmptyState,
   ErrorState,
   LoadingState,
+  PageHeader,
+  Section,
+  SegmentedFilter,
+  Select,
   StatusBanner,
+  TextInput,
   TONE_BOX,
   TONE_TEXT,
   type Tone,
@@ -262,21 +268,24 @@ export function PolicyClient() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Satıcı Politikası</h1>
-          <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
+    <div className="space-y-6">
+      <PageHeader
+        title="Satıcı Politikası"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Satıcı Politikası' }]}
+        description={
+          <>
             Bir satıcı, her marka için üç durumdan birindedir: <strong>yetkili</strong>,{' '}
             <strong>yasaklı</strong> veya <strong>tanımsız</strong>. Tanımsız gerçek bir durumdur — “henüz
             bakılmadı” demektir, “izinsiz” demek değildir. Eşleştirme pazaryeri satıcı kodu ya da vergi
             numarası ile yapılır; <strong>isimle asla</strong>.
-          </p>
-        </div>
+          </>
+        }
+        action={
         <label className="text-sm">
           <span className="mb-1 block text-(--color-muted)">Marka</span>
+          {/* kit-exempt: brands grouped in <optgroup>s, which the kit Select does not take */}
           <select
-            className="rounded border border-(--color-border) px-2 py-1"
+            className="h-9 rounded-lg border border-(--color-border) bg-(--color-surface) px-3 text-sm"
             value={watchedBrandId}
             onChange={(e) => setWatchedBrandId(e.target.value)}
           >
@@ -293,12 +302,13 @@ export function PolicyClient() {
             ))}
           </select>
         </label>
-      </div>
+        }
+      />
 
       {error && <StatusBanner ok={false} message={error} />}
       {message && <StatusBanner ok={true} message={message} />}
       {importErrors.length > 0 && (
-        <div className={`rounded border p-3 text-sm ${TONE_BOX.danger}`}>
+        <div role="alert" className={`rounded-lg border p-3 text-sm ${TONE_BOX.danger}`}>
           <strong className={`block ${TONE_TEXT.danger}`}>
             Dosya içe aktarılmadı — hiçbir satır yazılmadı.
           </strong>
@@ -345,7 +355,7 @@ export function PolicyClient() {
         <>
           {/* Kapsam anahtarı — hem elle girişi hem içe aktarmayı etkiler, o yüzden ikisinin de
           üstünde duruyor. */}
-          <label className="flex items-start gap-2 rounded border border-(--color-border) p-3 text-sm">
+          <label className="flex items-start gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 text-sm shadow-(--shadow-card)">
             <input
               type="checkbox"
               className="mt-0.5"
@@ -364,14 +374,8 @@ export function PolicyClient() {
 
           <div className="grid gap-4 md:grid-cols-2">
             {/* Elle giriş */}
-            <section
-              className="rounded border border-(--color-border) p-4"
-              aria-labelledby="manual-add-heading"
-            >
-              <h2 id="manual-add-heading" className="mb-3 text-lg font-medium">
-                Elle ekle
-              </h2>
-              <div className="space-y-2 text-sm">
+            <Section id="manual-add-heading" title="Elle ekle" card>
+              <div className="max-w-[720px] space-y-2 text-sm">
                 <div className="flex gap-3">
                   <label className="flex items-center gap-1">
                     <input
@@ -392,51 +396,51 @@ export function PolicyClient() {
                 </div>
                 {manualKind === 'sellerRef' ? (
                   <div className="flex gap-2">
-                    <select
-                      className="rounded border border-(--color-border) px-2 py-1"
+                    <Select
+                      aria-label="Pazaryeri"
                       value={manualMarketplace}
                       onChange={(e) => setManualMarketplace(e.target.value)}
-                    >
-                      <option value="trendyol">Trendyol</option>
-                      <option value="hepsiburada">Hepsiburada</option>
-                    </select>
-                    <input
-                      className="flex-1 rounded border border-(--color-border) px-2 py-1"
+                      options={[
+                        { value: 'trendyol', label: 'Trendyol' },
+                        { value: 'hepsiburada', label: 'Hepsiburada' },
+                      ]}
+                    />
+                    <TextInput
+                      className="flex-1"
+                      aria-label="Satıcı kodu"
                       placeholder="Satıcı kodu"
                       value={manualRef}
                       onChange={(e) => setManualRef(e.target.value)}
                     />
                   </div>
                 ) : (
-                  <input
-                    className="w-full rounded border border-(--color-border) px-2 py-1"
+                  <TextInput
+                    className="w-full"
+                    aria-label="Vergi numarası"
                     placeholder="Vergi numarası"
                     value={manualTax}
                     onChange={(e) => setManualTax(e.target.value)}
                   />
                 )}
-                <select
-                  className="w-full rounded border border-(--color-border) px-2 py-1"
+                <SegmentedFilter
+                  label="Durum"
                   value={manualStatus}
-                  onChange={(e) => setManualStatus(e.target.value as 'authorised' | 'blocked')}
-                >
-                  <option value="authorised">Yetkili</option>
-                  <option value="blocked">Yasaklı</option>
-                </select>
-                <input
-                  className="w-full rounded border border-(--color-border) px-2 py-1"
+                  onChange={setManualStatus}
+                  options={[
+                    { value: 'authorised', label: 'Yetkili' },
+                    { value: 'blocked', label: 'Yasaklı' },
+                  ]}
+                />
+                <TextInput
+                  className="w-full"
+                  aria-label="Not"
                   placeholder="Not (isteğe bağlı)"
                   value={manualNote}
                   onChange={(e) => setManualNote(e.target.value)}
                 />
-                <button
-                  type="button"
-                  disabled={busy || !watchedBrandId}
-                  onClick={addManual}
-                  className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
-                >
+                <Button size="sm" type="button" disabled={busy || !watchedBrandId} onClick={addManual}>
                   Ekle
-                </button>
+                </Button>
                 {manualKind === 'taxNumber' && (
                   <p className="text-xs text-(--color-muted)">
                     Vergi numarası kuralı, o numaranın hangi mağazaya ait olduğu kayıtlıysa çalışır. Henüz
@@ -445,32 +449,30 @@ export function PolicyClient() {
                   </p>
                 )}
               </div>
-            </section>
+            </Section>
 
             {/* Excel */}
-            <section className="rounded border border-(--color-border) p-4" aria-labelledby="import-heading">
-              <h2 id="import-heading" className="mb-3 text-lg font-medium">
-                Excel&apos;den içe aktar
-              </h2>
-              <div className="space-y-2 text-sm">
+            <Section id="import-heading" title="Excel'den içe aktar" card>
+              <div className="max-w-[720px] space-y-2 text-sm">
                 <p className="text-xs text-(--color-muted)">
                   Sütunlar: <code>Pazaryeri</code>, <code>Satıcı Kodu</code> veya <code>Vergi No</code>,
                   isteğe bağlı <code>Durum</code> ve <code>Not</code>. Türkçe Excel&apos;in noktalı virgüllü
                   CSV&apos;si de okunur.
                 </p>
-                <label className="block">
+                <div className="block">
                   <span className="mb-1 block text-(--color-muted)">
                     Durum sütunu yoksa hepsi şu kabul edilsin:
                   </span>
-                  <select
-                    className="rounded border border-(--color-border) px-2 py-1"
+                  <SegmentedFilter
+                    label="Varsayılan durum"
                     value={defaultStatus}
-                    onChange={(e) => setDefaultStatus(e.target.value as 'authorised' | 'blocked')}
-                  >
-                    <option value="authorised">Yetkili</option>
-                    <option value="blocked">Yasaklı</option>
-                  </select>
-                </label>
+                    onChange={setDefaultStatus}
+                    options={[
+                      { value: 'authorised', label: 'Yetkili' },
+                      { value: 'blocked', label: 'Yasaklı' },
+                    ]}
+                  />
+                </div>
                 <input
                   ref={fileInput}
                   type="file"
@@ -483,15 +485,12 @@ export function PolicyClient() {
                   className="block w-full text-xs"
                 />
               </div>
-            </section>
+            </Section>
           </div>
 
-          <section aria-labelledby="sellers-heading" className="space-y-3">
-            <h2 id="sellers-heading" className="text-lg font-medium">
-              Satıcılar
-            </h2>
+          <Section id="sellers-heading" title="Satıcılar">
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-4 rounded border border-(--color-border) p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-4 rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm shadow-(--shadow-card)">
                 <span>
                   <VerdictChip verdict="authorised" /> {formatNumber(counts.authorised)}
                 </span>
@@ -507,8 +506,11 @@ export function PolicyClient() {
                     görülmedi ya da vergi numarası hiçbir mağazayla eşleşmiyor)
                   </span>
                 )}
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   type="button"
+                  className="ml-auto"
                   onClick={() =>
                     downloadCsv(
                       'satici-politikasi.csv',
@@ -525,10 +527,9 @@ export function PolicyClient() {
                       })),
                     )
                   }
-                  className="ml-auto rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
                 >
                   Excel&apos;e Aktar
-                </button>
+                </Button>
               </div>
 
               {report.sellers.length === 0 && !loading && (
@@ -582,15 +583,16 @@ export function PolicyClient() {
                         <td className="px-2 py-1">
                           <div className="flex gap-1">
                             {(['authorised', 'blocked', 'undefined'] as const).map((v) => (
-                              <button
+                              <Button
                                 key={v}
+                                variant="secondary"
+                                size="sm"
                                 type="button"
                                 disabled={busy || s.verdict === v}
                                 onClick={() => void setVerdict(s, v)}
-                                className="rounded border border-(--color-border) px-1.5 py-0.5 text-xs hover:bg-(--color-hover) disabled:opacity-40"
                               >
                                 {POLICY_VERDICT_LABELS[v]}
-                              </button>
+                              </Button>
                             ))}
                           </div>
                         </td>
@@ -608,7 +610,7 @@ export function PolicyClient() {
                 ilanlarımızı okur. Politika, ne yapılacağına karar veren kişiye bakacağı yeri gösterir.
               </p>
             </div>
-          </section>
+          </Section>
         </>
       )}
     </div>

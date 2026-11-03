@@ -85,4 +85,27 @@ describe('PolicyClient', () => {
 
     expect(await screen.findByText('Test Satıcı')).toBeTruthy();
   });
+
+  describe('redesign (plan 2026-11-03 phase 2, Task 7)', () => {
+    it('header and sections keep their landmarks', async () => {
+      stubFetch({
+        [ROUTE]: {
+          body: {
+            filters: { sinceMs: 0, untilMs: 1, watchedBrandId: 'b1' },
+            groups: [{ id: 'g1', name: 'Mars' }],
+            brands: [{ id: 'b1', groupId: 'g1', label: 'Whiskas', marketplaceCode: 'trendyol' }],
+            policies: [],
+            sellers: [],
+          },
+        },
+      });
+      render(<PolicyClient />);
+      expect(await screen.findByRole('heading', { level: 1, name: 'Satıcı Politikası' })).toBeTruthy();
+      expect(screen.getByRole('navigation', { name: 'Konum' })).toBeTruthy();
+      expect(screen.getByRole('region', { name: 'Elle ekle' })).toBeTruthy();
+      expect(screen.getByRole('region', { name: "Excel'den içe aktar" })).toBeTruthy();
+      expect(screen.getByRole('region', { name: 'Satıcılar' })).toBeTruthy();
+      expect(screen.getByRole('textbox', { name: 'Satıcı kodu' })).toBeTruthy();
+    });
+  });
 });
