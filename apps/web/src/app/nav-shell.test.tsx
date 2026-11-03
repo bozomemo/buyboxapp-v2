@@ -202,4 +202,40 @@ describe('NavShell', () => {
       expect(await within(sidebar).findByRole('button', { name: 'Çıkış yap' })).toBeTruthy();
     });
   });
+
+  describe('scan freshness (spec 2026-11-03-ui-redesign §5.3)', () => {
+    const base = {
+      [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },
+      [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
+    };
+
+    it('pill shows the latest sweep', async () => {
+      stubFetch({
+        ...base,
+        '/api/dashboard': {
+          body: {
+            modules: { seller: false, brand: true },
+            brandAudit: { brands: [{ marketplaceCode: 'trendyol', lastSweptAt: Date.now() - 8 * 60_000 }] },
+          },
+        },
+      });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await within(screen.getByRole('banner')).findByText(/Trendyol/)).toBeTruthy();
+    });
+
+    it('pill absent on error', async () => {
+      stubFetch({ ...base, '/api/dashboard': { status: 500 } });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await screen.findByRole('button', { name: 'Sistem Çalışıyor' })).toBeTruthy();
+      expect(within(screen.getByRole('banner')).queryByText(/Trendyol/)).toBeNull();
+    });
+  });
 });

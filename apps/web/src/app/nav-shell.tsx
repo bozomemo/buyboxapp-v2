@@ -29,8 +29,9 @@ import {
   Users,
   type LucideIcon,
 } from '@/components/icon';
-import { Button, ConfirmButton, SegmentedFilter } from '@/components/ui';
+import { Ago, Button, Chip, ConfirmButton, SegmentedFilter } from '@/components/ui';
 import { readStoredNavCollapsed, storeNavCollapsed } from '@/lib/nav-collapse';
+import { scanFreshness, type DashboardFreshnessInput } from '@/lib/scan-freshness';
 import {
   NAV_VIEW_OPTIONS,
   readStoredNavView,
@@ -295,6 +296,29 @@ function ViewSwitch({ view, onChange }: { view: NavView; onChange: (view: NavVie
   return <SegmentedFilter label="Menü görünümü" options={NAV_VIEW_OPTIONS} value={view} onChange={onChange} />;
 }
 
+/**
+ * Each marketplace's last scan, at the left of the header (spec 2026-11-03-ui-redesign §5.3). Read
+ * once per full page load from `/api/dashboard`, which already carries it; not polled, because
+ * that route is the dashboard's whole payload. Says nothing while loading or on failure — the
+ * dashboard is where a failed read is reported, and a header that errors on every page over a
+ * secondary pill would be noise.
+ */
+function ScanFreshness() {
+  const [poll] = usePoll<DashboardFreshnessInput>('/api/dashboard');
+  if (poll.status !== 'ready') return null;
+  const entries = scanFreshness(poll.data);
+  if (entries.length === 0) return null;
+  return (
+    <div className="mr-auto flex flex-wrap items-center gap-2">
+      {entries.map((e) => (
+        <Chip key={e.marketplaceCode} tone={e.tone} dot title={e.tone === 'warn' ? 'Son başarılı tarama gecikmeli' : undefined}>
+          {e.label} · <Ago at={e.at} never="henüz taranmadı" />
+        </Chip>
+      ))}
+    </div>
+  );
+}
+
 /** Rendered without the shell: doc 06 §10.1–§10.3. */
 const STANDALONE_PREFIXES = ['/login', '/bootstrap', '/account/password', '/account/mfa-setup'];
 
@@ -483,6 +507,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <LicenseGraceBanner />
         <header className="flex items-center justify-end gap-3 border-b border-(--color-border) bg-(--color-surface) px-6 py-3">
+          <ScanFreshness />
           {showsViewSwitch(modulesState) && (
             <ViewSwitch
               view={view}

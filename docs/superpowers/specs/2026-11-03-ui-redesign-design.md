@@ -242,6 +242,10 @@ as they are:
     Phase 1 measures how long it takes on the copy database. If it is noticeably slow, the pill is
     dropped from phase 1. A dedicated light route would then be a separate decision, because it
     is a new route.
+  - **Measured 2026-11-03** on a copy of the production install's database: the `/api/dashboard`
+    handler took 45 ms cold and 23–26 ms warm, with an 8.7 KB response. That is well under the
+    300 ms threshold, so the pill stays. The figure covers the handler only, not the session
+    check in front of it.
   - If that read fails, the pill is omitted. The dashboard already reports the failure.
 - **Right:**
   - the view switch, rebuilt on `SegmentedFilter`;
