@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockNavigation, stubFetch } from '@/test-utils';
 import { TrackedProductsClient } from './tracked-products-client';
@@ -105,5 +105,34 @@ describe('TrackedProductsClient', () => {
     render(<TrackedProductsClient />);
 
     expect(await screen.findByText('Test Marka - Test Ürünü')).toBeTruthy();
+  });
+
+  describe('redesign (plan 2026-11-03 phase 2, Task 3)', () => {
+    const ONE = {
+      products: [],
+      total: 1234,
+    };
+
+    it('stat row', async () => {
+      stubFetch({ '/api/tracked-products': { body: ONE }, ...EMPTY_SIDE_ROUTES });
+      render(<TrackedProductsClient />);
+      const row = await screen.findByTestId('tracked-stats');
+      expect(row.className).toContain('grid-cols-2');
+      expect(within(row).getByText('Ürün')).toBeTruthy();
+      expect(within(row).getByText('1.234')).toBeTruthy();
+      expect(within(row).getByText('Marka')).toBeTruthy();
+      expect(within(row).getByText('Kategori')).toBeTruthy();
+    });
+
+    it('status is a segmented filter', async () => {
+      stubFetch({ '/api/tracked-products': { body: ONE }, ...EMPTY_SIDE_ROUTES });
+      render(<TrackedProductsClient />);
+      const group = await screen.findByRole('group', { name: 'Durum' });
+      fireEvent.click(within(group).getByRole('button', { name: /Duraklatıldı/ }));
+      await vi.waitFor(() => {
+        const calls = (fetch as unknown as { mock: { calls: [RequestInfo | URL][] } }).mock.calls.map(([u]) => String(u));
+        expect(calls.some((u) => u.startsWith('/api/tracked-products?') && u.includes('isActive=false'))).toBe(true);
+      });
+    });
   });
 });

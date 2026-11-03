@@ -34,6 +34,7 @@ export {
   Bell,
   Bookmark,
   CheckCircle2,
+  Download,
   Cog,
   Eye,
   GitCompare,
@@ -56,4 +57,5 @@ export {
   Tags,
   Trash2,
   Users,
+  X,
 } from 'lucide-react';

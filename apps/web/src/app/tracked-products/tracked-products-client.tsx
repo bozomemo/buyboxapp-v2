@@ -15,9 +15,11 @@ import {
   useFilterPresets,
   type ColumnDef,
 } from '@/components/table';
+import { Download, Icon, Search, X } from '@/components/icon';
 import {
   Ago,
   Button,
+  buttonClass,
   Chip,
   ConfirmButton,
   EmptyState,
@@ -25,7 +27,9 @@ import {
   Field,
   LoadingState,
   PageHeader,
+  SegmentedFilter,
   Select,
+  StatCard,
   TextInput,
 } from '@/components/ui';
 import { SweepPassCard } from '@/components/sweep-pass-card';
@@ -530,6 +534,7 @@ export function TrackedProductsClient() {
     switch (id) {
       case 'favourite':
         return (
+          // kit-exempt: favourite star toggle, a pressed icon state the kit has no control for
           <button
             type="button"
             aria-label={p.isFavourite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
@@ -689,6 +694,7 @@ export function TrackedProductsClient() {
     <div className="space-y-4">
       <PageHeader
         title="Takip Edilen Ürünler"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Takip Edilen Ürünler' }]}
         description={
           <>
             Satmadığımız ürünlerin fiyat, satıcı ve değerlendirme bilgisi. Buraya iki yoldan ürün gelir: tek
@@ -711,31 +717,40 @@ export function TrackedProductsClient() {
                 p.set('columns', visibleColumns.join(','));
                 return p.toString();
               })()}`}
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+              className={buttonClass('secondary', 'sm')}
               title={`Geçerli filtreyle eşleşen ilk ${CSV_EXPORT_ROW_CAP.toLocaleString('tr-TR')} ürünü indirir — ekrandaki sayfayı değil`}
             >
+              <Icon icon={Download} />
               Excel&apos;e Aktar
             </a>
           </div>
         }
       />
 
+      {/* Only numbers the screen already holds — no extra query (plan 2026-11-03 phase 2, Task 3). */}
+      <div data-testid="tracked-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Ürün" value={formatNumber(total)} delta="Geçerli filtreyle eşleşen" />
+        <StatCard label="Marka" value={formatNumber(brands.length)} delta="İzlenen marka" />
+        <StatCard label="Kategori" value={formatNumber(categories.length)} />
+      </div>
+
       {/* A refresh (filter/sayfa değişikliği) başarısız oldu ama önceki liste hâlâ ekranda —
           sessizce eskimesine izin vermek yerine söylüyoruz (§3.2 "Stale"). */}
       {loadError && (
         <p
           role="alert"
-          className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) px-3 py-2 text-sm"
+          className="rounded-lg border border-(--color-warning-border) bg-(--color-warning-bg) px-3 py-2 text-sm"
         >
           Son yenileme başarısız oldu ({loadError}). Aşağıdaki liste artık güncel olmayabilir.
         </p>
       )}
 
       {/* ---- filtreler ---- */}
-      <div className="space-y-2 rounded border border-(--color-border) p-3">
+      <div className="space-y-3 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
         <div className="flex flex-wrap items-end gap-2">
           <Field label="Ara">
             <TextInput
+              icon={Search}
               value={filters.text}
               onChange={(e) => setFilters({ ...filters, text: e.target.value })}
               placeholder="Ürün adı veya kodu"
@@ -764,18 +779,19 @@ export function TrackedProductsClient() {
               ]}
             />
           </Field>
-          <Field label="Durum">
-            <Select
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Durum</span>
+            <SegmentedFilter
+              label="Durum"
               value={filters.active}
-              onChange={(e) => setFilters({ ...filters, active: e.target.value })}
-              className="w-32"
+              onChange={(active) => setFilters({ ...filters, active })}
               options={[
                 { value: '', label: 'Tümü' },
                 { value: 'true', label: 'Aktif' },
                 { value: 'false', label: 'Duraklatıldı' },
               ]}
             />
-          </Field>
+          </div>
           <Field label="En az değerlendirme">
             <TextInput
               type="number"
@@ -819,12 +835,7 @@ export function TrackedProductsClient() {
             />
             Satıcısı olmayanlar
           </label>
-          <Button
-            variant="secondary"
-            type="button"
-            onClick={() => setFilters(EMPTY_FILTERS)}
-            className="px-2! py-1! text-xs"
-          >
+          <Button variant="secondary" size="sm" type="button" onClick={() => setFilters(EMPTY_FILTERS)}>
             Temizle
           </Button>
         </div>
@@ -835,47 +846,51 @@ export function TrackedProductsClient() {
           {presets.presets.length === 0 && <span className="text-(--color-muted)">yok</span>}
           {presets.presets.map((preset) => (
             <span key={preset.name} className="flex items-center gap-1">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 type="button"
                 onClick={() => setFilters({ ...EMPTY_FILTERS, ...preset.value })}
-                className="rounded border border-(--color-border) px-2 py-0.5 hover:bg-(--color-hover)"
               >
                 {preset.name}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
+                icon={X}
+                aria-label="Bu kaydı sil"
                 title="Bu kaydı sil"
                 onClick={() => presets.remove(preset.name)}
-                className="text-(--color-muted) hover:text-(--color-danger)"
-              >
-                ×
-              </button>
+              />
             </span>
           ))}
-          <input
+          <TextInput
             value={presetName}
             onChange={(e) => setPresetName(e.target.value)}
             placeholder="Yeni kayıt adı"
-            className="ml-auto w-40 rounded border border-(--color-border) px-2 py-0.5"
+            aria-label="Yeni kayıt adı"
+            className="ml-auto w-40"
           />
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             type="button"
             disabled={!presetName.trim()}
             onClick={() => {
               presets.save(presetName, filters);
               setPresetName('');
             }}
-            className="rounded border border-(--color-border) px-2 py-0.5 hover:bg-(--color-hover) disabled:opacity-40"
           >
             Filtreyi kaydet
-          </button>
+          </Button>
         </div>
       </div>
 
       <SweepPassCard marketplaceCode="trendyol" scope="all" label="Tarama turu" />
 
       {/* ---- link ile ekle ---- */}
-      <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) p-3">
+      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
         <Field label="Ürün linki">
           <TextInput
             value={link}
@@ -900,7 +915,7 @@ export function TrackedProductsClient() {
         <div
           role="group"
           aria-label="Kartı stok ürününe bağla"
-          className="rounded border border-(--color-accent) p-3 text-sm"
+          className="rounded-xl border border-(--color-accent) bg-(--color-surface) p-4 text-sm"
         >
           <p className="mb-2">
             <strong>{linkFor.label}</strong> kartını hangi stok ürününe bağlayalım?
@@ -966,7 +981,8 @@ export function TrackedProductsClient() {
         <span className={selected.size === 0 ? 'text-(--color-muted)' : undefined}>
           {selected.size === 0 ? 'Satır seçilmedi' : `${formatNumber(selected.size)} ürün seçildi`}
         </span>
-        <button
+        <Button
+          size="sm"
           type="button"
           disabled={busy || selected.size === 0 || selected.size > RESCAN_MAX_PRODUCTS}
           onClick={() => void rescan([...selected])}
@@ -975,10 +991,9 @@ export function TrackedProductsClient() {
               ? `Tek seferde en fazla ${RESCAN_MAX_PRODUCTS} ürün taranabilir`
               : 'Seçilen ürünlerin satıcı ve fiyat verisini şimdi yeniden okur'
           }
-          className="rounded bg-(--color-accent) px-3 py-1 text-xs text-(--color-accent-ink) disabled:opacity-40"
         >
           Seçilenleri Tekrar Tara
-        </button>
+        </Button>
         {selected.size > RESCAN_MAX_PRODUCTS && (
           <span className="text-xs text-(--color-warning)">
             Tek seferde en fazla {RESCAN_MAX_PRODUCTS} ürün — bir markanın tamamı için İzlenen Markalar
@@ -986,13 +1001,9 @@ export function TrackedProductsClient() {
           </span>
         )}
         {selected.size > 0 && (
-          <button
-            type="button"
-            onClick={() => setSelected(new Set())}
-            className="text-xs text-(--color-muted) hover:text-(--color-accent)"
-          >
+          <Button variant="ghost" size="sm" type="button" onClick={() => setSelected(new Set())}>
             Seçimi temizle
-          </button>
+          </Button>
         )}
         <span className="text-xs text-(--color-muted)">
           Tarama arka planda çalışır; sırası ve ilerlemesi{' '}
@@ -1057,6 +1068,7 @@ export function TrackedProductsClient() {
                   return (
                     <ResizableTh key={id} id={id} prefs={columns} className="px-2 py-2">
                       {sortable ? (
+                        // kit-exempt: sortable column header inside a resizable th
                         <button
                           type="button"
                           onClick={() => onSort(id)}
@@ -1091,24 +1103,28 @@ export function TrackedProductsClient() {
                     </td>
                   ))}
                   <td className="px-2 py-1 text-right whitespace-nowrap">
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
                       disabled={busy}
                       onClick={() => void rescan([p.id])}
                       title="Bu ürünün satıcı ve fiyat verisini şimdi yeniden oku"
-                      className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent) disabled:opacity-40"
                     >
                       Tara
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
                       onClick={() => void setActive(p.id, !p.isActive)}
                       title={p.isActive ? 'Taramayı bu ürün için durdur' : 'Taramayı sürdür'}
-                      className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent)"
                     >
                       {p.isActive ? 'Duraklat' : 'Sürdür'}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
                       onClick={() => {
                         setLinkFor(p);
@@ -1122,15 +1138,14 @@ export function TrackedProductsClient() {
                           : 'Bu kartı kendi stok ürününe bağla'
                       }
                       disabled={p.brandProduct !== null}
-                      className="mr-2 text-xs text-(--color-muted) hover:text-(--color-accent) disabled:opacity-40"
                     >
                       Ürünüme bağla
-                    </button>
+                    </Button>
                     <ConfirmButton
                       requireConfirm
                       confirmMessage={`"${p.label}" takipten çıkarılsın mı?`}
                       onConfirmed={() => void remove(p.id)}
-                      className="text-xs text-(--color-muted) hover:text-(--color-danger)"
+                      className={`${buttonClass('ghost', 'sm')} hover:text-(--color-danger)`}
                     >
                       Kaldır
                     </ConfirmButton>
