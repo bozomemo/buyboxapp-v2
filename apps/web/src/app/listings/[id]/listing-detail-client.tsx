@@ -17,7 +17,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { formatDateTime, formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
 import {
   DECISION_REASON_LABELS as REASON_LABELS,
   PHASE_LABELS,
@@ -186,8 +186,8 @@ export function ListingDetailClient({ id }: { id: string }) {
         }
         const d = (await r.json()) as Detail;
         setDetail(d);
-        setMinInput(d.listing.minPrice ? (Number(d.listing.minPrice) / 100).toFixed(2) : '');
-        setMaxInput(d.listing.maxPrice ? (Number(d.listing.maxPrice) / 100).toFixed(2) : '');
+        setMinInput(kurusToDecimal(d.listing.minPrice));
+        setMaxInput(kurusToDecimal(d.listing.maxPrice));
       })
       .catch(() => setError('İlan yüklenemedi.'));
   }, [id]);
@@ -414,8 +414,8 @@ export function ListingDetailClient({ id }: { id: string }) {
                 competition.offers.map((o) => ({
                   Sıra: o.rank,
                   Satıcı: o.sellerName,
-                  Fiyat: o.price ? (Number(o.price) / 100).toFixed(2) : '',
-                  'Müşteri Fiyatı': o.finalPrice ? (Number(o.finalPrice) / 100).toFixed(2) : '',
+                  Fiyat: kurusToDecimal(o.price),
+                  'Müşteri Fiyatı': kurusToDecimal(o.finalPrice),
                   Puan: o.rating ?? '',
                   'Kargo Süresi': o.dispatchTime ?? '',
                   Stok: o.offeredStock ?? '',
@@ -617,13 +617,13 @@ export function ListingDetailClient({ id }: { id: string }) {
                 `ilan-fiyat-gecmisi-${listing.marketplaceListingId}.csv`,
                 history.map((h) => ({
                   'Karar Zamanı': formatDateTime(h.decidedAt),
-                  'Eski Fiyat': (Number(h.oldPrice) / 100).toFixed(2),
-                  'Yeni Fiyat': (Number(h.newPrice) / 100).toFixed(2),
+                  'Eski Fiyat': kurusToDecimal(h.oldPrice),
+                  'Yeni Fiyat': kurusToDecimal(h.newPrice),
                   Sebep: REASON_LABELS[h.reason] ?? h.reason,
                   Kim: h.requestedBy ?? 'Sistem',
                   Durum: STATE_LABELS[h.state] ?? h.state,
-                  'Dip Fiyat': h.floorPrice ? (Number(h.floorPrice) / 100).toFixed(2) : '',
-                  Buybox: h.buyboxPrice ? (Number(h.buyboxPrice) / 100).toFixed(2) : '',
+                  'Dip Fiyat': kurusToDecimal(h.floorPrice),
+                  Buybox: kurusToDecimal(h.buyboxPrice),
                   Sıra: h.rank ?? '',
                   Hata: h.failureCode ? `${h.failureCode}: ${h.failureMessage ?? ''}` : '',
                 })),

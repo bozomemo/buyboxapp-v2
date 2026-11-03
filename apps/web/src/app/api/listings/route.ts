@@ -8,6 +8,7 @@ import { effectiveCommissionRate, floorPrice } from '@buybox/core';
 import { catalogRepo, competitionRepo, configRepo, listingsRepo, stockRepo } from '@buybox/db';
 import { mapFeeSettings } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
+import { kurusToDecimal } from '@/lib/format';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { pageLimit, pageOffset } from '@/lib/pagination';
@@ -137,7 +138,7 @@ async function getHandler(request: Request) {
           csvEscape(r.marketplaceListingId),
           csvEscape(r.baseStockCode ?? ''),
           csvEscape(withBrand(r.productName, csvBrands.get(r.id))),
-          csvEscape((Number(r.price) / 100).toFixed(2)),
+          csvEscape(kurusToDecimal(r.price)),
           csvEscape(r.offeredStock),
           csvEscape(r.phase ?? ''),
           csvEscape(r.repriceEnabled ? 'evet' : 'hayır'),

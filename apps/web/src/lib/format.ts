@@ -83,6 +83,21 @@ export function formatDuration(ms: number): string {
 }
 
 /**
+ * `bigint` kuruş → plain major units for a CSV export: `4990` becomes `49.90`, with no currency
+ * symbol and no thousands separator. Divided as `bigint`, never through `Number(kurus) / 100` —
+ * an export is data, and money never routes through a float. Accepts the wire's decimal string
+ * as well. Empty for an unknown amount: a spreadsheet cannot tell `0.00` from "we do not know".
+ */
+export function kurusToDecimal(kurus: bigint | string | null | undefined): string {
+  if (kurus === null || kurus === undefined || kurus === '') return '';
+  const value = BigInt(kurus);
+  const negative = value < 0n;
+  const magnitude = negative ? -value : value;
+  const minor = (magnitude % 100n).toString().padStart(2, '0');
+  return `${negative ? '-' : ''}${magnitude / 100n}.${minor}`;
+}
+
+/**
  * Operator-typed Turkish lira → `bigint` kuruş, or `null` when the text is not a price.
  *
  * The inverse of {@link formatMoney} and the only place a typed price becomes money. It never

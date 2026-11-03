@@ -20,6 +20,7 @@
  * `EXPORTABLE`. If the current market ever has to be exported, the fix is to store a per-look
  * summary at write time, not to run the per-row query 5,000 times here.
  */
+import { kurusToDecimal } from './format';
 import { discoveryLabel } from './tracked-product-discovery';
 
 export type TrackedColumnId =
@@ -82,22 +83,7 @@ interface ColumnSpec {
   readonly value: (row: ExportableProduct) => string;
 }
 
-/**
- * Kuruş as plain major units — `4990` becomes `49.90`, with no currency symbol and no thousands
- * separator, matching `/api/listings`' export so one spreadsheet can hold both.
- *
- * Divided as `bigint` rather than through `Number(kurus) / 100`: the display formatter may take
- * that shortcut safely for realistic prices, but an export is data, and money never routes
- * through a float in this system. Empty for an unknown amount — a spreadsheet cannot tell
- * `0.00` from "we do not know".
- */
-function money(value: bigint | null | undefined): string {
-  if (value === null || value === undefined) return '';
-  const negative = value < 0n;
-  const magnitude = negative ? -value : value;
-  const minor = (magnitude % 100n).toString().padStart(2, '0');
-  return `${negative ? '-' : ''}${magnitude / 100n}.${minor}`;
-}
+const money = kurusToDecimal;
 
 /** ISO, not a Turkish-formatted date: a CSV is data, and Excel parses ISO unambiguously. */
 function isoOrEmpty(ms: number | null | undefined): string {

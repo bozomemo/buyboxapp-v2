@@ -4,7 +4,7 @@
  * does not throw — it produces a plausible wrong number.
  */
 import { describe, expect, it } from 'vitest';
-import { formatDuration, parseMoneyToKurus } from './format';
+import { formatDuration, kurusToDecimal, parseMoneyToKurus } from './format';
 
 describe('parseMoneyToKurus', () => {
   const accepted: ReadonlyArray<readonly [string, bigint]> = [
@@ -74,5 +74,21 @@ describe('formatDuration', () => {
 
   it('clamps a negative duration rather than rendering a negative unit', () => {
     expect(formatDuration(-5_000)).toBe('0sn');
+  });
+});
+
+describe('kurusToDecimal', () => {
+  // A CSV export is data: kuruş never routes through a float on its way into a spreadsheet.
+  it.each<readonly [bigint | string | null | undefined, string]>([
+    [4990n, '49.90'],
+    ['4990', '49.90'],
+    ['5', '0.05'],
+    [-150n, '-1.50'],
+    ['9007199254740993', '90071992547409.93'],
+    [null, ''],
+    [undefined, ''],
+    ['', ''],
+  ])('%s → %s', (kurus, expected) => {
+    expect(kurusToDecimal(kurus)).toBe(expected);
   });
 });

@@ -7,7 +7,7 @@ import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { Download } from '@/components/icon';
 import { Ago, Button, buttonClass, Chip, EmptyState, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { formatDateTime, formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
 import { STATUS_LABELS } from '@/lib/labels';
 import { lookAnnotations } from '@/lib/price-chart-series';
 import { marketplaceProductUrl } from '@/lib/product-url';
@@ -291,10 +291,8 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                   Sıra: s.current?.rank ?? '',
                   Satıcı: s.sellerName,
                   'Satıcı No': s.sellerRef ?? '',
-                  Fiyat: s.current?.price ? (Number(s.current.price) / 100).toFixed(2) : '',
-                  'Müşteri Fiyatı': s.current?.finalPrice
-                    ? (Number(s.current.finalPrice) / 100).toFixed(2)
-                    : '',
+                  Fiyat: s.current?.price ? kurusToDecimal(s.current.price) : '',
+                  'Müşteri Fiyatı': kurusToDecimal(s.current?.finalPrice),
                   Kampanya:
                     s.current?.hasPromotion === null || !s.current
                       ? ''

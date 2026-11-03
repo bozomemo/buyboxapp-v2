@@ -19,7 +19,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatDuration, formatMoney, parseMoneyToKurus } from '@/lib/format';
+import { formatDateTime, formatDuration, formatMoney, kurusToDecimal, parseMoneyToKurus } from '@/lib/format';
 import { labelOf, PREDICATE_LABELS, SCOPE_LABELS, SUBJECT_LABELS, THRESHOLD_LABELS } from '@/lib/labels';
 
 interface AlertSeller {
@@ -740,7 +740,7 @@ export function AlertsClient() {
                     Kural: a.ruleName,
                     Ürün: a.productName,
                     Pazaryeri: a.marketplaceCode ?? '',
-                    'Bizim Fiyat': a.ourPrice ? (Number(a.ourPrice) / 100).toFixed(2) : '',
+                    'Bizim Fiyat': kurusToDecimal(a.ourPrice),
                     Durum: a.state,
                     // Absolute, deliberately: an exported CSV is read later, when "5 dakika önce"
                     // would already be wrong — doc 15 §3.3's own carve-out for a record whose exact

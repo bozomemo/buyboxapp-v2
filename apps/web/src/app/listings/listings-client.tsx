@@ -30,7 +30,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import { X } from '@/components/icon';
-import { formatMoney, formatNumber } from '@/lib/format';
+import { formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
 import { NO_PERMISSION_TITLE, useCan } from '@/lib/permissions';
 import { labelOf, PHASE_LABELS } from '@/lib/labels';
 
@@ -282,8 +282,8 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
 }
 
 function MinMaxCell({ row, onChanged }: { row: Row; onChanged: () => void }) {
-  const [min, setMin] = useState(row.minPrice ? (Number(row.minPrice) / 100).toFixed(2) : '');
-  const [max, setMax] = useState(row.maxPrice ? (Number(row.maxPrice) / 100).toFixed(2) : '');
+  const [min, setMin] = useState(kurusToDecimal(row.minPrice));
+  const [max, setMax] = useState(kurusToDecimal(row.maxPrice));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const canEdit = useCan()('prices.manage');

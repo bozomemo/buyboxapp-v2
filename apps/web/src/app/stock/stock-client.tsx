@@ -25,7 +25,7 @@ import {
 } from '@/components/ui';
 import { Download, Trash2 } from '@/components/icon';
 import { downloadCsv } from '@/lib/csv';
-import { formatMoney, formatNumber } from '@/lib/format';
+import { formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
 
 /**
  * `/stock` (doc 06 §3, doc 15 §6 Phase 2.6). This screen's stated task is "Maliyetler doğru mu?"
@@ -770,7 +770,7 @@ function StockTable({
           // A plain decimal, not `formatMoney`'s "₺123,45": a spreadsheet needs a parseable
           // number in this column, and the ₺ prefix and thousands separator would defeat that.
           // Still the display boundary — nothing upstream of this ever holds a float.
-          'Birim Fiyat': (Number(item.unitCost) / 100).toFixed(2),
+          'Birim Fiyat': kurusToDecimal(item.unitCost),
           'Stok Miktarı': item.unitStock,
           Kaynak: item.sourceCode,
         };

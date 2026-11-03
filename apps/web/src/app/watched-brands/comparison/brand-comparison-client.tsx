@@ -7,7 +7,7 @@ import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { alignBrandSeries, COMPARISON_COLORS } from '@/lib/brand-comparison';
 import { downloadCsv } from '@/lib/csv';
-import { formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 /**
@@ -216,7 +216,7 @@ export function BrandComparisonClient() {
                   Marka: s.label,
                   Pazaryeri: labelOf(MARKETPLACE_LABELS, s.marketplaceCode),
                   Tür: s.isOwnBrand ? 'bizim' : 'rakip',
-                  'Ortalama Fiyat': s.windowAvgPrice ? (Number(s.windowAvgPrice) / 100).toFixed(2) : '',
+                  'Ortalama Fiyat': kurusToDecimal(s.windowAvgPrice),
                   Endeks: indexByBrand.get(s.id)?.toFixed(1) ?? '',
                   'Veri Günü': s.points.length,
                 })),

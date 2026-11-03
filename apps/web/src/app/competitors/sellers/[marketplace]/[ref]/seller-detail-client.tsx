@@ -29,7 +29,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
 import { CoverageBadge, type Coverage } from '../../../coverage-badge';
 
 interface SellerListing {
@@ -559,9 +559,9 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
                   detail.listings.map((l) => ({
                     Ürün: l.productName,
                     'Stok Kodu': l.baseStockCode ?? l.marketplaceListingId,
-                    'Bizim Fiyatımız': (Number(l.ourPrice) / 100).toFixed(2),
-                    'Min Fiyat': l.minPrice ? (Number(l.minPrice) / 100).toFixed(2) : '',
-                    'Max Fiyat': l.maxPrice ? (Number(l.maxPrice) / 100).toFixed(2) : '',
+                    'Bizim Fiyatımız': kurusToDecimal(l.ourPrice),
+                    'Min Fiyat': kurusToDecimal(l.minPrice),
+                    'Max Fiyat': kurusToDecimal(l.maxPrice),
                     Teklif: l.observationCount,
                     Buybox: l.buyboxCount,
                     'Ort. Sıra': l.avgRank ?? '',
@@ -680,8 +680,8 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
                 detail.trackedProducts.map((t) => ({
                   Ürün: t.productLabel,
                   Pazaryeri: t.marketplaceCode,
-                  'Min Fiyat': t.minPrice ? (Number(t.minPrice) / 100).toFixed(2) : '',
-                  'Max Fiyat': t.maxPrice ? (Number(t.maxPrice) / 100).toFixed(2) : '',
+                  'Min Fiyat': kurusToDecimal(t.minPrice),
+                  'Max Fiyat': kurusToDecimal(t.maxPrice),
                   'Piyasa Sapması %': t.avgDeviationPct === null ? '' : t.avgDeviationPct.toFixed(1),
                   'Karşılaştırılan Bakış': t.comparedCount,
                   Teklif: t.observationCount,

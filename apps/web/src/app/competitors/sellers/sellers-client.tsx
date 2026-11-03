@@ -16,7 +16,7 @@ import {
 import { Download } from '@/components/icon';
 import { Button, ErrorState, LoadingState, PageHeader, SegmentedFilter } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
 import { CoverageBadge } from '../coverage-badge';
 
 interface Coverage {
@@ -329,8 +329,8 @@ export function SellersClient() {
                 Buybox: s.buyboxCount,
                 'Buybox %': (s.buyboxRate * 100).toFixed(1),
                 'Ort. Sıra': s.avgRank ?? '',
-                'Min Fiyat': s.minPrice ? (Number(s.minPrice) / 100).toFixed(2) : '',
-                'Max Fiyat': s.maxPrice ? (Number(s.maxPrice) / 100).toFixed(2) : '',
+                'Min Fiyat': kurusToDecimal(s.minPrice),
+                'Max Fiyat': kurusToDecimal(s.maxPrice),
                 'İlk Görülme': formatDateTime(s.firstSeenAt),
                 'Son Görülme': formatDateTime(s.lastSeenAt),
               })),

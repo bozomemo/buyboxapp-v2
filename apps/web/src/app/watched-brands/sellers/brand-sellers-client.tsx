@@ -26,7 +26,7 @@ import {
   type Tone,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
+import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
 import { POLICY_VERDICT_LABELS } from '@/lib/labels';
 import { SellerIdentityPanel } from './seller-identity-panel';
 
@@ -524,8 +524,8 @@ export function BrandSellersClient() {
                         'En Ucuz': s.cheapestCount,
                         'En Ucuz %': (s.cheapestRate * 100).toFixed(1),
                         'Piyasa Sapması %': s.avgDeviationPct?.toFixed(2) ?? '',
-                        'Min Fiyat': s.minPrice ? (Number(s.minPrice) / 100).toFixed(2) : '',
-                        'Max Fiyat': s.maxPrice ? (Number(s.maxPrice) / 100).toFixed(2) : '',
+                        'Min Fiyat': kurusToDecimal(s.minPrice),
+                        'Max Fiyat': kurusToDecimal(s.maxPrice),
                         'İlk Görülme': formatDateTime(s.firstSeenAt),
                         'Son Görülme': formatDateTime(s.lastSeenAt),
                       })),
