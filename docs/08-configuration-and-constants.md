@@ -322,3 +322,11 @@ provider credentials are secrets, and live in the environment (§14).
 | `AUTH_SMS_DAILY_CAP` | 200 | env | An install-wide ceiling on SMS spend. After it, SMS is refused until midnight Europe/Istanbul and an `error` event is written |
 | `auth.mfaRequired` | off | `app_settings` | Whether every user must have a second factor, on a loopback and a network install alike (R-AUTH-5). Until 2026-10-16 a network install ignored it and always required one |
 | `SMS_PROVIDER` | *(unset)* | env | Shared with the notification channel (§14). Unset means SMS is not offered as a second factor. `dev-console` is refused when `NODE_ENV=production` |
+
+## 16. UI dependencies — **added 2026-11-03**
+
+The web app's only UI dependencies beyond React and Tailwind are `lucide-react` (icons, imported
+only through `apps/web/src/components/icon.tsx`) and IBM Plex Sans/Mono through
+`next/font/google`, which downloads the fonts at build time on the CI runner and serves them from
+the app, so no browser contacts Google. Both are an exception to doc 15 rule 9, authorised by the
+product owner on 2026-11-03 (spec `docs/superpowers/specs/2026-11-03-ui-redesign-design.md` §2).

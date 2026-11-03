@@ -85,8 +85,10 @@ Violating any of these fails the task regardless of how the screen looks.
    class (`bg-red-500`), or the screen breaks in dark mode.
 8. **Never let colour be the only carrier of meaning** (WCAG 2.2 AA, 1.4.1). Every badge, count,
    row highlight and bar carries a word too. Test: does the screen still read in greyscale?
-9. **No new dependency.** No component library, no icon package, no date library. `formatDuration`
-   already exists; so does `PriceChart`.
+9. **No new dependency** — except `lucide-react` (icons) and IBM Plex through `next/font/google`,
+   authorised by the product owner on 2026-11-03 (`docs/superpowers/specs/2026-11-03-ui-redesign-design.md` §2).
+   Still no component library and no date library. `formatDuration` already exists; so does
+   `PriceChart`.
 
 ### Do not invent language
 

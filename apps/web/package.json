@@ -18,6 +18,7 @@
     "@buybox/jobs": "*",
     "@buybox/shared": "*",
     "@buybox/worker": "*",
+    "lucide-react": "^1.67.0",
     "next": "^16.0.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
