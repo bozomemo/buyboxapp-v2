@@ -4,7 +4,33 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { AppModule, EnabledModules } from '@buybox/shared';
-import { ConfirmButton } from '@/components/ui';
+import {
+  AlertTriangle,
+  BarChart3,
+  Bell,
+  Bookmark,
+  Cog,
+  Eye,
+  GitCompare,
+  History,
+  Icon,
+  LayoutDashboard,
+  LogOut,
+  Package,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ScanSearch,
+  ScrollText,
+  Settings,
+  ShieldCheck,
+  ShoppingBag,
+  Store,
+  Tags,
+  Users,
+  type LucideIcon,
+} from '@/components/icon';
+import { Button, ConfirmButton, SegmentedFilter } from '@/components/ui';
+import { readStoredNavCollapsed, storeNavCollapsed } from '@/lib/nav-collapse';
 import {
   NAV_VIEW_OPTIONS,
   readStoredNavView,
@@ -72,47 +98,50 @@ function usePoll<T>(url: string): [Poll<T>, () => void] {
  * not hold for a module somebody switched off in setup, and a brand manager wading through the
  * seller's pricing menus is exactly the confusion the brand module exists to remove. `module`
  * below is which module a group belongs to; `null` is shown to everyone.
+ *
+ * **Icons since 2026-11-03** (spec 2026-11-03-ui-redesign §5.2): every item carries one, which is
+ * what the collapsed icon rail draws; the label stays the link's accessible name either way.
  */
 const NAV_GROUPS: {
   readonly title: string | null;
   readonly module: AppModule | null;
-  readonly items: { href: string; label: string }[];
+  readonly items: { href: string; label: string; icon: LucideIcon }[];
 }[] = [
-  { title: null, module: null, items: [{ href: '/', label: 'Panel' }] },
+  { title: null, module: null, items: [{ href: '/', label: 'Panel', icon: LayoutDashboard }] },
   {
     title: 'Satış',
     module: 'seller',
     items: [
-      { href: '/stock', label: 'Stok' },
-      { href: '/listings', label: 'İlanlar' },
-      { href: '/brands', label: 'Markalar' },
-      { href: '/competitors', label: 'Rakip Geçmişi' },
-      { href: '/competitors/sellers', label: 'Rakip Satıcılar' },
-      { href: '/alerts', label: 'Alarmlar' },
+      { href: '/stock', label: 'Stok', icon: Package },
+      { href: '/listings', label: 'İlanlar', icon: Tags },
+      { href: '/brands', label: 'Markalar', icon: Bookmark },
+      { href: '/competitors', label: 'Rakip Geçmişi', icon: History },
+      { href: '/competitors/sellers', label: 'Rakip Satıcılar', icon: Users },
+      { href: '/alerts', label: 'Alarmlar', icon: Bell },
     ],
   },
   {
     title: 'Marka Denetimi',
     module: 'brand',
     items: [
-      { href: '/brand/products', label: 'Stok' },
-      { href: '/brand/listings', label: 'İlanlar' },
-      { href: '/watched-brands', label: 'İzlenen Markalar' },
-      { href: '/tracked-products', label: 'Takip Edilen Ürünler' },
-      { href: '/watched-brands/sellers', label: 'Marka Satıcıları' },
-      { href: '/watched-brands/policy', label: 'Satıcı Politikası' },
-      { href: '/watched-brands/findings', label: 'Denetim Bulguları' },
-      { href: '/watched-brands/cross-marketplace', label: 'Pazaryeri Eşleşmesi' },
-      { href: '/watched-brands/comparison', label: 'Marka Karşılaştırması' },
+      { href: '/brand/products', label: 'Stok', icon: Package },
+      { href: '/brand/listings', label: 'İlanlar', icon: Tags },
+      { href: '/watched-brands', label: 'İzlenen Markalar', icon: Eye },
+      { href: '/tracked-products', label: 'Takip Edilen Ürünler', icon: ScanSearch },
+      { href: '/watched-brands/sellers', label: 'Marka Satıcıları', icon: Store },
+      { href: '/watched-brands/policy', label: 'Satıcı Politikası', icon: ShieldCheck },
+      { href: '/watched-brands/findings', label: 'Denetim Bulguları', icon: AlertTriangle },
+      { href: '/watched-brands/cross-marketplace', label: 'Pazaryeri Eşleşmesi', icon: GitCompare },
+      { href: '/watched-brands/comparison', label: 'Marka Karşılaştırması', icon: BarChart3 },
     ],
   },
   {
     title: 'Sistem',
     module: null,
     items: [
-      { href: '/jobs', label: 'İşler' },
-      { href: '/events', label: 'Olaylar' },
-      { href: '/settings', label: 'Ayarlar' },
+      { href: '/jobs', label: 'İşler', icon: Cog },
+      { href: '/events', label: 'Olaylar', icon: ScrollText },
+      { href: '/settings', label: 'Ayarlar', icon: Settings },
     ],
   },
 ];
@@ -156,7 +185,7 @@ function SystemPauseButton() {
         type="button"
         onClick={retry}
         title={poll.message}
-        className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) px-3 py-1.5 text-sm font-semibold text-(--color-danger) hover:opacity-90"
+        className="h-9 rounded-lg border border-(--color-danger-border) bg-(--color-danger-bg) px-3 text-sm font-semibold text-(--color-danger) hover:opacity-90"
       >
         Sistem durumu alınamadı — Tekrar dene
       </button>
@@ -198,7 +227,7 @@ function SystemPauseButton() {
             ? 'Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur.'
             : NO_PERMISSION_TITLE
         }
-        className={`rounded px-3 py-1.5 text-sm font-semibold transition disabled:opacity-50 ${
+        className={`h-9 rounded-lg px-4 text-sm font-semibold transition disabled:opacity-50 ${
           engaged
             ? 'border border-(--color-border) bg-(--color-surface) text-(--color-text) hover:bg-(--color-hover)'
             : 'bg-(--color-success) text-(--color-success-ink) hover:opacity-90'
@@ -263,29 +292,7 @@ function LicenseGraceBanner() {
  * anything, which is why it can sit one click away beside the theme toggle.
  */
 function ViewSwitch({ view, onChange }: { view: NavView; onChange: (view: NavView) => void }) {
-  return (
-    <div
-      role="group"
-      aria-label="Menü görünümü"
-      className="flex overflow-hidden rounded border border-(--color-border) text-xs"
-    >
-      {NAV_VIEW_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          aria-pressed={view === opt.value}
-          className={`px-2.5 py-1.5 transition ${
-            view === opt.value
-              ? 'bg-(--color-accent) font-semibold text-(--color-accent-ink)'
-              : 'text-(--color-muted) hover:bg-(--color-hover)'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <SegmentedFilter label="Menü görünümü" options={NAV_VIEW_OPTIONS} value={view} onChange={onChange} />;
 }
 
 /** Rendered without the shell: doc 06 §10.1–§10.3. */
@@ -301,7 +308,7 @@ interface Me {
  * fails for a real reason — the session ended between page load and poll — sends the next click
  * to the sign-in screen anyway.
  */
-function UserMenu() {
+function UserMenu({ collapsed }: { collapsed: boolean }) {
   const [poll] = usePoll<Me>('/api/auth/me');
   const [signingOut, setSigningOut] = useState(false);
   if (poll.status !== 'ready') return null;
@@ -315,32 +322,58 @@ function UserMenu() {
     }
   }
 
+  const { displayName, roleLabel } = poll.data.user;
   const readOnly = !poll.data.user.permissions.some((p) => p !== 'view');
+  const initials = displayName
+    .split(/\s+/)
+    .map((part) => part[0] ?? '')
+    .join('')
+    .slice(0, 2)
+    .toLocaleUpperCase('tr');
 
+  // At the foot of the sidebar since 2026-11-03 (spec §5.2). In the rail only the initials and
+  // the sign-out icon show; the name stays in the link for a screen reader.
   return (
-    <div className="flex items-center gap-2 border-l border-(--color-border) pl-3 text-sm">
-      {readOnly && (
+    <div className={`flex items-center gap-2.5 rounded-lg bg-white/5 p-2.5 ${collapsed ? 'flex-col' : ''}`}>
+      <Link href="/account" title="Hesabım" className="flex min-w-0 flex-1 items-center gap-2.5 text-sm hover:underline">
         <span
-          className="rounded bg-(--color-chip-bg) px-2 py-1 text-xs text-(--color-chip-text)"
+          aria-hidden="true"
+          className="flex size-8 flex-none items-center justify-center rounded-full bg-(--color-sidebar-active-bg) text-xs font-bold text-(--color-sidebar-active-text)"
+        >
+          {initials}
+        </span>
+        <span className={collapsed ? 'sr-only' : 'min-w-0 leading-tight'}>
+          <span className="block truncate font-semibold text-(--color-sidebar-strong)">{displayName}</span>
+          <span className="block truncate text-xs text-(--color-sidebar-muted)">{roleLabel}</span>
+        </span>
+      </Link>
+      {readOnly && !collapsed && (
+        <span
+          className="rounded bg-white/10 px-1.5 py-0.5 text-[11px] text-(--color-sidebar-text)"
           title="Rolünüz yalnızca görüntülemeye izin veriyor; değişiklik yapamazsınız."
         >
           Salt okunur
         </span>
       )}
-      <Link href="/account" className="text-right leading-tight hover:underline" title="Hesabım">
-        <div className="font-medium">{poll.data.user.displayName}</div>
-        <div className="text-xs text-(--color-muted)">{poll.data.user.roleLabel}</div>
-      </Link>
       <button
         type="button"
         onClick={signOut}
         disabled={signingOut}
-        className="rounded border border-(--color-border) px-2.5 py-1.5 text-xs hover:bg-(--color-hover) disabled:opacity-50"
+        aria-label="Çıkış yap"
+        title="Çıkış yap"
+        className="flex size-8 flex-none items-center justify-center rounded-lg text-(--color-sidebar-text) hover:bg-white/10 disabled:opacity-50"
       >
-        Çıkış yap
+        <Icon icon={LogOut} />
       </button>
     </div>
   );
+}
+
+/** What the sidebar's brand block names under "BuyBoxApp": the one module shown, else nothing. */
+function moduleName(shown: { seller: boolean; brand: boolean }): string | null {
+  if (shown.brand && !shown.seller) return 'Marka Denetimi';
+  if (shown.seller && !shown.brand) return 'Satış';
+  return null;
 }
 
 export function NavShell({ children }: { children: React.ReactNode }) {
@@ -354,8 +387,15 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       : { status: modulesPoll.status };
   // Read after mount, like the theme: `localStorage` does not exist during the server render.
   const [view, setView] = useState<NavView>('all');
+  // The icon rail (spec §5.2): the stored choice if there is one, otherwise collapsed on a viewport
+  // narrower than 1024px. Read after mount for the same reason as the view.
+  const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     setView(readStoredNavView());
+    const stored = readStoredNavCollapsed();
+    setCollapsed(
+      stored ?? (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1023px)').matches),
+    );
   }, []);
   const shown = visibleModules(modulesState, view);
   const groups = NAV_GROUPS.filter((group) => group.module === null || shown[group.module]);
@@ -375,16 +415,30 @@ export function NavShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  const subtitle = moduleName(shown);
+
   return (
     <PermissionsProvider>
     <div className="flex min-h-screen">
-      <aside className="flex w-56 flex-none flex-col border-r border-(--color-border) bg-(--color-surface) p-4">
-        <div className="mb-6 text-lg font-bold">BuyBoxApp</div>
-        <nav className="flex flex-col gap-1">
+      <aside
+        className={`sticky top-0 flex h-screen flex-none flex-col bg-(--color-sidebar) py-4 transition-[width] ${
+          collapsed ? 'w-16 px-2' : 'w-60 px-3'
+        }`}
+      >
+        <div className={`mb-6 flex items-center gap-2.5 ${collapsed ? 'justify-center' : 'px-2'}`}>
+          <span className="flex size-8 flex-none items-center justify-center rounded-lg bg-(--color-accent) text-(--color-sidebar-strong)">
+            <Icon icon={ShoppingBag} size={18} />
+          </span>
+          <span className={collapsed ? 'sr-only' : 'leading-tight'}>
+            <span className="block text-[15px] font-bold text-(--color-sidebar-strong)">BuyBoxApp</span>
+            {subtitle && <span className="block text-xs text-(--color-sidebar-muted)">{subtitle}</span>}
+          </span>
+        </div>
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
           {groups.map((group, index) => (
             <div key={group.title ?? 'root'} className={index === 0 ? '' : 'mt-4'}>
-              {group.title && (
-                <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-(--color-muted)">
+              {group.title && !collapsed && (
+                <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-(--color-sidebar-muted)">
                   {group.title}
                 </div>
               )}
@@ -394,19 +448,37 @@ export function NavShell({ children }: { children: React.ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`block rounded px-3 py-2 text-sm ${
+                    title={collapsed ? item.label : undefined}
+                    aria-current={active ? 'page' : undefined}
+                    className={`flex items-center gap-3 rounded-lg py-2 text-sm ${collapsed ? 'justify-center px-0' : 'px-3'} ${
                       active
-                        ? 'bg-(--color-accent) text-(--color-accent-ink)'
-                        : 'text-(--color-text) hover:bg-(--color-hover)'
+                        ? 'bg-(--color-sidebar-active-bg) font-semibold text-(--color-sidebar-active-text)'
+                        : 'text-(--color-sidebar-text) hover:bg-white/5'
                     }`}
                   >
-                    {item.label}
+                    <Icon icon={item.icon} size={18} className="flex-none" />
+                    <span className={collapsed ? 'sr-only' : 'truncate'}>{item.label}</span>
                   </Link>
                 );
               })}
             </div>
           ))}
         </nav>
+        <div className="mt-4 flex flex-col gap-2">
+          <UserMenu collapsed={collapsed} />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={collapsed ? PanelLeftOpen : PanelLeftClose}
+            aria-label={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
+            title={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
+            onClick={() => {
+              setCollapsed(!collapsed);
+              storeNavCollapsed(!collapsed);
+            }}
+            className={`text-(--color-sidebar-text) hover:bg-white/10 ${collapsed ? 'self-center' : 'self-end'}`}
+          />
+        </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <LicenseGraceBanner />
@@ -422,7 +494,6 @@ export function NavShell({ children }: { children: React.ReactNode }) {
           )}
           <ThemeToggle />
           <SystemPauseButton />
-          <UserMenu />
         </header>
         <main className="flex-1 overflow-x-auto p-6">{children}</main>
       </div>

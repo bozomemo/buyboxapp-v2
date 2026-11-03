@@ -109,6 +109,7 @@ replaced. The selection mechanism stays exactly as it is: the inline script in `
 | `--color-sidebar-text` | `#CBD3E3` | `#C3CDE0` | Sidebar item text. |
 | `--color-sidebar-muted` | `#8C9BB8` | `#7F8CA8` | Group titles and the module name. |
 | `--color-sidebar-active-bg` / `-text` | `#E4ECFB` / `#14213D` | `#1C2F5C` / `#FFFFFF` | Active item pill. |
+| `--color-sidebar-strong` | `#FFFFFF` | `#FFFFFF` | Sidebar headline text (app name, user name) and the logo tile's ink. Added in Phase 1, Task 7. |
 | `--color-link` | = accent | `#8FB0F5` | Text links. On the dark ground the accent fails as text colour. |
 | `--color-thead` | `#F8FAFC` | `#0F182B` | Table header row. |
 | `--color-line` | `#EDF0F5` | `#1A2540` | Row dividers inside a card. |

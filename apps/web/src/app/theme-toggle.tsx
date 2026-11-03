@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { SegmentedFilter } from '@/components/ui';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -48,27 +49,5 @@ export function ThemeToggle() {
     }
   }
 
-  return (
-    <div
-      role="group"
-      aria-label="Görünüm"
-      className="flex overflow-hidden rounded border border-(--color-border) text-xs"
-    >
-      {OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => choose(opt.value)}
-          aria-pressed={theme === opt.value}
-          className={`px-2.5 py-1.5 transition ${
-            theme === opt.value
-              ? 'bg-(--color-accent) font-semibold text-(--color-accent-ink)'
-              : 'text-(--color-muted) hover:bg-(--color-hover)'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <SegmentedFilter label="Görünüm" options={OPTIONS} value={theme} onChange={choose} />;
 }

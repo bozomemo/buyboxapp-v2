@@ -28,4 +28,32 @@ export function Icon({
 }
 
 export type { LucideIcon };
-export { AlertTriangle, CheckCircle2, Inbox, Loader2, Package, PauseCircle, Search, Trash2 } from 'lucide-react';
+export {
+  AlertTriangle,
+  BarChart3,
+  Bell,
+  Bookmark,
+  CheckCircle2,
+  Cog,
+  Eye,
+  GitCompare,
+  History,
+  Inbox,
+  LayoutDashboard,
+  Loader2,
+  LogOut,
+  Package,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PauseCircle,
+  ScanSearch,
+  ScrollText,
+  Search,
+  Settings,
+  ShieldCheck,
+  ShoppingBag,
+  Store,
+  Tags,
+  Trash2,
+  Users,
+} from 'lucide-react';

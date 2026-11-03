@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockNavigation, stubFetch } from '@/test-utils';
 import { NavShell } from './nav-shell';
 
@@ -136,6 +136,70 @@ describe('NavShell', () => {
       expect(screen.getByRole('link', { name: 'Takip Edilen Ürünler' })).toBeTruthy();
       // The shared groups never depend on the view.
       expect(screen.getByRole('link', { name: 'İşler' })).toBeTruthy();
+    });
+  });
+
+  describe('sidebar (spec 2026-11-03-ui-redesign §5.2)', () => {
+    const base = {
+      [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },
+      [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
+    };
+    const original = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    let stored: Map<string, string>;
+
+    beforeEach(() => {
+      stored = new Map();
+      Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        value: {
+          getItem: (k: string) => stored.get(k) ?? null,
+          setItem: (k: string, v: string) => void stored.set(k, v),
+          removeItem: (k: string) => void stored.delete(k),
+        },
+      });
+    });
+
+    afterEach(() => {
+      if (original) Object.defineProperty(window, 'localStorage', original);
+    });
+
+    it('collapsed rail keeps link names', async () => {
+      stored.set('buybox.navCollapsed', '1');
+      stubFetch(base);
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await screen.findByRole('button', { name: 'Menüyü genişlet' })).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Panel' })).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'İşler' })).toBeTruthy();
+    });
+
+    it('rail toggle', async () => {
+      stubFetch(base);
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Menüyü daralt' }));
+      expect(screen.getByRole('button', { name: 'Menüyü genişlet' })).toBeTruthy();
+      expect(stored.get('buybox.navCollapsed')).toBe('1');
+    });
+
+    it('user block lives in the sidebar', async () => {
+      stubFetch({
+        ...base,
+        '/api/auth/me': { body: { user: { displayName: 'Mehmet Y.', roleLabel: 'Yönetici', permissions: ['view', 'edit'] } } },
+      });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      const sidebar = screen.getByRole('complementary');
+      expect(await within(sidebar).findByRole('button', { name: 'Çıkış yap' })).toBeTruthy();
     });
   });
 });
