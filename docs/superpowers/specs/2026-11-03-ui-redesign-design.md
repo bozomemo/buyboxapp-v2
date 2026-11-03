@@ -297,6 +297,8 @@ Every screen gets the new palette, fonts and shell as soon as this phase lands.
 
 **Phase 2 · Brand screens**
 
+Built 2026-11-03 (plan `docs/superpowers/plans/2026-11-03-ui-redesign-phase-2-brand-screens.md`); the converted screens are guarded by `apps/web/src/app/kit-adoption.test.ts`.
+
 Brand is the module in production (`takipsistemi`), so it goes first. The screens are, in order:
 
 1. Panel (`/`)
