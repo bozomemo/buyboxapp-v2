@@ -1,5 +1,6 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { NO_PERMISSION_TITLE, PermissionsProvider } from '@/lib/permissions';
 import { stubFetch } from '@/test-utils';
 import { JobsClient } from './jobs-client';
 
@@ -167,5 +168,64 @@ describe('JobsClient', () => {
     screen.getByText('Kapalı modüllerin 1 işi gizli — göster').click();
     expect(await screen.findByText('Modül kapalı')).toBeTruthy();
     expect(inCatalogue('Yeniden Fiyatlandırma')).toBe(true);
+  });
+
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Review Focus 1 and 4): the run
+  // button's guards survive its move into the kit `Button`.
+  const catalogue = (queued: boolean) => ({
+    '/api/jobs': {
+      body: {
+        jobs: [
+          {
+            jobName: 'SweepBrandCatalogue',
+            label: 'Marka Kataloğu',
+            module: 'brand',
+            moduleDisabled: false,
+            cadenceMs: null,
+            liveCadenceMs: null,
+            pendingRestart: false,
+            isCadenceOverride: false,
+            defaultCadenceMs: null,
+            perMarketplace: false,
+            defaultPayload: {},
+            enabled: true,
+            nextRunAt: null,
+            queued,
+            activeRun: null,
+            lastRun: null,
+          },
+        ],
+        scheduler: { running: true, systemPaused: false },
+        queueDepth: { ready: queued ? 1 : 0, locked: 0, done: 0, failed: 0 },
+        claimed: [],
+        circuitBreakers: [],
+      },
+    },
+    ...EMPTY_SIDE_ROUTES,
+  });
+
+  it('run now stays disabled while queued', async () => {
+    stubFetch(catalogue(true));
+
+    render(<JobsClient />);
+
+    const run = await screen.findByRole('button', { name: 'Kuyruğa alındı' });
+    expect((run as HTMLButtonElement).disabled).toBe(true);
+    expect(run.className).toContain('h-8');
+  });
+
+  it('keeps permission gating', async () => {
+    stubFetch({ ...catalogue(false), '/api/auth/me': { body: { user: { permissions: ['view'] } } } });
+
+    render(
+      <PermissionsProvider>
+        <JobsClient />
+      </PermissionsProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Çalıştır' }).getAttribute('title')).toBe(NO_PERMISSION_TITLE));
+    const run = screen.getByRole('button', { name: 'Çalıştır' }) as HTMLButtonElement;
+    expect(run.disabled).toBe(true);
+    expect(run.className).toContain('h-8');
   });
 });

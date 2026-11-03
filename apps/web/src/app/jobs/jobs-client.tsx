@@ -14,7 +14,8 @@ import {
   usePagedRows,
 } from '@/components/table';
 import { SweepPassCard } from '@/components/sweep-pass-card';
-import { EmptyState, ErrorState, LoadingState, Section } from '@/components/ui';
+import { Download } from '@/components/icon';
+import { Button, EmptyState, ErrorState, LoadingState, Section, Select, TextInput } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '@/lib/format';
 import { CIRCUIT_LABELS, JOB_LABELS, JOB_RUN_STATE_LABELS, labelOf } from '@/lib/labels';
@@ -620,7 +621,7 @@ export function JobsClient() {
     // and the operator needs to know *now* that the click landed.
     setPendingRuns((prev) => ({ ...prev, [job.jobName]: Date.now() }));
     try {
-      // Must mirror the <select>'s own fallback exactly (`marketplaces[0]?.code`) — the
+      // Must mirror the dropdown's own fallback exactly (`marketplaces[0]?.code`) — the
       // dropdown shows a marketplace pre-selected before the operator ever touches it, and
       // `selectedMarketplace` state only gets an entry on `onChange`. Reading the state alone
       // here would send `marketplaceCode: undefined` for a job whose row visibly has a
@@ -865,22 +866,20 @@ export function JobsClient() {
           <p className="text-xs text-(--color-muted)">
             Sıklık değişiklikleri worker yeniden başlatılınca etkili olur, kaydedilir kaydedilmez değil.
           </p>
-          <button
+          {/* The label carries "(N bekleyen)" whenever the tone is raised, so the state has its word. */}
+          <Button
+            variant={pendingRestartCount > 0 ? 'primary' : 'secondary'}
+            size="sm"
             type="button"
             disabled={busy === 'worker-restart'}
             onClick={restartWorker}
-            className={
-              pendingRestartCount > 0
-                ? 'rounded bg-(--color-warning) px-2 py-1 text-xs font-medium text-(--color-warning-ink)'
-                : 'rounded bg-(--color-chip-bg) px-2 py-1 text-xs text-(--color-chip-text)'
-            }
           >
             {busy === 'worker-restart'
               ? 'Yeniden başlatılıyor…'
               : pendingRestartCount > 0
                 ? `Worker'ı Yeniden Başlat (${pendingRestartCount} bekleyen)`
                 : "Worker'ı Yeniden Başlat"}
-          </button>
+          </Button>
           {/* Running jobs are drained, not killed (`Scheduler.shutdown`), so this is a warning
               about how long the click takes — not about losing work. */}
           {runningCount > 0 && busy !== 'worker-restart' && (
@@ -939,34 +938,36 @@ export function JobsClient() {
                         <span className="text-(--color-muted)">{formatCadence(job.cadenceMs)}</span>
                       ) : (
                         <div className="flex items-center gap-1.5">
-                          <input
+                          <TextInput
                             type="number"
                             min={10}
                             step={1}
-                            className="w-16 rounded border border-(--color-border) px-1 py-0.5 text-xs"
+                            aria-label={`${job.label} sıklığı (saniye)`}
+                            className="w-20"
                             value={cadenceDraft[job.jobName] ?? String(Math.round(job.cadenceMs / 1000))}
                             onChange={(e) =>
                               setCadenceDraft((prev) => ({ ...prev, [job.jobName]: e.target.value }))
                             }
                           />
                           <span className="text-xs text-(--color-muted)">sn</span>
-                          <button
+                          <Button
+                            size="sm"
                             type="button"
                             disabled={busy === `cadence-${job.jobName}`}
                             onClick={() => saveCadence(job.jobName)}
-                            className="rounded bg-(--color-accent) px-1.5 py-0.5 text-xs text-(--color-accent-ink) disabled:opacity-50"
                           >
                             {busy === `cadence-${job.jobName}` ? 'Kaydediliyor…' : 'Kaydet'}
-                          </button>
+                          </Button>
                           {job.isCadenceOverride && (
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               type="button"
                               disabled={busy === `cadence-${job.jobName}`}
                               onClick={() => resetCadence(job.jobName)}
-                              className="rounded bg-(--color-chip-bg) px-1.5 py-0.5 text-xs text-(--color-chip-text)"
                             >
                               Varsayılana dön
-                            </button>
+                            </Button>
                           )}
                           {cadenceSaved === job.jobName && (
                             <span className="text-xs text-(--color-success)">Kaydedildi</span>
@@ -1019,6 +1020,7 @@ export function JobsClient() {
                       )}
                     </td>
                     <td className="px-3 py-2">
+                      {/* kit-exempt: status chip is the toggle — "Etkin" / "Devre dışı" is the state and the control */}
                       <button
                         type="button"
                         disabled={busy === job.jobName}
@@ -1044,21 +1046,18 @@ export function JobsClient() {
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         {job.perMarketplace && (
-                          <select
-                            className="rounded border border-(--color-border) px-1 py-0.5 text-xs"
+                          <Select
+                            aria-label={`${job.label} pazaryeri`}
                             value={selectedMarketplace[job.jobName] ?? marketplaces[0]?.code ?? ''}
                             onChange={(e) =>
                               setSelectedMarketplace((prev) => ({ ...prev, [job.jobName]: e.target.value }))
                             }
-                          >
-                            {marketplaces.map((m) => (
-                              <option key={m.code} value={m.code}>
-                                {m.displayName}
-                              </option>
-                            ))}
-                          </select>
+                            options={marketplaces.map((m) => ({ value: m.code, label: m.displayName }))}
+                          />
                         )}
-                        <button
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           type="button"
                           // Disabled while the job is queued or running, not merely while this
                           // browser's POST is in flight: a second click would enqueue a second
@@ -1074,18 +1073,18 @@ export function JobsClient() {
                           }
                           {...(canRun ? {} : { title: NO_PERMISSION_TITLE })}
                           onClick={() => runNow(job)}
-                          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface) disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {job.activeRun ? 'Çalışıyor…' : isJobBusy(job) ? 'Kuyruğa alındı' : 'Çalıştır'}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           onClick={() => toggleDetails(job)}
                           aria-expanded={expandedJob === job.jobName}
-                          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface)"
                         >
                           {expandedJob === job.jobName ? 'Detayları gizle' : 'Detaylar'}
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -1107,21 +1106,17 @@ export function JobsClient() {
           </table>
         </TableFrame>
         {moduleDisabledCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowModuleDisabledJobs((v) => !v)}
-            className="mt-2 text-xs text-(--color-accent) hover:underline"
-          >
+          <Button variant="ghost" size="sm" type="button" className="mt-2" onClick={() => setShowModuleDisabledJobs((v) => !v)}>
             {showModuleDisabledJobs
               ? `Kapalı modüllerin işlerini gizle (${moduleDisabledCount})`
               : `Kapalı modüllerin ${moduleDisabledCount} işi gizli — göster`}
-          </button>
+          </Button>
         )}
       </Section>
 
       {/* Ranked above queue depth: a tripped breaker is a direct answer to "is a job stuck, and
           why" (doc 15 §6 2.1's stated primary task), not a supporting number. */}
-      <Section id="circuit-breaker" title="Devre Kesici (Circuit Breaker)">
+      <Section id="circuit-breaker" title="Devre Kesici (Circuit Breaker)" card>
         {overview.circuitBreakers.length === 0 ? (
           <p className="text-sm text-(--color-muted)">Hiç tetiklenmedi.</p>
         ) : (
@@ -1140,14 +1135,15 @@ export function JobsClient() {
                   )}
                 </div>
                 {c.state !== 'closed' && (
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     type="button"
                     disabled={busy === `circuit-${c.marketplaceCode}`}
                     onClick={() => resetCircuit(c.marketplaceCode)}
-                    className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface)"
                   >
                     Sıfırla
-                  </button>
+                  </Button>
                 )}
               </li>
             ))}
@@ -1160,10 +1156,10 @@ export function JobsClient() {
         </p>
       </Section>
 
-      <Section id="queue" title="Kuyruk Derinliği ve Alınan İşler">
+      <Section id="queue" title="Kuyruk Derinliği ve Alınan İşler" card>
         <div className="flex flex-wrap gap-4">
           {['ready', 'locked', 'done', 'failed'].map((state) => (
-            <div key={state} className="rounded border border-(--color-border) px-4 py-2 text-center">
+            <div key={state} className="rounded-lg border border-(--color-border) bg-(--color-bg) px-4 py-2 text-center">
               <div className="text-xl font-bold">{formatNumber(overview.queueDepth[state] ?? 0)}</div>
               <div className="text-xs text-(--color-muted)">{state}</div>
             </div>
@@ -1188,7 +1184,7 @@ export function JobsClient() {
       {/* Config, not triage: touched when 403s show up, not on a daily pass. Closed by default so
           it stops competing for attention with the sections above that actually answer the
           screen's question. */}
-      <details className="rounded border border-(--color-border)">
+      <details className="rounded-xl border border-(--color-border) bg-(--color-surface) shadow-(--shadow-card)">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Tarama Hızı (Rakip Verisi Toplama) — gelişmiş ayar
         </summary>
@@ -1221,10 +1217,10 @@ export function JobsClient() {
                   <tr key={rate.marketplaceCode}>
                     <td className="px-3 py-2 font-medium">{rate.marketplaceCode}</td>
                     <td className="px-3 py-2">
-                      <input
+                      <TextInput
                         type="number"
                         min={1}
-                        className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
+                        className="w-20"
                         value={scrapeRateDraft[rate.marketplaceCode]?.requestsPerMinute ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({
@@ -1241,10 +1237,10 @@ export function JobsClient() {
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <input
+                      <TextInput
                         type="number"
                         min={1}
-                        className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
+                        className="w-20"
                         value={scrapeRateDraft[rate.marketplaceCode]?.burst ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({
@@ -1263,11 +1259,11 @@ export function JobsClient() {
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <input
+                      <TextInput
                         type="number"
                         min={2}
                         max={120}
-                        className="w-20 rounded border border-(--color-border) px-2 py-1 text-sm"
+                        className="w-20"
                         value={scrapeRateDraft[rate.marketplaceCode]?.timeoutSeconds ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({
@@ -1289,14 +1285,15 @@ export function JobsClient() {
                       {rate.isOverride ? ' (özelleştirildi)' : ''}
                     </td>
                     <td className="px-3 py-2">
-                      <button
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         type="button"
                         disabled={busy === `scrape-rate-${rate.marketplaceCode}`}
                         onClick={() => saveScrapeRate(rate.marketplaceCode)}
-                        className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-surface) disabled:opacity-50"
                       >
                         {busy === `scrape-rate-${rate.marketplaceCode}` ? 'Kaydediliyor…' : 'Kaydet'}
-                      </button>
+                      </Button>
                       {scrapeRateSaved === rate.marketplaceCode && (
                         <span className="ml-2 text-xs text-(--color-success)">Kaydedildi</span>
                       )}
@@ -1316,39 +1313,33 @@ export function JobsClient() {
           runHistory.length > 0 ? (
             <div className="flex items-center gap-2">
               <ColumnMenu defs={RUN_HISTORY_COLUMNS} prefs={runHistoryColumns} />
-              <button
-                type="button"
-                onClick={exportRunHistoryCsv}
-                className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-              >
+              <Button variant="secondary" size="sm" icon={Download} type="button" onClick={exportRunHistoryCsv}>
                 Excel&apos;e Aktar
-              </button>
+              </Button>
             </div>
           ) : undefined
         }
       >
-        <div className="mb-2 flex gap-2">
-          <select
-            className="rounded border border-(--color-border) px-2 py-1 text-sm"
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Select
+            aria-label="İş"
             value={historyFilter.jobName}
             onChange={(e) => setHistoryFilter((f) => ({ ...f, jobName: e.target.value }))}
-          >
-            <option value="">Tüm işler</option>
-            {overview.jobs.map((j) => (
-              <option key={j.jobName} value={j.jobName}>
-                {j.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="rounded border border-(--color-border) px-2 py-1 text-sm"
+            options={[
+              { value: '', label: 'Tüm işler' },
+              ...overview.jobs.map((j) => ({ value: j.jobName, label: j.label })),
+            ]}
+          />
+          <Select
+            aria-label="Durum"
             value={historyFilter.state}
             onChange={(e) => setHistoryFilter((f) => ({ ...f, state: e.target.value }))}
-          >
-            <option value="">Tüm durumlar</option>
-            <option value="success">{labelOf(JOB_RUN_STATE_LABELS, 'success')}</option>
-            <option value="failed">{labelOf(JOB_RUN_STATE_LABELS, 'failed')}</option>
-          </select>
+            options={[
+              { value: '', label: 'Tüm durumlar' },
+              { value: 'success', label: labelOf(JOB_RUN_STATE_LABELS, 'success') },
+              { value: 'failed', label: labelOf(JOB_RUN_STATE_LABELS, 'failed') },
+            ]}
+          />
         </div>
         {runHistory.length === 0 ? (
           <EmptyState

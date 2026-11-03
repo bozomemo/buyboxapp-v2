@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/ui';
 import { requirePermission } from '@/lib/server/auth/page-guard';
 import { JobsClient } from './jobs-client';
 
@@ -8,7 +9,7 @@ export default async function JobsPage() {
   if (!gate.ok) return gate.element;
   return (
     <div className="space-y-3">
-      <h1 className="text-2xl font-semibold">İşler</h1>
+      <PageHeader title="İşler" breadcrumb={[{ label: 'Sistem' }, { label: 'İşler' }]} />
       <JobsClient />
     </div>
   );
