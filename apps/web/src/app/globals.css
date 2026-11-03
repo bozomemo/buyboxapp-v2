@@ -1,15 +1,21 @@
 @import 'tailwindcss';
 
 /*
- * Theme tokens (light default, dark override below). Every screen reads color through these
- * custom properties — never a raw Tailwind palette class — so a screen is dark-mode-correct the
- * moment it uses a token, with nothing further to touch when the palette changes.
+ * Theme tokens — the Lacivert palette, light default and dark override below (spec
+ * docs/superpowers/specs/2026-11-03-ui-redesign-design.md §3, chosen 2026-11-03). Every screen
+ * reads color through these custom properties — never a raw Tailwind palette class — so a screen
+ * is dark-mode-correct the moment it uses a token, with nothing further to touch when the palette
+ * changes.
  *
  * `-bg`/`-border` suffixes are the soft tint used for alert boxes, badges and status rows;
  * `-ink` is the text color to put *on* the solid `--color-accent/danger/warning/success` fill
- * (white in light mode, but the dark palette's accent/success/warning are light, saturated
- * colors that fail contrast under white text, so dark mode needs a near-black ink instead —
- * always reach for `-ink` next to a solid status fill, never hardcode `text-white`).
+ * (white in light mode, but the dark palette's status hues are light, saturated colors that fail
+ * contrast under white text, so dark mode needs a near-black ink instead — always reach for
+ * `-ink` next to a solid status fill, never hardcode `text-white`).
+ *
+ * `--color-sidebar*` are separate from the content tokens because the sidebar is dark navy in
+ * both themes. `--color-link` exists because the accent blue that carries a button fill is too
+ * dark to read as text on the dark ground.
  */
 :root {
   /*
@@ -22,125 +28,160 @@
    */
   color-scheme: light;
 
-  --color-bg: #f8fafc;
-  --color-surface: #ffffff;
-  --color-border: #e2e8f0;
-  --color-text: #0f172a;
-  --color-muted: #64748b;
-  --color-hover: #f1f5f9;
-  --color-chip-bg: #e2e8f0;
-  --color-chip-text: #334155;
-  --color-strong-bg: #262626;
-  --color-strong-ink: #ffffff;
+  --color-bg: #F4F6F9;
+  --color-surface: #FFFFFF;
+  --color-border: #DFE4EC;
+  --color-text: #111B2E;
+  --color-muted: #56627A;
+  --color-hover: #EDF0F5;
+  --color-chip-bg: #EEF1F6;
+  --color-chip-text: #3A465E;
+  --color-strong-bg: #14213D;
+  --color-strong-ink: #FFFFFF;
 
-  --color-accent: #2563eb;
-  --color-accent-ink: #ffffff;
-  --color-accent-bg: #eff6ff;
-  --color-accent-border: #93c5fd;
+  --color-accent: #2B59C3;
+  --color-accent-ink: #FFFFFF;
+  --color-accent-bg: #E4ECFB;
+  --color-accent-border: #A9C0EE;
+  --color-link: #2B59C3;
 
   /*
-   * The three status hues are a step darker than the palette they are named after (700 rather
-   * than 600) because they are read as *text* far more often than they are used as a fill —
-   * "Stok yok", a phase label, a failed-job row — and the 600 weights measured 3.0-3.3:1 against
-   * both `--color-bg` and `--color-surface`, under WCAG AA's 4.5:1 for body text (contrast sweep
-   * 2026-08-26). The dark palette needs no equivalent shift: its status hues sit at 5.5-11:1.
-   * Any replacement stays at or above 4.5:1 on `--color-bg`, on `--color-surface` and on its own
-   * `-bg` tint, and white `-ink` must clear 4.5:1 on the solid fill.
+   * Contrast rule, enforced by `theme-tokens.test.ts` (spec §3.4): every status hue clears 4.5:1
+   * on `--color-bg`, on `--color-surface` and on its own `-bg` tint; every `-ink` clears 4.5:1 on
+   * its solid fill; `--color-muted` and `--color-link` clear 4.5:1 on both grounds. The hues are
+   * read as *text* far more often than they are used as a fill — "Stok yok", a phase label, a
+   * failed-job row — which is why they sit this dark (contrast sweep 2026-08-26, doc 06 §11.1).
    */
-  --color-danger: #b91c1c;
-  --color-danger-ink: #ffffff;
-  --color-danger-bg: #fef2f2;
-  --color-danger-border: #fca5a5;
+  --color-danger: #B42318;
+  --color-danger-ink: #FFFFFF;
+  --color-danger-bg: #FEF3F2;
+  --color-danger-border: #F3C3BE;
 
-  --color-warning: #b45309;
-  --color-warning-ink: #ffffff;
-  --color-warning-bg: #fffbeb;
-  --color-warning-border: #fcd34d;
+  --color-warning: #9A5B00;
+  --color-warning-ink: #FFFFFF;
+  --color-warning-bg: #FFF6E5;
+  --color-warning-border: #F2D49B;
+  --color-warning-strong: #7A4800;
 
-  --color-success: #15803d;
-  --color-success-ink: #ffffff;
-  --color-success-bg: #f0fdf4;
-  --color-success-border: #86efac;
+  --color-success: #1E7A46;
+  --color-success-ink: #FFFFFF;
+  --color-success-bg: #EAF6EE;
+  --color-success-border: #B7E0C4;
+
+  --color-sidebar: #14213D;
+  --color-sidebar-text: #CBD3E3;
+  --color-sidebar-muted: #8C9BB8;
+  --color-sidebar-active-bg: #E4ECFB;
+  --color-sidebar-active-text: #14213D;
+  --color-thead: #F8FAFC;
+  --color-line: #EDF0F5;
+  --color-chart: #C9D8F5;
+  --shadow-card: 0 1px 2px rgba(17, 27, 46, 0.05);
 }
 
 /*
- * Dark palette — "Yüksek Kontrastlı Veri Paneli" (doc 06 §11), the direction picked from four
- * mocked-up options on 2026-08-18. Applied two ways so both "Sistem" and an explicit "Koyu"
- * choice work: the media query covers a system preference with no explicit choice stored
+ * Dark palette — Lacivert dark (spec §3.2), which on 2026-11-03 replaced the neon "Yüksek
+ * Kontrastlı Veri Paneli" chosen on 2026-08-18. Applied two ways so both "Sistem" and an explicit
+ * "Koyu" choice work: the media query covers a system preference with no explicit choice stored
  * (`data-theme` absent or "system"), and the attribute selector covers an explicit choice,
- * overriding the media query in either direction. Theme selection itself — reading
- * localStorage, stamping `data-theme` on `<html>` before paint — lives in the inline script in
- * `layout.tsx`, not here; this file only ever reacts to the attribute.
+ * overriding the media query in either direction. The two blocks must stay identical —
+ * `theme-tokens.test.ts` fails if they drift. Theme selection itself — reading localStorage,
+ * stamping `data-theme` on `<html>` before paint — lives in the inline script in `layout.tsx`,
+ * not here; this file only ever reacts to the attribute.
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --color-bg: #05070a;
-    --color-surface: #0a0e15;
-    --color-border: #1c2430;
-    --color-text: #f4f6f9;
-    --color-muted: #7c8798;
-    --color-hover: #131a26;
-    --color-chip-bg: #1c2430;
-    --color-chip-text: #cbd5e1;
-    --color-strong-bg: #1c2430;
-    --color-strong-ink: #f4f6f9;
+    --color-bg: #0B1220;
+    --color-surface: #111A2E;
+    --color-border: #22304D;
+    --color-text: #E6ECF5;
+    --color-muted: #93A0B8;
+    --color-hover: #18233B;
+    --color-chip-bg: #18233B;
+    --color-chip-text: #C3CDE0;
+    --color-strong-bg: #1C2F5C;
+    --color-strong-ink: #FFFFFF;
 
-    --color-accent: #22d3ee;
-    --color-accent-ink: #04141a;
-    --color-accent-bg: rgba(34, 211, 238, 0.14);
-    --color-accent-border: rgba(34, 211, 238, 0.4);
+    --color-accent: #3366D6;
+    --color-accent-ink: #FFFFFF;
+    --color-accent-bg: rgba(51, 102, 214, 0.18);
+    --color-accent-border: rgba(91, 141, 239, 0.45);
+    --color-link: #8FB0F5;
 
-    --color-danger: #ff3b47;
-    --color-danger-ink: #1a0304;
-    --color-danger-bg: rgba(255, 59, 71, 0.16);
-    --color-danger-border: rgba(255, 59, 71, 0.4);
+    --color-danger: #F97066;
+    --color-danger-ink: #1A0504;
+    --color-danger-bg: #3A1714;
+    --color-danger-border: #6E2620;
 
-    --color-warning: #ffb020;
-    --color-warning-ink: #1a1102;
-    --color-warning-bg: rgba(255, 176, 32, 0.14);
-    --color-warning-border: rgba(255, 176, 32, 0.4);
+    --color-warning: #F5B544;
+    --color-warning-ink: #1A1102;
+    --color-warning-bg: #33240A;
+    --color-warning-border: #6B4A12;
+    --color-warning-strong: #F7C66B;
 
-    --color-success: #16e37e;
-    --color-success-ink: #021a0e;
-    --color-success-bg: rgba(22, 227, 126, 0.14);
-    --color-success-border: rgba(22, 227, 126, 0.4);
+    --color-success: #47CD89;
+    --color-success-ink: #021A0E;
+    --color-success-bg: #0F2E1F;
+    --color-success-border: #1D5A3A;
+
+    --color-sidebar: #070D1A;
+    --color-sidebar-text: #C3CDE0;
+    --color-sidebar-muted: #7F8CA8;
+    --color-sidebar-active-bg: #1C2F5C;
+    --color-sidebar-active-text: #FFFFFF;
+    --color-thead: #0F182B;
+    --color-line: #1A2540;
+    --color-chart: #2B4A8A;
+    --shadow-card: none;
   }
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --color-bg: #05070a;
-  --color-surface: #0a0e15;
-  --color-border: #1c2430;
-  --color-text: #f4f6f9;
-  --color-muted: #7c8798;
-  --color-hover: #131a26;
-  --color-chip-bg: #1c2430;
-  --color-chip-text: #cbd5e1;
-  --color-strong-bg: #1c2430;
-  --color-strong-ink: #f4f6f9;
+  --color-bg: #0B1220;
+  --color-surface: #111A2E;
+  --color-border: #22304D;
+  --color-text: #E6ECF5;
+  --color-muted: #93A0B8;
+  --color-hover: #18233B;
+  --color-chip-bg: #18233B;
+  --color-chip-text: #C3CDE0;
+  --color-strong-bg: #1C2F5C;
+  --color-strong-ink: #FFFFFF;
 
-  --color-accent: #22d3ee;
-  --color-accent-ink: #04141a;
-  --color-accent-bg: rgba(34, 211, 238, 0.14);
-  --color-accent-border: rgba(34, 211, 238, 0.4);
+  --color-accent: #3366D6;
+  --color-accent-ink: #FFFFFF;
+  --color-accent-bg: rgba(51, 102, 214, 0.18);
+  --color-accent-border: rgba(91, 141, 239, 0.45);
+  --color-link: #8FB0F5;
 
-  --color-danger: #ff3b47;
-  --color-danger-ink: #1a0304;
-  --color-danger-bg: rgba(255, 59, 71, 0.16);
-  --color-danger-border: rgba(255, 59, 71, 0.4);
+  --color-danger: #F97066;
+  --color-danger-ink: #1A0504;
+  --color-danger-bg: #3A1714;
+  --color-danger-border: #6E2620;
 
-  --color-warning: #ffb020;
-  --color-warning-ink: #1a1102;
-  --color-warning-bg: rgba(255, 176, 32, 0.14);
-  --color-warning-border: rgba(255, 176, 32, 0.4);
+  --color-warning: #F5B544;
+  --color-warning-ink: #1A1102;
+  --color-warning-bg: #33240A;
+  --color-warning-border: #6B4A12;
+  --color-warning-strong: #F7C66B;
 
-  --color-success: #16e37e;
-  --color-success-ink: #021a0e;
-  --color-success-bg: rgba(22, 227, 126, 0.14);
-  --color-success-border: rgba(22, 227, 126, 0.4);
+  --color-success: #47CD89;
+  --color-success-ink: #021A0E;
+  --color-success-bg: #0F2E1F;
+  --color-success-border: #1D5A3A;
+
+  --color-sidebar: #070D1A;
+  --color-sidebar-text: #C3CDE0;
+  --color-sidebar-muted: #7F8CA8;
+  --color-sidebar-active-bg: #1C2F5C;
+  --color-sidebar-active-text: #FFFFFF;
+  --color-thead: #0F182B;
+  --color-line: #1A2540;
+  --color-chart: #2B4A8A;
+  --shadow-card: none;
 }
 
 body {

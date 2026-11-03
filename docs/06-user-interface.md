@@ -794,50 +794,51 @@ Reached from the user's name in the header. Four sections:
 
 ---
 
-## 11. Dark mode (built)
+## 11. Theme — Lacivert (light and dark)
 
-A Light / Dark / System theme toggle is planned. On 2026-08-18 four dark-mode directions were
-mocked up against the real Dashboard layout (sidebar, KPI cards, the price-monitoring grid) and
-reviewed with the product owner in a Claude Design canvas. The chosen direction was
-**Option 2 — "Yüksek Kontrastlı Veri Paneli"** (trading-terminal style): near-black surfaces,
-strong contrast, vivid signal colours pulled forward for status, tabular-figure numerics. When
-this is built, implement it — not one of the other three explored directions — and validate
-contrast (WCAG AA) before shipping.
+On 2026-11-03 the product owner chose a visual redesign of the whole app (spec
+`docs/superpowers/specs/2026-11-03-ui-redesign-design.md`) in the **Lacivert** palette, with a
+matching dark theme. The Lacivert dark theme **replaces** the neon dark direction ("Option 2 —
+Yüksek Kontrastlı Veri Paneli", chosen 2026-08-18), which is retired. Lacivert was chosen because
+a blue accent separates most clearly from the red / amber / green status colours that carry
+meaning in this app.
 
-Token values captured from the chosen mockup, to seed `globals.css`'s dark palette:
+The tokens live in `globals.css` and nowhere else. The full value tables are spec §3.2 (changed
+values) and §3.3 (new tokens); the headline values are:
 
-| Token                    | Value     | Notes                                                     |
-| ------------------------ | --------- | --------------------------------------------------------- |
-| `--color-bg` (dark)      | `#05070a` | page background                                           |
-| `--color-surface` (dark) | `#0a0e15` | cards, sidebar, table                                     |
-| surface-2 (dark)         | `#0d1220` | sticky table header, sidebar-adjacent panels              |
-| `--color-border` (dark)  | `#1c2430` |                                                           |
-| `--color-text` (dark)    | `#f4f6f9` |                                                           |
-| `--color-muted` (dark)   | `#7c8798` |                                                           |
-| `--color-accent` (dark)  | `#22d3ee` | replaces `#2563eb` in dark mode; accent-on-text `#04141a` |
-| `--color-danger` (dark)  | `#ff3b47` | tint bg `rgba(255,59,71,0.16)`                            |
-| `--color-warning` (dark) | `#ffb020` | tint bg `rgba(255,176,32,0.14)`                           |
-| `--color-success` (dark) | `#16e37e` | tint bg `rgba(22,227,126,0.14)`                           |
+| Token | Light | Dark |
+|---|---|---|
+| `--color-bg` | `#F4F6F9` | `#0B1220` |
+| `--color-surface` | `#FFFFFF` | `#111A2E` |
+| `--color-text` | `#111B2E` | `#E6ECF5` |
+| `--color-muted` | `#56627A` | `#93A0B8` |
+| `--color-accent` | `#2B59C3` | `#3366D6` |
+| `--color-link` | `#2B59C3` | `#8FB0F5` |
+| `--color-danger` | `#B42318` | `#F97066` |
+| `--color-warning` | `#9A5B00` | `#F5B544` |
+| `--color-success` | `#1E7A46` | `#47CD89` |
+| `--color-sidebar` | `#14213D` | `#070D1A` |
 
-Numeric table columns (prices) use a monospace/tabular-nums treatment
-(`ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace`) rather than the
-light theme's default sans stack — this is specific to the chosen direction and should carry
-over to the real implementation.
+The sidebar is dark navy in both themes, so it has its own `--color-sidebar*` tokens. Tables sit
+inside surface cards with a `--color-thead` header row — the _surface-2_ that the neon direction
+listed and never implemented is this token.
 
-Both things this section once listed as unscoped are now settled. The toggle is a `data-theme`
-attribute plus a stored preference, stamped on `<html>` before first paint by the inline script
-in `theme-init-script.ts`, with the `prefers-color-scheme` media query covering "Sistem"; the
-palette lives in `globals.css` and is applied twice, once per mechanism. And the sweep of the
-`apps/web` screens for hardcoded (non-token) colours was carried out on 2026-08-26 — see §11.1.
+The toggle mechanism is unchanged: a `data-theme` attribute plus a stored preference, stamped on
+`<html>` before first paint by the inline script in `theme-init-script.ts`, with the
+`prefers-color-scheme` media query covering "Sistem". The dark palette is applied twice, once per
+mechanism; `theme-tokens.test.ts` fails if the two blocks drift apart.
 
-**One token is still unimplemented:** the table above lists a _surface-2_ (`#0d1220`) for the
-sticky table header and sidebar-adjacent panels. `globals.css` has no such token, and
-`.table-sticky-head th` paints `--color-bg` instead. That is correct today because the grids sit
-directly on the page background rather than inside a surface card, so a header painted
-`--color-surface` would be the odd one out; add surface-2 when a grid is first placed inside a
-card, not before.
+**Contrast is enforced by a test, not by an audit.** `apps/web/src/app/theme-tokens.test.ts`
+reads `globals.css` and fails the build unless, in both themes: every status hue clears 4.5:1 on
+`--color-bg`, on `--color-surface` and on its own `-bg` tint; every `-ink` clears 4.5:1 on its
+solid fill; `--color-muted` and `--color-link` clear 4.5:1 on both grounds; and the sidebar text
+clears 4.5:1 on the sidebar.
 
-### 11.1 Colour sweep and contrast audit (2026-08-26)
+### 11.1 Colour sweep and contrast audit (2026-08-26, history)
+
+This audit was done against the retired neon palette and the old slate light palette. Its sweep
+result still holds — no screen names a colour except through a token — and the contrast rule it
+established is now the test above.
 
 Every `.tsx` under `apps/web/src` was swept for colour that does not come from a token — Tailwind
 palette utilities (`bg-white`, `text-gray-500`, …), hex and `rgb()`/`hsl()` literals, and inline
