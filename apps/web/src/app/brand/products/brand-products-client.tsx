@@ -27,6 +27,7 @@ import {
   StatusBanner,
   TextInput,
 } from '@/components/ui';
+import { errorMessage } from '@/components/auth-card';
 import { DEFAULT_PAGE_SIZE, Pagination, STICKY_HEAD, TableFrame } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import { ImportPanel } from './import-panel';
@@ -106,7 +107,10 @@ export function BrandProductsClient() {
     if (query.trim() !== '') params.set('text', query.trim());
     if (unlinkedOnly) params.set('unlinkedOnly', 'true');
     fetch(`/api/brand-products?${params.toString()}`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((d: { products: BrandProduct[]; total: number }) => {
         setRows(d.products);
         setTotal(d.total);
@@ -170,7 +174,12 @@ export function BrandProductsClient() {
   }
 
   async function remove(id: string) {
-    await fetch(`/api/brand-products/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/brand-products/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      setNotice({ ok: false, message: errorMessage(data, `Ürün silinemedi (HTTP ${res.status}).`) });
+      return;
+    }
     setNotice({ ok: true, message: 'Ürün silindi. Kartları takip listesinde kaldı.' });
     load();
   }
