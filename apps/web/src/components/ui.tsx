@@ -105,15 +105,18 @@ export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: LucideIcon;
 } & ({ children: React.ReactNode } | { children?: undefined; 'aria-label': string });
 
+/**
+ * The class string `Button` draws itself with, for an element that must stay something else — a
+ * download `<a href>` that should look like a secondary button is still a link, not a button.
+ */
+export function buttonClass(variant: ButtonVariant = 'primary', size: keyof typeof BUTTON_SIZE = 'md'): string {
+  return `inline-flex items-center justify-center gap-2 rounded-lg font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${BUTTON_SIZE[size]} ${BUTTON_VARIANT[variant]}`;
+}
+
 export function Button({ variant = 'primary', size = 'md', icon, children, ...props }: ButtonProps) {
-  const base =
-    'inline-flex items-center justify-center gap-2 rounded-lg font-semibold disabled:cursor-not-allowed disabled:opacity-50';
   const square = children === undefined ? (size === 'sm' ? 'w-8 px-0' : 'w-9 px-0') : '';
   return (
-    <button
-      {...props}
-      className={`${base} ${BUTTON_SIZE[size]} ${square} ${BUTTON_VARIANT[variant]} ${props.className ?? ''}`}
-    >
+    <button {...props} className={`${buttonClass(variant, size)} ${square} ${props.className ?? ''}`}>
       {icon && <Icon icon={icon} />}
       {children}
     </button>

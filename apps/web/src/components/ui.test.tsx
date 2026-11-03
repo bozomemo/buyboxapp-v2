@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Search, Trash2 } from './icon';
 import {
   Button,
+  buttonClass,
   Chip,
   ErrorState,
   PageHeader,
@@ -155,5 +156,17 @@ describe('VerdictBanner', () => {
     render(<VerdictBanner tone="warn" title="Sistem ilerliyor, 2 konu ilginizi bekliyor" />);
     const title = within(screen.getByRole('status')).getByText('Sistem ilerliyor, 2 konu ilginizi bekliyor');
     expect(title.className).toContain('--color-warning-strong');
+  });
+});
+
+describe('buttonClass', () => {
+  it('matches Button', () => {
+    render(
+      <Button variant="danger" size="sm">
+        X
+      </Button>,
+    );
+    const className = screen.getByRole('button', { name: 'X' }).className;
+    for (const token of buttonClass('danger', 'sm').split(/\s+/).filter(Boolean)) expect(className).toContain(token);
   });
 });
