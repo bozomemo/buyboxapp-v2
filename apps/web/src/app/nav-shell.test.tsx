@@ -188,7 +188,20 @@ describe('NavShell', () => {
       expect(stored.get('buybox.navCollapsed')).toBe('1');
     });
 
-    it('user block lives in the sidebar', async () => {
+    it('rail toggle is drawn in sidebar ink, not content ink', async () => {
+      stubFetch(base);
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      // A content-ink class on the navy sidebar is 1.08:1 in the light theme — invisible.
+      const toggle = await screen.findByRole('button', { name: 'Menüyü daralt' });
+      expect(toggle.className).not.toContain('text-(--color-text)');
+      expect(toggle.className).toContain('text-(--color-sidebar-text)');
+    });
+
+        it('user block lives in the sidebar', async () => {
       stubFetch({
         ...base,
         '/api/auth/me': { body: { user: { displayName: 'Mehmet Y.', roleLabel: 'Yönetici', permissions: ['view', 'edit'] } } },
@@ -227,7 +240,28 @@ describe('NavShell', () => {
       expect(await within(screen.getByRole('banner')).findByText(/Trendyol/)).toBeTruthy();
     });
 
-    it('pill absent on error', async () => {
+    it('a late scan says so in words, not only in amber', async () => {
+      stubFetch({
+        ...base,
+        '/api/dashboard': {
+          body: {
+            modules: { seller: true, brand: false },
+            brandAudit: null,
+            competitorAlerts: {
+              coverage: [{ marketplaceCode: 'hepsiburada', displayName: 'Hepsiburada', lastOkAt: Date.now() - 3 * 3_600_000, stale: true }],
+            },
+          },
+        },
+      });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await within(screen.getByRole('banner')).findByText(/gecikmeli/)).toBeTruthy();
+    });
+
+        it('pill absent on error', async () => {
       stubFetch({ ...base, '/api/dashboard': { status: 500 } });
       render(
         <NavShell>

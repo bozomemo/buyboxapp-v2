@@ -29,7 +29,7 @@ import {
   Users,
   type LucideIcon,
 } from '@/components/icon';
-import { Ago, Button, Chip, ConfirmButton, SegmentedFilter } from '@/components/ui';
+import { Ago, Chip, ConfirmButton, SegmentedFilter } from '@/components/ui';
 import { readStoredNavCollapsed, storeNavCollapsed } from '@/lib/nav-collapse';
 import { scanFreshness, type DashboardFreshnessInput } from '@/lib/scan-freshness';
 import {
@@ -301,7 +301,9 @@ function ViewSwitch({ view, onChange }: { view: NavView; onChange: (view: NavVie
  * once per full page load from `/api/dashboard`, which already carries it; not polled, because
  * that route is the dashboard's whole payload. Says nothing while loading or on failure — the
  * dashboard is where a failed read is reported, and a header that errors on every page over a
- * secondary pill would be noise.
+ * secondary pill would be noise. A late scan says "gecikmeli" in the chip itself — the amber
+ * tone alone would leave a stale scraper reading like a fresh one in greyscale or to a screen
+ * reader (doc 15 rule 8).
  */
 function ScanFreshness() {
   const [poll] = usePoll<DashboardFreshnessInput>('/api/dashboard');
@@ -312,7 +314,8 @@ function ScanFreshness() {
     <div className="mr-auto flex flex-wrap items-center gap-2">
       {entries.map((e) => (
         <Chip key={e.marketplaceCode} tone={e.tone} dot title={e.tone === 'warn' ? 'Son başarılı tarama gecikmeli' : undefined}>
-          {e.label} · <Ago at={e.at} never="henüz taranmadı" />
+          {e.label} · {e.tone === 'warn' && 'gecikmeli · '}
+          <Ago at={e.at} never="henüz taranmadı" />
         </Chip>
       ))}
     </div>
@@ -490,18 +493,24 @@ export function NavShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="mt-4 flex flex-col gap-2">
           <UserMenu collapsed={collapsed} />
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={collapsed ? PanelLeftOpen : PanelLeftClose}
+          {/* A plain button, not the kit's ghost `Button`: that variant's content ink would win
+              over a sidebar-ink class by Tailwind's source order, not class order, and content ink
+              on the navy sidebar is 1.08:1 in the light theme — the only control that opens the
+              rail would be invisible. Same shape as the sign-out button above. */}
+          <button
+            type="button"
             aria-label={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
             title={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
             onClick={() => {
               setCollapsed(!collapsed);
               storeNavCollapsed(!collapsed);
             }}
-            className={`text-(--color-sidebar-text) hover:bg-white/10 ${collapsed ? 'self-center' : 'self-end'}`}
-          />
+            className={`flex size-8 items-center justify-center rounded-lg text-(--color-sidebar-text) hover:bg-white/10 ${
+              collapsed ? 'self-center' : 'self-end'
+            }`}
+          >
+            <Icon icon={collapsed ? PanelLeftOpen : PanelLeftClose} />
+          </button>
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
