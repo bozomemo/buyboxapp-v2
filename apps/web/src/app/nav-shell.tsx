@@ -31,6 +31,7 @@ import {
 } from '@/components/icon';
 import { Ago, Button, Chip, ConfirmButton, SegmentedFilter } from '@/components/ui';
 import { readStoredNavCollapsed, storeNavCollapsed } from '@/lib/nav-collapse';
+import { useDashboardFreshness } from '@/lib/dashboard-feed';
 import { scanFreshness, type DashboardFreshnessInput } from '@/lib/scan-freshness';
 import {
   NAV_VIEW_OPTIONS,
@@ -292,19 +293,41 @@ function ViewSwitch({ view, onChange }: { view: NavView; onChange: (view: NavVie
   return <SegmentedFilter label="Menü görünümü" options={NAV_VIEW_OPTIONS} value={view} onChange={onChange} />;
 }
 
+/** How often the pill re-reads off the Panel: often enough that a scan falling behind turns amber. */
+const SCAN_REREAD_MS = 120_000;
+
 /**
- * Each marketplace's last scan, at the left of the header (spec 2026-11-03-ui-redesign §5.3). Read
- * once per full page load from `/api/dashboard`, which already carries it; not polled, because
- * that route is the dashboard's whole payload. Says nothing while loading or on failure — the
- * dashboard is where a failed read is reported, and a header that errors on every page over a
- * secondary pill would be noise. A late scan says "gecikmeli" in the chip itself — the amber
- * tone alone would leave a stale scraper reading like a fresh one in greyscale or to a screen
- * reader (doc 15 rule 8).
+ * Each marketplace's last scan, at the left of the header (spec 2026-11-03-ui-redesign §5.3), from
+ * `/api/dashboard`, which already carries it. On the Panel (`onPanel`) it takes the Panel's own
+ * read through `dashboard-feed` rather than fetching the same payload a second time; elsewhere it
+ * reads the route itself and re-reads every {@link SCAN_REREAD_MS}, so the amber tone — the
+ * server's staleness judgement — does not stay frozen at page load while the "… önce" text ages.
+ * Says nothing while loading or on failure — the dashboard is where a failed read is reported,
+ * and a header that errors on every page over a secondary pill would be noise. A late scan says
+ * "gecikmeli" in the chip itself — the amber tone alone would leave a stale scraper reading like
+ * a fresh one in greyscale or to a screen reader (doc 15 rule 8).
  */
-function ScanFreshness() {
-  const [poll] = usePoll<DashboardFreshnessInput>('/api/dashboard');
-  if (poll.status !== 'ready') return null;
-  const entries = scanFreshness(poll.data);
+function ScanFreshness({ onPanel }: { onPanel: boolean }) {
+  const shared = useDashboardFreshness();
+  const [own, setOwn] = useState<DashboardFreshnessInput | undefined>();
+  useEffect(() => {
+    if (onPanel) return;
+    let cancelled = false;
+    const read = () =>
+      fetch('/api/dashboard')
+        .then((res) => (res.ok ? (res.json() as Promise<DashboardFreshnessInput>) : undefined))
+        .then((data) => !cancelled && setOwn(data))
+        .catch(() => !cancelled && setOwn(undefined));
+    void read();
+    const interval = setInterval(read, SCAN_REREAD_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [onPanel]);
+  const data = onPanel ? shared : own;
+  if (!data) return null;
+  const entries = scanFreshness(data);
   if (entries.length === 0) return null;
   return (
     <div className="mr-auto flex flex-wrap items-center gap-2">
@@ -518,7 +541,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <LicenseGraceBanner />
         <header className="flex items-center justify-end gap-3 border-b border-(--color-border) bg-(--color-surface) px-6 py-3">
-          <ScanFreshness />
+          <ScanFreshness onPanel={pathname === '/'} />
           {showsViewSwitch(modulesState) && (
             <ViewSwitch
               view={view}

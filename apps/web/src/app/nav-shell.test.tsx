@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockNavigation, stubFetch } from '@/test-utils';
+import { publishDashboardFreshness, resetDashboardFeed } from '@/lib/dashboard-feed';
 import { NavShell } from './nav-shell';
 
 /**
@@ -281,6 +282,59 @@ describe('NavShell', () => {
       [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },
       [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
     };
+
+    // Off the Panel the pill reads the route itself; on it, the Panel's own read is shared.
+    beforeEach(() => {
+      mockNavigation.pathname = '/jobs';
+      resetDashboardFeed();
+    });
+
+    afterEach(() => {
+      mockNavigation.pathname = '/';
+      vi.useRealTimers();
+    });
+
+    it('on the Panel it reads what the Panel fetched, not the route again', async () => {
+      mockNavigation.pathname = '/';
+      stubFetch(base);
+      publishDashboardFreshness({
+        modules: { seller: false, brand: true },
+        brandAudit: { brands: [{ marketplaceCode: 'trendyol', lastSweptAt: Date.now() - 60_000 }] },
+      });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await within(screen.getByRole('banner')).findByText(/Trendyol/)).toBeTruthy();
+      const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+      expect(urls.some((u) => u.startsWith('/api/dashboard'))).toBe(false);
+    });
+
+    it('off the Panel it re-reads, so a scan that falls behind turns amber', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const coverage = (stale: boolean) => ({
+        body: {
+          modules: { seller: true, brand: false },
+          brandAudit: null,
+          competitorAlerts: {
+            coverage: [{ marketplaceCode: 'hepsiburada', displayName: 'Hepsiburada', lastOkAt: Date.now() - 60_000, stale }],
+          },
+        },
+      });
+      stubFetch({ ...base, '/api/dashboard': coverage(false) });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      const banner = screen.getByRole('banner');
+      expect(await within(banner).findByText(/Hepsiburada/)).toBeTruthy();
+      expect(within(banner).queryByText(/gecikmeli/)).toBeNull();
+      stubFetch({ ...base, '/api/dashboard': coverage(true) });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await within(banner).findByText(/gecikmeli/)).toBeTruthy();
+    });
 
     it('pill shows the latest sweep', async () => {
       stubFetch({

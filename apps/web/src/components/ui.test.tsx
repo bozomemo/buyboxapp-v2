@@ -238,3 +238,12 @@ describe('VerdictBanner action', () => {
     expect(screen.getByText('Son güncelleme 10:00').closest('[aria-live="off"]')).toBeTruthy();
   });
 });
+
+describe('ErrorState title and retrying', () => {
+  it('names what failed and holds the button while retrying', () => {
+    render(<ErrorState title="Panel verisi yüklenemedi" message="HTTP 500" onRetry={() => {}} retrying />);
+    expect(screen.getByText('Panel verisi yüklenemedi')).toBeTruthy();
+    const button = screen.getByRole('button', { name: 'Deneniyor…' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+});

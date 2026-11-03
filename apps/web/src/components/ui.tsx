@@ -373,15 +373,26 @@ export function EmptyState({
  * dene"** button. Before this component only `/` had a retry affordance (doc 15 baseline, 1 of
  * 26 files) — every other screen stranded the operator on a silent, dead screen.
  */
-export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+/** `title` names what failed when "Yüklenemedi" is too vague; `retrying` holds the button mid-retry. */
+export function ErrorState({
+  message,
+  onRetry,
+  title = 'Yüklenemedi',
+  retrying = false,
+}: {
+  message: string;
+  onRetry: () => void;
+  title?: string;
+  retrying?: boolean;
+}) {
   return (
     <div className={`flex gap-3 rounded-xl border p-4 ${TONE_BOX.danger}`}>
       <Icon icon={AlertTriangle} size={20} className={`mt-0.5 flex-none ${TONE_TEXT.danger}`} />
       <div>
-        <p className={`text-sm font-semibold ${TONE_TEXT.danger}`}>Yüklenemedi</p>
+        <p className={`text-sm font-semibold ${TONE_TEXT.danger}`}>{title}</p>
         <p className="mt-1 text-sm">{message}</p>
-        <Button variant="secondary" type="button" onClick={onRetry} className="mt-3">
-          Tekrar dene
+        <Button variant="secondary" type="button" onClick={onRetry} disabled={retrying} className="mt-3">
+          {retrying ? 'Deneniyor…' : 'Tekrar dene'}
         </Button>
       </div>
     </div>

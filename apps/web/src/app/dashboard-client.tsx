@@ -8,6 +8,7 @@ import {
   buttonClass,
   Chip,
   ConfirmButton,
+  ErrorState,
   PageHeader,
   Section,
   StatCard,
@@ -18,6 +19,7 @@ import {
 } from '@/components/ui';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
+import { publishDashboardFreshness } from '@/lib/dashboard-feed';
 import { formatDateTime, formatMoney, formatNumber, formatTime } from '@/lib/format';
 import {
   DECISION_REASON_LABELS,
@@ -1117,6 +1119,8 @@ export function DashboardClient() {
       .then((d: DashboardData) => {
         setData(d);
         setError(undefined);
+        // The header's scan pill reads this instead of fetching the same payload again.
+        publishDashboardFreshness(d);
         // Only a good read moves this: the stale-refresh warning dates the numbers by it.
         setLoadedAt(Date.now());
       })
@@ -1141,16 +1145,14 @@ export function DashboardClient() {
   // matters most: silence here is not evidence the system is fine.
   if (error && !data) {
     return (
-      <div className={`rounded-xl border p-4 shadow-(--shadow-card) ${TONE_BOX.danger}`}>
-        {/* kit-exempt: error headline inside the danger box — the box, not a page header, is the screen */}
-        <h1 className={`text-lg font-semibold ${TONE_TEXT.danger}`}>Panel verisi yüklenemedi</h1>
-        <p className="mt-1 text-sm">
-          Sunucuya ulaşılamadı ({error}). Sistemin durumu hakkında bu ekranda hiçbir şey söylenemez —
-          çalışıyor da olabilir, durmuş da.
-        </p>
-        <Button variant="secondary" type="button" onClick={load} disabled={refreshing} className="mt-3">
-          {refreshing ? 'Deneniyor…' : 'Tekrar dene'}
-        </Button>
+      <div className="space-y-4">
+        <PageHeader title="Panel" />
+        <ErrorState
+          title="Panel verisi yüklenemedi"
+          message={`Sunucuya ulaşılamadı (${error}). Sistemin durumu hakkında bu ekranda hiçbir şey söylenemez — çalışıyor da olabilir, durmuş da.`}
+          onRetry={load}
+          retrying={refreshing}
+        />
       </div>
     );
   }

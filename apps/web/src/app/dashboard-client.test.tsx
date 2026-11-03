@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatTime } from '@/lib/format';
 import { PermissionsProvider } from '@/lib/permissions';
 import { stubFetch } from '@/test-utils';
+import { readDashboardFreshness, resetDashboardFeed } from '@/lib/dashboard-feed';
 import { DashboardClient } from './dashboard-client';
 
 /**
@@ -42,6 +43,8 @@ describe('DashboardClient', () => {
 
     expect(await screen.findByText('Panel verisi yüklenemedi')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Tekrar dene' })).toBeTruthy();
+    // The kit's page header and error state, like every other screen's first-load failure.
+    expect(screen.getByRole('heading', { level: 1, name: 'Panel' })).toBeTruthy();
   });
 
   it('empty: shows the empty-state sentence, not a bare blank', async () => {
@@ -248,6 +251,14 @@ describe('DashboardClient', () => {
       render(<DashboardClient />);
       const row = await screen.findByTestId('dashboard-stats');
       expect(within(row).getByText('%99')).toBeTruthy();
+    });
+
+    it('shares each good read with the header', async () => {
+      resetDashboardFeed();
+      stubFetch({ '/api/dashboard': { body: BRAND_ONLY }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      await screen.findByTestId('dashboard-stats');
+      expect(readDashboardFreshness()?.brandAudit?.brands).toHaveLength(2);
     });
 
     it('no stat row without brand audit', async () => {
