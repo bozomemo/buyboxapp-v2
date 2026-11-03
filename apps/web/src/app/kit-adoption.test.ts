@@ -37,7 +37,6 @@ export const PENDING: readonly string[] = [
   'setup/steps/step1-database.tsx',
   'setup/steps/step4-fees.tsx',
   'setup/steps/step6-product-source.tsx',
-  'stock/stock-client.tsx',
   'tracked-products/[id]/tracked-product-detail-client.tsx',
 ];
 

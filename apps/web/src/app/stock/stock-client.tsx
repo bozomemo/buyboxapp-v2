@@ -23,6 +23,7 @@ import {
   Section,
   TextInput,
 } from '@/components/ui';
+import { Download, Trash2 } from '@/components/icon';
 import { downloadCsv } from '@/lib/csv';
 import { formatMoney, formatNumber } from '@/lib/format';
 
@@ -127,7 +128,7 @@ function MultiplierCell({
 
   return (
     <div className="flex flex-col gap-0.5">
-      <input
+      <TextInput
         type="number"
         step="0.01"
         value={multiplier}
@@ -135,7 +136,7 @@ function MultiplierCell({
         aria-label={`${item.name} için ${marketplace.displayName} fiyat çarpanı`}
         onChange={(e) => setMultiplier(Number(e.target.value))}
         onBlur={() => void save()}
-        className="w-16 rounded border border-(--color-border) px-1 py-0.5 text-xs disabled:opacity-50"
+        className="w-20 disabled:opacity-50"
       />
       {busy && <span className="text-[10px] text-(--color-muted)">Kaydediliyor…</span>}
       {error && <span className="text-[10px] text-(--color-danger)">{error}</span>}
@@ -406,6 +407,7 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
     return (
       <p className="text-sm text-(--color-danger)">
         Ürün kaynağı yapılandırması alınamadı ({configPoll.message}).{' '}
+        {/* kit-exempt: inline action within a sentence */}
         <button
           type="button"
           onClick={() => setConfigAttempt((n) => n + 1)}
@@ -441,7 +443,7 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
             type="button"
             disabled={busy}
             onClick={() => void previewExcel()}
-            className="px-2! py-1! text-xs"
+            size="sm"
           >
             İlk 20 Satırı Önizle
           </Button>
@@ -449,7 +451,7 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
             type="button"
             disabled={busy}
             onClick={() => void commitExcel()}
-            className="px-2! py-1! text-xs"
+            size="sm"
           >
             {busy ? 'İçe aktarılıyor…' : 'İçe Aktar'}
           </Button>
@@ -525,13 +527,14 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
     <div className="text-sm">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-medium">{bundles.length} paket</span>
-        <Button variant="secondary" type="button" onClick={openNew} className="px-2! py-1! text-xs">
+        <Button variant="secondary" size="sm" type="button" onClick={openNew}>
           Yeni Paket
         </Button>
       </div>
       <ul className="mb-2 max-h-64 space-y-1 overflow-auto">
         {pagedBundles.rows.map((b) => (
           <li key={b.bundleStockCode} className="flex items-center justify-between">
+            {/* kit-exempt: data cell is the control — the bundle's name opens it */}
             <button
               type="button"
               className="text-(--color-accent) hover:underline"
@@ -586,13 +589,15 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
                   aria-label={`${i + 1}. üye miktarı`}
                   className="w-16"
                 />
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={Trash2}
                   type="button"
                   onClick={() => setMembers(members.filter((_, j) => j !== i))}
-                  className="text-xs text-(--color-danger)"
                 >
                   Sil
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -600,19 +605,19 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
             variant="secondary"
             type="button"
             onClick={() => setMembers([...members, { memberStockCode: '', quantity: 1 }])}
-            className="px-2! py-1! text-xs"
+            size="sm"
           >
             Üye Ekle
           </Button>
           <div className="flex gap-2">
-            <Button type="button" onClick={() => void save()} className="px-3! py-1! text-xs">
+            <Button size="sm" type="button" onClick={() => void save()}>
               Kaydet
             </Button>
             <Button
               variant="secondary"
               type="button"
               onClick={() => setEditing(undefined)}
-              className="px-3! py-1! text-xs"
+              size="sm"
             >
               Vazgeç
             </Button>
@@ -787,7 +792,7 @@ function StockTable({
       action={
         <div className="flex items-center gap-2">
           <ColumnMenu defs={columnDefs} prefs={columns} />
-          <Button variant="secondary" type="button" onClick={exportCsv} className="px-2! py-1! text-xs">
+          <Button variant="secondary" size="sm" icon={Download} type="button" onClick={exportCsv}>
             Excel&apos;e Aktar
           </Button>
         </div>
@@ -822,7 +827,7 @@ function StockTable({
             variant="secondary"
             type="button"
             onClick={() => setFilters(EMPTY_FILTERS)}
-            className="px-2! py-1! pb-1.5! text-xs"
+            size="sm"
           >
             Temizle
           </Button>
@@ -918,6 +923,7 @@ export function StockClient() {
     <div className="space-y-6">
       <PageHeader
         title="Stok"
+        breadcrumb={[{ label: 'Satış' }, { label: 'Stok' }]}
         description="Her stok kaleminin maliyetini ve pazaryeri ayarlarını burada yönetin. Kırmızı satır maliyeti bilinmeyen — bu yüzden otomasyon dışında kalan — bir kalemi, sarı satır fiziksel stoktan fazla listelenmiş bir kalemi işaret eder."
         action={<AddItemForm onAdded={load} />}
       />
@@ -935,7 +941,7 @@ export function StockClient() {
 
       <StockTable items={items} marketplaces={marketplaces} refreshing={loading} onChanged={load} />
 
-      <details className="rounded border border-(--color-border)">
+      <details className="rounded-xl border border-(--color-border) bg-(--color-surface) shadow-(--shadow-card)">
         <summary className="cursor-pointer px-3 py-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           İçe Aktarma
         </summary>
@@ -944,7 +950,7 @@ export function StockClient() {
         </div>
       </details>
 
-      <details className="rounded border border-(--color-border)">
+      <details className="rounded-xl border border-(--color-border) bg-(--color-surface) shadow-(--shadow-card)">
         <summary className="cursor-pointer px-3 py-2 text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
           Paket Düzenleyici
         </summary>
