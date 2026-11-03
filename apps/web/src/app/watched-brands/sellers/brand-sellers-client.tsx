@@ -13,7 +13,18 @@ import {
   useColumnPrefs,
   usePagedRows,
 } from '@/components/table';
-import { Ago, Chip, ErrorState, LoadingState, Section, StatusBanner, type Tone } from '@/components/ui';
+import {
+  Ago,
+  Button,
+  Chip,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  Section,
+  SegmentedFilter,
+  StatusBanner,
+  type Tone,
+} from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { POLICY_VERDICT_LABELS } from '@/lib/labels';
@@ -231,13 +242,9 @@ function renderSellerCell(
       // to the marketplace, and the sellers worth identifying are the ones somebody intends to
       // write to.
       return (
-        <button
-          type="button"
-          onClick={() => onResolveIdentity(s)}
-          className="rounded border border-(--color-border) px-1.5 py-0.5 text-xs hover:bg-(--color-hover)"
-        >
+        <Button variant="secondary" size="sm" type="button" onClick={() => onResolveIdentity(s)}>
           Kimlik
-        </button>
+        </Button>
       );
   }
 }
@@ -309,21 +316,26 @@ export function BrandSellersClient() {
   );
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Markalarımı Kimler Satıyor</h1>
-          <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
+    <div className="space-y-6">
+      {/* The title stays "Markalarımı Kimler Satıyor" — the question the screen answers, and the
+          name operators know it by; the menu item is "Marka Satıcıları". */}
+      <PageHeader
+        title="Markalarımı Kimler Satıyor"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Marka Satıcıları' }]}
+        description={
+          <>
             İzlenen markaların ürünlerinde görülen satıcılar, markanın en çok ürününde görülenden başlayarak.
             Sayılar <strong>tekliflerden</strong> gelir: bir satıcının ürünü kaç kez <em>listelediğini</em>{' '}
             gösterir, kaç adet sattığını değil.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
+          </>
+        }
+      />
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
           <label className="text-sm">
             <span className="mb-1 block text-(--color-muted)">Kapsam</span>
+            {/* kit-exempt: scope options grouped in <optgroup>s, which the kit Select does not take */}
             <select
-              className="rounded border border-(--color-border) px-2 py-1"
+              className="h-9 rounded-lg border border-(--color-border) bg-(--color-surface) px-3 text-sm"
               value={scope}
               onChange={(e) => setScope(e.target.value)}
             >
@@ -342,31 +354,32 @@ export function BrandSellersClient() {
               ))}
             </select>
           </label>
-          <label className="text-sm">
+          <div className="text-sm">
             <span className="mb-1 block text-(--color-muted)">Dönem</span>
-            <select
-              className="rounded border border-(--color-border) px-2 py-1"
+            <SegmentedFilter
+              label="Dönem"
               value={String(sinceMs)}
-              onChange={(e) => setSinceMs(Number(e.target.value))}
-            >
-              <option value={String(daysAgo(7))}>Son 7 gün</option>
-              <option value={String(daysAgo(30))}>Son 30 gün</option>
-              <option value={String(daysAgo(90))}>Son 90 gün</option>
-            </select>
-          </label>
-          <label className="text-sm">
+              onChange={(v) => setSinceMs(Number(v))}
+              options={[
+                { value: String(daysAgo(7)), label: 'Son 7 gün' },
+                { value: String(daysAgo(30)), label: 'Son 30 gün' },
+                { value: String(daysAgo(90)), label: 'Son 90 gün' },
+              ]}
+            />
+          </div>
+          <div className="text-sm">
             <span className="mb-1 block text-(--color-muted)">Pazaryeri</span>
-            <select
-              className="rounded border border-(--color-border) px-2 py-1"
+            <SegmentedFilter
+              label="Pazaryeri"
               value={marketplaceCode}
-              onChange={(e) => setMarketplaceCode(e.target.value)}
-            >
-              <option value="">Tümü</option>
-              <option value="trendyol">Trendyol</option>
-              <option value="hepsiburada">Hepsiburada</option>
-            </select>
-          </label>
-        </div>
+              onChange={setMarketplaceCode}
+              options={[
+                { value: '', label: 'Tümü' },
+                { value: 'trendyol', label: 'Trendyol' },
+                { value: 'hepsiburada', label: 'Hepsiburada' },
+              ]}
+            />
+          </div>
       </div>
 
       {/* Loading and error never share a line (§3.2): the first request has nothing to fall back
@@ -391,7 +404,7 @@ export function BrandSellersClient() {
           <Section id="sellers-heading" title="Satıcılar">
             <div className="space-y-4">
               {report.sellers.length === 0 && !loading && (
-                <div className="rounded border border-(--color-border) p-4 text-sm text-(--color-muted)">
+                <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
                   Bu dönemde hiç teklif kaydı yok. Marka taraması ürünleri bulur ama fiyatları getirmez —
                   satıcı ve fiyat verisi için ürün başına derin tarama (<code>ScrapeCompetitors</code>)
                   çalışmalıdır.{' '}
@@ -403,7 +416,7 @@ export function BrandSellersClient() {
               )}
 
               {blockedAndCheap.length > 0 && (
-                <div className="rounded border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
+                <div className="rounded-lg border border-(--color-danger-border) bg-(--color-danger-bg) p-3 text-sm">
                   <strong>
                     {formatNumber(blockedAndCheap.length)} yasaklı satıcı piyasanın belirgin altında satıyor.
                   </strong>{' '}
@@ -423,7 +436,7 @@ export function BrandSellersClient() {
             sütunlar %100'e tamamlanmıyor ve sayfada bunun bir açıklaması olmuyor.
           */}
               {report.buybox && report.buybox.totalLooks > 0 && (
-                <div className="rounded border border-(--color-border) p-3 text-sm">
+                <div className="rounded-lg border border-(--color-border) bg-(--color-surface) p-3 text-sm">
                   Bu dönemde markanın <strong>{formatNumber(report.buybox.totalLooks)}</strong> kayıtlı buybox
                   anı var
                   {topShare && (
@@ -450,7 +463,7 @@ export function BrandSellersClient() {
               )}
 
               {belowMarket.length > 0 && (
-                <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
+                <div className="rounded-lg border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
                   <strong>{formatNumber(belowMarket.length)}</strong> satıcı bulunduğu listelemelerde ortalama
                   olarak piyasanın %{Math.abs(DEVIATION_ALERT_PCT)} veya daha altında fiyat veriyor:{' '}
                   {belowMarket
@@ -467,7 +480,7 @@ export function BrandSellersClient() {
               )}
 
               {report.unidentifiedCount > 0 && (
-                <div className="rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
+                <div className="rounded-lg border border-(--color-warning-border) bg-(--color-warning-bg) p-3 text-sm">
                   Bu dönemde <strong>{formatNumber(report.unidentifiedCount)}</strong> teklif, pazaryeri
                   satıcı kimliği vermediği için aşağıdaki listede yer almıyor. Bu teklifler isme göre
                   eşleştirilmez — aynı isim aynı firma anlamına gelmediği için yanlış satıcıya atfetmektense
@@ -487,7 +500,9 @@ export function BrandSellersClient() {
 
               <div className="flex items-center justify-end gap-2">
                 <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   type="button"
                   onClick={() =>
                     downloadCsv(
@@ -512,10 +527,9 @@ export function BrandSellersClient() {
                       })),
                     )
                   }
-                  className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
                 >
                   Excel&apos;e Aktar
-                </button>
+                </Button>
               </div>
 
               <TableFrame>

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { BrandSellersClient } from './brand-sellers-client';
@@ -99,5 +99,30 @@ describe('BrandSellersClient', () => {
     render(<BrandSellersClient />);
 
     expect(await screen.findByText('Test Satıcı')).toBeTruthy();
+  });
+
+  describe('redesign (plan 2026-11-03 phase 2, Task 5)', () => {
+    const EMPTY = {
+      filters: { sinceMs: 0, untilMs: 1, marketplaceCode: null, watchedBrandId: null, groupId: null },
+      groups: [],
+      brands: [],
+      sellers: [],
+      unidentifiedCount: 0,
+      buybox: { totalLooks: 0, unidentifiedLooks: 0 },
+    };
+
+    it('title survives as h1 with a breadcrumb', async () => {
+      stubFetch({ [ROUTE]: { body: EMPTY } });
+      render(<BrandSellersClient />);
+      expect(await screen.findByRole('heading', { level: 1, name: 'Markalarımı Kimler Satıyor' })).toBeTruthy();
+      expect(screen.getByRole('navigation', { name: 'Konum' })).toBeTruthy();
+    });
+
+    it('period and marketplace are segmented filters', async () => {
+      stubFetch({ [ROUTE]: { body: EMPTY } });
+      render(<BrandSellersClient />);
+      expect(within(await screen.findByRole('group', { name: 'Dönem' })).getByRole('button', { name: 'Son 30 gün' })).toBeTruthy();
+      expect(within(screen.getByRole('group', { name: 'Pazaryeri' })).getByRole('button', { name: 'Hepsiburada' })).toBeTruthy();
+    });
   });
 });

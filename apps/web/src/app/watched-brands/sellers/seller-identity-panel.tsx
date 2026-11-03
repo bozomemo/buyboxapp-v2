@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Ago, ConfirmButton, TONE_BOX, TONE_TEXT } from '@/components/ui';
+import { Ago, Button, buttonClass, ConfirmButton, TONE_BOX, TONE_TEXT } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
 
 interface IdentityListing {
@@ -155,7 +155,7 @@ export function SellerIdentityPanel({
   const identity = data?.identity ?? null;
 
   return (
-    <div className="rounded border border-(--color-border) p-4">
+    <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold">{sellerName || sellerRef} — satıcı kimliği</h2>
@@ -166,14 +166,9 @@ export function SellerIdentityPanel({
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => void resolve()}
-            disabled={pending}
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
-          >
+          <Button variant="secondary" size="sm" type="button" onClick={() => void resolve()} disabled={pending}>
             {pending ? 'Çözülüyor…' : identity ? 'Yeniden çöz' : 'Kimliği çöz'}
-          </button>
+          </Button>
           {identity && (
             // Deleting a resolved identity is the risky direction of this control (§3.6): it
             // throws away a real page read, and re-reading it costs another request to the
@@ -183,41 +178,33 @@ export function SellerIdentityPanel({
               requireConfirm
               confirmMessage={`${sellerName || sellerRef} için okunan kimlik silinsin mi? Yeniden çözmek pazaryerine yeni bir istek gerektirir.`}
               onConfirmed={() => void forget()}
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+              className={buttonClass('secondary', 'sm')}
             >
               Kimliği unut
             </ConfirmButton>
           )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-          >
+          <Button variant="ghost" size="sm" type="button" onClick={onClose}>
             Kapat
-          </button>
+          </Button>
         </div>
       </div>
 
       {error && (
-        <div className={`mt-3 rounded border p-2 text-sm ${TONE_BOX.danger} ${TONE_TEXT.danger}`}>
+        <div className={`mt-3 rounded-lg border p-2 text-sm ${TONE_BOX.danger} ${TONE_TEXT.danger}`}>
           {error}
           {/* The panel's own primary load (reading the stored identity) can fail same as any
               screen's (§3.2) — a retry here re-runs that GET, distinct from "Kimliği çöz", which
               queues a new marketplace resolution. */}
           {!data && (
-            <button
-              type="button"
-              onClick={() => void load()}
-              className="mt-2 block rounded border border-(--color-border) bg-(--color-surface) px-2 py-1 text-xs font-semibold text-(--color-fg) hover:bg-(--color-hover)"
-            >
+            <Button variant="secondary" size="sm" type="button" onClick={() => void load()} className="mt-2">
               Tekrar dene
-            </button>
+            </Button>
           )}
         </div>
       )}
 
       {data?.taxNumberDisagrees && (
-        <div className="mt-3 rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-2 text-sm">
+        <div className="mt-3 rounded-lg border border-(--color-warning-border) bg-(--color-warning-bg) p-2 text-sm">
           Satıcı kaydındaki vergi numarası (<strong>{data.seller.taxNumber}</strong>) pazaryerinin
           bildirdiğinden (<strong>{identity?.taxNumber}</strong>) farklı. Kayıttaki numara elle girilmiştir ve{' '}
           <em>değiştirilmedi</em> — yetkili satıcı listesi onunla eşleşir, ve hangi numaranın doğru olduğuna

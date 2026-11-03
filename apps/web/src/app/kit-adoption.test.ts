@@ -18,6 +18,8 @@ const APP_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z
 
 export const CONVERTED: readonly string[] = ['dashboard-client.tsx', 'tracked-products/tracked-products-client.tsx',
   'watched-brands/findings/findings-client.tsx',
+  'watched-brands/sellers/brand-sellers-client.tsx',
+  'watched-brands/sellers/seller-identity-panel.tsx',
 ];
 
 const NON_TEXT_INPUT = /type=["'](checkbox|radio|file|hidden)["']/;
