@@ -13,7 +13,8 @@ import {
   useColumnPrefs,
   usePagedRows,
 } from '@/components/table';
-import { ErrorState, LoadingState, PageHeader } from '@/components/ui';
+import { Download } from '@/components/icon';
+import { Button, ErrorState, LoadingState, PageHeader, SegmentedFilter } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge } from '../coverage-badge';
@@ -141,7 +142,10 @@ function renderSellerCell(id: ColumnId, s: Seller): React.ReactNode {
 }
 
 export function SellersClient() {
-  const [sinceMs, setSinceMs] = useState(daysAgo(30));
+  // The pressed period is its own state: an option value computed from `daysAgo()` never equals
+  // the stored instant again once the clock moves (the redesign phase-2 bug).
+  const [periodDays, setPeriodDays] = useState('30');
+  const [sinceMs, setSinceMs] = useState(() => daysAgo(30));
   const [marketplaceCode, setMarketplaceCode] = useState('');
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
@@ -194,6 +198,7 @@ export function SellersClient() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="Rakip Satıcılar"
+        breadcrumb={[{ label: 'Satış' }, { label: 'Rakip Satıcılar' }]}
         description={
           <>
             İzlediğimiz ürünlerde karşımıza çıkan satıcılar, en çok çakışandan başlayarak. Bu veriler{' '}
@@ -202,31 +207,36 @@ export function SellersClient() {
           </>
         }
         action={
-          <div className="flex items-end gap-3">
-            <label className="text-sm">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="text-sm">
               <span className="mb-1 block text-(--color-muted)">Dönem</span>
-              <select
-                className="rounded border border-(--color-border) px-2 py-1"
-                value={String(sinceMs)}
-                onChange={(e) => setSinceMs(Number(e.target.value))}
-              >
-                <option value={String(daysAgo(7))}>Son 7 gün</option>
-                <option value={String(daysAgo(30))}>Son 30 gün</option>
-                <option value={String(daysAgo(90))}>Son 90 gün</option>
-              </select>
-            </label>
-            <label className="text-sm">
+              <SegmentedFilter
+                label="Dönem"
+                value={periodDays}
+                onChange={(v) => {
+                  setPeriodDays(v);
+                  setSinceMs(daysAgo(Number(v)));
+                }}
+                options={[
+                  { value: '7', label: 'Son 7 gün' },
+                  { value: '30', label: 'Son 30 gün' },
+                  { value: '90', label: 'Son 90 gün' },
+                ]}
+              />
+            </div>
+            <div className="text-sm">
               <span className="mb-1 block text-(--color-muted)">Pazaryeri</span>
-              <select
-                className="rounded border border-(--color-border) px-2 py-1"
+              <SegmentedFilter
+                label="Pazaryeri"
                 value={marketplaceCode}
-                onChange={(e) => setMarketplaceCode(e.target.value)}
-              >
-                <option value="">Tümü</option>
-                <option value="trendyol">Trendyol</option>
-                <option value="hepsiburada">Hepsiburada</option>
-              </select>
-            </label>
+                onChange={setMarketplaceCode}
+                options={[
+                  { value: '', label: 'Tümü' },
+                  { value: 'trendyol', label: 'Trendyol' },
+                  { value: 'hepsiburada', label: 'Hepsiburada' },
+                ]}
+              />
+            </div>
           </div>
         }
       />
@@ -302,7 +312,10 @@ export function SellersClient() {
 
       <div className="flex items-center justify-end gap-2">
         <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={Download}
           type="button"
           onClick={() =>
             downloadCsv(
@@ -323,10 +336,9 @@ export function SellersClient() {
               })),
             )
           }
-          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
         >
           Excel&apos;e Aktar
-        </button>
+        </Button>
       </div>
 
       <TableFrame>

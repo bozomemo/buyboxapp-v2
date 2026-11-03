@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { SellersClient } from './sellers-client';
 
@@ -91,5 +91,23 @@ describe('SellersClient', () => {
     render(<SellersClient />);
 
     expect(await screen.findByText('Test Satıcı')).toBeTruthy();
+  });
+
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 8 and Review Focus 3).
+  it('period filter keeps its selection', async () => {
+    // A clock that moves on every read: option values computed from `Date.now()` would never
+    // equal the stored one again — the phase-2 bug this pins against.
+    let clock = 1_800_000_000_000;
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 1000));
+    stubFetch({ [PRIMARY_ROUTE]: { body: EMPTY_BODY } });
+
+    render(<SellersClient />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Son 7 gün' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Son 7 gün' }).getAttribute('aria-pressed')).toBe('true'),
+    );
+    expect(screen.getByRole('button', { name: 'Son 30 gün' }).getAttribute('aria-pressed')).toBe('false');
+    spy.mockRestore();
   });
 });

@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { CompetitorsClient } from './competitors-client';
 
@@ -84,5 +84,23 @@ describe('CompetitorsClient', () => {
     render(<CompetitorsClient />);
 
     expect(await screen.findByText('Test Ürünü')).toBeTruthy();
+  });
+
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 8).
+  it('marketplace filter is pressed', async () => {
+    stubFetch({ [PRIMARY_ROUTE]: { body: EMPTY_BODY } });
+
+    render(<CompetitorsClient />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Trendyol' }));
+    expect(screen.getByRole('button', { name: 'Trendyol' }).getAttribute('aria-pressed')).toBe('true');
+    await waitFor(() => {
+      const last = vi
+        .mocked(globalThis.fetch)
+        .mock.calls.map((call) => String(call[0]))
+        .filter((url) => url.startsWith('/api/competitors?'))
+        .at(-1);
+      expect(new URL(last!, 'http://localhost').searchParams.get('marketplaceCode')).toBe('trendyol');
+    });
   });
 });

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
-import { Ago, ErrorState, LoadingState, PageHeader } from '@/components/ui';
+import { Download, Search } from '@/components/icon';
+import { Ago, Button, ErrorState, LoadingState, PageHeader, SegmentedFilter, TextInput } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge, type Coverage } from './coverage-badge';
@@ -162,6 +163,7 @@ export function CompetitorsClient() {
     <div className="space-y-4">
       <PageHeader
         title="Rakip Geçmişi"
+        breadcrumb={[{ label: 'Satış' }, { label: 'Rakip Geçmişi' }]}
         description="Seçilen pazaryeri, ürün ve satıcı için buybox geçmişini, satıcı giriş/çıkışlarını ve tarama kapsamını gösterir."
       />
 
@@ -181,56 +183,48 @@ export function CompetitorsClient() {
         </p>
       )}
 
-      <div className="flex flex-wrap items-end gap-3 rounded border border-(--color-border) p-3">
-        <label className="flex flex-col text-xs">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
+        <label className="flex flex-col gap-1 text-xs">
           Başlangıç
-          <input
+          <TextInput
             type="date"
             value={new Date(sinceMs).toISOString().slice(0, 10)}
             onChange={(e) => setSinceMs(new Date(e.target.value).getTime())}
-            className="rounded border border-(--color-border) px-2 py-1 text-sm"
           />
         </label>
-        <label className="flex flex-col text-xs">
+        <label className="flex flex-col gap-1 text-xs">
           Bitiş
-          <input
+          <TextInput
             type="date"
             value={new Date(untilMs).toISOString().slice(0, 10)}
             onChange={(e) => setUntilMs(new Date(e.target.value).getTime())}
-            className="rounded border border-(--color-border) px-2 py-1 text-sm"
           />
         </label>
-        <label className="flex flex-col text-xs">
+        <div className="flex flex-col gap-1 text-xs">
           Pazaryeri
-          <select
+          <SegmentedFilter
+            label="Pazaryeri"
             value={marketplaceCode}
-            onChange={(e) => setMarketplaceCode(e.target.value)}
-            className="rounded border border-(--color-border) px-2 py-1 text-sm"
-          >
-            <option value="">Tümü</option>
-            <option value="trendyol">Trendyol</option>
-            <option value="hepsiburada">Hepsiburada</option>
-          </select>
-        </label>
-        <label className="flex flex-col text-xs">
+            onChange={setMarketplaceCode}
+            options={[
+              { value: '', label: 'Tümü' },
+              { value: 'trendyol', label: 'Trendyol' },
+              { value: 'hepsiburada', label: 'Hepsiburada' },
+            ]}
+          />
+        </div>
+        <label className="flex flex-col gap-1 text-xs">
           Stok Kodu
-          <input
-            value={baseStockCode}
-            onChange={(e) => setBaseStockCode(e.target.value)}
-            className="w-32 rounded border border-(--color-border) px-2 py-1 text-sm"
-          />
+          <TextInput value={baseStockCode} onChange={(e) => setBaseStockCode(e.target.value)} className="w-32" />
         </label>
-        <label className="flex flex-col text-xs">
+        <label className="flex flex-col gap-1 text-xs">
           Satıcı (sellerRef)
-          <input
-            value={sellerRef}
-            onChange={(e) => setSellerRef(e.target.value)}
-            className="w-32 rounded border border-(--color-border) px-2 py-1 text-sm"
-          />
+          <TextInput value={sellerRef} onChange={(e) => setSellerRef(e.target.value)} className="w-32" />
         </label>
-        <label className="relative flex flex-col text-xs">
+        <label className="relative flex flex-col gap-1 text-xs">
           İlan (fiyat zaman çizelgesi için)
-          <input
+          <TextInput
+            icon={Search}
             value={listingLabel || listingQuery}
             onChange={(e) => {
               setListingLabel('');
@@ -238,12 +232,13 @@ export function CompetitorsClient() {
               setListingQuery(e.target.value);
             }}
             placeholder="Ürün adı ara…"
-            className="w-56 rounded border border-(--color-border) px-2 py-1 text-sm"
+            className="w-56"
           />
           {listingOptions.length > 0 && !listingId && (
             <ul className="absolute top-full z-10 mt-1 max-h-48 w-56 overflow-y-auto rounded border border-(--color-border) bg-(--color-surface) shadow">
               {listingOptions.map((o) => (
                 <li key={o.id}>
+                  {/* kit-exempt: combobox option in the listing lookup's result list */}
                   <button
                     type="button"
                     className="block w-full px-2 py-1 text-left text-xs hover:bg-(--color-hover)"
@@ -261,17 +256,18 @@ export function CompetitorsClient() {
           )}
         </label>
         {listingId && (
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={() => {
               setListingId('');
               setListingLabel('');
               setListingQuery('');
             }}
-            className="rounded border px-2 py-1 text-xs"
           >
             İlan Filtresini Kaldır
-          </button>
+          </Button>
         )}
       </div>
 
@@ -283,20 +279,22 @@ export function CompetitorsClient() {
 
       {report?.priceTimeline && (
         <section
-          className="rounded border border-(--color-border) p-4"
+          className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)"
           aria-labelledby="price-timeline-heading"
         >
           <div className="mb-2 flex items-center justify-between">
-            <h2 id="price-timeline-heading" className="text-lg font-medium">
+            <h2 id="price-timeline-heading" className="text-[15px] font-semibold">
               Fiyat Zaman Çizelgesi
             </h2>
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Download}
               type="button"
               onClick={() => downloadCsv('fiyat-zaman-cizelgesi.csv', report.priceTimeline!.buybox)}
-              className="rounded border px-2 py-1 text-xs"
             >
               CSV İndir
-            </button>
+            </Button>
           </div>
           <TableFrame maxHeight="50vh">
             <table className="w-full text-xs">
@@ -337,20 +335,22 @@ export function CompetitorsClient() {
       {report && <CoverageBadge coverage={report.coverage} sinceMs={report.filters.sinceMs} />}
 
       <section
-        className="rounded border border-(--color-border) p-4"
+        className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)"
         aria-labelledby="seller-presence-heading"
       >
         <div className="mb-2 flex items-center justify-between">
-          <h2 id="seller-presence-heading" className="text-lg font-medium">
+          <h2 id="seller-presence-heading" className="text-[15px] font-semibold">
             Satıcı Varlığı (Giriş/Çıkış)
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             type="button"
             onClick={() => report && downloadCsv('satici-varligi.csv', report.sellerPresence)}
-            className="rounded border px-2 py-1 text-xs"
           >
             CSV İndir
-          </button>
+          </Button>
         </div>
         <TableFrame maxHeight="50vh">
           <table className="w-full text-xs">
@@ -392,21 +392,23 @@ export function CompetitorsClient() {
         </div>
       </section>
 
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="buybox-share-heading">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="buybox-share-heading">
         <div className="mb-2 flex items-center justify-between">
-          <h2 id="buybox-share-heading" className="text-lg font-medium">
+          <h2 id="buybox-share-heading" className="text-[15px] font-semibold">
             Buybox Payı
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             type="button"
             onClick={() =>
               report &&
               downloadCsv('buybox-payi.csv', listingId ? report.timeWeightedBuyboxShare : report.buyboxShare)
             }
-            className="rounded border px-2 py-1 text-xs"
           >
             CSV İndir
-          </button>
+          </Button>
         </div>
         {listingId ? (
           <>
@@ -480,10 +482,10 @@ export function CompetitorsClient() {
 
       {report?.sellerProfile && (
         <section
-          className="rounded border border-(--color-border) p-4"
+          className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)"
           aria-labelledby="seller-profile-heading"
         >
-          <h2 id="seller-profile-heading" className="mb-2 text-lg font-medium">
+          <h2 id="seller-profile-heading" className="mb-2 text-[15px] font-semibold">
             Satıcı Profili — {report.sellerProfile.sellerName}
           </h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -510,20 +512,22 @@ export function CompetitorsClient() {
       )}
 
       <section
-        className="rounded border border-(--color-border) p-4"
+        className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)"
         aria-labelledby="observation-coverage-heading"
       >
         <div className="mb-2 flex items-center justify-between">
-          <h2 id="observation-coverage-heading" className="text-lg font-medium">
+          <h2 id="observation-coverage-heading" className="text-[15px] font-semibold">
             Gözlem Kapsamı
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             type="button"
             onClick={() => report && downloadCsv('gozlem-kapsami.csv', report.observationCoverage)}
-            className="rounded border px-2 py-1 text-xs"
           >
             CSV İndir
-          </button>
+          </Button>
         </div>
         <TableFrame maxHeight="50vh">
           <table className="w-full text-xs">

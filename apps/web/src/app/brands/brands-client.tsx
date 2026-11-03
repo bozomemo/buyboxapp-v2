@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
-import { EmptyState, ErrorState, LoadingState, PageHeader } from '@/components/ui';
+import { Download, Search } from '@/components/icon';
+import { Button, EmptyState, ErrorState, LoadingState, PageHeader, TextInput } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatNumber } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
@@ -59,9 +60,13 @@ export function BrandsClient() {
     <div className="space-y-4">
       <PageHeader
         title="Markalar"
+        breadcrumb={[{ label: 'Satış' }, { label: 'Markalar' }]}
         description="Bugün yalnızca Trendyol için doldurulur — Hepsiburada'nın listeleme servisi marka bilgisi vermiyor (api-references §2.4)."
         action={
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             type="button"
             disabled={brands.length === 0}
             onClick={() =>
@@ -74,19 +79,19 @@ export function BrandsClient() {
                 })),
               )
             }
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
           >
             Excel&apos;e Aktar
-          </button>
+          </Button>
         }
       />
 
-      <input
+      <TextInput
+        icon={Search}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Marka ara…"
         aria-label="Marka ara"
-        className="w-64 rounded border border-(--color-border) px-2 py-1 text-sm"
+        className="w-64"
       />
 
       {brands.length === 0 ? (
