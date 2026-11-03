@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { formatDateTime, formatDuration } from '@/lib/format';
-import { AlertTriangle, Icon, Inbox, Loader2, type LucideIcon } from './icon';
+import { AlertTriangle, CheckCircle2, Icon, Inbox, Loader2, PauseCircle, type LucideIcon } from './icon';
 
 /**
  * The shared UI kit (doc 15 §1a). Everything a screen needs to render a form, a status, a
@@ -415,5 +415,115 @@ export function ConfirmButton({
     <button {...rest} type="button" onClick={handleClick}>
       {children}
     </button>
+  );
+}
+
+// --- 2026-11-03 redesign components (spec §4.3) --------------------------------------------------
+
+/**
+ * A KPI tile: a label, one large number, and optionally the line that says how it moved. `tone`
+ * colours the number only — the label next to it is what says what the number means.
+ */
+export function StatCard({
+  label,
+  value,
+  delta,
+  tone,
+}: {
+  label: string;
+  value: React.ReactNode;
+  delta?: React.ReactNode;
+  tone?: Tone;
+}) {
+  return (
+    <div className="rounded-xl border border-(--color-border) bg-(--color-surface) px-5 py-4 shadow-(--shadow-card)">
+      <div className="text-[13px] font-medium text-(--color-muted)">{label}</div>
+      <div className={`tabular-figures mt-1.5 text-3xl font-semibold ${tone ? TONE_TEXT[tone] : ''}`}>{value}</div>
+      {delta && <div className="mt-1 text-xs text-(--color-muted)">{delta}</div>}
+    </div>
+  );
+}
+
+/**
+ * One-of-many filter with a count on each option — "Tümü 128 · Tavsiye altı 14 · Sınırda 9". Plain
+ * buttons with `aria-pressed` inside a labelled group: Tab and Enter/Space already make it
+ * keyboard-usable, so there is no roving tabindex. A tone colours an unselected option's label;
+ * the label and count are always there, so the colour is never the only thing saying it.
+ */
+export function SegmentedFilter<V extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly { value: V; label: string; count?: number; tone?: Tone }[];
+  value: V;
+  onChange: (value: V) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex overflow-hidden rounded-lg border border-(--color-border) bg-(--color-surface) text-[13px]"
+    >
+      {options.map((opt, i) => {
+        const selected = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onChange(opt.value)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 font-medium transition ${
+              i > 0 ? 'border-l border-(--color-border)' : ''
+            } ${
+              selected
+                ? 'bg-(--color-strong-bg) text-(--color-strong-ink)'
+                : `hover:bg-(--color-hover) ${opt.tone ? TONE_TEXT[opt.tone] : 'text-(--color-muted)'}`
+            }`}
+          >
+            {opt.label}
+            {opt.count !== undefined && <span className="tabular-figures text-xs opacity-80">{opt.count}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const VERDICT_ICON: Record<Tone, LucideIcon> = {
+  ok: CheckCircle2,
+  warn: AlertTriangle,
+  danger: AlertTriangle,
+  neutral: PauseCircle,
+};
+
+/**
+ * The dashboard's top band: the system's verdict in one sentence, in its tone. `warn` uses
+ * `--color-warning-strong` for the title because the plain warning hue is tuned for small text
+ * and reads thin as a headline on its own tint.
+ */
+export function VerdictBanner({
+  tone,
+  title,
+  detail,
+  action,
+}: {
+  tone: Tone;
+  title: string;
+  detail?: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  const ink = tone === 'warn' ? 'text-(--color-warning-strong)' : TONE_TEXT[tone];
+  return (
+    <div role="status" className={`flex flex-wrap items-center gap-4 rounded-xl border px-5 py-4 ${TONE_BOX[tone]}`}>
+      <Icon icon={VERDICT_ICON[tone]} size={20} className={`flex-none ${TONE_TEXT[tone]}`} />
+      <div className="min-w-0 flex-1">
+        <h2 className={`text-[17px] font-bold ${ink}`}>{title}</h2>
+        {detail && <p className={`mt-0.5 text-sm ${ink}`}>{detail}</p>}
+      </div>
+      {action && <div className="flex-none">{action}</div>}
+    </div>
   );
 }

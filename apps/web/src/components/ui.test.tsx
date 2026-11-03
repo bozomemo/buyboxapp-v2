@@ -1,7 +1,18 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Search, Trash2 } from './icon';
-import { Button, Chip, ErrorState, PageHeader, Section, TextInput, type Tone } from './ui';
+import {
+  Button,
+  Chip,
+  ErrorState,
+  PageHeader,
+  Section,
+  SegmentedFilter,
+  StatCard,
+  TextInput,
+  VerdictBanner,
+  type Tone,
+} from './ui';
 
 /**
  * Kit tests for the 2026-11-03 visual redesign (spec §4). They pin what a screen relies on — the
@@ -101,5 +112,48 @@ describe('ErrorState', () => {
     render(<ErrorState message="HTTP 500" onRetry={onRetry} />);
     fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+});
+
+describe('StatCard', () => {
+  it('renders label, value and delta', () => {
+    render(<StatCard label="Açık bulgu" value="14" delta="↑ 6 · geçen hafta 8" tone="danger" />);
+    expect(screen.getByText('Açık bulgu')).toBeTruthy();
+    expect(screen.getByText('↑ 6 · geçen hafta 8')).toBeTruthy();
+    const value = screen.getByText('14');
+    expect(value.className).toContain('--color-danger');
+    expect(value.className).toContain('tabular-figures');
+  });
+});
+
+describe('SegmentedFilter', () => {
+  it('is a labelled group of pressed buttons', () => {
+    const onChange = vi.fn();
+    render(
+      <SegmentedFilter
+        label="Durum"
+        value="all"
+        onChange={onChange}
+        options={[
+          { value: 'all', label: 'Tümü', count: 128 },
+          { value: 'bad', label: 'Tavsiye altı', count: 14, tone: 'danger' },
+          { value: 'warn', label: 'Sınırda', count: 9, tone: 'warn' },
+        ]}
+      />,
+    );
+    const group = screen.getByRole('group', { name: 'Durum' });
+    expect(within(group).getByRole('button', { name: /Tümü/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(group).getByRole('button', { name: /Tavsiye altı/ }).getAttribute('aria-pressed')).toBe('false');
+    expect(within(group).getByText('14')).toBeTruthy();
+    fireEvent.click(within(group).getByRole('button', { name: /Sınırda/ }));
+    expect(onChange).toHaveBeenCalledWith('warn');
+  });
+});
+
+describe('VerdictBanner', () => {
+  it('announces its title', () => {
+    render(<VerdictBanner tone="warn" title="Sistem ilerliyor, 2 konu ilginizi bekliyor" />);
+    const title = within(screen.getByRole('status')).getByText('Sistem ilerliyor, 2 konu ilginizi bekliyor');
+    expect(title.className).toContain('--color-warning-strong');
   });
 });
