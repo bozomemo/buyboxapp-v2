@@ -77,6 +77,10 @@
   --color-line: #EDF0F5;
   --color-chart: #C9D8F5;
   --shadow-card: 0 1px 2px rgba(17, 27, 46, 0.05);
+
+  /* IBM Plex, self-hosted by `next/font` (`fonts.ts`); the system stacks are only the fallback. */
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, Consolas, monospace;
 }
 
 /*
@@ -187,15 +191,7 @@
 body {
   background: var(--color-bg);
   color: var(--color-text);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    sans-serif;
+  font-family: var(--font-sans);
 }
 
 /*
@@ -234,13 +230,13 @@ body {
 }
 
 /*
- * Tabular price columns: the dark direction (doc 06 §11) specifies a monospace/tabular-nums
- * treatment for money and other aligned numeric cells so digits stay column-aligned — kept as a
+ * Tabular price columns: money and other aligned numeric cells are set in Plex Mono with
+ * tabular figures so digits stay column-aligned (spec 2026-11-03-ui-redesign §3.3) — kept as a
  * shared class rather than repeated inline so every grid picks it up the same way.
  */
 .tabular-figures {
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 /*

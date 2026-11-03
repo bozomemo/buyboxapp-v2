@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { plexMono, plexSans } from './fonts';
 import { NavShell } from './nav-shell';
 import { THEME_INIT_SCRIPT } from './theme-init-script';
 
@@ -13,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // suppressHydrationWarning: the inline script below sets `data-theme` on this element before
     // React hydrates, which the server's markup never has — an expected, single-attribute
     // mismatch, not a bug. See theme-init-script.ts for why this can't be done any other way.
-    <html lang="tr" suppressHydrationWarning>
+    <html lang="tr" className={`${plexSans.variable} ${plexMono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
