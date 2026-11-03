@@ -1,5 +1,5 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { BrandComparisonClient } from './brand-comparison-client';
 
@@ -86,14 +86,19 @@ describe('BrandComparisonClient', () => {
 
   describe('redesign (plan 2026-11-03 phase 2, Task 8)', () => {
     it('comparison summary is a region and period a segmented filter', async () => {
+      // A clock that moves on every read, so an option value recomputed per render can never
+      // equal the stored selection by luck.
+      let t = 1_800_000_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => (t += 1000));
       stubFetch({
         [ROUTE]: {
           body: { window: { sinceMs: 0, untilMs: 1 }, brands: [], series: [], index: null, hasCompetitorBrand: false },
         },
       });
       render(<BrandComparisonClient />);
-      expect(await screen.findByRole('region', { name: 'Dönem özeti' })).toBeTruthy();
-      expect(within(screen.getByRole('group', { name: 'Dönem' })).getByRole('button', { name: 'Son 30 gün' })).toBeTruthy();
+      await screen.findByText('Bu dönemde hiçbir marka için kayıtlı bakış yok.', { exact: false });
+      expect(screen.getByRole('region', { name: 'Dönem özeti' })).toBeTruthy();
+      expect(within(screen.getByRole('group', { name: 'Dönem' })).getByRole('button', { name: 'Son 30 gün' }).getAttribute('aria-pressed')).toBe('true');
       expect(screen.getByRole('navigation', { name: 'Konum' })).toBeTruthy();
     });
   });

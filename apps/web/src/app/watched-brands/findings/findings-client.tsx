@@ -527,7 +527,11 @@ function FindingGroup({
 }
 
 export function FindingsClient() {
-  const [sinceMs, setSinceMs] = useState(daysAgo(30));
+  // The period is held as its day count, not as the computed start: `daysAgo` reads the clock, so
+  // an option value computed again on the next render never equals the stored start, and the
+  // filter showed no selection at all (review 2026-11-03). `sinceMs` is computed once, on choice.
+  const [periodDays, setPeriodDays] = useState('30');
+  const [sinceMs, setSinceMs] = useState(() => daysAgo(30));
   const [brandId, setBrandId] = useState('');
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
@@ -694,12 +698,12 @@ export function FindingsClient() {
               <span className="mb-1 block text-(--color-muted)">Dönem</span>
               <SegmentedFilter
                 label="Dönem"
-                value={String(sinceMs)}
+                value={periodDays}
                 onChange={(v) => setSinceMs(Number(v))}
                 options={[
-                  { value: String(daysAgo(7)), label: 'Son 7 gün' },
-                  { value: String(daysAgo(30)), label: 'Son 30 gün' },
-                  { value: String(daysAgo(90)), label: 'Son 90 gün' },
+                  { value: '7', label: 'Son 7 gün' },
+                  { value: '30', label: 'Son 30 gün' },
+                  { value: '90', label: 'Son 90 gün' },
                 ]}
               />
             </div>

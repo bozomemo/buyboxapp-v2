@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PermissionsProvider } from '@/lib/permissions';
 import { stubFetch } from '@/test-utils';
@@ -209,6 +209,17 @@ describe('DashboardClient', () => {
       expect(stats.getByText('%94')).toBeTruthy();
       expect(stats.getByText('Takip edilen ürün')).toBeTruthy();
       expect(stats.getByText('128')).toBeTruthy();
+    });
+
+    it('a failed refresh warns above the brand numbers it qualifies', async () => {
+      stubFetch({ '/api/dashboard': { body: BRAND_ONLY }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      stubFetch({ '/api/dashboard': { reject: new Error('server down') }, '/api/health': { body: HEALTH_OK } });
+      fireEvent.click(screen.getByRole('button', { name: 'Yenile' }));
+      const alert = await screen.findByText(/Son yenileme başarısız oldu/);
+      // "Aşağıdaki bilgiler … itibarıyladır" must sit above every number it describes.
+      expect(alert.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('no stat row without brand audit', async () => {

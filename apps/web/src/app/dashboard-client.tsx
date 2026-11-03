@@ -1182,8 +1182,6 @@ export function DashboardClient() {
         refreshing={refreshing}
       />
 
-      {modules.brand && data.brandAudit && <BrandStatRow audit={data.brandAudit} />}
-
       {/* A refresh that failed while a previous read is still on screen. The numbers below are
           real but no longer current, and saying so costs a line — letting them age silently on a
           screen that auto-refreshes is how an operator trusts a half-hour-old "her şey yolunda". */}
@@ -1192,6 +1190,10 @@ export function DashboardClient() {
           Son yenileme başarısız oldu ({error}). Aşağıdaki bilgiler {formatTime(loadedAt)} itibarıyladır.
         </p>
       )}
+
+      {/* Under the stale-refresh warning, not above it: that warning says "the information below"
+          is as of the last good read, and these are the numbers it most needs to qualify. */}
+      {modules.brand && data.brandAudit && <BrandStatRow audit={data.brandAudit} />}
 
       <Section id="attention" title="Dikkat Gerekenler">
         <AttentionList items={attention} />

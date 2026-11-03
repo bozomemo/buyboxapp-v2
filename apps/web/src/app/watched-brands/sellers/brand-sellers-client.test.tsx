@@ -1,5 +1,5 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { BrandSellersClient } from './brand-sellers-client';
 
@@ -118,10 +118,16 @@ describe('BrandSellersClient', () => {
       expect(screen.getByRole('navigation', { name: 'Konum' })).toBeTruthy();
     });
 
-    it('period and marketplace are segmented filters', async () => {
+    it('period and marketplace are segmented filters that show their selection', async () => {
+      // A clock that moves on every read, so an option value recomputed per render can never
+      // equal the stored selection by luck.
+      let t = 1_800_000_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => (t += 1000));
       stubFetch({ [ROUTE]: { body: EMPTY } });
       render(<BrandSellersClient />);
-      expect(within(await screen.findByRole('group', { name: 'Dönem' })).getByRole('button', { name: 'Son 30 gün' })).toBeTruthy();
+      await screen.findByRole('region', { name: 'Satıcılar' });
+      expect(within(screen.getByRole('group', { name: 'Dönem' })).getByRole('button', { name: 'Son 30 gün' }).getAttribute('aria-pressed')).toBe('true');
+      vi.restoreAllMocks();
       expect(within(screen.getByRole('group', { name: 'Pazaryeri' })).getByRole('button', { name: 'Hepsiburada' })).toBeTruthy();
     });
   });

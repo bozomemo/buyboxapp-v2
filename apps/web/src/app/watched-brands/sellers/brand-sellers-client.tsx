@@ -264,7 +264,11 @@ function renderSellerCell(
  * sattığını değil. Hiçbir pazaryeri satış adedini vermez.
  */
 export function BrandSellersClient() {
-  const [sinceMs, setSinceMs] = useState(daysAgo(30));
+  // The period is held as its day count, not as the computed start: `daysAgo` reads the clock, so
+  // an option value computed again on the next render never equals the stored start, and the
+  // filter showed no selection at all (review 2026-11-03). `sinceMs` is computed once, on choice.
+  const [periodDays, setPeriodDays] = useState('30');
+  const [sinceMs, setSinceMs] = useState(() => daysAgo(30));
   const [marketplaceCode, setMarketplaceCode] = useState('');
   const [scope, setScope] = useState(''); // '' | `group:<id>` | `brand:<id>`
   const [report, setReport] = useState<Report | null>(null);
@@ -358,12 +362,12 @@ export function BrandSellersClient() {
             <span className="mb-1 block text-(--color-muted)">Dönem</span>
             <SegmentedFilter
               label="Dönem"
-              value={String(sinceMs)}
+              value={periodDays}
               onChange={(v) => setSinceMs(Number(v))}
               options={[
-                { value: String(daysAgo(7)), label: 'Son 7 gün' },
-                { value: String(daysAgo(30)), label: 'Son 30 gün' },
-                { value: String(daysAgo(90)), label: 'Son 90 gün' },
+                { value: '7', label: 'Son 7 gün' },
+                { value: '30', label: 'Son 30 gün' },
+                { value: '90', label: 'Son 90 gün' },
               ]}
             />
           </div>

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { FindingsClient } from './findings-client';
 
@@ -180,10 +180,15 @@ describe('FindingsClient', () => {
       expect(toggle.getAttribute('aria-pressed')).toBe('false');
     });
 
-    it('period is a segmented filter', async () => {
+    it('period is a segmented filter that shows its selection', async () => {
+      // A clock that moves on every read, so an option value recomputed per render can never
+      // equal the stored selection by luck.
+      let t = 1_800_000_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => (t += 1000));
       populated();
       const group = await screen.findByRole('group', { name: 'Dönem' });
-      expect(within(group).getByRole('button', { name: 'Son 30 gün' })).toBeTruthy();
+      expect(within(group).getByRole('button', { name: 'Son 30 gün' }).getAttribute('aria-pressed')).toBe('true');
+      vi.restoreAllMocks();
     });
 
     it('summary is a stat row', async () => {
