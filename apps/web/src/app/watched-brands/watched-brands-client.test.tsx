@@ -94,4 +94,36 @@ describe('WatchedBrandsClient', () => {
 
     expect(await screen.findByText('Whiskas')).toBeTruthy();
   });
+
+  describe('redesign (plan 2026-11-03 phase 2, Task 6)', () => {
+    it('page header carries the breadcrumb and row actions keep their titles', async () => {
+      stubFetch({
+        '/api/watched-brands': {
+          body: {
+            groups: [
+              {
+                id: 'g1',
+                name: 'Mars',
+                note: null,
+                brands: [
+                  {
+                    id: 'b1', marketplaceCode: 'trendyol', label: 'Whiskas', brandRef: '104703', searchTerm: 'whiskas',
+                    isActive: true, lastSweptAt: Date.now(), lastSweepProductCount: 887, productCount: 887, unratedCount: 574,
+                    isOwnBrand: true, noSellerCount: 3, neverLookedCount: 0, suggestedBrandRef: null,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        ...EMPTY_SIDE_ROUTES,
+      });
+      render(<WatchedBrandsClient />);
+      await screen.findByText('Whiskas');
+      expect(screen.getByRole('navigation', { name: 'Konum' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Sadece katalog' }).getAttribute('title')).toBe(
+        'Yalnızca katalog: hangi ürünler var? Satıcı/buybox verisi toplanmaz.',
+      );
+    });
+  });
 });

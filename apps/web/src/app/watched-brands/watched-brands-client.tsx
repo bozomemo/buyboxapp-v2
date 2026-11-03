@@ -14,6 +14,7 @@ import {
 import {
   Ago,
   Button,
+  buttonClass,
   Chip,
   ConfirmButton,
   EmptyState,
@@ -323,15 +324,17 @@ export function WatchedBrandsClient() {
             {brand.brandRef && <span>marka id: {brand.brandRef}</span>}
             {brand.searchTerm && <span>arama: {brand.searchTerm}</span>}
             {brand.suggestedBrandRef && (
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 disabled={busy}
                 onClick={() => void applySuggestedRef(brand)}
-                className="text-left text-(--color-accent) hover:underline disabled:opacity-40"
+                className="justify-start px-0! text-(--color-link)!"
                 title={`Ürünlerin %${Math.round(brand.suggestedBrandRef.share * 100)}'i bu marka id'sini taşıyor`}
               >
                 + marka id {brand.suggestedBrandRef.ref} ekle
-              </button>
+              </Button>
             )}
           </div>
         );
@@ -402,6 +405,7 @@ export function WatchedBrandsClient() {
         return <Ago at={brand.lastSweptAt} never="henüz taranmadı" />;
       case 'status':
         return (
+          // kit-exempt: the status chip itself is the toggle — a word-carrying state, not a button label
           <button
             type="button"
             disabled={busy}
@@ -431,6 +435,7 @@ export function WatchedBrandsClient() {
     <div className="space-y-4">
       <PageHeader
         title="İzlenen Markalar"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'İzlenen Markalar' }]}
         description={
           <>
             Bir markanın pazaryerindeki <strong>bütün</strong> ürünlerini tek seferde izlemeye alır. Bu liste{' '}
@@ -478,10 +483,10 @@ export function WatchedBrandsClient() {
       </div>
 
       {showAddForms && (
-        <Section id="watched-brands-add" title="Marka veya grup ekle">
+        <Section id="watched-brands-add" title="Marka veya grup ekle" card>
           <div className="space-y-2">
             {/* ---- grup ekle ---- */}
-            <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) p-3">
+            <div className="flex flex-wrap items-end gap-2 rounded-lg border border-(--color-border) bg-(--color-bg) p-3">
               <Field label="Yeni marka grubu">
                 <TextInput
                   value={groupName}
@@ -506,7 +511,7 @@ export function WatchedBrandsClient() {
 
             {/* ---- marka ekle ---- */}
             {groups.length > 0 && (
-              <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) p-3">
+              <div className="flex flex-wrap items-end gap-2 rounded-lg border border-(--color-border) bg-(--color-bg) p-3">
                 <Field label="Grup">
                   <Select
                     value={brandGroupId}
@@ -571,7 +576,7 @@ export function WatchedBrandsClient() {
 
       {pruneSuggestions.length > 0 && (
         <Section id="watched-brands-prune" title="Ölü ürün önerisi">
-          <div className="space-y-2 rounded border border-(--color-warning-border) bg-(--color-warning-bg) p-3">
+          <div className="space-y-2 rounded-xl border border-(--color-warning-border) bg-(--color-warning-bg) p-4">
             <p className="max-w-3xl text-xs text-(--color-muted)">
               Pazaryerinin hiç değerlendirme kaydetmediği ürünler. Değerlendirme sayısı, satış hızının
               elimizdeki en iyi göstergesi — hiç değerlendirmesi olmayan bir ürün büyük olasılıkla hiç
@@ -590,14 +595,9 @@ export function WatchedBrandsClient() {
                   <span className="text-xs text-(--color-muted)">
                     · derin tarama {suggestion.currentScanMinutes} dk → {suggestion.prunedScanMinutes} dk
                   </span>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void pruneUnrated(suggestion)}
-                    className="rounded border border-(--color-border) bg-(--color-bg) px-2 py-0.5 text-xs hover:bg-(--color-hover) disabled:opacity-40"
-                  >
+                  <Button variant="secondary" size="sm" type="button" disabled={busy} onClick={() => void pruneUnrated(suggestion)}>
                     Duraklat
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -616,7 +616,7 @@ export function WatchedBrandsClient() {
               confirmMessage={`${group.name} grubunu ve altındaki ${group.brands.length} markayı sil?`}
               onConfirmed={() => void removeGroup(group)}
               disabled={busy}
-              className="text-xs text-(--color-muted) hover:text-(--color-danger) disabled:opacity-40"
+              className={`${buttonClass('ghost', 'sm')} hover:text-(--color-danger)`}
             >
               Grubu sil
             </ConfirmButton>
@@ -659,27 +659,29 @@ export function WatchedBrandsClient() {
 Başlatılsın mı?`}
                         onConfirmed={() => void sweepNow(brand, true)}
                         disabled={busy}
-                        className="mr-2 rounded border border-(--color-border) px-2 py-0.5 text-xs hover:bg-(--color-hover) disabled:opacity-40"
+                        className={`mr-2 ${buttonClass('secondary', 'sm')}`}
                       >
                         Şimdi tara
                       </ConfirmButton>
                       {/* Ucuz yarı, tek tıkla: katalog taraması 24 üründe bir sayfa okur ve
                           hiçbir satıcı isteği göndermez. */}
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         disabled={busy}
                         onClick={() => void sweepNow(brand, false)}
                         title="Yalnızca katalog: hangi ürünler var? Satıcı/buybox verisi toplanmaz."
-                        className="mr-2 rounded border border-(--color-border) px-2 py-0.5 text-xs text-(--color-muted) hover:bg-(--color-hover) disabled:opacity-40"
+                        className="mr-2"
                       >
                         Sadece katalog
-                      </button>
+                      </Button>
                       <ConfirmButton
                         requireConfirm
                         confirmMessage={`${brand.label} markasını izleme listesinden çıkar?\n\nBulduğu ${formatNumber(brand.productCount)} ürün ve geçmişleri silinmez — sadece marka bağlantıları kalkar.`}
                         onConfirmed={() => void removeBrand(brand)}
                         disabled={busy}
-                        className="text-(--color-muted) hover:text-(--color-danger) disabled:opacity-40"
+                        className={`${buttonClass('ghost', 'sm')} hover:text-(--color-danger)`}
                       >
                         Kaldır
                       </ConfirmButton>
