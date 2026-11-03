@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Trash2 } from '@/components/icon';
 import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
 
 interface Band {
@@ -152,23 +153,28 @@ function BandEditor({
                 </span>
               )}
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Trash2}
               type="button"
-              className="mt-1.5 text-xs text-(--color-danger)"
+              className="mt-0.5"
               onClick={() => onChange(bands.filter((_, j) => j !== i))}
             >
               Kaldır
-            </button>
+            </Button>
           </div>
         );
       })}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
-        className="w-fit text-xs text-(--color-accent)"
+        className="w-fit"
         onClick={() => onChange([...bands, { edge: '', amount: '0' }])}
       >
         + Bant Ekle
-      </button>
+      </Button>
     </div>
   );
 }

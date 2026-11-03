@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { EnabledModules } from '@buybox/shared';
+import { PageHeader } from '@/components/ui';
 import {
   loadWizardProgress,
   saveWizardProgress,
@@ -73,17 +74,18 @@ export default function SetupWizard() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-6 py-10">
-      <div>
-        <h1 className="text-2xl font-bold">Kurulum Sihirbazı</h1>
-        <p className="text-sm text-(--color-muted)">
-          Adım {steps.indexOf(step) + 1} / {steps.length} — {STEP_LABELS[step]}
-        </p>
-      </div>
+      <PageHeader
+        title="Kurulum Sihirbazı"
+        description={`Adım ${steps.indexOf(step) + 1} / ${steps.length} — ${STEP_LABELS[step]}`}
+      />
 
       <ol className="flex flex-wrap gap-2 text-xs">
         {steps.map((s, i) => (
+          // The current step is announced and a done one carries a mark, so the state is never
+          // the pill's colour alone (doc 15 rule 8).
           <li
             key={s}
+            aria-current={i === stepIndex ? 'step' : undefined}
             className={`rounded-full px-3 py-1 ${
               i === stepIndex
                 ? 'bg-(--color-accent) text-(--color-accent-ink)'
@@ -92,12 +94,13 @@ export default function SetupWizard() {
                   : 'bg-(--color-chip-bg) text-(--color-muted)'
             }`}
           >
+            {i < stepIndex && '✓ '}
             {STEP_LABELS[s]}
           </li>
         ))}
       </ol>
 
-      <div className="rounded-lg border border-(--color-border) bg-(--color-surface) p-6">
+      <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-6 shadow-(--shadow-card)">
         {step === 'database' && (
           <Step1Database
             onDone={() => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Field, StatusBanner, StepStopNotice, TextInput } from '@/components/ui';
+import { Button, Field, Select, StatusBanner, StepStopNotice, TextInput } from '@/components/ui';
 
 type Engine = 'sqlite' | 'postgres' | 'mysql';
 
@@ -128,7 +128,7 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
   return (
     <div className="flex flex-col gap-4">
       <Field label="Veritabanı Motoru">
-        <select
+        <Select
           value={engine}
           onChange={(e) => {
             const next = e.target.value as Engine;
@@ -137,12 +137,12 @@ export function Step1Database({ onDone }: { onDone: () => void }) {
             setTestResult(undefined);
             setMigrateResult(undefined);
           }}
-          className="rounded border border-(--color-border) px-3 py-1.5 text-sm"
-        >
-          <option value="sqlite">SQLite (tek kullanıcılı yerel kurulum için önerilir)</option>
-          <option value="postgres">PostgreSQL</option>
-          <option value="mysql">MySQL</option>
-        </select>
+          options={[
+            { value: 'sqlite', label: 'SQLite (tek kullanıcılı yerel kurulum için önerilir)' },
+            { value: 'postgres', label: 'PostgreSQL' },
+            { value: 'mysql', label: 'MySQL' },
+          ]}
+        />
       </Field>
 
       <Field

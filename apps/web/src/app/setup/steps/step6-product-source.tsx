@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
+import { Button, Field, Select, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
 
 type SourceCode = 'manual' | 'excel' | 'marketplaceListing';
 
@@ -129,23 +129,23 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
         />
       )}
       <Field label="Ürün Kaynağı">
-        <select
+        <Select
           value={source}
           onChange={(e) => {
             setSource(e.target.value as SourceCode);
             setPreview(undefined);
             setSaved(false);
           }}
-          className="rounded border border-(--color-border) px-3 py-1.5 text-sm"
-        >
-          <option value="manual">Manuel (Stok ekranından tek tek eklenir)</option>
-          <option value="excel">Excel</option>
-          <option value="marketplaceListing">Pazaryeri listelerinden</option>
-        </select>
+          options={[
+            { value: 'manual', label: 'Manuel (Stok ekranından tek tek eklenir)' },
+            { value: 'excel', label: 'Excel' },
+            { value: 'marketplaceListing', label: 'Pazaryeri listelerinden' },
+          ]}
+        />
       </Field>
 
       {source === 'excel' && (
-        <div className="flex flex-col gap-3 rounded border border-(--color-border) p-4">
+        <div className="flex flex-col gap-3 rounded-lg border border-(--color-border) bg-(--color-bg) p-4">
           <input
             ref={fileInput}
             type="file"

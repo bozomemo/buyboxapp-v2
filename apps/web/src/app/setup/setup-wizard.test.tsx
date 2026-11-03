@@ -105,6 +105,35 @@ describe('SetupWizard (orchestrator)', () => {
     expect(await screen.findByText('Adım 4 / 9 — Pazaryerleri', { exact: false })).toBeTruthy();
   });
 
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 11, Review Focus 5): the
+  // step list says which step you are on and which are done in more than colour.
+  it('current step is announced', async () => {
+    stubFetch({ '/api/setup/database/suggest': { pending: true } });
+
+    const { container } = render(<SetupWizard />);
+
+    await screen.findByText('Adım 1 / 9 — Veritabanı', { exact: false });
+    const current = container.querySelectorAll('li[aria-current="step"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]!.textContent).toBe('Veritabanı');
+  });
+
+  it('done steps carry a mark', async () => {
+    window.localStorage.setItem(
+      PROGRESS_KEY,
+      JSON.stringify({ stepIndex: 2, databaseReady: true, enabledMarketplaces: [] }),
+    );
+    stubFetch({ '/api/setup/database/suggest': { pending: true } });
+
+    const { container } = render(<SetupWizard />);
+
+    await screen.findByText('Adım 3 / 9 — Mağaza Kimliği', { exact: false });
+    const steps = Array.from(container.querySelectorAll('ol > li'));
+    expect(steps[0]!.textContent?.startsWith('✓')).toBe(true);
+    expect(steps[1]!.textContent?.startsWith('✓')).toBe(true);
+    expect(steps[2]!.textContent?.startsWith('✓')).toBe(false);
+  });
+
   it('asks the purpose right after the database step', async () => {
     window.localStorage.setItem(
       PROGRESS_KEY,

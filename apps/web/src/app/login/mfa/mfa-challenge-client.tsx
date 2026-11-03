@@ -110,6 +110,7 @@ export function MfaChallengeClient({ next }: { next: string }) {
       {info.methods.length > 1 && (
         <div role="radiogroup" aria-label="Doğrulama yöntemi" className="mb-4 flex flex-wrap gap-1 text-xs">
           {info.methods.map((m) => (
+            // kit-exempt: radio group — role="radio" with aria-checked, which SegmentedFilter's aria-pressed does not replace
             <button
               key={m}
               type="button"
@@ -120,7 +121,7 @@ export function MfaChallengeClient({ next }: { next: string }) {
                 setCode('');
                 setError(null);
               }}
-              className={`rounded border px-2 py-1 ${method === m ? 'border-(--color-accent) bg-(--color-accent-bg)' : 'border-(--color-border)'}`}
+              className={`h-8 rounded-full border px-3 text-sm ${method === m ? 'border-(--color-accent) bg-(--color-accent) font-semibold text-(--color-accent-ink)' : 'border-(--color-border) hover:bg-(--color-hover)'}`}
             >
               {METHOD_LABELS[m]}
             </button>
@@ -182,9 +183,9 @@ export function MfaChallengeClient({ next }: { next: string }) {
         <Button type="submit" disabled={busy || code.trim() === ''}>
           {busy ? 'Doğrulanıyor…' : 'Doğrula'}
         </Button>
-        <button type="button" className="text-sm text-(--color-muted) underline" onClick={() => window.location.assign('/login')}>
+        <Button variant="ghost" size="sm" type="button" onClick={() => window.location.assign('/login')}>
           Farklı bir hesapla giriş yap
-        </button>
+        </Button>
       </form>
     </AuthCard>
   );
