@@ -19,11 +19,7 @@ import { describe, expect, it } from 'vitest';
 const APP_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 
 export const PENDING: readonly string[] = [
-  'account/account-client.tsx',
-  'account/mfa-setup/mfa-setup-client.tsx',
-  'account/password/password-client.tsx',
   'dashboard-client.tsx',
-  'license/license-client.tsx',
   'login/mfa/mfa-challenge-client.tsx',
   'nav-shell.tsx',
   'setup/setup-wizard.tsx',

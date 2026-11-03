@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { LicenseInvalidReason, LicenseStatus } from '@buybox/shared';
-import { ErrorState, LoadingState, PageHeader, TONE_BOX, TONE_TEXT, type Tone } from '@/components/ui';
+import { Button, ErrorState, LoadingState, PageHeader, TONE_BOX, TONE_TEXT, type Tone } from '@/components/ui';
 
 /**
  * The licence screen (docs/13-licensing.md §6) — the one route reachable while unlicensed, and
@@ -123,6 +123,7 @@ export function LicenseClient() {
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
       <PageHeader
         title="Lisans"
+        breadcrumb={[{ label: 'Sistem' }, { label: 'Ayarlar', href: '/settings' }, { label: 'Lisans' }]}
         description="BuyBoxApp lisanslı bir kurulum gerektirir. Lisans olmadan hiçbir iş çalışmaz, hiçbir fiyat gönderilmez."
       />
 
@@ -138,7 +139,10 @@ export function LicenseClient() {
         </p>
       )}
 
-      <section aria-labelledby="license-form-heading" className="flex flex-col gap-3">
+      <section
+        aria-labelledby="license-form-heading"
+        className="flex max-w-[720px] flex-col gap-3 rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)"
+      >
         <h2 id="license-form-heading" className="sr-only">
           Lisans anahtarı gir
         </h2>
@@ -159,14 +163,9 @@ export function LicenseClient() {
           </p>
         )}
         <div>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={busy || token.trim() === ''}
-            className="rounded bg-(--color-accent) px-4 py-2 text-sm font-semibold text-(--color-accent-ink) hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button type="button" onClick={() => void save()} disabled={busy || token.trim() === ''}>
             {busy ? 'Kaydediliyor…' : 'Lisansı etkinleştir'}
-          </button>
+          </Button>
         </div>
       </section>
     </main>

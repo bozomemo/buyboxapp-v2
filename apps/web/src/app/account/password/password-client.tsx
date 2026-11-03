@@ -88,9 +88,9 @@ export function PasswordClient() {
           {submitting ? 'Kaydediliyor…' : 'Parolayı değiştir'}
         </Button>
         {!mustChange && (
-          <button type="button" className="text-sm text-(--color-muted) underline" onClick={() => window.history.back()}>
+          <Button variant="ghost" size="sm" type="button" onClick={() => window.history.back()}>
             Vazgeç
-          </button>
+          </Button>
         )}
       </form>
     </AuthCard>

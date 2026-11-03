@@ -89,9 +89,9 @@ export function MfaSetupClient() {
           aria-label="Doğrulama uygulaması için QR kodu"
           dangerouslySetInnerHTML={{ __html: step.qrSvg }}
         />
-        <button type="button" className="text-xs text-(--color-muted) underline" onClick={() => setShowKey(!showKey)}>
+        <Button variant="ghost" size="sm" type="button" onClick={() => setShowKey(!showKey)}>
           {showKey ? 'Anahtarı gizle' : 'Tarayamıyor musunuz? Anahtarı elle girin'}
-        </button>
+        </Button>
         {showKey && (
           <code className="break-all rounded border border-(--color-border) bg-(--color-chip-bg) px-2 py-1 text-center text-sm">
             {step.secret}
@@ -116,15 +116,16 @@ export function MfaSetupClient() {
             {busy ? 'Doğrulanıyor…' : 'Etkinleştir'}
           </Button>
         </form>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
-          className="text-sm text-(--color-muted) underline"
           onClick={() => {
             void fetch('/api/auth/logout', { method: 'POST' }).finally(() => window.location.assign('/login'));
           }}
         >
           Çıkış yap
-        </button>
+        </Button>
       </div>
     </AuthCard>
   );

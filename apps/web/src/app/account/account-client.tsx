@@ -3,7 +3,17 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
-import { Ago, ConfirmButton, ErrorState, LoadingState, PageHeader, Section, StatusBanner } from '@/components/ui';
+import {
+  Ago,
+  Button,
+  buttonClass,
+  ConfirmButton,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  Section,
+  StatusBanner,
+} from '@/components/ui';
 import { formatDateTime } from '@/lib/format';
 import { MfaSection } from './mfa-section';
 
@@ -99,7 +109,7 @@ export function AccountClient() {
       />
       {error && <StatusBanner ok={false} message={error} />}
 
-      <Section id="account-password" title="Parola">
+      <Section id="account-password" title="Parola" card>
         <p className="text-sm">
           <Link href="/account/password" className="text-(--color-accent) hover:underline">
             Parolayı değiştir
@@ -108,7 +118,7 @@ export function AccountClient() {
         </p>
       </Section>
 
-      <Section id="account-mfa" title="İki adımlı doğrulama">
+      <Section id="account-mfa" title="İki adımlı doğrulama" card>
         <MfaSection account={load.data} onChanged={refresh} />
       </Section>
 
@@ -120,7 +130,7 @@ export function AccountClient() {
             requireConfirm
             confirmMessage="Bu tarayıcı dahil tüm oturumlarınız kapanacak ve hatırlanan cihazlar unutulacak. Devam edilsin mi?"
             onConfirmed={() => void act({ action: 'signOutEverywhere' }, () => window.location.assign('/login'))}
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
+            className={buttonClass('secondary', 'sm')}
           >
             Tüm cihazlardan çıkış yap
           </ConfirmButton>
@@ -150,13 +160,14 @@ export function AccountClient() {
                   </td>
                   <td className="px-3 py-2 text-right">
                     {!s.current && (
-                      <button
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         type="button"
                         onClick={() => void act({ action: 'endSession', id: s.id })}
-                        className="rounded border px-2 py-1 text-xs hover:bg-(--color-hover)"
                       >
                         Sonlandır
-                      </button>
+                      </Button>
                     )}
                   </td>
                 </tr>
@@ -166,25 +177,26 @@ export function AccountClient() {
         </TableFrame>
       </Section>
 
-      <Section id="account-devices" title="Hatırlanan cihazlar">
+      <Section id="account-devices" title="Hatırlanan cihazlar" card>
         {devices.length === 0 ? (
           <p className="text-sm text-(--color-muted)">
             Hatırlanan cihaz yok. İki adımlı doğrulamada “Bu cihazı hatırla” seçilirse burada görünür.
           </p>
         ) : (
-          <ul className="divide-y divide-(--color-border) rounded border border-(--color-border) text-sm">
+          <ul className="divide-y divide-(--color-border) rounded-lg border border-(--color-border) text-sm">
             {devices.map((d) => (
               <li key={d.id} className="flex items-center justify-between gap-3 px-3 py-2">
                 <span title={d.label ?? undefined}>
                   {describeAgent(d.label)} · {formatDateTime(d.expiresAt)} tarihine kadar
                 </span>
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   type="button"
                   onClick={() => void act({ action: 'forgetDevice', id: d.id })}
-                  className="rounded border px-2 py-1 text-xs hover:bg-(--color-hover)"
                 >
                   Unut
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
