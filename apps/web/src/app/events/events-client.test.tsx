@@ -44,6 +44,18 @@ describe('EventsClient', () => {
     ).toBeTruthy();
   });
 
+  // Redesign phase 3 (Review Focus: narrow viewport): the filter row wraps, and its controls are
+  // the kit's 36px ones.
+  it('filter bar wraps', async () => {
+    stubFetch({ '/api/events': { body: { events: [], limit: 500 } } });
+
+    render(<EventsClient />);
+
+    const level = await screen.findByRole('combobox', { name: 'En düşük seviye' });
+    expect(level.className).toContain('h-9');
+    expect(level.closest('label')?.parentElement?.className).toContain('flex-wrap');
+  });
+
   it('populated: shows an event row with its translated level and code', async () => {
     const now = Date.now();
     stubFetch({

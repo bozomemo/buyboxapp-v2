@@ -28,7 +28,6 @@ export const PENDING: readonly string[] = [
   'competitors/sellers/sellers-client.tsx',
   'competitors/sellers/[marketplace]/[ref]/seller-detail-client.tsx',
   'dashboard-client.tsx',
-  'events/events-client.tsx',
   'license/license-client.tsx',
   'listings/listings-client.tsx',
   'listings/[id]/listing-detail-client.tsx',

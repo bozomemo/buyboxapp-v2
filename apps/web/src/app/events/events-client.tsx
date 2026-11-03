@@ -13,12 +13,16 @@ import {
   usePagedRows,
   useColumnPrefs,
 } from '@/components/table';
+import { Download, Search } from '@/components/icon';
 import {
+  Button,
   EmptyState,
   ErrorState,
   LoadingState,
   PageHeader,
   Section,
+  Select,
+  TextInput,
   TONE_TEXT,
   type Tone,
 } from '@/components/ui';
@@ -154,6 +158,7 @@ export function EventsClient() {
     <div className="space-y-6">
       <PageHeader
         title="Olaylar"
+        breadcrumb={[{ label: 'Sistem' }, { label: 'Olaylar' }]}
         description="Arka plan işlerinin ve pazaryeri entegrasyonlarının teknik günlüğü. İleri düzey bilgidir —
           bir işin genel durumu için İşler ekranını kullanın; burası bir olayın tam olarak ne zaman ve
           neden yaşandığını aramak içindir."
@@ -165,47 +170,46 @@ export function EventsClient() {
         </p>
       )}
 
-      <Section id="events-filter-heading" title="Filtrele">
+      <Section id="events-filter-heading" title="Filtrele" card>
         <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs text-(--color-muted)">
+          <label className="flex flex-col gap-1 text-xs text-(--color-muted)">
             En düşük seviye
-            <select
-              className="mt-1 block rounded border border-(--color-border) px-2 py-1 text-sm"
+            <Select
               value={minLevel}
               onChange={(e) => setMinLevel(e.target.value)}
-            >
-              <option value="">Tümü</option>
-              <option value="debug">debug ve üzeri</option>
-              <option value="info">bilgi ve üzeri</option>
-              <option value="warn">uyarı ve üzeri</option>
-              <option value="error">yalnızca hata</option>
-            </select>
+              options={[
+                { value: '', label: 'Tümü' },
+                { value: 'debug', label: 'debug ve üzeri' },
+                { value: 'info', label: 'bilgi ve üzeri' },
+                { value: 'warn', label: 'uyarı ve üzeri' },
+                { value: 'error', label: 'yalnızca hata' },
+              ]}
+            />
           </label>
-          <label className="text-xs text-(--color-muted)">
+          <label className="flex flex-col gap-1 text-xs text-(--color-muted)">
             Pazaryeri
-            <select
-              className="mt-1 block rounded border border-(--color-border) px-2 py-1 text-sm"
+            <Select
               value={marketplaceCode}
               onChange={(e) => setMarketplaceCode(e.target.value)}
-            >
-              <option value="">Tümü</option>
-              <option value="trendyol">Trendyol</option>
-              <option value="hepsiburada">Hepsiburada</option>
-            </select>
+              options={[
+                { value: '', label: 'Tümü' },
+                { value: 'trendyol', label: 'Trendyol' },
+                { value: 'hepsiburada', label: 'Hepsiburada' },
+              ]}
+            />
           </label>
-          <label className="text-xs text-(--color-muted)">
+          <label className="flex flex-col gap-1 text-xs text-(--color-muted)">
             Kod
-            <input
-              className="mt-1 block rounded border border-(--color-border) px-2 py-1 text-sm"
+            <TextInput
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="ör. SubmitPriceChangesBatchFailed"
             />
           </label>
-          <label className="relative text-xs text-(--color-muted)">
+          <label className="relative flex flex-col gap-1 text-xs text-(--color-muted)">
             İlan
-            <input
-              className="mt-1 block rounded border border-(--color-border) px-2 py-1 text-sm"
+            <TextInput
+              icon={Search}
               value={selectedListing ? selectedListing.productName : listingQuery}
               onChange={(e) => {
                 setSelectedListing(null);
@@ -217,6 +221,7 @@ export function EventsClient() {
               <ul className="absolute z-10 mt-1 max-h-48 w-64 overflow-auto rounded border border-(--color-border) bg-(--color-surface) shadow">
                 {listingOptions.map((o) => (
                   <li key={o.id}>
+                    {/* kit-exempt: combobox option in the listing lookup's result list */}
                     <button
                       type="button"
                       className="block w-full px-2 py-1 text-left text-sm hover:bg-(--color-hover)"
@@ -232,20 +237,18 @@ export function EventsClient() {
               </ul>
             )}
           </label>
-          <label className="text-xs text-(--color-muted)">
+          <label className="flex flex-col gap-1 text-xs text-(--color-muted)">
             Başlangıç
-            <input
+            <TextInput
               type="datetime-local"
-              className="mt-1 block rounded border border-(--color-border) px-2 py-1 text-sm"
               value={sinceMs}
               onChange={(e) => setSinceMs(e.target.value)}
             />
           </label>
-          <label className="text-xs text-(--color-muted)">
+          <label className="flex flex-col gap-1 text-xs text-(--color-muted)">
             Bitiş
-            <input
+            <TextInput
               type="datetime-local"
-              className="mt-1 block rounded border border-(--color-border) px-2 py-1 text-sm"
               value={untilMs}
               onChange={(e) => setUntilMs(e.target.value)}
             />
@@ -267,7 +270,10 @@ export function EventsClient() {
           events.length > 0 && (
             <div className="flex items-center gap-2">
               <ColumnMenu defs={EVENT_COLUMNS} prefs={eventColumns} />
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Download}
                 type="button"
                 onClick={() =>
                   downloadCsv(
@@ -281,10 +287,9 @@ export function EventsClient() {
                     })),
                   )
                 }
-                className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
               >
                 Excel&apos;e Aktar
-              </button>
+              </Button>
             </div>
           )
         }
