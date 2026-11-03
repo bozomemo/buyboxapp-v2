@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { FindingsClient } from './findings-client';
@@ -137,5 +137,61 @@ describe('FindingsClient', () => {
     // "Kesin bilgi" appears both as the finding's badge and as the group heading it now sits
     // under (doc 15 §6, 2.4: the stated/measured split was implicit in sort order before).
     expect(screen.getAllByText('Kesin bilgi', { exact: false }).length).toBeGreaterThan(0);
+  });
+
+  describe('redesign (plan 2026-11-03 phase 2, Task 4)', () => {
+    function populated() {
+      const now = Date.now();
+      stubFetch({
+        '/api/brand-reports/findings': {
+          body: {
+            ...CATALOGUE,
+            brand: BRAND,
+            needsBrand: false,
+            findings: [
+              {
+                id: 'finding-1',
+                kind: 'blockedSellerPresent',
+                basis: 'stated',
+                subject: { kind: 'seller', marketplaceCode: 'trendyol', sellerRef: 'seller-1', name: 'Yasaklı Satıcı A.Ş.' },
+                thresholdKey: null,
+                magnitude: 1,
+                productCount: 3,
+                lastSeenAt: now - 3_600_000,
+                note: null,
+                openedAt: now - 86_400_000,
+                notifiedAt: null,
+              },
+            ],
+            notificationsConfigured: true,
+            filters: { sinceMs: now - 1000, untilMs: now },
+            context: { hasAuthorisedList: true, sellerCount: 4, productCount: 10, truncatedDeviations: false, truncatedDisagreements: false, disagreementTotal: 0 },
+          },
+        },
+      });
+      render(<FindingsClient />);
+    }
+
+    it('kind toggles stay pressed buttons', async () => {
+      populated();
+      const toggle = await screen.findByRole('button', { name: /Yasaklı satıcı satışta · 1/ });
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('period is a segmented filter', async () => {
+      populated();
+      const group = await screen.findByRole('group', { name: 'Dönem' });
+      expect(within(group).getByRole('button', { name: 'Son 30 gün' })).toBeTruthy();
+    });
+
+    it('summary is a stat row', async () => {
+      populated();
+      const row = await screen.findByTestId('findings-stats');
+      expect(row.className).toContain('grid-cols-2');
+      expect(within(row).getByText('Bulgu')).toBeTruthy();
+      expect(within(row).getByText('Satıcı')).toBeTruthy();
+    });
   });
 });

@@ -2,7 +2,19 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Ago, EmptyState, ErrorState, LoadingState, PageHeader, Section, TONE_BOX } from '@/components/ui';
+import {
+  Ago,
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  Section,
+  SegmentedFilter,
+  StatCard,
+  TextInput,
+  TONE_BOX,
+} from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { FINDING_BASIS_LABELS, FINDING_KIND_LABELS, labelOf } from '@/lib/labels';
@@ -332,7 +344,7 @@ function FindingRow({
 }) {
   const f = finding;
   return (
-    <div className="rounded border border-(--color-border)">
+    <div className="rounded-xl border border-(--color-border) bg-(--color-surface) shadow-(--shadow-card)">
       <div className="flex flex-wrap items-start gap-3 p-3">
         <span className={`rounded px-2 py-0.5 text-xs ${BASIS_CLASS[f.basis]}`}>
           {labelOf(FINDING_BASIS_LABELS, f.basis)}
@@ -372,13 +384,9 @@ function FindingRow({
           </div>
           <div className="mt-1 text-sm text-(--color-muted)">{describe(f)}</div>
         </div>
-        <button
-          type="button"
-          onClick={() => onToggleEvidence(f)}
-          className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
-        >
+        <Button variant="secondary" size="sm" type="button" onClick={() => onToggleEvidence(f)}>
           {isOpen ? 'Kanıtı kapat' : 'Kanıt'}
-        </button>
+        </Button>
       </div>
 
       {isOpen && (
@@ -625,6 +633,7 @@ export function FindingsClient() {
       <div className="space-y-4">
         <PageHeader
           title="Denetim Bulguları"
+          breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Denetim Bulguları' }]}
           description="Marka arşivinden çıkan, bakılmaya değer noktalar."
         />
         <ErrorState message={error} onRetry={load} />
@@ -636,6 +645,7 @@ export function FindingsClient() {
       <div className="space-y-4">
         <PageHeader
           title="Denetim Bulguları"
+          breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Denetim Bulguları' }]}
           description="Marka arşivinden çıkan, bakılmaya değer noktalar."
         />
         <LoadingState message="Bulgular yükleniyor…" skeletonRows={3} />
@@ -654,13 +664,15 @@ export function FindingsClient() {
     <div className="space-y-6">
       <PageHeader
         title="Denetim Bulguları"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Denetim Bulguları' }]}
         description="Hiçbiri bir ihlal iddiası değildir — her bulgu dayandığı ham gözleme kadar açılır ve kararı okuyan verir."
         action={
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm">
               <span className="mb-1 block text-(--color-muted)">Marka</span>
+              {/* kit-exempt: brands grouped in <optgroup>s, which the kit Select does not take */}
               <select
-                className="rounded border border-(--color-border) px-2 py-1"
+                className="h-9 rounded-lg border border-(--color-border) bg-(--color-surface) px-3 text-sm"
                 value={brandId}
                 onChange={(e) => setBrandId(e.target.value)}
               >
@@ -678,26 +690,27 @@ export function FindingsClient() {
                 ))}
               </select>
             </label>
-            <label className="text-sm">
+            <div className="text-sm">
               <span className="mb-1 block text-(--color-muted)">Dönem</span>
-              <select
-                className="rounded border border-(--color-border) px-2 py-1"
+              <SegmentedFilter
+                label="Dönem"
                 value={String(sinceMs)}
-                onChange={(e) => setSinceMs(Number(e.target.value))}
-              >
-                <option value={String(daysAgo(7))}>Son 7 gün</option>
-                <option value={String(daysAgo(30))}>Son 30 gün</option>
-                <option value={String(daysAgo(90))}>Son 90 gün</option>
-              </select>
-            </label>
-            <button
+                onChange={(v) => setSinceMs(Number(v))}
+                options={[
+                  { value: String(daysAgo(7)), label: 'Son 7 gün' },
+                  { value: String(daysAgo(30)), label: 'Son 30 gün' },
+                  { value: String(daysAgo(90)), label: 'Son 90 gün' },
+                ]}
+              />
+            </div>
+            <Button
+              variant="secondary"
               type="button"
               onClick={() => setShowThresholds((v) => !v)}
               aria-expanded={showThresholds}
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
             >
               Eşikler
-            </button>
+            </Button>
           </div>
         }
       />
@@ -706,7 +719,7 @@ export function FindingsClient() {
           still on screen — the numbers below are real but for the old selection, and saying so
           costs a line (doc 15 §3.2 "Stale"). */}
       {error && (
-        <p role="alert" className={`rounded border p-3 text-sm ${TONE_BOX.warn}`}>
+        <p role="alert" className={`rounded-lg border p-3 text-sm ${TONE_BOX.warn}`}>
           Yenileme başarısız oldu: {error}
         </p>
       )}
@@ -720,6 +733,7 @@ export function FindingsClient() {
         <Section
           id="thresholds-heading"
           title="Eşikler"
+          card
           action={
             <span className="text-xs text-(--color-muted)">
               {report.thresholdsAreDefault
@@ -728,7 +742,7 @@ export function FindingsClient() {
             </span>
           }
         >
-          <div className="space-y-3 rounded border border-(--color-border) p-4">
+          <div className="space-y-3">
             {/* Her bulgu bir eşikten çıkar ve hiçbiri koda gömülü değil: burada değiştirilen
                 sayı tüm geçmişi yeniden yanıtlar, yalnızca bundan sonrasını değil. */}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -736,11 +750,11 @@ export function FindingsClient() {
                 <label key={field.key} className="text-sm">
                   <span className="mb-1 block">{field.label}</span>
                   <span className="flex items-center gap-2">
-                    <input
+                    <TextInput
                       type="number"
                       min={0}
                       step="any"
-                      className="w-24 rounded border border-(--color-border) px-2 py-1"
+                      className="w-24"
                       value={draft[field.key]}
                       onChange={(e) => setDraft({ ...draft, [field.key]: Number(e.target.value) })}
                     />
@@ -751,22 +765,12 @@ export function FindingsClient() {
               ))}
             </div>
             <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={saving}
-                onClick={saveThresholds}
-                className="rounded bg-(--color-accent) px-3 py-1 text-sm text-(--color-accent-ink) disabled:opacity-50"
-              >
+              <Button type="button" disabled={saving} onClick={saveThresholds}>
                 {saving ? 'Kaydediliyor…' : 'Kaydet ve yeniden hesapla'}
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={resetThresholds}
-                className="rounded border border-(--color-border) px-3 py-1 text-sm hover:bg-(--color-hover) disabled:opacity-50"
-              >
+              </Button>
+              <Button variant="secondary" type="button" disabled={saving} onClick={resetThresholds}>
                 Varsayılanlara dön
-              </button>
+              </Button>
             </div>
             <p className="text-xs text-(--color-muted)">
               Eşik değişiklikleri kim değiştirdiyse onunla birlikte kaydedilir (<code>settings_audit</code>).
@@ -786,17 +790,15 @@ export function FindingsClient() {
       {report.brand && (
         <>
           <Section id="summary-heading" title="Özet">
-            <div aria-live="polite" className="flex flex-wrap items-center gap-4 text-sm">
-              <span>
-                <strong>{formatNumber(findings.length)}</strong> bulgu
-              </span>
-              <span className="text-(--color-muted)">
-                {formatNumber(statedCount)} kesin bilgi · {formatNumber(findings.length - statedCount)} yorum
-              </span>
-              <span className="text-(--color-muted)">
-                {formatNumber(report.context?.sellerCount ?? 0)} satıcı,{' '}
-                {formatNumber(report.context?.productCount ?? 0)} ürün üzerinden
-              </span>
+            <div aria-live="polite" data-testid="findings-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatCard
+                label="Bulgu"
+                value={formatNumber(findings.length)}
+                tone={findings.length > 0 ? 'warn' : undefined}
+                delta={`${formatNumber(statedCount)} kesin bilgi · ${formatNumber(findings.length - statedCount)} yorum`}
+              />
+              <StatCard label="Satıcı" value={formatNumber(report.context?.sellerCount ?? 0)} delta="Bu dönemde görülen" />
+              <StatCard label="Ürün" value={formatNumber(report.context?.productCount ?? 0)} delta="Bu dönemde görülen" />
             </div>
 
             {/* Kapsam ve bildirim notları tek bir açılır grup altında: dördü de ayrı ayrı kutu
@@ -804,7 +806,7 @@ export function FindingsClient() {
                 Varsayılan olarak açık — bunlar "olmasa da olur" değil, bulgu yokluğunun ne anlama
                 geldiğini belirleyen notlar (§4 adım 3, "Current UX Problems" #5). */}
             {hasCoverageNotes && (
-              <details open className="mt-3 rounded border border-(--color-border) bg-(--color-surface)">
+              <details open className="mt-3 rounded-xl border border-(--color-border) bg-(--color-surface) shadow-(--shadow-card)">
                 <summary className="cursor-pointer px-3 py-2 text-sm font-semibold">
                   Kapsam ve bildirim notları
                 </summary>
@@ -853,13 +855,13 @@ export function FindingsClient() {
                     </p>
                   )}
                   {report.context?.referencePrice?.truncated && (
-                    <p className={`rounded border p-2 ${TONE_BOX.warn}`}>
+                    <p className={`rounded-lg border p-2 ${TONE_BOX.warn}`}>
                       Tavsiye fiyatın altındaki eşleşmeler sınıra dayandı ve liste kesildi. Gösterilenler en
                       derin sapanlar; toleransı yükseltmek listeyi daraltır.
                     </p>
                   )}
                   {report.context?.truncatedDeviations && (
-                    <p className={`rounded border p-2 ${TONE_BOX.warn}`}>
+                    <p className={`rounded-lg border p-2 ${TONE_BOX.warn}`}>
                       Derin indirim eşiği çok geniş: sınırın üstünde eşleşme var ve liste kesildi. Eşiği
                       yükseltmek listeyi daraltır.
                     </p>
@@ -875,13 +877,9 @@ export function FindingsClient() {
                 message="Bu dönemde ve bu eşiklerle bulgu yok."
                 reason="Eşikler bir keşif aracıdır — hiçbir şey çıkmıyorsa daraltmayı deneyin."
                 action={
-                  <button
-                    type="button"
-                    onClick={() => setShowThresholds(true)}
-                    className="rounded border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm font-semibold hover:bg-(--color-hover)"
-                  >
+                  <Button variant="secondary" type="button" onClick={() => setShowThresholds(true)}>
                     Eşikleri aç
-                  </button>
+                  </Button>
                 }
               />
             ) : (
@@ -890,8 +888,10 @@ export function FindingsClient() {
                   {([...counts.keys()] as FindingKind[])
                     .sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))
                     .map((kind) => (
-                      <button
+                      <Button
                         key={kind}
+                        variant={hidden.has(kind) ? 'secondary' : 'primary'}
+                        size="sm"
                         type="button"
                         aria-pressed={!hidden.has(kind)}
                         onClick={() =>
@@ -902,17 +902,16 @@ export function FindingsClient() {
                             return next;
                           })
                         }
-                        className={`rounded-full border px-3 py-1 text-xs ${
-                          hidden.has(kind)
-                            ? 'border-(--color-border) text-(--color-muted) line-through'
-                            : 'border-(--color-accent) text-(--color-accent)'
-                        }`}
+                        className={`rounded-full ${hidden.has(kind) ? 'text-(--color-muted) line-through' : ''}`}
                       >
                         {labelOf(FINDING_KIND_LABELS, kind)} · {formatNumber(counts.get(kind) ?? 0)}
-                      </button>
+                      </Button>
                     ))}
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     type="button"
+                    className="ml-auto"
                     onClick={() =>
                       downloadCsv(
                         `denetim-bulgulari-${report.brand!.label}.csv`,
@@ -938,10 +937,9 @@ export function FindingsClient() {
                         })),
                       )
                     }
-                    className="ml-auto rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
                   >
                     Excel&apos;e Aktar
-                  </button>
+                  </Button>
                 </div>
 
                 {visible.length === 0 ? (

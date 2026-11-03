@@ -16,7 +16,9 @@ import { describe, expect, it } from 'vitest';
  */
 const APP_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 
-export const CONVERTED: readonly string[] = ['dashboard-client.tsx', 'tracked-products/tracked-products-client.tsx'];
+export const CONVERTED: readonly string[] = ['dashboard-client.tsx', 'tracked-products/tracked-products-client.tsx',
+  'watched-brands/findings/findings-client.tsx',
+];
 
 const NON_TEXT_INPUT = /type=["'](checkbox|radio|file|hidden)["']/;
 
