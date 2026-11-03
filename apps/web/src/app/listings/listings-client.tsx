@@ -25,9 +25,11 @@ import {
   Field,
   LoadingState,
   PageHeader,
+  SegmentedFilter,
   Select,
   TextInput,
 } from '@/components/ui';
+import { X } from '@/components/icon';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { NO_PERMISSION_TITLE, useCan } from '@/lib/permissions';
 import { labelOf, PHASE_LABELS } from '@/lib/labels';
@@ -173,18 +175,19 @@ function TriState({
   onChange: (v: boolean | undefined) => void;
 }) {
   return (
-    <label className="flex items-center gap-1 text-xs">
-      {label}
-      <select
+    <div className="flex items-center gap-1.5 text-xs">
+      <span aria-hidden="true">{label}</span>
+      <SegmentedFilter
+        label={label}
         value={value === undefined ? 'any' : String(value)}
-        onChange={(e) => onChange(e.target.value === 'any' ? undefined : e.target.value === 'true')}
-        className="rounded border border-(--color-border) px-1 py-0.5"
-      >
-        <option value="any">herhangi</option>
-        <option value="true">evet</option>
-        <option value="false">hayır</option>
-      </select>
-    </label>
+        onChange={(v) => onChange(v === 'any' ? undefined : v === 'true')}
+        options={[
+          { value: 'any', label: 'herhangi' },
+          { value: 'true', label: 'evet' },
+          { value: 'false', label: 'hayır' },
+        ]}
+      />
+    </div>
   );
 }
 
@@ -224,6 +227,7 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
 
   if (!editing) {
     return (
+      // kit-exempt: data cell is the control — the price opens its own editor
       <button
         type="button"
         className="hover:underline"
@@ -240,30 +244,21 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1">
-        <input
+        <TextInput
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Yeni fiyat"
+          aria-label="Yeni fiyat"
           disabled={busy}
-          className="w-20 rounded border border-(--color-border) px-1 py-0.5 text-xs"
+          className="w-24"
         />
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          disabled={!value || busy}
-          className="text-xs text-(--color-accent)"
-        >
+        <Button size="sm" type="button" onClick={() => setConfirming(true)} disabled={!value || busy}>
           Gönder
-        </button>
-        <button
-          type="button"
-          onClick={() => setEditing(false)}
-          disabled={busy}
-          className="text-xs text-(--color-muted)"
-        >
+        </Button>
+        <Button variant="ghost" size="sm" type="button" onClick={() => setEditing(false)} disabled={busy}>
           İptal
-        </button>
+        </Button>
       </div>
       {confirming && (
         <div className="rounded border border-(--color-warning) bg-(--color-warning-bg) p-2 text-xs">
@@ -272,22 +267,12 @@ function ManualPriceCell({ row, onChanged }: { row: Row; onChanged: () => void }
             geçici olarak duraklatır.
           </p>
           <div className="mt-1 flex gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void submit()}
-              className="rounded bg-(--color-accent) px-2 py-0.5 text-(--color-accent-ink)"
-            >
+            <Button size="sm" type="button" disabled={busy} onClick={() => void submit()}>
               {busy ? 'Gönderiliyor…' : 'Onayla'}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setConfirming(false)}
-              className="rounded border px-2 py-0.5"
-            >
+            </Button>
+            <Button variant="secondary" size="sm" type="button" disabled={busy} onClick={() => setConfirming(false)}>
               Vazgeç
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -332,23 +317,23 @@ function MinMaxCell({ row, onChanged }: { row: Row; onChanged: () => void }) {
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center gap-1">
-        <input
+        <TextInput
           value={min}
           onChange={(e) => setMin(e.target.value)}
           onBlur={() => void save()}
           placeholder="min"
           disabled={saving || !canEdit}
           {...(canEdit ? {} : { title: NO_PERMISSION_TITLE })}
-          className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
+          className="w-20"
         />
-        <input
+        <TextInput
           value={max}
           onChange={(e) => setMax(e.target.value)}
           onBlur={() => void save()}
           placeholder="max"
           disabled={saving || !canEdit}
           {...(canEdit ? {} : { title: NO_PERMISSION_TITLE })}
-          className="w-14 rounded border border-(--color-border) px-1 py-0.5 text-xs"
+          className="w-20"
         />
       </div>
       {saving && <span className="text-(--color-muted)">Kaydediliyor…</span>}
@@ -676,6 +661,7 @@ export function ListingsClient() {
     <div className="space-y-4">
       <PageHeader
         title="İlanlar"
+        breadcrumb={[{ label: 'Satış' }, { label: 'İlanlar' }]}
         description="Fiyatı ve otomasyonu takip ettiğiniz her ilan burada. Kırmızı satır zararına satışı ya da bilinmeyen maliyeti, sarı satır bloke bir fazı, yeşil satır alınabilecek bir buybox'ı işaret eder."
         action={
           <div className="flex items-center gap-2">
@@ -758,18 +744,16 @@ export function ListingsClient() {
           </Field>
           <div className="flex flex-wrap gap-2">
             {PHASES.map((p) => (
-              <button
+              <Button
                 key={p}
+                variant={filters.phases.includes(p) ? 'primary' : 'secondary'}
+                size="sm"
                 type="button"
+                aria-pressed={filters.phases.includes(p)}
                 onClick={() => togglePhase(p)}
-                className={`rounded px-2 py-1 text-xs ${
-                  filters.phases.includes(p)
-                    ? 'bg-(--color-accent) text-(--color-accent-ink)'
-                    : 'border border-(--color-border)'
-                }`}
               >
                 {PHASE_LABELS[p] ?? p}
-              </button>
+              </Button>
             ))}
           </div>
           <TriState
@@ -798,7 +782,7 @@ export function ListingsClient() {
             onChange={(v) => setFilters({ ...filters, isBlacklisted: v })}
           />
           {hasActiveFilters && (
-            <Button variant="secondary" type="button" onClick={clearFilters} className="px-2! py-1! text-xs">
+            <Button variant="secondary" size="sm" type="button" onClick={clearFilters}>
               Temizle
             </Button>
           )}
@@ -810,40 +794,44 @@ export function ListingsClient() {
           {presets.presets.length === 0 && <span className="text-(--color-muted)">yok</span>}
           {presets.presets.map((preset) => (
             <span key={preset.name} className="flex items-center gap-1">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 type="button"
                 onClick={() => setFilters({ ...EMPTY_FILTERS, ...preset.value })}
-                className="rounded border border-(--color-border) px-2 py-0.5 hover:bg-(--color-hover)"
               >
                 {preset.name}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={X}
                 type="button"
                 title="Bu kaydı sil"
+                aria-label="Bu kaydı sil"
                 onClick={() => presets.remove(preset.name)}
-                className="text-(--color-muted) hover:text-(--color-danger)"
-              >
-                ×
-              </button>
+              />
             </span>
           ))}
-          <input
+          <TextInput
             value={presetName}
             onChange={(e) => setPresetName(e.target.value)}
             placeholder="Yeni kayıt adı"
-            className="ml-auto w-40 rounded border border-(--color-border) px-2 py-0.5"
+            aria-label="Yeni kayıt adı"
+            className="ml-auto w-40"
           />
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             type="button"
             disabled={!presetName.trim()}
             onClick={() => {
               presets.save(presetName, filters);
               setPresetName('');
             }}
-            className="rounded border border-(--color-border) px-2 py-0.5 hover:bg-(--color-hover) disabled:opacity-40"
           >
             Filtreyi kaydet
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -945,6 +933,7 @@ export function ListingsClient() {
                 {visibleColumns.map((d) => (
                   <ResizableTh key={d.id} id={d.id} prefs={columns} className="px-2 py-2">
                     {SORTABLE[d.id] ? (
+                      // kit-exempt: sort header
                       <button
                         type="button"
                         onClick={() => toggleSort(d.id)}
