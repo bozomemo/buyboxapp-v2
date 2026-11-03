@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
-import { Ago, Chip, EmptyState, ErrorState, LoadingState } from '@/components/ui';
+import { Download } from '@/components/icon';
+import { Ago, Button, buttonClass, Chip, EmptyState, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import { STATUS_LABELS } from '@/lib/labels';
@@ -181,37 +182,46 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/tracked-products" className="text-xs text-(--color-accent) hover:underline">
-          ← Takip edilen ürünlere dön
-        </Link>
-        <h1 className="text-2xl font-semibold">{product.label}</h1>
-        <p className="text-sm text-(--color-muted)">
-          {product.marketplaceCode} · {product.productRef}
-          {pageUrl && (
-            <>
-              {' · '}
-              <a
-                href={pageUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-(--color-accent) hover:underline"
-              >
-                Ürün sayfasını aç
-              </a>
-            </>
-          )}
-          {!product.isActive && (
-            <span className="ml-2">
-              <Chip tone="neutral">Takip duraklatıldı</Chip>
-            </span>
-          )}
-        </p>
-      </div>
+      <PageHeader
+        title={product.label}
+        breadcrumb={[
+          { label: 'Marka Denetimi' },
+          { label: 'Takip Edilen Ürünler', href: '/tracked-products' },
+          { label: product.label },
+        ]}
+        description={
+          <>
+              {product.marketplaceCode} · {product.productRef}
+              {pageUrl && (
+                <>
+                  {' · '}
+                  <a
+                    href={pageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-(--color-accent) hover:underline"
+                  >
+                    Ürün sayfasını aç
+                  </a>
+                </>
+              )}
+              {!product.isActive && (
+                <span className="ml-2">
+                  <Chip tone="neutral">Takip duraklatıldı</Chip>
+                </span>
+              )}
+          </>
+        }
+        action={
+          <Link href="/tracked-products" className={buttonClass('secondary', 'sm')}>
+            ← Takip edilen ürünlere dön
+          </Link>
+        }
+      />
 
       {/* Şu An */}
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="now-heading">
-        <h2 id="now-heading" className="mb-3 text-lg font-medium">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="now-heading">
+        <h2 id="now-heading" className="mb-3 text-[15px] font-semibold">
           Şu An
         </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -263,12 +273,15 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
       </section>
 
       {/* Satıcılar */}
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="sellers-heading">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="sellers-heading">
         <div className="mb-3 flex items-center justify-between">
-          <h2 id="sellers-heading" className="text-lg font-medium">
+          <h2 id="sellers-heading" className="text-[15px] font-semibold">
             Satıcılar
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             type="button"
             disabled={ordered.length === 0}
             onClick={() =>
@@ -297,10 +310,9 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                 })),
               )
             }
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
           >
             Excel&apos;e Aktar
-          </button>
+          </Button>
         </div>
 
         {ordered.length === 0 ? (
@@ -335,6 +347,7 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                       <td className="px-2 py-1">
                         {/* A real button, not a row `onClick` (doc 15 §3.7: never a div/tr with
                             onClick as the only way to trigger it). */}
+                        {/* kit-exempt: data cell is the control — the seller's name expands its row */}
                         <button
                           type="button"
                           onClick={() => setExpanded(isOpen ? null : s.key)}
@@ -422,8 +435,8 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
       </section>
 
       {/* Bakış geçmişi — bu iç tablo da bir denetim kaydı, mutlak zaman kalıyor (yukarıdaki not). */}
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="history-heading">
-        <h2 id="history-heading" className="mb-3 text-lg font-medium">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="history-heading">
+        <h2 id="history-heading" className="mb-3 text-[15px] font-semibold">
           Buybox Fiyat Geçmişi
         </h2>
         <BuyboxChart looks={looks} sellers={sellers} />

@@ -26,17 +26,14 @@ export const PENDING: readonly string[] = [
   'brands/brands-client.tsx',
   'competitors/competitors-client.tsx',
   'competitors/sellers/sellers-client.tsx',
-  'competitors/sellers/[marketplace]/[ref]/seller-detail-client.tsx',
   'dashboard-client.tsx',
   'license/license-client.tsx',
-  'listings/[id]/listing-detail-client.tsx',
   'login/mfa/mfa-challenge-client.tsx',
   'nav-shell.tsx',
   'setup/setup-wizard.tsx',
   'setup/steps/step1-database.tsx',
   'setup/steps/step4-fees.tsx',
   'setup/steps/step6-product-source.tsx',
-  'tracked-products/[id]/tracked-product-detail-client.tsx',
 ];
 
 const NON_TEXT_INPUT = /type=["'](checkbox|radio|file|hidden)["']/;

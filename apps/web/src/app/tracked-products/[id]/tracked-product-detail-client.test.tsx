@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { TrackedProductDetailClient } from './tracked-product-detail-client';
@@ -110,9 +110,22 @@ describe('TrackedProductDetailClient', () => {
 
     render(<TrackedProductDetailClient id="t1" />);
 
-    expect(await screen.findByText('Marka - Test Rakip Ürünü')).toBeTruthy();
+    // The title is also the breadcrumb's last crumb now; the page heading is the one that counts.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Marka - Test Rakip Ürünü' })).toBeTruthy();
     // "Rakip Satıcı" also names the buybox seller in the "Şu An" summary, so the seller-table row
     // is asserted specifically via its expand button rather than by text alone.
     expect(screen.getByRole('button', { name: 'Rakip Satıcı' })).toBeTruthy();
+  });
+
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 7): a detail screen names
+  // where it sits and links back to its list from the breadcrumb.
+  it('breadcrumb links back', async () => {
+    stubFetch({ [PRIMARY_ROUTE]: { body: POPULATED_BODY } });
+
+    render(<TrackedProductDetailClient id="t1" />);
+
+    const nav = await screen.findByRole('navigation', { name: 'Konum' });
+    expect(within(nav).getByRole('link', { name: 'Takip Edilen Ürünler' }).getAttribute('href')).toBe('/tracked-products');
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
   });
 });

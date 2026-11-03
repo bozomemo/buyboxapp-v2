@@ -4,7 +4,18 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { PriceChart } from '@/components/price-chart';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
-import { Ago, Chip, ConfirmButton, ErrorState, LoadingState } from '@/components/ui';
+import { Download } from '@/components/icon';
+import {
+  Ago,
+  Button,
+  buttonClass,
+  Chip,
+  ConfirmButton,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  TextInput,
+} from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import {
@@ -268,15 +279,16 @@ export function ListingDetailClient({ id }: { id: string }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/listings" className="text-xs text-(--color-accent) hover:underline">
-          ← İlanlara dön
-        </Link>
-        <h1 className="text-2xl font-semibold">{listing.productName}</h1>
-        <p className="text-sm text-(--color-muted)">
-          {listing.marketplaceCode} · {listing.marketplaceListingId} · {listing.sellerStockCode}
-        </p>
-      </div>
+      <PageHeader
+        title={listing.productName}
+        breadcrumb={[{ label: 'Satış' }, { label: 'İlanlar', href: '/listings' }, { label: listing.productName }]}
+        description={`${listing.marketplaceCode} · ${listing.marketplaceListingId} · ${listing.sellerStockCode}`}
+        action={
+          <Link href="/listings" className={buttonClass('secondary', 'sm')}>
+            ← İlanlara dön
+          </Link>
+        }
+      />
 
       {/* A background reload (after a manual price, an automation toggle, a bounds save) can
           fail without wiping the detail already on screen — that failure is reported here,
@@ -289,8 +301,8 @@ export function ListingDetailClient({ id }: { id: string }) {
 
       {/* Now — the panel R-UI-8 lives on: the price must be explainable here, without opening
           the history table below. */}
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="now-heading">
-        <h2 id="now-heading" className="mb-3 text-lg font-medium">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="now-heading">
+        <h2 id="now-heading" className="mb-3 text-[15px] font-semibold">
           Şu An
         </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -360,11 +372,11 @@ export function ListingDetailClient({ id }: { id: string }) {
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="flex flex-col text-xs">
             Elle Fiyat Gönder
-            <input
+            <TextInput
               value={priceInput}
               onChange={(e) => setPriceInput(e.target.value)}
               placeholder="Yeni fiyat"
-              className="w-28 rounded border border-(--color-border) px-2 py-1 text-sm"
+              className="w-28"
             />
           </label>
           <ConfirmButton
@@ -372,7 +384,7 @@ export function ListingDetailClient({ id }: { id: string }) {
             confirmMessage={`Fiyat ${priceInput} olarak gönderilsin mi? Bu, otomasyonu geçici olarak duraklatır.`}
             onConfirmed={() => void submitManualPrice()}
             disabled={busy || !priceInput || !canEdit}
-            className="rounded bg-(--color-accent) px-3 py-1 text-sm text-(--color-accent-ink) disabled:opacity-50"
+            className={buttonClass('primary', 'sm')}
           >
             Gönder
           </ConfirmButton>
@@ -385,12 +397,15 @@ export function ListingDetailClient({ id }: { id: string }) {
       </section>
 
       {/* Competition */}
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="competition-heading">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="competition-heading">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="competition-heading" className="text-lg font-medium">
+          <h2 id="competition-heading" className="text-[15px] font-semibold">
             Rekabet
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             type="button"
             disabled={competition.offers.length === 0}
             onClick={() =>
@@ -407,10 +422,9 @@ export function ListingDetailClient({ id }: { id: string }) {
                 })),
               )
             }
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
           >
             Excel&apos;e Aktar
-          </button>
+          </Button>
         </div>
         {competition.buybox && (
           <p className="mb-2 text-sm">
@@ -461,8 +475,8 @@ export function ListingDetailClient({ id }: { id: string }) {
       </section>
 
       {/* Engine — "why the last decision was what it was, in words" (doc 06 §5). */}
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="engine-heading">
-        <h2 id="engine-heading" className="mb-3 text-lg font-medium">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="engine-heading">
+        <h2 id="engine-heading" className="mb-3 text-[15px] font-semibold">
           Motor
         </h2>
         {engine ? (
@@ -525,7 +539,7 @@ export function ListingDetailClient({ id }: { id: string }) {
               confirmMessage="Yeniden optimize edilsin mi? Bu, fiyatlamayı baştan aramaya döndürür."
               onConfirmed={() => void bulkOne('forceReoptimize', 'Yeniden optimize ediliyor…')}
               disabled={busy || !canEdit}
-              className="rounded border px-3 py-1 text-sm"
+              className={buttonClass('secondary', 'sm')}
             >
               Yeniden Optimize Et
             </ConfirmButton>
@@ -542,7 +556,7 @@ export function ListingDetailClient({ id }: { id: string }) {
                 )
               }
               disabled={busy || !canEdit}
-              className="rounded border px-3 py-1 text-sm"
+              className={buttonClass('secondary', 'sm')}
             >
               {listing.repriceEnabled ? 'Otomasyonu Duraklat' : 'Otomasyonu Sürdür'}
             </ConfirmButton>
@@ -558,28 +572,23 @@ export function ListingDetailClient({ id }: { id: string }) {
           <div className="flex items-end gap-2">
             <label className="flex flex-col text-xs">
               Min Fiyat
-              <input
+              <TextInput
                 value={minInput}
                 onChange={(e) => setMinInput(e.target.value)}
-                className="w-24 rounded border border-(--color-border) px-2 py-1 text-sm"
+                className="w-24"
               />
             </label>
             <label className="flex flex-col text-xs">
               Max Fiyat
-              <input
+              <TextInput
                 value={maxInput}
                 onChange={(e) => setMaxInput(e.target.value)}
-                className="w-24 rounded border border-(--color-border) px-2 py-1 text-sm"
+                className="w-24"
               />
             </label>
-            <button
-              type="button"
-              disabled={busy || !canEdit}
-              onClick={() => void saveBounds()}
-              className="rounded border px-3 py-1 text-sm"
-            >
+            <Button variant="secondary" size="sm" type="button" disabled={busy || !canEdit} onClick={() => void saveBounds()}>
               Sınırları Kaydet
-            </button>
+            </Button>
             {busy && busyLabel === 'Kaydediliyor…' && (
               <span aria-live="polite" className="text-sm text-(--color-muted)">
                 {busyLabel}
@@ -592,12 +601,15 @@ export function ListingDetailClient({ id }: { id: string }) {
       {/* History — an audit log, so `decidedAt` stays an absolute timestamp on purpose (doc 15
           §3.3: "Absolute time is correct only where the exact instant is the point — an audit
           record"). This is what makes a price explainable months later (doc 06 §5). */}
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="history-heading">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="history-heading">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="history-heading" className="text-lg font-medium">
+          <h2 id="history-heading" className="text-[15px] font-semibold">
             Fiyat Geçmişi
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             type="button"
             disabled={history.length === 0}
             onClick={() =>
@@ -617,10 +629,9 @@ export function ListingDetailClient({ id }: { id: string }) {
                 })),
               )
             }
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
           >
             Excel&apos;e Aktar
-          </button>
+          </Button>
         </div>
         <TableFrame maxHeight="50vh">
           <table className="w-full text-xs">

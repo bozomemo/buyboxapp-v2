@@ -14,7 +14,20 @@ import {
   useColumnPrefs,
   usePagedRows,
 } from '@/components/table';
-import { Ago, ErrorState, LoadingState, StatusBanner } from '@/components/ui';
+import { Download } from '@/components/icon';
+import {
+  Ago,
+  Button,
+  buttonClass,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  SegmentedFilter,
+  Select,
+  StatCard,
+  StatusBanner,
+  TextInput,
+} from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge, type Coverage } from '../../../coverage-badge';
@@ -265,6 +278,13 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
     const raw = Number(searchParams.get('sinceMs'));
     return Number.isFinite(raw) && raw > 0 ? raw : daysAgo(30);
   });
+  // Which period button is pressed. Kept apart from `sinceMs` because an option value computed
+  // from `daysAgo()` never equals the stored instant again once the clock moves (the redesign
+  // phase-2 bug). A window seeded from a finding link is none of the three, so none is pressed.
+  const [periodDays, setPeriodDays] = useState(() => {
+    const raw = Number(searchParams.get('sinceMs'));
+    return Number.isFinite(raw) && raw > 0 ? '' : '30';
+  });
   const [watchedBrandId, setWatchedBrandId] = useState(() => searchParams.get('watchedBrandId') ?? '');
   const [detail, setDetail] = useState<Detail | null>(null);
   const [groups, setGroups] = useState<GroupOption[]>([]);
@@ -358,45 +378,64 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
   const selectedBrand = detail.watchedBrands.find((b) => b.id === watchedBrandId);
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          {sellerModule ? (
-            <Link className="text-sm text-(--color-accent) hover:underline" href="/competitors/sellers">
-              ← Rakip satıcılar
-            </Link>
-          ) : (
-            <Link className="text-sm text-(--color-accent) hover:underline" href="/watched-brands/sellers">
-              ← Marka satıcıları
-            </Link>
+    <div className="space-y-6">
+      <PageHeader
+        title={detail.seller.sellerName || detail.seller.sellerRef}
+        breadcrumb={
+          sellerModule
+            ? [
+                { label: 'Satış' },
+                { label: 'Rakip Satıcılar', href: '/competitors/sellers' },
+                { label: detail.seller.sellerName || detail.seller.sellerRef },
+              ]
+            : [
+                { label: 'Marka Denetimi' },
+                { label: 'Marka Satıcıları', href: '/watched-brands/sellers' },
+                { label: detail.seller.sellerName || detail.seller.sellerRef },
+              ]
+        }
+        description={
+          <>
+          {detail.seller.marketplaceCode} · {detail.seller.sellerRef}
+          {detail.group && (
+            <>
+              {' '}
+              · Grup: <strong>{detail.group.displayName}</strong> ({detail.groupMembers.length} pazaryeri
+              kimliği)
+            </>
           )}
-          <h1 className="mt-1 text-2xl font-semibold">
-            {detail.seller.sellerName || detail.seller.sellerRef}
-          </h1>
-          <p className="text-sm text-(--color-muted)">
-            {detail.seller.marketplaceCode} · {detail.seller.sellerRef}
-            {detail.group && (
-              <>
-                {' '}
-                · Grup: <strong>{detail.group.displayName}</strong> ({detail.groupMembers.length} pazaryeri
-                kimliği)
-              </>
+          </>
+        }
+        action={
+          <div className="flex flex-wrap items-end gap-3">
+            {sellerModule ? (
+              <Link className={buttonClass('secondary', 'sm')} href="/competitors/sellers">
+                ← Rakip satıcılar
+              </Link>
+            ) : (
+              <Link className={buttonClass('secondary', 'sm')} href="/watched-brands/sellers">
+                ← Marka satıcıları
+              </Link>
             )}
-          </p>
-        </div>
-        <label className="text-sm">
-          <span className="mb-1 block text-(--color-muted)">Dönem</span>
-          <select
-            className="rounded border border-(--color-border) px-2 py-1"
-            value={String(sinceMs)}
-            onChange={(e) => setSinceMs(Number(e.target.value))}
-          >
-            <option value={String(daysAgo(7))}>Son 7 gün</option>
-            <option value={String(daysAgo(30))}>Son 30 gün</option>
-            <option value={String(daysAgo(90))}>Son 90 gün</option>
-          </select>
-        </label>
-      </div>
+            <div className="text-sm">
+              <span className="mb-1 block text-(--color-muted)">Dönem</span>
+              <SegmentedFilter
+                label="Dönem"
+                value={periodDays}
+                onChange={(v) => {
+                  setPeriodDays(v);
+                  setSinceMs(daysAgo(Number(v)));
+                }}
+                options={[
+                  { value: '7', label: 'Son 7 gün' },
+                  { value: '30', label: 'Son 30 gün' },
+                  { value: '90', label: 'Son 90 gün' },
+                ]}
+              />
+            </div>
+          </div>
+        }
+      />
 
       {error && <StatusBanner ok={false} message={error} />}
 
@@ -417,8 +456,8 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
         </>
       )}
 
-      <section className="rounded border border-(--color-border) p-4" aria-labelledby="identity-heading">
-        <h2 id="identity-heading" className="text-lg font-medium">
+      <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="identity-heading">
+        <h2 id="identity-heading" className="text-[15px] font-semibold">
           Kimlik eşleme
         </h2>
         <p className="mt-1 max-w-3xl text-sm text-(--color-muted)">
@@ -437,8 +476,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <label className="text-sm">
               <span className="mb-1 block text-(--color-muted)">Grup</span>
-              <select
-                className="rounded border border-(--color-border) px-2 py-1"
+              <Select
                 disabled={busy}
                 value={detail.group?.id ?? ''}
                 onChange={(e) =>
@@ -449,26 +487,23 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
                     groupId: e.target.value || null,
                   })
                 }
-              >
-                <option value="">— gruplanmamış —</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.displayName}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: '— gruplanmamış —' },
+                  ...groups.map((g) => ({ value: g.id, label: g.displayName })),
+                ]}
+              />
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-(--color-muted)">Yeni grup oluştur</span>
-              <input
-                className="rounded border border-(--color-border) px-2 py-1"
+              <TextInput
                 placeholder="ör. Olympus Grup"
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
               />
             </label>
-            <button
-              className="rounded bg-(--color-strong-bg) px-3 py-1.5 text-sm text-(--color-strong-ink) disabled:opacity-50"
+            <Button
+              size="sm"
+              type="button"
               disabled={busy || newGroupName.trim() === ''}
               onClick={async () => {
                 await post({ action: 'createGroup', displayName: newGroupName.trim() });
@@ -476,7 +511,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
               }}
             >
               Oluştur
-            </button>
+            </Button>
             {/* A control mid-request must say so, not only disable (doc 15 §3.2) — both the group
                 dropdown and the create button share this one request. */}
             {busy && (
@@ -492,7 +527,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
       {sellerModule && (
         <section className="space-y-3" aria-labelledby="our-listings-heading">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 id="our-listings-heading" className="text-lg font-medium">
+            <h2 id="our-listings-heading" className="text-[15px] font-semibold">
               Sattığımız ürünlerde
             </h2>
             <span className="text-xs text-(--color-muted)">
@@ -500,29 +535,22 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
             </span>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded border border-(--color-border) p-3">
-              <div className="text-xs text-(--color-muted)">Çakıştığımız ürün</div>
-              <div className="text-xl font-semibold">{formatNumber(detail.listings.length)}</div>
-            </div>
-            <div className="rounded border border-(--color-border) p-3">
-              <div className="text-xs text-(--color-muted)">Kayıtlı teklif</div>
-              <div className="text-xl font-semibold">{formatNumber(totalObservations)}</div>
-            </div>
-            <div className="rounded border border-(--color-border) p-3">
-              <div className="text-xs text-(--color-muted)">Buybox&apos;ta görüldüğü</div>
-              <div className="text-xl font-semibold">
-                {formatNumber(totalBuybox)}
-                <span className="ml-2 text-sm font-normal text-(--color-muted)">
-                  {totalObservations > 0 ? formatPercent((totalBuybox / totalObservations) * 100) : '—'}
-                </span>
-              </div>
-            </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <StatCard label="Çakıştığımız ürün" value={formatNumber(detail.listings.length)} />
+            <StatCard label="Kayıtlı teklif" value={formatNumber(totalObservations)} />
+            <StatCard
+              label="Buybox'ta görüldüğü"
+              value={formatNumber(totalBuybox)}
+              delta={totalObservations > 0 ? formatPercent((totalBuybox / totalObservations) * 100) : '—'}
+            />
           </div>
 
           <div className="flex items-center justify-end gap-2">
             <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Download}
               type="button"
               disabled={detail.listings.length === 0}
               onClick={() =>
@@ -542,10 +570,9 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
                   })),
                 )
               }
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
             >
               Excel&apos;e Aktar
-            </button>
+            </Button>
           </div>
 
           <TableFrame>
@@ -599,7 +626,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
       <section className="space-y-3" aria-labelledby="tracked-products-heading">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 id="tracked-products-heading" className="text-lg font-medium">
+            <h2 id="tracked-products-heading" className="text-[15px] font-semibold">
               İzlenen marka ürünlerinde
             </h2>
             <span className="text-xs text-(--color-muted)">
@@ -608,41 +635,27 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
           </div>
           <label className="text-sm">
             <span className="mb-1 block text-(--color-muted)">Marka</span>
-            <select
-              className="rounded border border-(--color-border) px-2 py-1"
+            {/* Default is every watched brand: "bu firma izlediğimiz her şeyde ne yapıyor"
+                is the question the audit is for. A finding link narrows it on arrival. */}
+            <Select
               value={watchedBrandId}
               onChange={(e) => setWatchedBrandId(e.target.value)}
-            >
-              {/* Default is every watched brand: "bu firma izlediğimiz her şeyde ne yapıyor"
-                  is the question the audit is for. A finding link narrows it on arrival. */}
-              <option value="">Tüm izlenen markalar</option>
-              {detail.watchedBrands.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.label} ({b.marketplaceCode})
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'Tüm izlenen markalar' },
+                ...detail.watchedBrands.map((b) => ({ value: b.id, label: `${b.label} (${b.marketplaceCode})` })),
+              ]}
+            />
           </label>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded border border-(--color-border) p-3">
-            <div className="text-xs text-(--color-muted)">Görüldüğü ürün</div>
-            <div className="text-xl font-semibold">{formatNumber(detail.trackedProducts.length)}</div>
-          </div>
-          <div className="rounded border border-(--color-border) p-3">
-            <div className="text-xs text-(--color-muted)">Kayıtlı teklif</div>
-            <div className="text-xl font-semibold">{formatNumber(trackedObservations)}</div>
-          </div>
-          <div className="rounded border border-(--color-border) p-3">
-            <div className="text-xs text-(--color-muted)">Buybox&apos;ta görüldüğü</div>
-            <div className="text-xl font-semibold">
-              {formatNumber(trackedBuybox)}
-              <span className="ml-2 text-sm font-normal text-(--color-muted)">
-                {trackedObservations > 0 ? formatPercent((trackedBuybox / trackedObservations) * 100) : '—'}
-              </span>
-            </div>
-          </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <StatCard label="Görüldüğü ürün" value={formatNumber(detail.trackedProducts.length)} />
+          <StatCard label="Kayıtlı teklif" value={formatNumber(trackedObservations)} />
+          <StatCard
+            label="Buybox'ta görüldüğü"
+            value={formatNumber(trackedBuybox)}
+            delta={trackedObservations > 0 ? formatPercent((trackedBuybox / trackedObservations) * 100) : '—'}
+          />
         </div>
 
         {detail.trackedTruncated && (
@@ -655,7 +668,10 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
 
         <div className="flex items-center justify-end gap-2">
           <ColumnMenu defs={TRACKED_COLUMN_DEFS} prefs={trackedColumns} />
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             type="button"
             disabled={detail.trackedProducts.length === 0}
             onClick={() =>
@@ -676,10 +692,9 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
                 })),
               )
             }
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-40"
           >
             Excel&apos;e Aktar
-          </button>
+          </Button>
         </div>
 
         <TableFrame>

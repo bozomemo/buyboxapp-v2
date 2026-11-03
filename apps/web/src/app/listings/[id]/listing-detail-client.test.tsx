@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { ListingDetailClient } from './listing-detail-client';
@@ -152,7 +152,20 @@ describe('ListingDetailClient', () => {
 
     render(<ListingDetailClient id="l1" />);
 
-    expect(await screen.findByText('Test Ürünü')).toBeTruthy();
+    // The title is also the breadcrumb's last crumb now; the page heading is the one that counts.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Test Ürünü' })).toBeTruthy();
     expect(screen.getByText('Rakip Satıcı')).toBeTruthy();
+  });
+
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 7): a detail screen names
+  // where it sits and links back to its list from the breadcrumb.
+  it('breadcrumb links back', async () => {
+    stubFetch({ [PRIMARY_ROUTE]: { body: POPULATED_BODY } });
+
+    render(<ListingDetailClient id="l1" />);
+
+    const nav = await screen.findByRole('navigation', { name: 'Konum' });
+    expect(within(nav).getByRole('link', { name: 'İlanlar' }).getAttribute('href')).toBe('/listings');
+    expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
   });
 });

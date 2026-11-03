@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockNavigation, stubFetch } from '@/test-utils';
 import { SellerDetailClient } from './seller-detail-client';
@@ -165,5 +165,47 @@ describe('SellerDetailClient', () => {
     expect(screen.queryByText('Sattığımız ürünlerde')).toBeNull();
     // The own-listings scrape coverage is the seller's; brand-only never runs that scrape.
     expect(screen.queryByText('Bu dönemde hiç tarama yapılmamış.')).toBeNull();
+  });
+
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 7 and Review Focus 3).
+  const EMPTY_DETAIL = {
+    filters: { sinceMs: 0, untilMs: 1, watchedBrandId: null },
+    seller: { marketplaceCode: 'trendyol', sellerRef: 'S1', sellerName: 'Test Satıcı', operatorNote: null, isKnown: true },
+    group: null,
+    groupMembers: [],
+    listings: [],
+    trackedProducts: [],
+    trackedTruncated: false,
+    watchedBrands: [],
+    coverage: EMPTY_COVERAGE,
+  };
+
+  it('period filter keeps its selection', async () => {
+    mockNavigation.searchParams = new URLSearchParams();
+    // A clock that moves on every read: option values computed from `Date.now()` would never
+    // equal the stored one again — the phase-2 bug this pins against.
+    let clock = 1_800_000_000_000;
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 1000));
+    stubFetch({ [PRIMARY_ROUTE]: { body: EMPTY_DETAIL }, ...SIDE_ROUTES });
+
+    render(<SellerDetailClient marketplace="trendyol" sellerRef="S1" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Son 7 gün' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Son 7 gün' }).getAttribute('aria-pressed')).toBe('true'),
+    );
+    expect(screen.getByRole('button', { name: 'Son 30 gün' }).getAttribute('aria-pressed')).toBe('false');
+    spy.mockRestore();
+  });
+
+  it('breadcrumb links back', async () => {
+    mockNavigation.searchParams = new URLSearchParams();
+    stubFetch({ [PRIMARY_ROUTE]: { body: EMPTY_DETAIL }, ...SIDE_ROUTES });
+
+    render(<SellerDetailClient marketplace="trendyol" sellerRef="S1" />);
+
+    const nav = await screen.findByRole('navigation', { name: 'Konum' });
+    expect(within(nav).getByRole('link', { name: 'Rakip Satıcılar' }).getAttribute('href')).toBe('/competitors/sellers');
+    expect(screen.getByRole('heading', { level: 1, name: 'Test Satıcı' })).toBeTruthy();
   });
 });
