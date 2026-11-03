@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { formatTime } from '@/lib/format';
 import { PermissionsProvider } from '@/lib/permissions';
 import { stubFetch } from '@/test-utils';
 import { DashboardClient } from './dashboard-client';
@@ -220,6 +221,24 @@ describe('DashboardClient', () => {
       const alert = await screen.findByText(/Son yenileme başarısız oldu/);
       // "Aşağıdaki bilgiler … itibarıyladır" must sit above every number it describes.
       expect(alert.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    // "Aşağıdaki bilgiler … itibarıyladır" names the last *good* read. A failed refresh used to
+    // advance it too, so the warning dated stale numbers to the moment they failed to update.
+    it('a failed refresh keeps the time of the last good read', async () => {
+      const goodAt = new Date('2026-11-03T10:00:00').getTime();
+      const failedAt = new Date('2026-11-03T10:05:00').getTime();
+      const now = vi.spyOn(Date, 'now').mockReturnValue(goodAt);
+      stubFetch({ '/api/dashboard': { body: BRAND_ONLY }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      await screen.findByTestId('dashboard-stats');
+      now.mockReturnValue(failedAt);
+      stubFetch({ '/api/dashboard': { reject: new Error('server down') }, '/api/health': { body: HEALTH_OK } });
+      fireEvent.click(screen.getByRole('button', { name: 'Yenile' }));
+      const alert = await screen.findByText(/Son yenileme başarısız oldu/);
+      expect(alert.textContent).toContain(formatTime(goodAt));
+      expect(alert.textContent).not.toContain(formatTime(failedAt));
+      now.mockRestore();
     });
 
     it('no stat row without brand audit', async () => {

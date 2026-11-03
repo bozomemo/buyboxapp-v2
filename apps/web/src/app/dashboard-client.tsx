@@ -1116,6 +1116,8 @@ export function DashboardClient() {
       .then((d: DashboardData) => {
         setData(d);
         setError(undefined);
+        // Only a good read moves this: the stale-refresh warning dates the numbers by it.
+        setLoadedAt(Date.now());
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
     // Its own chain, and its failure is swallowed: health is an *addition* to the verdict, so
@@ -1124,10 +1126,7 @@ export function DashboardClient() {
       .then((res) => (res.ok ? res.json() : undefined))
       .then((h: HealthData | undefined) => setHealth(h))
       .catch(() => setHealth(undefined));
-    void Promise.all([dashboard, healthCheck]).then(() => {
-      setLoadedAt(Date.now());
-      setRefreshing(false);
-    });
+    void Promise.all([dashboard, healthCheck]).then(() => setRefreshing(false));
   }, []);
 
   useEffect(() => {
