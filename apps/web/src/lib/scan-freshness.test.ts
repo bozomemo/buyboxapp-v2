@@ -15,7 +15,7 @@ describe('scanFreshness', () => {
     [
       'never swept',
       { modules: { seller: false, brand: true }, brandAudit: brand(['trendyol', null], ['trendyol', null]) },
-      [{ marketplaceCode: 'trendyol', label: 'Trendyol', at: null, tone: 'ok' }],
+      [{ marketplaceCode: 'trendyol', label: 'Trendyol', at: null, tone: 'neutral' }],
     ],
     [
       'seller stale',

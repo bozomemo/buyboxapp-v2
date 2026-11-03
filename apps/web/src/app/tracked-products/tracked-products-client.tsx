@@ -728,7 +728,7 @@ export function TrackedProductsClient() {
       />
 
       {/* Only numbers the screen already holds — no extra query (plan 2026-11-03 phase 2, Task 3). */}
-      <div data-testid="tracked-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div data-testid="tracked-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard label="Ürün" value={formatNumber(total)} delta="Geçerli filtreyle eşleşen" />
         <StatCard label="Marka" value={formatNumber(brands.length)} delta="İzlenen marka" />
         <StatCard label="Kategori" value={formatNumber(categories.length)} />

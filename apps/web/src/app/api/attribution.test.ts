@@ -2,6 +2,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { authRepo, configRepo, createDb, runMigrations, type AppDatabase } from '@buybox/db';
 import { SYSTEM_PAUSE_SETTING_KEY } from '@buybox/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,7 +15,7 @@ import { POST as setSystemPause } from './system-pause/route';
  * the literal `'operator'` and six the literal `'setup-wizard'`; the first test keeps either from
  * coming back, the second checks that what is written instead names the signed-in user.
  */
-const API_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const API_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 function routeFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {

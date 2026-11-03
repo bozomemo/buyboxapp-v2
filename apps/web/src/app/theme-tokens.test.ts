@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { contrastRatio } from '@/lib/contrast';
 
@@ -10,7 +11,7 @@ import { contrastRatio } from '@/lib/contrast';
  * here instead of in front of a customer. Also pins that the two dark blocks — the system
  * preference and the explicit "Koyu" choice — never drift apart.
  */
-const APP_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const css = readFileSync(path.join(APP_DIR, 'globals.css'), 'utf8');
 
 /** Custom properties declared in the first `{…}` after `selector`. */
@@ -74,6 +75,12 @@ describe.each([
     expect(contrastRatio(t(`--color-${s}-ink`), t(`--color-${s}`))).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('pairs drawn together stay legible', () => {
+    expect(contrastRatio(t('--color-muted'), t('--color-thead'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(t('--color-warning-strong'), t('--color-warning-bg'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(t('--color-strong-ink'), t('--color-strong-bg'))).toBeGreaterThanOrEqual(4.5);
+  });
+
   it.each(['muted', 'link'])('%s on bg and surface', (k) => {
     for (const ground of [t('--color-bg'), t('--color-surface')])
       expect(contrastRatio(t(`--color-${k}`), ground)).toBeGreaterThanOrEqual(4.5);
@@ -81,6 +88,9 @@ describe.each([
 
   it('sidebar text on sidebar', () => {
     expect(contrastRatio(t('--color-sidebar-text'), t('--color-sidebar'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(t('--color-sidebar-muted'), t('--color-sidebar'))).toBeGreaterThanOrEqual(4.5);
+    for (const ground of [t('--color-sidebar-raised'), t('--color-sidebar-hover')])
+      expect(contrastRatio(t('--color-sidebar-text'), ground)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(t('--color-sidebar-active-text'), t('--color-sidebar-active-bg'))).toBeGreaterThanOrEqual(4.5);
   });
 });

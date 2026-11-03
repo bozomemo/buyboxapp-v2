@@ -106,7 +106,7 @@ function BandEditor({
             className="w-28"
           />
           <Button
-            variant="ghost"
+            variant="ghost-danger"
             size="sm"
             icon={Trash2}
             type="button"

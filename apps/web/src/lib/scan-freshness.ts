@@ -18,13 +18,14 @@ export interface Freshness {
   marketplaceCode: string;
   label: string;
   at: number | null;
-  tone: 'ok' | 'warn';
+  tone: 'ok' | 'warn' | 'neutral';
 }
 
 /**
  * One entry per marketplace: when it was last scanned, and whether that is late.
  *
- * - **Brand**: the latest `lastSweptAt` across that marketplace's brands, always tone `ok`. The
+ * - **Brand**: the latest `lastSweptAt` across that marketplace's brands, tone `ok` — or `neutral`
+ *   when no brand there was ever swept, since green would vouch for a scan that never ran. The
  *   brand payload carries no staleness flag, and inventing a threshold here would be a business
  *   rule decided in a header pill.
  * - **Seller**: `coverage`, with tone `warn` when the server already judged it `stale`.
@@ -43,7 +44,7 @@ export function scanFreshness(payload: DashboardFreshnessInput): Freshness[] {
         marketplaceCode,
         label: MARKETPLACE_LABELS[marketplaceCode] ?? marketplaceCode,
         at,
-        tone: 'ok',
+        tone: at === null ? 'neutral' : 'ok',
       });
     }
   }

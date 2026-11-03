@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { BrandComparisonClient } from './brand-comparison-client';
@@ -82,6 +82,32 @@ describe('BrandComparisonClient', () => {
     // "Whiskas" renders twice — once as the filter chip, once as the summary row's link — so
     // assert on the row link specifically rather than the ambiguous text.
     expect(await screen.findByRole('link', { name: 'Whiskas' })).toBeTruthy();
+  });
+
+  it('a selected brand carries a check mark, not only a fill', async () => {
+    stubFetch({
+      [ROUTE]: {
+        body: {
+          window: { sinceMs: 0, untilMs: 1 },
+          brands: [
+            { id: 'b1', label: 'Whiskas', marketplaceCode: 'trendyol', isOwnBrand: true },
+            { id: 'b2', label: 'Felix', marketplaceCode: 'trendyol', isOwnBrand: false },
+          ],
+          series: [],
+          index: null,
+          hasCompetitorBrand: false,
+        },
+      },
+    });
+    render(<BrandComparisonClient />);
+    // No selection means every brand is in; choosing one leaves the other out.
+    fireEvent.click(await screen.findByRole('button', { name: /Whiskas/ }));
+    const on = screen.getByRole('button', { name: /Whiskas/ });
+    const off = screen.getByRole('button', { name: /Felix/ });
+    expect(on.getAttribute('aria-pressed')).toBe('true');
+    expect(on.querySelector('svg')).toBeTruthy();
+    expect(off.getAttribute('aria-pressed')).toBe('false');
+    expect(off.querySelector('svg')).toBeNull();
   });
 
   describe('redesign (plan 2026-11-03 phase 2, Task 8)', () => {

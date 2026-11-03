@@ -33,6 +33,7 @@ export {
   BarChart3,
   Bell,
   Bookmark,
+  Check,
   CheckCircle2,
   Download,
   Cog,

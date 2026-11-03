@@ -949,7 +949,7 @@ export function AlertsClient() {
                     requireConfirm
                     confirmMessage={`"${r.name}" kuralı silinsin mi? Bu kurala bağlı açık alarmlar da silinir.`}
                     onConfirmed={() => void remove(r)}
-                    className={`${buttonClass('ghost', 'sm')} text-(--color-danger)!`}
+                    className={buttonClass('ghost-danger', 'sm')}
                   >
                     sil
                   </ConfirmButton>

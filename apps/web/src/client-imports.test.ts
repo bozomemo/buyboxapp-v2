@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -10,7 +11,7 @@ import { describe, expect, it } from 'vitest';
  * when the page is built or first visited, never in a unit test that renders the component.
  * Found 2026-09-27 on `/settings/users`; this keeps it from recurring anywhere.
  */
-const SRC = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const SRC = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PACKAGES = /from '@buybox\/(shared|db|jobs|adapters|core|worker)'/;
 
 function sources(dir: string): string[] {

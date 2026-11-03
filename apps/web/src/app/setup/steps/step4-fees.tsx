@@ -154,7 +154,7 @@ function BandEditor({
               )}
             </div>
             <Button
-              variant="ghost"
+              variant="ghost-danger"
               size="sm"
               icon={Trash2}
               type="button"

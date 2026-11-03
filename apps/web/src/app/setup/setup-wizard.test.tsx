@@ -134,6 +134,26 @@ describe('SetupWizard (orchestrator)', () => {
     expect(steps[2]!.textContent?.startsWith('✓')).toBe(false);
   });
 
+  it('a restored step past a shorter list still marks the step it shows', async () => {
+    window.localStorage.setItem(
+      PROGRESS_KEY,
+      JSON.stringify({
+        stepIndex: 8,
+        databaseReady: true,
+        enabledMarketplaces: [],
+        modules: { seller: false, brand: true },
+      }),
+    );
+    stubFetch({ '/api/setup/database/suggest': { pending: true } });
+
+    const { container } = render(<SetupWizard />);
+
+    await screen.findByText('Adım 4 / 4', { exact: false });
+    const steps = Array.from(container.querySelectorAll('ol > li'));
+    expect(steps[3]!.getAttribute('aria-current')).toBe('step');
+    expect(steps[3]!.textContent?.startsWith('✓')).toBe(false);
+  });
+
   it('asks the purpose right after the database step', async () => {
     window.localStorage.setItem(
       PROGRESS_KEY,

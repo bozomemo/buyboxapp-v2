@@ -357,7 +357,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   // At the foot of the sidebar since 2026-11-03 (spec §5.2). In the rail only the initials and
   // the sign-out icon show; the name stays in the link for a screen reader.
   return (
-    <div className={`flex items-center gap-2.5 rounded-lg bg-white/5 p-2.5 ${collapsed ? 'flex-col' : ''}`}>
+    <div className={`flex items-center gap-2.5 rounded-lg bg-(--color-sidebar-raised) p-2.5 ${collapsed ? 'flex-col' : ''}`}>
       <Link href="/account" title="Hesabım" className="flex min-w-0 flex-1 items-center gap-2.5 text-sm hover:underline">
         <span
           aria-hidden="true"
@@ -372,7 +372,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
       </Link>
       {readOnly && !collapsed && (
         <span
-          className="rounded bg-white/10 px-1.5 py-0.5 text-[11px] text-(--color-sidebar-text)"
+          className="rounded bg-(--color-sidebar-hover) px-1.5 py-0.5 text-[11px] text-(--color-sidebar-text)"
           title="Rolünüz yalnızca görüntülemeye izin veriyor; değişiklik yapamazsınız."
         >
           Salt okunur
@@ -385,7 +385,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
         disabled={signingOut}
         aria-label="Çıkış yap"
         title="Çıkış yap"
-        className="flex size-8 flex-none items-center justify-center rounded-lg text-(--color-sidebar-text) hover:bg-white/10 disabled:opacity-50"
+        className="flex size-8 flex-none items-center justify-center rounded-lg text-(--color-sidebar-text) hover:bg-(--color-sidebar-hover) disabled:opacity-50"
       >
         <Icon icon={LogOut} />
       </button>
@@ -414,6 +414,9 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   // The icon rail (spec §5.2): the stored choice if there is one, otherwise collapsed on a viewport
   // narrower than 1024px. Read after mount for the same reason as the view.
   const [collapsed, setCollapsed] = useState(false);
+  // Off until the operator toggles: animating the stored width read after mount slid the rail
+  // shut on every full page load.
+  const [animateRail, setAnimateRail] = useState(false);
   useEffect(() => {
     setView(readStoredNavView());
     const stored = readStoredNavCollapsed();
@@ -445,7 +448,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
     <PermissionsProvider>
     <div className="flex min-h-screen">
       <aside
-        className={`sticky top-0 flex h-screen flex-none flex-col bg-(--color-sidebar) py-4 transition-[width] ${
+        className={`sticky top-0 flex h-screen flex-none flex-col bg-(--color-sidebar) py-4 ${animateRail ? 'transition-[width]' : ''} ${
           collapsed ? 'w-16 px-2' : 'w-60 px-3'
         }`}
       >
@@ -477,7 +480,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
                     className={`flex items-center gap-3 rounded-lg py-2 text-sm ${collapsed ? 'justify-center px-0' : 'px-3'} ${
                       active
                         ? 'bg-(--color-sidebar-active-bg) font-semibold text-(--color-sidebar-active-text)'
-                        : 'text-(--color-sidebar-text) hover:bg-white/5'
+                        : 'text-(--color-sidebar-text) hover:bg-(--color-sidebar-raised)'
                     }`}
                   >
                     <Icon icon={item.icon} size={18} className="flex-none" />
@@ -500,10 +503,11 @@ export function NavShell({ children }: { children: React.ReactNode }) {
             aria-label={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
             title={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}
             onClick={() => {
+              setAnimateRail(true);
               setCollapsed(!collapsed);
               storeNavCollapsed(!collapsed);
             }}
-            className={`flex size-8 items-center justify-center rounded-lg text-(--color-sidebar-text) hover:bg-white/10 ${
+            className={`flex size-8 items-center justify-center rounded-lg text-(--color-sidebar-text) hover:bg-(--color-sidebar-hover) ${
               collapsed ? 'self-center' : 'self-end'
             }`}
           >

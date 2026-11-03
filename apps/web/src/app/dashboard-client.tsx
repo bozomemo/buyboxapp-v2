@@ -922,7 +922,8 @@ function BrandStatRow({ audit }: { audit: BrandAudit }) {
       />
       <StatCard
         label="Tavsiye fiyat kapsamı"
-        value={productsTotal > 0 ? `%${Math.round((100 * productsWithPrice) / productsTotal)}` : '—'}
+        // Floored: 995 of 1000 rounded to "%100" and claimed coverage the audit does not have.
+        value={productsTotal > 0 ? `%${Math.floor((100 * productsWithPrice) / productsTotal)}` : '—'}
         // Kapsam, bulgunun kendisi kadar önemli: fiyat listesi olmayan ürün "altında değil" değil,
         // "bilinmiyor"dur.
         delta={

@@ -19,6 +19,14 @@ const INVALID_MESSAGES: Record<LicenseInvalidReason, string> = {
   'clock-rollback': 'Sunucu saati geriye alınmış görünüyor. Sistem saatini düzeltin ve sayfayı yenileyin.',
 };
 
+/**
+ * The states `isLicensedToRun` (`@buybox/shared`) lets the proxy through on. Restated rather than
+ * imported: a client component may take only types from that package (`client-imports.test.ts`).
+ */
+function runsUnder(status: LicenseStatus): boolean {
+  return status.state === 'valid' || status.state === 'grace';
+}
+
 function describe(status: LicenseStatus): { tone: Tone; title: string; detail: string } {
   switch (status.state) {
     case 'valid':
@@ -123,7 +131,12 @@ export function LicenseClient() {
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
       <PageHeader
         title="Lisans"
-        breadcrumb={[{ label: 'Sistem' }, { label: 'Ayarlar', href: '/settings' }, { label: 'Lisans' }]}
+        // Unlicensed, /settings redirects straight back here — a link to it would go nowhere.
+        breadcrumb={[
+          { label: 'Sistem' },
+          { label: 'Ayarlar', href: runsUnder(data.status) ? '/settings' : undefined },
+          { label: 'Lisans' },
+        ]}
         description="BuyBoxApp lisanslı bir kurulum gerektirir. Lisans olmadan hiçbir iş çalışmaz, hiçbir fiyat gönderilmez."
       />
 

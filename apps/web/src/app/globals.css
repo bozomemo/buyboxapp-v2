@@ -74,6 +74,8 @@
   --color-sidebar-active-bg: #E4ECFB;
   --color-sidebar-active-text: #14213D;
   --color-sidebar-strong: #FFFFFF;
+  --color-sidebar-raised: #202C47;
+  --color-sidebar-hover: #2C3750;
   --color-thead: #F8FAFC;
   --color-line: #EDF0F5;
   --color-chart: #C9D8F5;
@@ -137,6 +139,8 @@
     --color-sidebar-active-bg: #1C2F5C;
     --color-sidebar-active-text: #FFFFFF;
     --color-sidebar-strong: #FFFFFF;
+    --color-sidebar-raised: #131926;
+    --color-sidebar-hover: #202531;
     --color-thead: #0F182B;
     --color-line: #1A2540;
     --color-chart: #2B4A8A;
@@ -185,6 +189,8 @@
   --color-sidebar-active-bg: #1C2F5C;
   --color-sidebar-active-text: #FFFFFF;
   --color-sidebar-strong: #FFFFFF;
+  --color-sidebar-raised: #131926;
+  --color-sidebar-hover: #202531;
   --color-thead: #0F182B;
   --color-line: #1A2540;
   --color-chart: #2B4A8A;

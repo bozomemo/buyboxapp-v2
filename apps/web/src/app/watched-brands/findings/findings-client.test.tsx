@@ -178,6 +178,8 @@ describe('FindingsClient', () => {
       expect(toggle.getAttribute('aria-pressed')).toBe('true');
       fireEvent.click(toggle);
       expect(toggle.getAttribute('aria-pressed')).toBe('false');
+      // Button draws `rounded-lg`; a same-property override needs `!` to win in Tailwind v4.
+      expect(toggle.className).toContain('rounded-full!');
     });
 
     it('period is a segmented filter that shows its selection', async () => {

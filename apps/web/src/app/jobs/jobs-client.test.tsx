@@ -204,6 +204,43 @@ describe('JobsClient', () => {
     ...EMPTY_SIDE_ROUTES,
   });
 
+  it('per-marketplace select is as tall as the row buttons', async () => {
+    const routes = catalogue(false);
+    routes['/api/jobs'].body.jobs[0]!.perMarketplace = true;
+    stubFetch({
+      ...routes,
+      '/api/settings/marketplaces': { body: { marketplaces: [{ code: 'trendyol', displayName: 'Trendyol', enabled: true }] } },
+    });
+    render(<JobsClient />);
+    const select = await screen.findByRole('combobox', { name: 'Marka Kataloğu pazaryeri' });
+    expect(select.className).toContain('h-8!');
+  });
+
+  it('scrape-rate inputs say which marketplace and field they set', async () => {
+    stubFetch({
+      ...catalogue(false),
+      '/api/jobs/scrape-rate': {
+        body: {
+          rates: [
+            {
+              marketplaceCode: 'trendyol',
+              requestsPerMinute: 6,
+              burst: 2,
+              requestTimeoutMs: 30_000,
+              isOverride: false,
+              default: { requestsPerMinute: 6, burst: 2, requestTimeoutMs: 30_000 },
+            },
+          ],
+        },
+      },
+    });
+    render(<JobsClient />);
+    // Behind a closed <details>, so by label rather than by role.
+    expect(await screen.findByLabelText('trendyol istek/dakika')).toBeTruthy();
+    expect(screen.getByLabelText('trendyol patlama')).toBeTruthy();
+    expect(screen.getByLabelText('trendyol zaman aşımı (sn)')).toBeTruthy();
+  });
+
   it('run now stays disabled while queued', async () => {
     stubFetch(catalogue(true));
 

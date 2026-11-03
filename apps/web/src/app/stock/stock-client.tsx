@@ -590,7 +590,7 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
                   className="w-16"
                 />
                 <Button
-                  variant="ghost"
+                  variant="ghost-danger"
                   size="sm"
                   icon={Trash2}
                   type="button"

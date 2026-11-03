@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -8,7 +9,7 @@ import { describe, expect, it } from 'vitest';
  * server, before rendering. Pages are components, so this reads source rather than importing
  * them — the check is that the call is there, and `page-guard.tsx` is what makes it right.
  */
-const APP_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 /** Reachable before sign-in, by design (doc 18 §7.3). */
 const PUBLIC_PAGES = new Set(['login/page.tsx', 'login/mfa/page.tsx', 'bootstrap/page.tsx']);

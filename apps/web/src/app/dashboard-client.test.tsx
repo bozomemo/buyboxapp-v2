@@ -207,7 +207,8 @@ describe('DashboardClient', () => {
       expect(stats.getByText('Satıcısı olmayan ürün')).toBeTruthy();
       expect(stats.getByText('6')).toBeTruthy();
       expect(stats.getByText('Tavsiye fiyat kapsamı')).toBeTruthy();
-      expect(stats.getByText('%94')).toBeTruthy();
+      // 120 / 128 is 93.75: floored, so a shortfall never rounds up into a fuller-looking number.
+      expect(stats.getByText('%93')).toBeTruthy();
       expect(stats.getByText('Takip edilen ürün')).toBeTruthy();
       expect(stats.getByText('128')).toBeTruthy();
     });
@@ -239,6 +240,14 @@ describe('DashboardClient', () => {
       expect(alert.textContent).toContain(formatTime(goodAt));
       expect(alert.textContent).not.toContain(formatTime(failedAt));
       now.mockRestore();
+    });
+
+    it('coverage short of every product never reads %100', async () => {
+      const almost = { ...BRAND_ONLY, brandAudit: { ...BRAND_ONLY.brandAudit, referencePrice: { productsWithPrice: 995, productsTotal: 1000 } } };
+      stubFetch({ '/api/dashboard': { body: almost }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      expect(within(row).getByText('%99')).toBeTruthy();
     });
 
     it('no stat row without brand audit', async () => {

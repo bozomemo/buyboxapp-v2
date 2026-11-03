@@ -2,6 +2,7 @@
 import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createDb, runMigrations } from '@buybox/db';
 import { hasPermission, type Permission, type Role } from '@buybox/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -22,7 +23,7 @@ import { signIn } from '@/lib/server/auth/test-auth';
  * 4. With no administrator, everything guarded is refused except the setup routes, which the
  *    setup token opens.
  */
-const API_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const API_DIR = path.dirname(fileURLToPath(import.meta.url));
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 const SELF_AUTHENTICATING = new Set([
   'auth/login',

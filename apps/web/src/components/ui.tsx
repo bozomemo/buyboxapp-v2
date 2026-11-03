@@ -89,16 +89,21 @@ export function Select(
   );
 }
 
-export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'ghost-danger';
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   primary: 'bg-(--color-accent) text-(--color-accent-ink) hover:opacity-90',
   secondary: 'border border-(--color-border) bg-(--color-surface) hover:bg-(--color-hover)',
   danger: 'bg-(--color-danger) text-(--color-danger-ink) hover:opacity-90',
   ghost: 'text-(--color-text) hover:bg-(--color-hover)',
+  // A remove action in a list: destructive ink without the weight of a solid red fill.
+  'ghost-danger': 'text-(--color-danger) hover:bg-(--color-danger-bg)',
 };
 
-const BUTTON_SIZE = { sm: 'h-8 px-3 text-xs', md: 'h-9 px-4 text-sm' } as const;
+const BUTTON_SIZE = { sm: 'h-8 text-xs', md: 'h-9 text-sm' } as const;
+// Apart from the height so an icon-only button can drop it: two same-property utilities on one
+// element resolve by CSS order in Tailwind v4, so a `px-0` beside `px-3` did not reliably win.
+const BUTTON_PAD = { sm: 'px-3', md: 'px-4' } as const;
 
 /**
  * `icon` renders before the label. A button with an icon and no children is icon-only, and the
@@ -115,14 +120,18 @@ export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
  * The class string `Button` draws itself with, for an element that must stay something else — a
  * download `<a href>` that should look like a secondary button is still a link, not a button.
  */
-export function buttonClass(variant: ButtonVariant = 'primary', size: keyof typeof BUTTON_SIZE = 'md'): string {
-  return `inline-flex items-center justify-center gap-2 rounded-lg font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${BUTTON_SIZE[size]} ${BUTTON_VARIANT[variant]}`;
+export function buttonClass(
+  variant: ButtonVariant = 'primary',
+  size: keyof typeof BUTTON_SIZE = 'md',
+  square = false,
+): string {
+  const box = square ? (size === 'sm' ? 'w-8' : 'w-9') : BUTTON_PAD[size];
+  return `inline-flex items-center justify-center gap-2 rounded-lg font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${BUTTON_SIZE[size]} ${box} ${BUTTON_VARIANT[variant]}`;
 }
 
 export function Button({ variant = 'primary', size = 'md', icon, children, ...props }: ButtonProps) {
-  const square = children === undefined ? (size === 'sm' ? 'w-8 px-0' : 'w-9 px-0') : '';
   return (
-    <button {...props} className={`${buttonClass(variant, size)} ${square} ${props.className ?? ''}`}>
+    <button {...props} className={`${buttonClass(variant, size, children === undefined)} ${props.className ?? ''}`}>
       {icon && <Icon icon={icon} />}
       {children}
     </button>
@@ -543,7 +552,12 @@ export function VerdictBanner({
           <Heading className={`text-[17px] font-bold ${ink}`}>{title}</Heading>
           {detail && <p className={`mt-0.5 text-sm ${ink}`}>{detail}</p>}
         </div>
-        {action && <div className="flex-none">{action}</div>}
+        {/* Outside the announcement: a refresh button and its clock changing is not news. */}
+        {action && (
+          <div aria-live="off" className="flex-none">
+            {action}
+          </div>
+        )}
       </div>
       {children && <div className="mt-3 flex flex-wrap items-center gap-2 pl-9">{children}</div>}
     </div>

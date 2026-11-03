@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { FeesClient } from './fees-client';
@@ -82,5 +82,12 @@ describe('FeesClient', () => {
 
     expect(await screen.findByDisplayValue('15')).toBeTruthy();
     expect(await screen.findByText('Komisyon: %15')).toBeTruthy();
+  });
+
+  it('a band\'s remove button is drawn in danger ink', async () => {
+    stubFetch({ [PRIMARY_ROUTE]: { body: { current: null, history: [] } } });
+    render(<FeesClient />);
+    fireEvent.click((await screen.findAllByRole('button', { name: /Bant Ekle/ }))[0]!);
+    expect(screen.getAllByRole('button', { name: 'Kaldır' })[0]!.className).toContain('text-(--color-danger)');
   });
 });

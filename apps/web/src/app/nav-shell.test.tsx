@@ -212,6 +212,42 @@ describe('NavShell', () => {
       expect(stored.get('buybox.navCollapsed')).toBe('1');
     });
 
+    // The stored width is read after mount; animating that first change slid the rail shut on
+    // every full page load. Only the operator's own toggle animates.
+    it('rail does not animate the stored width on load', async () => {
+      stored.set('buybox.navCollapsed', '1');
+      stubFetch(base);
+      const { container } = render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Menüyü genişlet' }));
+      const aside = container.querySelector('aside')!;
+      expect(aside.className).toContain('transition-[width]');
+      cleanup();
+      stored.set('buybox.navCollapsed', '1');
+      stubFetch(base);
+      const again = render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      await screen.findByRole('button', { name: 'Menüyü genişlet' });
+      expect(again.container.querySelector('aside')!.className).not.toContain('transition');
+    });
+
+    it('sidebar surfaces are tokens, not white overlays', async () => {
+      stubFetch(base);
+      const { container } = render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      await screen.findByRole('button', { name: 'Menüyü daralt' });
+      expect(container.querySelector('aside')!.innerHTML).not.toContain('bg-white/');
+    });
+
     it('rail toggle is drawn in sidebar ink, not content ink', async () => {
       stubFetch(base);
       render(

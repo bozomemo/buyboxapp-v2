@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -8,7 +9,7 @@ import { describe, expect, it } from 'vitest';
  * is the part a reviewer would miss: without the `latin-ext` subset, ş/ğ/ı/İ fall back to another
  * font mid-word on every Turkish label.
  */
-const APP_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(APP_DIR, 'fonts.ts'), 'utf8');
 
 describe('fonts.ts', () => {

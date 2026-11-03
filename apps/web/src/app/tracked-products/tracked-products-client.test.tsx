@@ -118,6 +118,8 @@ describe('TrackedProductsClient', () => {
       render(<TrackedProductsClient />);
       const row = await screen.findByTestId('tracked-stats');
       expect(row.className).toContain('grid-cols-2');
+      // Three cards: a four-column row left an empty quarter on wide screens.
+      expect(row.className).toContain('lg:grid-cols-3');
       expect(within(row).getByText('Ürün')).toBeTruthy();
       expect(within(row).getByText('1.234')).toBeTruthy();
       expect(within(row).getByText('Marka')).toBeTruthy();

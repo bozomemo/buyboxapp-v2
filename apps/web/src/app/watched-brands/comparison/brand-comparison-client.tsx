@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { Check } from '@/components/icon';
 import { Ago, Button, ErrorState, LoadingState, PageHeader, Section, SegmentedFilter } from '@/components/ui';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
@@ -123,6 +124,8 @@ export function BrandComparisonClient() {
               <Button
                 key={brand.id}
                 variant={on ? 'primary' : 'secondary'}
+                // A mark as well as the fill: selection that is colour alone fails WCAG 1.4.1.
+                icon={on ? Check : undefined}
                 size="sm"
                 type="button"
                 aria-pressed={on}

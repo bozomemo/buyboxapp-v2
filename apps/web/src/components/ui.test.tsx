@@ -211,3 +211,30 @@ describe('VerdictBanner neutral', () => {
     expect(screen.getByRole('heading', { name: 'Sistem duraklatıldı' }).className).toContain('--color-text');
   });
 });
+
+// Redesign follow-ups (deferred minors of phases 1–3).
+describe('Button follow-ups', () => {
+  it('ghost-danger keeps danger ink without a fill or border', () => {
+    render(<Button variant="ghost-danger">Kaldır</Button>);
+    const className = screen.getByRole('button', { name: 'Kaldır' }).className;
+    expect(className).toContain('text-(--color-danger)');
+    expect(className).not.toContain('bg-(--color-danger)');
+    expect(className).not.toMatch(/(^|\s)border(\s|$)/);
+  });
+
+  it('icon-only button is square: no size padding to override', () => {
+    render(<Button icon={Trash2} size="sm" aria-label="Sil" />);
+    const className = screen.getByRole('button', { name: 'Sil' }).className;
+    expect(className).toContain('w-8');
+    expect(className).not.toContain('px-3');
+  });
+});
+
+describe('VerdictBanner action', () => {
+  // The banner is a live region; a refresh button and a clock in it re-announced the whole
+  // verdict every time the clock moved.
+  it('is outside the announcement', () => {
+    render(<VerdictBanner tone="ok" title="Her şey yolunda" action={<span>Son güncelleme 10:00</span>} />);
+    expect(screen.getByText('Son güncelleme 10:00').closest('[aria-live="off"]')).toBeTruthy();
+  });
+});

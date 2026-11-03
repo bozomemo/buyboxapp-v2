@@ -906,7 +906,7 @@ export function FindingsClient() {
                             return next;
                           })
                         }
-                        className={`rounded-full ${hidden.has(kind) ? 'text-(--color-muted) line-through' : ''}`}
+                        className={`rounded-full! ${hidden.has(kind) ? 'text-(--color-muted) line-through' : ''}`}
                       >
                         {labelOf(FINDING_KIND_LABELS, kind)} · {formatNumber(counts.get(kind) ?? 0)}
                       </Button>

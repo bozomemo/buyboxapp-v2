@@ -2,6 +2,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createDb, runMigrations } from '@buybox/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { signIn } from '@/lib/server/auth/test-auth';
@@ -13,7 +14,7 @@ import { routePermission } from '@/lib/server/auth/guard';
  * listing routes by hand, so a route added later is held to the same rule without anyone
  * remembering to add it here.
  */
-const API_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const API_DIR = path.dirname(fileURLToPath(import.meta.url));
 const METHODS = ['POST', 'PATCH', 'PUT'] as const;
 
 function routeFiles(dir: string): string[] {

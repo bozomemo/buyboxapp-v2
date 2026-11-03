@@ -1,12 +1,13 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Icon, Package } from './icon';
 
 afterEach(cleanup);
 
-const SRC = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {

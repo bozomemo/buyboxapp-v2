@@ -1048,6 +1048,7 @@ export function JobsClient() {
                         {job.perMarketplace && (
                           <Select
                             aria-label={`${job.label} pazaryeri`}
+                            className="h-8!"
                             value={selectedMarketplace[job.jobName] ?? marketplaces[0]?.code ?? ''}
                             onChange={(e) =>
                               setSelectedMarketplace((prev) => ({ ...prev, [job.jobName]: e.target.value }))
@@ -1221,6 +1222,7 @@ export function JobsClient() {
                         type="number"
                         min={1}
                         className="w-20"
+                        aria-label={`${rate.marketplaceCode} istek/dakika`}
                         value={scrapeRateDraft[rate.marketplaceCode]?.requestsPerMinute ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({
@@ -1241,6 +1243,7 @@ export function JobsClient() {
                         type="number"
                         min={1}
                         className="w-20"
+                        aria-label={`${rate.marketplaceCode} patlama`}
                         value={scrapeRateDraft[rate.marketplaceCode]?.burst ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({
@@ -1264,6 +1267,7 @@ export function JobsClient() {
                         min={2}
                         max={120}
                         className="w-20"
+                        aria-label={`${rate.marketplaceCode} zaman aşımı (sn)`}
                         value={scrapeRateDraft[rate.marketplaceCode]?.timeoutSeconds ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({

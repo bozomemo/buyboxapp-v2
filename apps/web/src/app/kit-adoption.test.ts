@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -14,7 +15,7 @@ import { describe, expect, it } from 'vitest';
  * covers, and a control the kit has no equivalent for carries `kit-exempt: <reason>` on one of
  * the two lines above it.
  */
-const APP_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const NON_TEXT_INPUT = /type=["'](checkbox|radio|file|hidden)["']/;
 
