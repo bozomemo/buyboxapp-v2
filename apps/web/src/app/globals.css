@@ -209,8 +209,32 @@ body {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--color-bg);
+  background: var(--color-thead);
   box-shadow: inset 0 -1px 0 var(--color-border);
+}
+
+/*
+ * Grid look inside a `TableFrame` card (spec 2026-11-03-ui-redesign §4.4): a tinted, small-caps
+ * header row, line dividers, and a hover row. In `@layer components` on purpose — Tailwind v4
+ * puts every utility in a layer, and unlayered CSS beats any layer, so these rules written bare
+ * would silently override the `th`/`td` classes a screen sets on its own cells. Hover skips a row
+ * carrying one of the `.row-*` highlights below, so a red or amber row stays red or amber.
+ */
+@layer components {
+  .table-frame thead th {
+    background: var(--color-thead);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-muted);
+  }
+  .table-frame tbody td {
+    border-bottom: 1px solid var(--color-line);
+  }
+  .table-frame tbody tr:not([class*='row-']):hover {
+    background: var(--color-hover);
+  }
 }
 
 /* Row-highlight semantics shared by the stock and listings grids (doc 06 §3, §4.2). */

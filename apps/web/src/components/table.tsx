@@ -31,7 +31,8 @@ export const DEFAULT_PAGE_SIZE = 50;
 /**
  * A bounded, scrollable box for a table. `maxHeight` is viewport-relative on purpose: the
  * operator's screen is what the list has to fit, and the same absolute pixel height is a cramped
- * keyhole on a laptop and a wasted third of a desk monitor.
+ * keyhole on a laptop and a wasted third of a desk monitor. Drawn as a surface card; the header
+ * row, dividers and hover come from `.table-frame` in `globals.css` (spec 2026-11-03 §4.4).
  */
 export function TableFrame({
   children,
@@ -44,7 +45,7 @@ export function TableFrame({
 }) {
   return (
     <div
-      className={`table-frame rounded border border-(--color-border) ${className}`}
+      className={`table-frame rounded-xl border border-(--color-border) bg-(--color-surface) shadow-(--shadow-card) ${className}`}
       style={{ maxHeight }}
     >
       {children}
