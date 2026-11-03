@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { AlertsClient } from './alerts-client';
 
@@ -60,6 +60,43 @@ describe('AlertsClient', () => {
         'Bir kural tanımlanmadan hiçbir koşul izlenmez. Aşağıdan yeni bir kural oluşturabilirsiniz.',
       ),
     ).toBeTruthy();
+  });
+
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 9, Review Focus 2): the kit
+  // `Select` carries string values, and the quiet period is milliseconds the API reads as a number.
+  it('quiet period posts a number', async () => {
+    stubFetch({
+      '/api/alerts': {
+        body: {
+          alerts: [],
+          rules: [],
+          staleness: [],
+          staleAfterMs: 86_400_000,
+          options: { marketplaces: [], sellers: [], sellerGroups: [], defaultQuietPeriodMs: 3_600_000 },
+        },
+      },
+      '/api/alerts/rules': { body: { ok: true } },
+    });
+
+    render(<AlertsClient />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Yeni kural' }));
+    fireEvent.change(screen.getByPlaceholderText('ör. Sahte ürün şüphesi — 400 TL altı'), {
+      target: { value: 'Test kuralı' },
+    });
+    const quiet = screen.getByRole('combobox', { name: /Sessizlik süresi/ });
+    expect(quiet.className).toContain('h-9');
+    fireEvent.change(quiet, { target: { value: String(6 * 60 * 60_000) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => {
+      const post = vi
+        .mocked(globalThis.fetch)
+        .mock.calls.find((call) => String(call[0]) === '/api/alerts/rules');
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String((post![1] as RequestInit).body)) as { quietPeriodMs: unknown };
+      expect(body.quietPeriodMs).toBe(6 * 60 * 60_000);
+    });
   });
 
   it('populated: shows an open alert and its rule name', async () => {

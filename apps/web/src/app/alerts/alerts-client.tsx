@@ -3,8 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Pagination, usePagedRows } from '@/components/table';
+import { Download, Search } from '@/components/icon';
 import {
   Ago,
+  Button,
+  buttonClass,
   Chip,
   ConfirmButton,
   EmptyState,
@@ -12,10 +15,12 @@ import {
   LoadingState,
   PageHeader,
   Section,
+  Select,
+  TextInput,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatMoney, parseMoneyToKurus } from '@/lib/format';
-import { PREDICATE_LABELS, SCOPE_LABELS, SUBJECT_LABELS, THRESHOLD_LABELS } from '@/lib/labels';
+import { labelOf, PREDICATE_LABELS, SCOPE_LABELS, SUBJECT_LABELS, THRESHOLD_LABELS } from '@/lib/labels';
 
 interface AlertSeller {
   sellerRef: string | null;
@@ -209,8 +214,10 @@ function ListingPicker({ onPick }: { onPick: (listing: { id: string; productName
 
   return (
     <div>
-      <input
-        className="w-full rounded border border-(--color-border) px-2 py-1 text-sm"
+      <TextInput
+        icon={Search}
+        className="w-full"
+        aria-label="Ürün ara"
         placeholder="Ürün adı ya da stok kodu ile ara…"
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -220,6 +227,7 @@ function ListingPicker({ onPick }: { onPick: (listing: { id: string; productName
         <ul className="mt-1 max-h-48 overflow-y-auto rounded border border-(--color-border)">
           {results.map((r) => (
             <li key={r.id}>
+              {/* kit-exempt: combobox option in the listing picker's result list */}
               <button
                 type="button"
                 className="w-full px-2 py-1 text-left text-sm hover:bg-(--color-hover)"
@@ -273,7 +281,7 @@ function RuleEditor({
   );
 
   return (
-    <div className="rounded border border-(--color-accent-border) bg-(--color-accent-bg) p-4">
+    <div className="rounded-xl border border-(--color-accent-border) bg-(--color-accent-bg) p-4">
       <h3 className="font-medium">{draft.id ? 'Kuralı düzenle' : 'Yeni kural'}</h3>
 
       {error && (
@@ -285,8 +293,8 @@ function RuleEditor({
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <label className="text-sm">
           <span className="block text-xs font-medium text-(--color-muted)">Kural adı</span>
-          <input
-            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
+          <TextInput
+            className="mt-1 w-full"
             placeholder="ör. Sahte ürün şüphesi — 400 TL altı"
             value={draft.name}
             onChange={(e) => set('name', e.target.value)}
@@ -295,17 +303,13 @@ function RuleEditor({
 
         <label className="text-sm">
           <span className="block text-xs font-medium text-(--color-muted)">Sessizlik süresi</span>
-          <select
-            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
-            value={draft.quietPeriodMs}
+          {/* String values on the wire of the control, milliseconds (a number) in the draft. */}
+          <Select
+            className="mt-1 w-full"
+            value={String(draft.quietPeriodMs)}
             onChange={(e) => set('quietPeriodMs', Number(e.target.value))}
-          >
-            {QUIET_PERIODS.map(([ms, label]) => (
-              <option key={ms} value={ms}>
-                {label}
-              </option>
-            ))}
-          </select>
+            options={QUIET_PERIODS.map(([ms, label]) => ({ value: String(ms), label }))}
+          />
           <span className="mt-1 block text-xs text-(--color-muted)">
             Kapanan bir alarmın yeniden açılması için beklenecek süre. Açık alarmı susturmaz.
           </span>
@@ -314,8 +318,9 @@ function RuleEditor({
         {/* Scope */}
         <div className="text-sm">
           <span className="block text-xs font-medium text-(--color-muted)">Hangi ürünlerde?</span>
-          <select
-            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
+          <Select
+            aria-label="Hangi ürünlerde?"
+            className="mt-1 w-full"
             value={draft.scopeType}
             onChange={(e) =>
               onChange({
@@ -325,32 +330,26 @@ function RuleEditor({
                 scopeLabel: '',
               })
             }
-          >
-            {(Object.keys(SCOPE_LABELS) as ScopeType[]).map((k) => (
-              <option key={k} value={k}>
-                {SCOPE_LABELS[k]}
-              </option>
-            ))}
-          </select>
+            options={(Object.keys(SCOPE_LABELS) as ScopeType[]).map((k) => ({ value: k, label: labelOf(SCOPE_LABELS, k) }))}
+          />
 
           {draft.scopeType === 'marketplace' && (
-            <select
-              className="mt-2 w-full rounded border border-(--color-border) px-2 py-1"
+            <Select
+              aria-label="Pazaryeri"
+              className="mt-2 w-full"
               value={draft.scopeValue}
               onChange={(e) => set('scopeValue', e.target.value)}
-            >
-              <option value="">— pazaryeri seçin —</option>
-              {options.marketplaces.map((m) => (
-                <option key={m.code} value={m.code}>
-                  {m.displayName}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: '— pazaryeri seçin —' },
+                ...options.marketplaces.map((m) => ({ value: m.code, label: m.displayName })),
+              ]}
+            />
           )}
 
           {draft.scopeType === 'baseStockCode' && (
-            <input
-              className="mt-2 w-full rounded border border-(--color-border) px-2 py-1"
+            <TextInput
+              aria-label="Stok kodu"
+              className="mt-2 w-full"
               placeholder="Stok kodu"
               value={draft.scopeValue}
               onChange={(e) => onChange({ ...draft, scopeValue: e.target.value, scopeLabel: '' })}
@@ -360,15 +359,16 @@ function RuleEditor({
           {draft.scopeType === 'listing' && (
             <div className="mt-2">
               {draft.scopeValue ? (
-                <div className="flex items-center justify-between gap-2 rounded border border-(--color-border) bg-(--color-surface) px-2 py-1">
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-(--color-border) bg-(--color-surface) px-3 py-1">
                   <span>{draft.scopeLabel || draft.scopeValue}</span>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
-                    className="text-xs text-(--color-accent) hover:underline"
                     onClick={() => onChange({ ...draft, scopeValue: '', scopeLabel: '' })}
                   >
                     değiştir
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <ListingPicker
@@ -382,34 +382,31 @@ function RuleEditor({
         {/* Subject */}
         <div className="text-sm">
           <span className="block text-xs font-medium text-(--color-muted)">Hangi satıcı?</span>
-          <select
-            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
+          <Select
+            aria-label="Hangi satıcı?"
+            className="mt-1 w-full"
             value={draft.subjectType}
             onChange={(e) =>
               onChange({ ...draft, subjectType: e.target.value as SubjectType, subjectValue: '' })
             }
-          >
-            {(Object.keys(SUBJECT_LABELS) as SubjectType[]).map((k) => (
-              <option key={k} value={k}>
-                {SUBJECT_LABELS[k]}
-              </option>
-            ))}
-          </select>
+            options={(Object.keys(SUBJECT_LABELS) as SubjectType[]).map((k) => ({ value: k, label: labelOf(SUBJECT_LABELS, k) }))}
+          />
 
           {draft.subjectType === 'seller' && (
             <>
-              <select
-                className="mt-2 w-full rounded border border-(--color-border) px-2 py-1"
+              <Select
+                aria-label="Satıcı"
+                className="mt-2 w-full"
                 value={draft.subjectValue}
                 onChange={(e) => set('subjectValue', e.target.value)}
-              >
-                <option value="">— satıcı seçin —</option>
-                {sellersForScope.map((s) => (
-                  <option key={`${s.marketplaceCode}:${s.sellerRef}`} value={s.sellerRef}>
-                    {s.sellerName || s.sellerRef} ({s.marketplaceCode})
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: '— satıcı seçin —' },
+                  ...sellersForScope.map((s) => ({
+                    value: s.sellerRef,
+                    label: `${s.sellerName || s.sellerRef} (${s.marketplaceCode})`,
+                  })),
+                ]}
+              />
               {sellersForScope.length === 0 && (
                 <span className="mt-1 block text-xs text-(--color-warning)">
                   Henüz kayıtlı satıcı yok — bir rakip taraması çalıştıktan sonra burada listelenir.
@@ -420,18 +417,16 @@ function RuleEditor({
 
           {draft.subjectType === 'sellerGroup' && (
             <>
-              <select
-                className="mt-2 w-full rounded border border-(--color-border) px-2 py-1"
+              <Select
+                aria-label="Satıcı grubu"
+                className="mt-2 w-full"
                 value={draft.subjectValue}
                 onChange={(e) => set('subjectValue', e.target.value)}
-              >
-                <option value="">— grup seçin —</option>
-                {options.sellerGroups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.displayName}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: '— grup seçin —' },
+                  ...options.sellerGroups.map((g) => ({ value: g.id, label: g.displayName })),
+                ]}
+              />
               {options.sellerGroups.length === 0 && (
                 <span className="mt-1 block text-xs text-(--color-warning)">
                   Tanımlı satıcı grubu yok.{' '}
@@ -448,42 +443,39 @@ function RuleEditor({
         {/* Predicate */}
         <div className="text-sm">
           <span className="block text-xs font-medium text-(--color-muted)">Ne olursa?</span>
-          <select
-            className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
+          <Select
+            aria-label="Ne olursa?"
+            className="mt-1 w-full"
             value={draft.predicate}
             onChange={(e) => set('predicate', e.target.value as Predicate)}
-          >
-            {(Object.keys(PREDICATE_LABELS) as Predicate[]).map((k) => (
-              <option key={k} value={k}>
-                {PREDICATE_LABELS[k]}
-              </option>
-            ))}
-          </select>
+            options={(Object.keys(PREDICATE_LABELS) as Predicate[]).map((k) => ({ value: k, label: labelOf(PREDICATE_LABELS, k) }))}
+          />
         </div>
 
         {/* Threshold */}
         {draft.predicate === 'priceBelow' && (
           <div className="text-sm">
             <span className="block text-xs font-medium text-(--color-muted)">Eşik</span>
-            <select
-              className="mt-1 w-full rounded border border-(--color-border) px-2 py-1"
+            <Select
+              aria-label="Eşik"
+              className="mt-1 w-full"
               value={draft.thresholdType}
               onChange={(e) => set('thresholdType', e.target.value as ThresholdType)}
-            >
-              {(Object.keys(THRESHOLD_LABELS) as ThresholdType[]).map((k) => (
-                <option key={k} value={k}>
-                  {THRESHOLD_LABELS[k]}
-                </option>
-              ))}
-            </select>
+              options={(Object.keys(THRESHOLD_LABELS) as ThresholdType[]).map((k) => ({
+                value: k,
+                label: labelOf(THRESHOLD_LABELS, k),
+              }))}
+            />
 
             {draft.thresholdType === 'fixed' && (
               <>
-                <input
-                  className={`mt-2 w-full rounded border px-2 py-1 ${
-                    thresholdInvalid
-                      ? 'border-(--color-danger-border) bg-(--color-danger-bg)'
-                      : 'border-(--color-border)'
+                {/* `!`: the kit control's own border and surface come later in the stylesheet and
+                    would otherwise win over the error tint (Tailwind v4 source order). */}
+                <TextInput
+                  aria-label="Eşik tutarı"
+                  aria-invalid={thresholdInvalid}
+                  className={`mt-2 w-full ${
+                    thresholdInvalid ? 'border-(--color-danger-border)! bg-(--color-danger-bg)!' : ''
                   }`}
                   inputMode="decimal"
                   placeholder="400,00"
@@ -507,8 +499,9 @@ function RuleEditor({
             {draft.thresholdType === 'pctBelowOurs' && (
               <div className="mt-2 flex items-center gap-2">
                 <span>%</span>
-                <input
-                  className="w-24 rounded border border-(--color-border) px-2 py-1"
+                <TextInput
+                  aria-label="Yüzde"
+                  className="w-24"
                   inputMode="numeric"
                   value={draft.thresholdPctText}
                   onChange={(e) => set('thresholdPctText', e.target.value)}
@@ -533,22 +526,12 @@ function RuleEditor({
       </label>
 
       <div className="mt-4 flex gap-2">
-        <button
-          type="button"
-          className="rounded bg-(--color-accent) px-3 py-1.5 text-sm text-(--color-accent-ink) disabled:opacity-50"
-          disabled={saving || thresholdInvalid}
-          onClick={onSave}
-        >
+        <Button type="button" disabled={saving || thresholdInvalid} onClick={onSave}>
           {saving ? 'Kaydediliyor…' : 'Kaydet'}
-        </button>
-        <button
-          type="button"
-          className="rounded border border-(--color-border) px-3 py-1.5 text-sm"
-          onClick={onCancel}
-          disabled={saving}
-        >
+        </Button>
+        <Button variant="secondary" type="button" onClick={onCancel} disabled={saving}>
           Vazgeç
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -678,6 +661,7 @@ export function AlertsClient() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="Rakip Alarmları"
+        breadcrumb={[{ label: 'Satış' }, { label: 'Alarmlar' }]}
         description={
           <>
             Alarmlar <strong>raporlamadır</strong>: hiçbir fiyat kararını tetiklemez, hiçbir fiyatı
@@ -744,7 +728,10 @@ export function AlertsClient() {
         title={`Açık alarmlar (${data.alerts.length})`}
         action={
           data.alerts.length > 0 && (
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Download}
               type="button"
               onClick={() =>
                 downloadCsv(
@@ -764,10 +751,9 @@ export function AlertsClient() {
                   })),
                 )
               }
-              className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover)"
             >
               Excel&apos;e Aktar
-            </button>
+            </Button>
           )
         }
       >
@@ -882,9 +868,8 @@ export function AlertsClient() {
         title={`Kurallar (${data.rules.length})`}
         action={
           <div className="flex flex-wrap items-center gap-3">
-            <button
+            <Button
               type="button"
-              className="rounded bg-(--color-accent) px-3 py-1.5 text-sm text-(--color-accent-ink) disabled:opacity-50"
               disabled={draft !== null}
               onClick={() => {
                 setFormError(null);
@@ -893,15 +878,11 @@ export function AlertsClient() {
               }}
             >
               + Yeni kural
-            </button>
+            </Button>
             {data.rules.length > 0 && (
-              <button
-                type="button"
-                className="text-sm text-(--color-accent) hover:underline"
-                onClick={() => setShowRules((v) => !v)}
-              >
+              <Button variant="ghost" size="sm" type="button" onClick={() => setShowRules((v) => !v)}>
                 {showRules ? 'Listeyi gizle' : 'Listeyi göster'}
-              </button>
+              </Button>
             )}
           </div>
         }
@@ -928,7 +909,7 @@ export function AlertsClient() {
             {pagedRules.rows.map((r) => (
               <div
                 key={r.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded border border-(--color-border) p-3 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm shadow-(--shadow-card)"
               >
                 <div>
                   <div className="font-medium">
@@ -950,28 +931,25 @@ export function AlertsClient() {
                 </div>
                 <div className="flex items-center gap-3 text-xs text-(--color-muted)">
                   <span>sessizlik {formatDuration(r.quietPeriodMs)}</span>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
-                    className="text-(--color-accent) hover:underline"
                     onClick={() => {
                       setFormError(null);
                       setDraft(draftFromRule(r));
                     }}
                   >
                     düzenle
-                  </button>
-                  <button
-                    type="button"
-                    className="text-(--color-accent) hover:underline"
-                    onClick={() => void toggleEnabled(r)}
-                  >
+                  </Button>
+                  <Button variant="ghost" size="sm" type="button" onClick={() => void toggleEnabled(r)}>
                     {r.enabled ? 'pasifleştir' : 'etkinleştir'}
-                  </button>
+                  </Button>
                   <ConfirmButton
                     requireConfirm
                     confirmMessage={`"${r.name}" kuralı silinsin mi? Bu kurala bağlı açık alarmlar da silinir.`}
                     onConfirmed={() => void remove(r)}
-                    className="text-(--color-danger) hover:underline"
+                    className={`${buttonClass('ghost', 'sm')} text-(--color-danger)!`}
                   >
                     sil
                   </ConfirmButton>

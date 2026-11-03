@@ -22,7 +22,6 @@ export const PENDING: readonly string[] = [
   'account/account-client.tsx',
   'account/mfa-setup/mfa-setup-client.tsx',
   'account/password/password-client.tsx',
-  'alerts/alerts-client.tsx',
   'dashboard-client.tsx',
   'license/license-client.tsx',
   'login/mfa/mfa-challenge-client.tsx',
