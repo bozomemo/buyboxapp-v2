@@ -170,3 +170,22 @@ describe('buttonClass', () => {
     for (const token of buttonClass('danger', 'sm').split(/\s+/).filter(Boolean)) expect(className).toContain(token);
   });
 });
+
+describe('VerdictBanner level and children', () => {
+  it('can be the page h1 and carries a chip row', () => {
+    render(
+      <VerdictBanner tone="ok" title="Her şey yolunda" level={1}>
+        <Chip tone="ok">İşler: çalışıyor</Chip>
+      </VerdictBanner>,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Her şey yolunda' })).toBeTruthy();
+    expect(within(screen.getByRole('status')).getByText('İşler: çalışıyor')).toBeTruthy();
+  });
+});
+
+describe('VerdictBanner neutral', () => {
+  it('a neutral headline reads in body ink, not muted', () => {
+    render(<VerdictBanner tone="neutral" title="Sistem duraklatıldı" />);
+    expect(screen.getByRole('heading', { name: 'Sistem duraklatıldı' }).className).toContain('--color-text');
+  });
+});

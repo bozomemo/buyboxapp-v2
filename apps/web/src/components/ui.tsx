@@ -505,28 +505,39 @@ const VERDICT_ICON: Record<Tone, LucideIcon> = {
 /**
  * The dashboard's top band: the system's verdict in one sentence, in its tone. `warn` uses
  * `--color-warning-strong` for the title because the plain warning hue is tuned for small text
- * and reads thin as a headline on its own tint.
+ * and reads thin as a headline on its own tint. `level={1}` makes the title the page's `<h1>` on a
+ * screen whose verdict *is* its heading (the Panel); `children` is a row under it, e.g. the
+ * state chips that together answer "is it safe?".
  */
 export function VerdictBanner({
   tone,
   title,
   detail,
   action,
+  level = 2,
+  children,
 }: {
   tone: Tone;
   title: string;
   detail?: React.ReactNode;
   action?: React.ReactNode;
+  level?: 1 | 2;
+  children?: React.ReactNode;
 }) {
-  const ink = tone === 'warn' ? 'text-(--color-warning-strong)' : TONE_TEXT[tone];
+  const ink =
+    tone === 'warn' ? 'text-(--color-warning-strong)' : tone === 'neutral' ? 'text-(--color-text)' : TONE_TEXT[tone];
+  const Heading = level === 1 ? 'h1' : 'h2';
   return (
-    <div role="status" className={`flex flex-wrap items-center gap-4 rounded-xl border px-5 py-4 ${TONE_BOX[tone]}`}>
-      <Icon icon={VERDICT_ICON[tone]} size={20} className={`flex-none ${TONE_TEXT[tone]}`} />
-      <div className="min-w-0 flex-1">
-        <h2 className={`text-[17px] font-bold ${ink}`}>{title}</h2>
-        {detail && <p className={`mt-0.5 text-sm ${ink}`}>{detail}</p>}
+    <div role="status" className={`rounded-xl border px-5 py-4 ${TONE_BOX[tone]}`}>
+      <div className="flex flex-wrap items-center gap-4">
+        <Icon icon={VERDICT_ICON[tone]} size={20} className={`flex-none ${TONE_TEXT[tone]}`} />
+        <div className="min-w-0 flex-1">
+          <Heading className={`text-[17px] font-bold ${ink}`}>{title}</Heading>
+          {detail && <p className={`mt-0.5 text-sm ${ink}`}>{detail}</p>}
+        </div>
+        {action && <div className="flex-none">{action}</div>}
       </div>
-      {action && <div className="flex-none">{action}</div>}
+      {children && <div className="mt-3 flex flex-wrap items-center gap-2 pl-9">{children}</div>}
     </div>
   );
 }

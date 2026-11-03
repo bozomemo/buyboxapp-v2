@@ -2,7 +2,19 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Ago, Chip, ConfirmButton, Section, Tone, TONE_BOX, TONE_TEXT } from '@/components/ui';
+import {
+  Ago,
+  Button,
+  buttonClass,
+  Chip,
+  ConfirmButton,
+  Section,
+  StatCard,
+  Tone,
+  TONE_BOX,
+  TONE_TEXT,
+  VerdictBanner,
+} from '@/components/ui';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { formatDateTime, formatMoney, formatNumber, formatTime } from '@/lib/format';
@@ -365,7 +377,13 @@ function buildVerdict(data: DashboardData, attention: Attention[]): Verdict {
   };
 }
 
-function VerdictBanner({
+/**
+ * The Panel's verdict on the kit's `VerdictBanner` (spec 2026-11-03-ui-redesign §6.1, pattern 2).
+ * Its headline stays the page's `<h1>`, and the kit's `role="status"` carries the old
+ * `aria-live="polite"`: the screen re-reads itself every 30s and the verdict can flip without
+ * anyone touching anything.
+ */
+function DashboardVerdict({
   verdict,
   data,
   health,
@@ -381,62 +399,48 @@ function VerdictBanner({
   refreshing: boolean;
 }) {
   return (
-    // aria-live: the screen re-reads itself every 30s and the verdict can flip without anyone
-    // touching anything. `polite` announces that without interrupting.
-    <div aria-live="polite" className={`rounded border p-4 ${TONE_BOX[verdict.tone]}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1
-            className={`text-xl font-semibold ${verdict.tone === 'neutral' ? '' : TONE_TEXT[verdict.tone]}`}
-          >
-            {verdict.headline}
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm">{verdict.detail}</p>
-        </div>
-        <div className="flex flex-none items-center gap-2 text-xs text-(--color-muted)">
+    <VerdictBanner
+      tone={verdict.tone}
+      title={verdict.headline}
+      detail={verdict.detail}
+      level={1}
+      action={
+        <div className="flex items-center gap-2 text-xs text-(--color-muted)">
           <span title={formatDateTime(lastLoadedAt)}>Son güncelleme {formatTime(lastLoadedAt)}</span>
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            className="rounded border border-(--color-border) bg-(--color-surface) px-2 py-1 hover:bg-(--color-hover) disabled:opacity-50"
-          >
+          <Button variant="secondary" size="sm" type="button" onClick={onRefresh} disabled={refreshing}>
             {refreshing ? 'Yenileniyor…' : 'Yenile'}
-          </button>
+          </Button>
         </div>
-      </div>
-
+      }
+    >
       {/* The states that together answer "is it safe?", always all shown: each is misleading
           without the others. "İşler çalışıyor" alone says nothing about whether money is moving,
           and neither says anything if the worker is not ticking. */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Chip tone={data.systemPaused ? 'neutral' : 'ok'}>
-          İşler: {data.systemPaused ? 'duraklatıldı' : 'çalışıyor'}
+      <Chip tone={data.systemPaused ? 'neutral' : 'ok'} dot>
+        İşler: {data.systemPaused ? 'duraklatıldı' : 'çalışıyor'}
+      </Chip>
+      {(data.modules?.seller ?? true) && (
+        <Chip tone={data.globalKillSwitchEngaged ? 'neutral' : 'warn'} dot>
+          Fiyat gönderimi: {data.globalKillSwitchEngaged ? 'kapalı' : 'AÇIK'}
         </Chip>
-        {(data.modules?.seller ?? true) && (
-          <Chip tone={data.globalKillSwitchEngaged ? 'neutral' : 'warn'}>
-            Fiyat gönderimi: {data.globalKillSwitchEngaged ? 'kapalı' : 'AÇIK'}
-          </Chip>
-        )}
-        {health && (
-          <Chip
-            tone={health.worker.running ? 'ok' : 'danger'}
-            title={
-              health.worker.databaseTarget ? `Worker veritabanı: ${health.worker.databaseTarget}` : undefined
-            }
-          >
-            Worker: {health.worker.running ? 'çalışıyor' : 'durmuş'}
-          </Chip>
-        )}
-      </div>
-    </div>
+      )}
+      {health && (
+        <Chip
+          tone={health.worker.running ? 'ok' : 'danger'}
+          dot
+          title={health.worker.databaseTarget ? `Worker veritabanı: ${health.worker.databaseTarget}` : undefined}
+        >
+          Worker: {health.worker.running ? 'çalışıyor' : 'durmuş'}
+        </Chip>
+      )}
+    </VerdictBanner>
   );
 }
 
 function AttentionList({ items }: { items: Attention[] }) {
   if (items.length === 0) {
     return (
-      <div className="rounded border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
+      <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card) text-sm text-(--color-muted)">
         Şu an müdahale gerektiren bir şey yok.
       </div>
     );
@@ -446,7 +450,7 @@ function AttentionList({ items }: { items: Attention[] }) {
       {items.map((item) => (
         <li
           key={item.id}
-          className={`flex flex-wrap items-start justify-between gap-3 rounded border p-3 ${
+          className={`flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3 ${
             item.severity === 'danger' ? TONE_BOX.danger : TONE_BOX.warn
           }`}
         >
@@ -460,10 +464,7 @@ function AttentionList({ items }: { items: Attention[] }) {
             <p className="mt-1 text-sm">{item.detail}</p>
           </div>
           {item.href && (
-            <Link
-              href={item.href}
-              className="flex-none rounded border border-(--color-border) bg-(--color-surface) px-3 py-1.5 text-sm font-semibold hover:bg-(--color-hover)"
-            >
+            <Link href={item.href} className={`flex-none ${buttonClass('secondary', 'sm')}`}>
               {item.hrefLabel ?? 'Aç'} →
             </Link>
           )}
@@ -511,7 +512,7 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
   }
 
   return (
-    <div className={`rounded border p-4 ${engaged ? TONE_BOX.neutral : TONE_BOX.warn}`}>
+    <div className={`rounded-xl border p-4 shadow-(--shadow-card) ${engaged ? TONE_BOX.neutral : TONE_BOX.warn}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-semibold">
@@ -529,11 +530,7 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
           onConfirmed={() => void setEngaged(!engaged)}
           disabled={busy || !allowed}
           {...(allowed ? {} : { title: NO_PERMISSION_TITLE })}
-          className={`flex-none rounded px-3 py-2 text-sm font-semibold disabled:opacity-50 ${
-            engaged
-              ? 'border border-(--color-border) bg-(--color-surface) hover:bg-(--color-hover)'
-              : 'bg-(--color-danger) text-(--color-danger-ink) hover:opacity-90'
-          }`}
+          className={`flex-none ${buttonClass(engaged ? 'secondary' : 'danger', 'md')}`}
         >
           {busy ? 'Uygulanıyor…' : engaged ? 'Fiyat gönderimini aç' : 'Fiyat gönderimini durdur'}
         </ConfirmButton>
@@ -552,7 +549,7 @@ function PriceSubmissionSwitch({ engaged, onChanged }: { engaged: boolean; onCha
  */
 function SystemPauseState({ paused, seller }: { paused: boolean; seller: boolean }) {
   return (
-    <div className={`rounded border p-4 ${TONE_BOX.neutral}`}>
+    <div className={`rounded-xl border p-4 shadow-(--shadow-card) ${TONE_BOX.neutral}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-semibold">Genel durdurma {paused ? 'açık' : 'kapalı'}</div>
@@ -620,7 +617,7 @@ function MarketplaceCard({
   const remaining = m.budget ? Math.max(0, m.budget.allowance - m.budget.consumed) : null;
 
   return (
-    <div className="rounded border border-(--color-border) bg-(--color-surface) p-4">
+    <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold">{m.displayName}</span>
         <div className="flex items-center gap-2">
@@ -644,7 +641,7 @@ function MarketplaceCard({
                 ? `${m.displayName} için fiyat gönderimini aç`
                 : `${m.displayName} için fiyat gönderimini durdur`
             }
-            className="rounded border border-(--color-border) px-2 py-1 text-xs hover:bg-(--color-hover) disabled:opacity-50"
+            className={buttonClass('secondary', 'sm')}
           >
             {busy ? '…' : m.killSwitchEngaged ? 'Aç' : 'Durdur'}
           </ConfirmButton>
@@ -745,7 +742,7 @@ function PhaseTiles({ distribution }: { distribution: Record<string, number> }) 
   const total = PHASES.reduce((sum, p) => sum + (distribution[p] ?? 0), 0);
   if (total === 0) {
     return (
-      <p className="rounded border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
+      <p className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card) text-sm text-(--color-muted)">
         Henüz fiyatlandırılan ilan yok. İlanlar içe aktarıldıktan ve otomasyon açıldıktan sonra burası dolar.
       </p>
     );
@@ -761,7 +758,7 @@ function PhaseTiles({ distribution }: { distribution: Record<string, number> }) 
               key={phase}
               href={`/listings?phases=${phase}`}
               title={PHASE_DESCRIPTIONS[phase]}
-              className={`rounded border p-3 text-center hover:bg-(--color-hover) ${
+              className={`rounded-lg border p-3 text-center hover:bg-(--color-hover) ${
                 problem ? TONE_BOX.warn : 'border-(--color-border) bg-(--color-surface)'
               }`}
             >
@@ -802,7 +799,7 @@ const DECISION_STATE_TONE: Record<string, Tone> = {
 function DecisionsTable({ decisions }: { decisions: Decision[] }) {
   if (decisions.length === 0) {
     return (
-      <p className="rounded border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
+      <p className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card) text-sm text-(--color-muted)">
         Henüz fiyat değişikliği yapılmadı.
       </p>
     );
@@ -880,64 +877,72 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }) {
  * `<details>`. They are what you read *after* a number surprises you, not what you scan — and on
  * an install watching a dozen brands they were half the page's height on every visit.
  */
-function BrandAuditSection({ audit }: { audit: BrandAudit }) {
+/**
+ * The brand audit's headline numbers, directly under the verdict (spec 2026-11-03-ui-redesign
+ * §6.1, pattern 2). They used to be three tiles inside the "Marka Denetimi" section at the bottom
+ * of the page; on a brand-only install they are the numbers the page exists for.
+ */
+function BrandStatRow({ audit }: { audit: BrandAudit }) {
   const noSeller = audit.brands.reduce((n, b) => n + b.noSellerCount, 0);
   const neverLooked = audit.brands.reduce((n, b) => n + b.neverLookedCount, 0);
+  const products = audit.brands.reduce((n, b) => n + b.productCount, 0);
   const openFindings = audit.openFindings.stated + audit.openFindings.measured;
+  const { productsWithPrice, productsTotal } = audit.referencePrice;
 
   return (
+    <div data-testid="dashboard-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <StatCard
+        label="Açık bulgu"
+        value={formatNumber(openFindings)}
+        tone={openFindings > 0 ? 'warn' : undefined}
+        delta={
+          <>
+            {/* İkisi ayrı, çünkü ayrı şeyler: biri birinin yazdığı bir kayda dayanır, diğeri bir
+                örneklem yorumudur. */}
+            {formatNumber(audit.openFindings.stated)} kesin bilgi · {formatNumber(audit.openFindings.measured)} yorum
+            {' · '}
+            <Link href="/watched-brands/findings" className="text-(--color-link) hover:underline">
+              Aç →
+            </Link>
+          </>
+        }
+      />
+      <StatCard
+        label="Satıcısı olmayan ürün"
+        value={formatNumber(noSeller)}
+        tone={noSeller > 0 ? 'warn' : undefined}
+        // "Henüz bakılmadı" ayrı yazılıyor: ilk turunu tamamlamamış bir kurulumda satıcısız
+        // sayısı tek başına yanıltıcıdır.
+        delta={
+          neverLooked > 0
+            ? `${formatNumber(neverLooked)} ürüne henüz bakılmadı — bu sayı eksik olabilir.`
+            : 'Her ürüne en az bir kez bakıldı.'
+        }
+      />
+      <StatCard
+        label="Tavsiye fiyat kapsamı"
+        value={productsTotal > 0 ? `%${Math.round((100 * productsWithPrice) / productsTotal)}` : '—'}
+        // Kapsam, bulgunun kendisi kadar önemli: fiyat listesi olmayan ürün "altında değil" değil,
+        // "bilinmiyor"dur.
+        delta={
+          productsWithPrice === 0
+            ? 'Fiyat listesi yüklenmemiş — bu sinyal hiç üretilmiyor.'
+            : `${formatNumber(productsWithPrice)} / ${formatNumber(productsTotal)} ürün`
+        }
+      />
+      <StatCard label="Takip edilen ürün" value={formatNumber(products)} delta={`${formatNumber(audit.brands.length)} marka`} />
+    </div>
+  );
+}
+
+/**
+ * The per-brand table and the 30-day trend, closed by default. The headline numbers live in
+ * `BrandStatRow` at the top of the page.
+ */
+function BrandAuditSection({ audit }: { audit: BrandAudit }) {
+  return (
     <Section id="brand-audit" title="Marka Denetimi">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className={`rounded border p-4 ${openFindings > 0 ? TONE_BOX.warn : TONE_BOX.neutral}`}>
-          <div className="text-xs text-(--color-muted)">Açık bulgu</div>
-          <div className="tabular-figures text-2xl font-bold">{formatNumber(openFindings)}</div>
-          {/* İkisi ayrı, çünkü ayrı şeyler: biri birinin yazdığı bir kayda dayanır, diğeri bir
-              örneklem yorumudur. Tek sayıya indirmek, kimsenin ayarlamadığı bir eşiği elle
-              girilmiş bir kara liste eşleşmesinin yanına koyardı. */}
-          <div className="mt-1 text-xs text-(--color-muted)">
-            {formatNumber(audit.openFindings.stated)} kesin bilgi ·{' '}
-            {formatNumber(audit.openFindings.measured)} yorum
-          </div>
-          <Link
-            href="/watched-brands/findings"
-            className="mt-2 inline-block text-xs text-(--color-accent) hover:underline"
-          >
-            Denetim bulgularını aç →
-          </Link>
-        </div>
-
-        <div className="rounded border border-(--color-border) bg-(--color-surface) p-4">
-          <div className="text-xs text-(--color-muted)">Satıcısı olmayan ürün</div>
-          <div className="tabular-figures text-2xl font-bold">{formatNumber(noSeller)}</div>
-          {/* "Henüz bakılmadı" ayrı yazılıyor: ilk turunu tamamlamamış bir kurulumda satıcısız
-              sayısı tek başına yanıltıcıdır. */}
-          <div className="mt-1 text-xs text-(--color-muted)">
-            {neverLooked > 0
-              ? `${formatNumber(neverLooked)} ürüne henüz bakılmadı — bu sayı eksik olabilir.`
-              : 'Her ürüne en az bir kez bakıldı.'}
-          </div>
-        </div>
-
-        <div className="rounded border border-(--color-border) bg-(--color-surface) p-4">
-          <div className="text-xs text-(--color-muted)">Tavsiye fiyat kapsamı</div>
-          <div className="tabular-figures text-2xl font-bold">
-            {formatNumber(audit.referencePrice.productsWithPrice)}
-            <span className="text-base font-normal text-(--color-muted)">
-              {' / '}
-              {formatNumber(audit.referencePrice.productsTotal)}
-            </span>
-          </div>
-          {/* Kapsam, bulgunun kendisi kadar önemli: fiyat listesi olmayan ürün "altında değil"
-              değil, "bilinmiyor"dur. */}
-          <div className="mt-1 text-xs text-(--color-muted)">
-            {audit.referencePrice.productsWithPrice === 0
-              ? 'Fiyat listesi yüklenmemiş — bu sinyal hiç üretilmiyor.'
-              : 'Listesi olmayan ürünler bu sinyalin dışındadır.'}
-          </div>
-        </div>
-      </div>
-
-      <details className="mt-4 rounded border border-(--color-border) bg-(--color-surface)">
+      <details className="rounded-xl border border-(--color-border) bg-(--color-surface) shadow-(--shadow-card)">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
           Marka bazında ayrıntı ve son 30 günün seyri
         </summary>
@@ -1135,20 +1140,15 @@ export function DashboardClient() {
   // matters most: silence here is not evidence the system is fine.
   if (error && !data) {
     return (
-      <div className={`rounded border p-4 ${TONE_BOX.danger}`}>
+      <div className={`rounded-xl border p-4 shadow-(--shadow-card) ${TONE_BOX.danger}`}>
         <h1 className={`text-lg font-semibold ${TONE_TEXT.danger}`}>Panel verisi yüklenemedi</h1>
         <p className="mt-1 text-sm">
           Sunucuya ulaşılamadı ({error}). Sistemin durumu hakkında bu ekranda hiçbir şey söylenemez —
           çalışıyor da olabilir, durmuş da.
         </p>
-        <button
-          type="button"
-          onClick={load}
-          disabled={refreshing}
-          className="mt-3 rounded border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm font-semibold hover:bg-(--color-hover) disabled:opacity-50"
-        >
+        <Button variant="secondary" type="button" onClick={load} disabled={refreshing} className="mt-3">
           {refreshing ? 'Deneniyor…' : 'Tekrar dene'}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -1160,8 +1160,8 @@ export function DashboardClient() {
         <p aria-live="polite" className="text-(--color-muted)">
           Sistem durumu okunuyor…
         </p>
-        <div className="h-24 animate-pulse rounded border border-(--color-border) bg-(--color-surface)" />
-        <div className="h-16 animate-pulse rounded border border-(--color-border) bg-(--color-surface)" />
+        <div className="h-24 animate-pulse rounded-xl border border-(--color-border) bg-(--color-surface)" />
+        <div className="h-16 animate-pulse rounded-xl border border-(--color-border) bg-(--color-surface)" />
       </div>
     );
   }
@@ -1173,7 +1173,7 @@ export function DashboardClient() {
 
   return (
     <div className="space-y-8">
-      <VerdictBanner
+      <DashboardVerdict
         verdict={verdict}
         data={data}
         health={health}
@@ -1182,11 +1182,13 @@ export function DashboardClient() {
         refreshing={refreshing}
       />
 
+      {modules.brand && data.brandAudit && <BrandStatRow audit={data.brandAudit} />}
+
       {/* A refresh that failed while a previous read is still on screen. The numbers below are
           real but no longer current, and saying so costs a line — letting them age silently on a
           screen that auto-refreshes is how an operator trusts a half-hour-old "her şey yolunda". */}
       {error && (
-        <p className={`rounded border p-3 text-sm ${TONE_BOX.warn}`}>
+        <p role="alert" className={`rounded-lg border p-3 text-sm ${TONE_BOX.warn}`}>
           Son yenileme başarısız oldu ({error}). Aşağıdaki bilgiler {formatTime(loadedAt)} itibarıyladır.
         </p>
       )}
@@ -1216,7 +1218,7 @@ export function DashboardClient() {
             }
           >
             {data.marketplaces.length === 0 ? (
-              <p className="rounded border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
+              <p className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card) text-sm text-(--color-muted)">
                 Henüz etkin pazaryeri yok. Ayarlar &gt; Pazaryerleri ekranından ekleyin.
               </p>
             ) : (

@@ -1,5 +1,6 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PermissionsProvider } from '@/lib/permissions';
 import { stubFetch } from '@/test-utils';
 import { DashboardClient } from './dashboard-client';
 
@@ -159,5 +160,84 @@ describe('DashboardClient', () => {
 
     expect(await screen.findByText('İşler çalışıyor ve müdahale gerektiren bir şey yok.')).toBeTruthy();
     expect(screen.queryByText(/Fiyat gönderimi/)).toBeNull();
+  });
+
+  describe('redesign (plan 2026-11-03 phase 2, Task 2)', () => {
+    const BRAND_ONLY = {
+      modules: { seller: false, brand: true },
+      systemPaused: false,
+      globalKillSwitchEngaged: true,
+      marketplaces: [
+        {
+          code: 'trendyol',
+          displayName: 'Trendyol',
+          enabled: true,
+          killSwitchEngaged: false,
+          automationEnabled: false,
+          budget: { consumed: 0, allowance: 0, reservePct: 10 },
+          health: { lastImportAt: null, lastBuyboxObservationAt: null, reachable: true, scrapeFailureRatePct: 0 },
+        },
+      ],
+      phaseDistribution: {},
+      competitorAlerts: { open: 0, coverage: [], staleMarketplaces: [] },
+      alerts: [],
+      recentDecisions: [],
+      brandAudit: {
+        windowMs: 30 * 86_400_000,
+        openFindings: { stated: 9, measured: 5 },
+        brands: [
+          { id: 'b1', label: 'Miyav Gold', marketplaceCode: 'trendyol', productCount: 84, noSellerCount: 4, neverLookedCount: 0, openFindings: 9, lastSweptAt: Date.now() },
+          { id: 'b2', label: 'Havhav Pro', marketplaceCode: 'trendyol', productCount: 44, noSellerCount: 2, neverLookedCount: 0, openFindings: 5, lastSweptAt: Date.now() },
+        ],
+        referencePrice: { productsWithPrice: 120, productsTotal: 128 },
+        trend: [],
+      },
+    };
+
+    it('stat row from brand audit', async () => {
+      stubFetch({ '/api/dashboard': { body: BRAND_ONLY }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      expect(row.className).toContain('grid-cols-2');
+      expect(row.className).toContain('lg:grid-cols-4');
+      const stats = within(row);
+      expect(stats.getByText('Açık bulgu')).toBeTruthy();
+      expect(stats.getByText('14')).toBeTruthy();
+      expect(stats.getByText('Satıcısı olmayan ürün')).toBeTruthy();
+      expect(stats.getByText('6')).toBeTruthy();
+      expect(stats.getByText('Tavsiye fiyat kapsamı')).toBeTruthy();
+      expect(stats.getByText('%94')).toBeTruthy();
+      expect(stats.getByText('Takip edilen ürün')).toBeTruthy();
+      expect(stats.getByText('128')).toBeTruthy();
+    });
+
+    it('no stat row without brand audit', async () => {
+      stubFetch({ '/api/dashboard': { body: { ...BRAND_ONLY, brandAudit: null } }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      await screen.findByText('İşler çalışıyor ve müdahale gerektiren bir şey yok.');
+      expect(screen.queryByText('Açık bulgu')).toBeNull();
+    });
+
+    it('verdict stays the page h1', async () => {
+      stubFetch({ '/api/dashboard': { body: { ...BRAND_ONLY, brandAudit: null } }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      expect(await screen.findByRole('heading', { level: 1, name: 'Her şey yolunda' })).toBeTruthy();
+    });
+
+    it('keeps permission gating', async () => {
+      stubFetch({
+        '/api/dashboard': { body: { ...BRAND_ONLY, modules: { seller: true, brand: true }, brandAudit: null } },
+        '/api/health': { body: HEALTH_OK },
+        '/api/auth/me': { body: { user: { permissions: ['view'] } } },
+      });
+      render(
+        <PermissionsProvider>
+          <DashboardClient />
+        </PermissionsProvider>,
+      );
+      const toggle = await screen.findByRole('button', { name: 'Fiyat gönderimini aç' });
+      await vi.waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(true));
+      expect(toggle.getAttribute('title')).toBe('Bu işlem için yetkiniz yok');
+    });
   });
 });
