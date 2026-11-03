@@ -315,6 +315,11 @@ Brand is the module in production (`takipsistemi`), so it goes first. The screen
 
 **Phase 3 · The rest**
 
+Built 2026-11-03 (plan `docs/superpowers/plans/2026-11-03-ui-redesign-phase-3-rest.md`). The
+guard in `apps/web/src/app/kit-adoption.test.ts` now walks every screen file under
+`apps/web/src/app/`; the controls the kit has no equivalent for carry a `kit-exempt: <reason>`
+comment, and the plan lists the accepted reasons.
+
 - the seller screens (Stok, İlanlar, Markalar, Rakip Geçmişi, Rakip Satıcılar, Alarmlar);
 - İşler, Olaylar, Ayarlar;
 - Hesabım;

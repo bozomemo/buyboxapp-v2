@@ -8,6 +8,7 @@ import {
   buttonClass,
   Chip,
   ConfirmButton,
+  PageHeader,
   Section,
   StatCard,
   Tone,
@@ -379,7 +380,7 @@ function buildVerdict(data: DashboardData, attention: Attention[]): Verdict {
 
 /**
  * The Panel's verdict on the kit's `VerdictBanner` (spec 2026-11-03-ui-redesign §6.1, pattern 2).
- * Its headline stays the page's `<h1>`, and the kit's `role="status"` carries the old
+ * Its headline stays the page's level-1 heading, and the kit's `role="status"` carries the old
  * `aria-live="polite"`: the screen re-reads itself every 30s and the verdict can flip without
  * anyone touching anything.
  */
@@ -1141,6 +1142,7 @@ export function DashboardClient() {
   if (error && !data) {
     return (
       <div className={`rounded-xl border p-4 shadow-(--shadow-card) ${TONE_BOX.danger}`}>
+        {/* kit-exempt: error headline inside the danger box — the box, not a page header, is the screen */}
         <h1 className={`text-lg font-semibold ${TONE_TEXT.danger}`}>Panel verisi yüklenemedi</h1>
         <p className="mt-1 text-sm">
           Sunucuya ulaşılamadı ({error}). Sistemin durumu hakkında bu ekranda hiçbir şey söylenemez —
@@ -1156,7 +1158,7 @@ export function DashboardClient() {
   if (!data) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold">Panel</h1>
+        <PageHeader title="Panel" />
         <p aria-live="polite" className="text-(--color-muted)">
           Sistem durumu okunuyor…
         </p>

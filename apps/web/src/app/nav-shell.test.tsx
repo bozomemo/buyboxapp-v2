@@ -70,6 +70,30 @@ describe('NavShell', () => {
     expect(screen.getByRole('button', { name: 'Tekrar dene' })).toBeTruthy();
   });
 
+  // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 12): the header's failure
+  // state is a kit danger button, and clicking it asks again.
+  it('status error offers retry', async () => {
+    stubFetch({
+      [SYSTEM_PAUSE_ROUTE]: { reject: new Error('system-pause down') },
+      [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
+    });
+
+    render(
+      <NavShell>
+        <p>içerik</p>
+      </NavShell>,
+    );
+
+    const retry = await screen.findByRole('button', { name: 'Sistem durumu alınamadı — Tekrar dene' });
+    expect(retry.className).toContain('bg-(--color-danger)');
+    expect(retry.getAttribute('title')).toBe('system-pause down');
+    const calls = () =>
+      vi.mocked(globalThis.fetch).mock.calls.filter((call) => String(call[0]) === SYSTEM_PAUSE_ROUTE).length;
+    const before = calls();
+    fireEvent.click(retry);
+    await vi.waitFor(() => expect(calls()).toBeGreaterThan(before));
+  });
+
   it('empty: a valid licence and a running system show no banner and no alarm colour', async () => {
     stubFetch({
       [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },

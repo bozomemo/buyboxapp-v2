@@ -29,7 +29,7 @@ import {
   Users,
   type LucideIcon,
 } from '@/components/icon';
-import { Ago, Chip, ConfirmButton, SegmentedFilter } from '@/components/ui';
+import { Ago, Button, Chip, ConfirmButton, SegmentedFilter } from '@/components/ui';
 import { readStoredNavCollapsed, storeNavCollapsed } from '@/lib/nav-collapse';
 import { scanFreshness, type DashboardFreshnessInput } from '@/lib/scan-freshness';
 import {
@@ -182,14 +182,9 @@ function SystemPauseButton() {
 
   if (poll.status === 'error') {
     return (
-      <button
-        type="button"
-        onClick={retry}
-        title={poll.message}
-        className="h-9 rounded-lg border border-(--color-danger-border) bg-(--color-danger-bg) px-3 text-sm font-semibold text-(--color-danger) hover:opacity-90"
-      >
+      <Button variant="danger" type="button" onClick={retry} title={poll.message}>
         Sistem durumu alınamadı — Tekrar dene
-      </button>
+      </Button>
     );
   }
 
@@ -267,6 +262,7 @@ function LicenseGraceBanner() {
     return (
       <div className="border-b border-(--color-danger-border) bg-(--color-danger-bg) px-6 py-2 text-center text-sm text-(--color-danger)">
         Lisans durumu okunamadı: {poll.message}{' '}
+        {/* kit-exempt: inline action within a sentence */}
         <button type="button" onClick={retry} className="font-semibold underline">
           Tekrar dene
         </button>
@@ -382,6 +378,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
           Salt okunur
         </span>
       )}
+      {/* kit-exempt: sidebar ink — kit Button colours lose to the sidebar's by CSS source order (phase 1 ruling) */}
       <button
         type="button"
         onClick={signOut}
@@ -497,6 +494,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
               over a sidebar-ink class by Tailwind's source order, not class order, and content ink
               on the navy sidebar is 1.08:1 in the light theme — the only control that opens the
               rail would be invisible. Same shape as the sign-out button above. */}
+          {/* kit-exempt: sidebar ink — kit Button colours lose to the sidebar's by CSS source order (phase 1 ruling) */}
           <button
             type="button"
             aria-label={collapsed ? 'Menüyü genişlet' : 'Menüyü daralt'}

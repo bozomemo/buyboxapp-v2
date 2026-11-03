@@ -6,22 +6,15 @@ import { describe, expect, it } from 'vitest';
 /**
  * Every screen under `apps/web/src/app/` must not hand-roll a control the shared kit already
  * covers — a raw `<button>`, a text `<input>`, a `<select>`, a page `<h1>` instead of
- * `PageHeader`, or the old `px-2! py-1!` squeeze on a `Button` (spec 2026-11-03 §7).
- *
- * The 2026-11-03 redesign's phase 3 (plan `2026-11-03-ui-redesign-phase-3-rest.md`) converts
- * the screens that phase 2 left; until it is done they sit on `PENDING`. A pending file must
- * still violate, so the list can only shrink as screens are converted — never go stale.
+ * `PageHeader`, or the old `px-2! py-1!` squeeze on a `Button` (spec 2026-11-03 §7). The 2026-11-03
+ * redesign converted every screen (phases 2 and 3); this walk is what keeps a new or edited
+ * screen from sliding back. Comments are read too, so name a tag in prose without its brackets.
  *
  * Two escapes, both explicit: a checkbox/radio/file/hidden input is not something `TextInput`
  * covers, and a control the kit has no equivalent for carries `kit-exempt: <reason>` on one of
  * the two lines above it.
  */
 const APP_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
-
-export const PENDING: readonly string[] = [
-  'dashboard-client.tsx',
-  'nav-shell.tsx',
-];
 
 const NON_TEXT_INPUT = /type=["'](checkbox|radio|file|hidden)["']/;
 
@@ -76,14 +69,7 @@ describe('violations', () => {
 });
 
 describe('every screen under app/ uses the kit', () => {
-  it.each(screenFiles().filter((f) => !PENDING.includes(f)))('%s', (file) => {
+  it.each(screenFiles())('%s', (file) => {
     expect(violations(read(file))).toEqual([]);
-  });
-});
-
-describe('pending files still need converting', () => {
-  it.each(PENDING.length > 0 ? PENDING : ['(none)'])('%s', (file) => {
-    if (file === '(none)') return;
-    expect(violations(read(file)).length).toBeGreaterThan(0);
   });
 });
