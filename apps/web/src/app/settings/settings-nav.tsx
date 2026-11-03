@@ -48,20 +48,26 @@ export function SettingsNav() {
     (tab) => tab.href !== '/settings/users' || can('users.manage'),
   );
   return (
-    <nav className="flex flex-wrap gap-1 border-b border-(--color-border) pb-2">
-      {tabs.map((tab) => (
-        <Link
-          key={tab.href}
-          href={tab.href}
-          className={
-            pathname === tab.href
-              ? 'rounded bg-(--color-accent) px-3 py-1.5 text-sm font-medium text-(--color-accent-ink)'
-              : 'rounded px-3 py-1.5 text-sm text-(--color-muted) hover:bg-(--color-surface)'
-          }
-        >
-          {tab.label}
-        </Link>
-      ))}
+    // An underline tab bar; the tab you are on is announced (`aria-current`), not only drawn
+    // differently (doc 15 rule 8).
+    <nav aria-label="Ayarlar bölümleri" className="flex flex-wrap gap-x-1 border-b border-(--color-border)">
+      {tabs.map((tab) => {
+        const active = pathname === tab.href;
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            aria-current={active ? 'page' : undefined}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
+              active
+                ? 'border-(--color-accent) font-semibold text-(--color-text)'
+                : 'border-transparent text-(--color-muted) hover:text-(--color-text)'
+            }`}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }

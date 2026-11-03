@@ -9,6 +9,7 @@ import { STICKY_HEAD, TableFrame } from '@/components/table';
 import {
   Ago,
   Button,
+  buttonClass,
   Chip,
   ConfirmButton,
   ErrorState,
@@ -96,6 +97,7 @@ export function UsersClient({ roleTable }: { roleTable: RoleTable }) {
     <div className="space-y-6">
       <PageHeader
         title="Kullanıcılar"
+        breadcrumb={[{ label: 'Sistem' }, { label: 'Ayarlar', href: '/settings' }, { label: 'Kullanıcılar' }]}
         description="Kimin giriş yapabileceği ve ne yapabileceği. Her değişiklik giriş kayıtlarına işlenir."
         action={
           <Link href="/settings/users/activity" className="text-sm text-(--color-accent) hover:underline">
@@ -112,11 +114,11 @@ export function UsersClient({ roleTable }: { roleTable: RoleTable }) {
         {load.status === 'ready' && <UsersTable users={load.users} roleOptions={roleOptions} onDone={report} />}
       </Section>
 
-      <Section id="users-policy" title="İki adımlı doğrulama">
+      <Section id="users-policy" title="İki adımlı doğrulama" card>
         <MfaPolicy onDone={report} />
       </Section>
 
-      <Section id="users-new" title="Yeni kullanıcı">
+      <Section id="users-new" title="Yeni kullanıcı" card>
         <NewUserForm roleOptions={roleOptions} onDone={report} />
       </Section>
 
@@ -211,7 +213,7 @@ function UsersTable({
                         onConfirmed={() => void act(user, { action: 'disable' }, `${user.username} devre dışı bırakıldı.`)}
                         disabled={rowBusy || lastAdmin}
                         title={lastAdmin ? LAST_ADMIN_TITLE : undefined}
-                        className="rounded border px-2 py-1 disabled:opacity-40"
+                        className={buttonClass('secondary', 'sm')}
                       >
                         Devre dışı bırak
                       </ConfirmButton>
@@ -221,28 +223,29 @@ function UsersTable({
                         confirmMessage={`${user.username} yeniden etkinleştirilsin mi?`}
                         onConfirmed={() => void act(user, { action: 'enable' }, `${user.username} etkinleştirildi.`)}
                         disabled={rowBusy}
-                        className="rounded border px-2 py-1 disabled:opacity-40"
+                        className={buttonClass('secondary', 'sm')}
                       >
                         Etkinleştir
                       </ConfirmButton>
                     )}
-                    <button
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       type="button"
                       disabled={rowBusy}
                       onClick={() => {
                         setResetting(resetting === user.id ? null : user.id);
                         setTemporary(suggestTemporaryPassword());
                       }}
-                      className="rounded border px-2 py-1 disabled:opacity-40"
                     >
                       Parolayı sıfırla
-                    </button>
+                    </Button>
                     <ConfirmButton
                       requireConfirm
                       confirmMessage={`${user.username} için iki adımlı doğrulama sıfırlansın mı? Bir sonraki girişte yeniden kurması gerekir; tüm oturumları kapanır.`}
                       onConfirmed={() => void act(user, { action: 'resetMfa' }, `${user.username}: iki adımlı doğrulama sıfırlandı.`)}
                       disabled={rowBusy || (!user.totpEnabled && !user.smsEnabled)}
-                      className="rounded border px-2 py-1 disabled:opacity-40"
+                      className={buttonClass('secondary', 'sm')}
                     >
                       2 adımlıyı sıfırla
                     </ConfirmButton>
@@ -252,7 +255,7 @@ function UsersTable({
                         confirmMessage=""
                         onConfirmed={() => void act(user, { action: 'unlock' }, `${user.username} kilidi kaldırıldı.`)}
                         disabled={rowBusy}
-                        className="rounded border px-2 py-1 disabled:opacity-40"
+                        className={buttonClass('secondary', 'sm')}
                       >
                         Kilidi kaldır
                       </ConfirmButton>

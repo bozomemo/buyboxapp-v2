@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, ErrorState, Field, LoadingState, Section, StatusBanner, TextInput } from '@/components/ui';
+import { Button, ErrorState, Field, LoadingState, Section, Select, StatusBanner, TextInput } from '@/components/ui';
 
 /** Settings > Product Sources (doc 15 §6, Phase 5). Consistency pass only. */
 
@@ -112,30 +112,30 @@ export function ProductSourcesClient() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex max-w-[720px] flex-col gap-4">
       <p className="text-sm text-(--color-muted)">
         {configured ? 'Şu anda yapılandırılmış bir kaynak var.' : 'Henüz bir ürün kaynağı yapılandırılmadı.'}
       </p>
-      <Section id="product-source-form" title="Ürün Kaynağı">
+      <Section id="product-source-form" title="Ürün Kaynağı" card>
         <div className="flex flex-col gap-4">
           <Field label="Ürün Kaynağı">
-            <select
+            <Select
               value={source}
               onChange={(e) => {
                 setSource(e.target.value as SourceCode);
                 setPreview(undefined);
                 setSaved(false);
               }}
-              className="rounded border border-(--color-border) px-3 py-1.5 text-sm"
-            >
-              <option value="manual">Manuel (Stok ekranından tek tek eklenir)</option>
-              <option value="excel">Excel</option>
-              <option value="marketplaceListing">Pazaryeri listelerinden</option>
-            </select>
+              options={[
+                { value: 'manual', label: 'Manuel (Stok ekranından tek tek eklenir)' },
+                { value: 'excel', label: 'Excel' },
+                { value: 'marketplaceListing', label: 'Pazaryeri listelerinden' },
+              ]}
+            />
           </Field>
 
           {source === 'excel' && (
-            <div className="flex flex-col gap-3 rounded border border-(--color-border) p-4">
+            <div className="flex flex-col gap-3 rounded-lg border border-(--color-border) bg-(--color-bg) p-4">
               <input
                 ref={fileInput}
                 type="file"
@@ -210,7 +210,7 @@ export function ProductSourcesClient() {
         </div>
       </Section>
 
-      <Section id="product-source-erp" title="ERP Entegrasyonu">
+      <Section id="product-source-erp" title="ERP Entegrasyonu" card>
         <div className="rounded border border-dashed border-(--color-border) p-4">
           <p className="text-sm text-(--color-muted)">Yakında.</p>
         </div>

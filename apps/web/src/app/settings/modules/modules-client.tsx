@@ -99,7 +99,7 @@ export function ModulesClient({ redirectedFrom }: { redirectedFrom: AppModule | 
         kaldığı yerden devam eder.
       </p>
 
-      <Section id="modules" title="Modüller">
+      <Section id="modules" title="Modüller" card>
         <div className="flex flex-col gap-3">
           {MODULES.map((m) => (
             <label

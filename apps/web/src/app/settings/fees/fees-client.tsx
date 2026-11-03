@@ -14,6 +14,7 @@ import {
   StatusBanner,
   TextInput,
 } from '@/components/ui';
+import { Trash2 } from '@/components/icon';
 
 interface Band {
   edge: string;
@@ -104,22 +105,26 @@ function BandEditor({
             onChange={(e) => onChange(bands.map((b, j) => (i === j ? { ...b, amount: e.target.value } : b)))}
             className="w-28"
           />
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Trash2}
             type="button"
-            className="text-xs text-(--color-danger)"
             onClick={() => onChange(bands.filter((_, j) => j !== i))}
           >
             Kaldır
-          </button>
+          </Button>
         </div>
       ))}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
-        className="w-fit text-xs text-(--color-accent)"
+        className="w-fit"
         onClick={() => onChange([...bands, { edge: '', amount: '0' }])}
       >
         + Bant Ekle
-      </button>
+      </Button>
     </div>
   );
 }
@@ -267,8 +272,8 @@ export function FeesClient() {
         </p>
       )}
 
-      <Section id="fees-form" title="Ücret Ayarları">
-        <div className="rounded border border-(--color-border) p-4">
+      <Section id="fees-form" title="Ücret Ayarları" card>
+        <div className="max-w-[720px]">
           <p className="mb-3 text-xs text-(--color-muted)">
             Kaydettiğinizde yeni bir satır, şimdiki zamanla etkin olarak eklenir (doc 05 §2) — geçmiş fiyat
             kararları hep o anda geçerli olan değerlerle açıklanabilir kalır, eski satır asla değiştirilmez.
@@ -362,7 +367,7 @@ export function FeesClient() {
         </div>
       </Section>
 
-      <Section id="fees-history" title="Geçmiş">
+      <Section id="fees-history" title="Geçmiş" card>
         {history.length === 0 ? (
           <EmptyState
             message="Bu pazaryeri için henüz kaydedilmiş bir ücret geçmişi yok."

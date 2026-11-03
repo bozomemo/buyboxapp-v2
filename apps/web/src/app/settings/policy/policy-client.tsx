@@ -228,7 +228,7 @@ export function PolicyClient() {
         </p>
       )}
 
-      <div className="flex items-center justify-between rounded border border-(--color-border) bg-(--color-surface) p-4">
+      <div className="flex items-center justify-between rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
         <div>
           <p className="text-sm font-semibold">Otomasyon</p>
           <p className="text-xs text-(--color-muted)">
@@ -259,9 +259,9 @@ export function PolicyClient() {
         </p>
       )}
 
-      <div className="rounded border border-(--color-border) p-4">
+      <div className="max-w-[720px]">
         <div className="flex flex-col gap-6">
-          <Section id="policy-strateji" title="Strateji">
+          <Section id="policy-strateji" title="Strateji" card>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Kaba Adım Türü">
                 <Select
@@ -307,7 +307,7 @@ export function PolicyClient() {
             </p>
           </Section>
 
-          <Section id="policy-kar-koruma" title="Kâr Koruma">
+          <Section id="policy-kar-koruma" title="Kâr Koruma" card>
             <label className="mb-3 flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -337,7 +337,7 @@ export function PolicyClient() {
             </p>
           </Section>
 
-          <Section id="policy-stok" title="Stok">
+          <Section id="policy-stok" title="Stok" card>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Stok Modu">
                 <Select
@@ -359,7 +359,7 @@ export function PolicyClient() {
             </p>
           </Section>
 
-          <Section id="policy-hiz-butce" title="Hız ve Bütçe">
+          <Section id="policy-hiz-butce" title="Hız ve Bütçe" card>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Yerleşme Süresi (dakika)">
                 <TextInput
@@ -410,7 +410,7 @@ export function PolicyClient() {
         {saveError && <StatusBanner ok={false} message={saveError} />}
         {previewError && <StatusBanner ok={false} message={previewError} />}
         {preview && (
-          <div className="mt-4 rounded border border-(--color-border) p-3">
+          <div className="mt-4 rounded-lg border border-(--color-border) bg-(--color-bg) p-3">
             <p className="text-sm">
               <strong>{preview.changed}</strong> ilan fiyat değiştirir, <strong>{preview.unchanged}</strong>{' '}
               ilan değişmez{preview.skipped > 0 ? `, ${preview.skipped} ilan hesaplanamadı (eksik veri)` : ''}{' '}

@@ -44,8 +44,8 @@ export function DatabaseClient() {
   }
 
   return (
-    <Section id="database-status" title="Veritabanı Durumu">
-      <div className="max-w-md rounded border border-(--color-border) p-4">
+    <Section id="database-status" title="Veritabanı Durumu" card>
+      <div className="max-w-md">
         <dl className="space-y-2 text-sm">
           <div className="flex items-center justify-between">
             <dt className="text-(--color-muted)">Motor</dt>

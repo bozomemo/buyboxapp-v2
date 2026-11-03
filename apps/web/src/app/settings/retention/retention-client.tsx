@@ -86,7 +86,7 @@ export function RetentionClient() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex max-w-[720px] flex-col gap-4">
       <p className="text-sm text-(--color-muted)">
         {isDefault
           ? 'Şu anda varsayılan pencereler kullanılıyor (doc 05 §10).'
@@ -94,8 +94,8 @@ export function RetentionClient() {
         <code>competitor_observations</code> ve <code>scrape_runs</code> süresiz saklanır ve burada
         listelenmez (doc 10 §5).
       </p>
-      <Section id="retention-windows" title="Saklama Pencereleri">
-        <div className="grid grid-cols-2 gap-4 rounded border border-(--color-border) p-4">
+      <Section id="retention-windows" title="Saklama Pencereleri" card>
+        <div className="grid grid-cols-2 gap-4">
           {LABELS.map(({ key, label }) => (
             <Field key={key} label={label}>
               <TextInput
