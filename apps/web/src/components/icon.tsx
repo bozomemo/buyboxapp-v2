@@ -28,4 +28,4 @@ export function Icon({
 }
 
 export type { LucideIcon };
-export { Package } from 'lucide-react';
+export { AlertTriangle, Inbox, Loader2, Package, Search, Trash2 } from 'lucide-react';

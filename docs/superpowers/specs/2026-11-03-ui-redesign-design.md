@@ -152,9 +152,14 @@ an optional prop, so the existing kit call sites restyle themselves without bein
   - New optional `dot` that shows a status dot.
   - The word stays mandatory (doc 15 rule 8).
 - **Section**
-  - Becomes a card: surface background, `--shadow-card`, 12px radius.
-  - New optional `action` slot at the right end of the title row.
-- **PageHeader** gains three optional parts:
+  - Can be a card: surface background, `--shadow-card`, 12px radius. The card is **opt-in**
+    through a `card` prop that defaults to `false` (changed during planning, 2026-11-03).
+    `Section` is used 52 times across 22 screens, many of which already wrap a bordered grid or
+    empty state, so making every one a card at once would draw a card inside a card until each
+    screen is converted. The Phase 2 and 3 plans set `card` on each screen as they convert it.
+  - The existing `action` slot stays at the right end of the title row.
+- **PageHeader** gains optional parts (the existing single `action` prop is kept rather than
+  renamed `actions`; several actions are passed as a fragment):
   - a `breadcrumb` above the title;
   - `actions` on the right;
   - a one-line `description` under the title.

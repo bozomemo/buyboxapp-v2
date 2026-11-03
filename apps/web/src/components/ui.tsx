@@ -1,6 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { formatDateTime, formatDuration } from '@/lib/format';
+import { AlertTriangle, Icon, Inbox, Loader2, type LucideIcon } from './icon';
 
 /**
  * The shared UI kit (doc 15 §1a). Everything a screen needs to render a form, a status, a
@@ -48,12 +50,21 @@ export function Field({
   );
 }
 
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+/** Shared by `TextInput` and `Select`: 36px high, accent ring on focus (spec §4.2). */
+const CONTROL =
+  'h-9 rounded-lg border border-(--color-border) bg-(--color-surface) px-3 text-sm outline-none focus:border-(--color-accent) focus:ring-2 focus:ring-(--color-accent-border)';
+
+/**
+ * `icon` puts a decorative glyph inside the control's leading edge — a search box's magnifier —
+ * without changing what the input is to a screen reader.
+ */
+export function TextInput({ icon, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { icon?: LucideIcon }) {
+  if (!icon) return <input {...props} className={`${CONTROL} ${props.className ?? ''}`} />;
   return (
-    <input
-      {...props}
-      className={`rounded border border-(--color-border) px-3 py-1.5 text-sm outline-none focus:border-(--color-accent) ${props.className ?? ''}`}
-    />
+    <span className="relative inline-flex items-center">
+      <Icon icon={icon} className="pointer-events-none absolute left-2.5 text-(--color-muted)" />
+      <input {...props} className={`${CONTROL} pl-8 ${props.className ?? ''}`} />
+    </span>
   );
 }
 
@@ -62,10 +73,7 @@ export function Select(
 ) {
   const { options, ...rest } = props;
   return (
-    <select
-      {...rest}
-      className={`rounded border border-(--color-border) px-3 py-1.5 text-sm outline-none focus:border-(--color-accent) ${rest.className ?? ''}`}
-    >
+    <select {...rest} className={`${CONTROL} ${rest.className ?? ''}`}>
       {options.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
@@ -75,16 +83,41 @@ export function Select(
   );
 }
 
-export function Button({
-  variant = 'primary',
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' }) {
-  const base = 'rounded px-4 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed';
-  const styles =
-    variant === 'primary'
-      ? 'bg-(--color-accent) text-(--color-accent-ink) hover:opacity-90'
-      : 'border border-(--color-border) bg-(--color-surface) hover:bg-(--color-hover)';
-  return <button {...props} className={`${base} ${styles} ${props.className ?? ''}`} />;
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+
+const BUTTON_VARIANT: Record<ButtonVariant, string> = {
+  primary: 'bg-(--color-accent) text-(--color-accent-ink) hover:opacity-90',
+  secondary: 'border border-(--color-border) bg-(--color-surface) hover:bg-(--color-hover)',
+  danger: 'bg-(--color-danger) text-(--color-danger-ink) hover:opacity-90',
+  ghost: 'text-(--color-text) hover:bg-(--color-hover)',
+};
+
+const BUTTON_SIZE = { sm: 'h-8 px-3 text-xs', md: 'h-9 px-4 text-sm' } as const;
+
+/**
+ * `icon` renders before the label. A button with an icon and no children is icon-only, and the
+ * prop type then requires `aria-label` — an unlabelled icon button is a control a screen reader
+ * announces as "button" and nothing else.
+ */
+export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: ButtonVariant;
+  size?: keyof typeof BUTTON_SIZE;
+  icon?: LucideIcon;
+} & ({ children: React.ReactNode } | { children?: undefined; 'aria-label': string });
+
+export function Button({ variant = 'primary', size = 'md', icon, children, ...props }: ButtonProps) {
+  const base =
+    'inline-flex items-center justify-center gap-2 rounded-lg font-semibold disabled:cursor-not-allowed disabled:opacity-50';
+  const square = children === undefined ? (size === 'sm' ? 'w-8 px-0' : 'w-9 px-0') : '';
+  return (
+    <button
+      {...props}
+      className={`${base} ${BUTTON_SIZE[size]} ${square} ${BUTTON_VARIANT[variant]} ${props.className ?? ''}`}
+    >
+      {icon && <Icon icon={icon} />}
+      {children}
+    </button>
+  );
 }
 
 export function StatusBanner({ ok, message }: { ok: boolean; message: string }) {
@@ -166,35 +199,58 @@ export const TONE_TEXT: Record<Tone, string> = {
 /**
  * A status word plus its tone. The word is always present: colour is never the only carrier of a
  * state (WCAG 2.2 AA, 1.4.1, doc 15 §2 rule 8), so every chip built from this still reads
- * correctly in greyscale or to a screen reader.
+ * correctly in greyscale or to a screen reader. `dot` adds a decorative status dot in front of it.
  */
-export function Chip({ tone, children, title }: { tone: Tone; children: React.ReactNode; title?: string }) {
+export function Chip({
+  tone,
+  children,
+  title,
+  dot,
+}: {
+  tone: Tone;
+  children: React.ReactNode;
+  title?: string;
+  dot?: boolean;
+}) {
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-semibold ${TONE_BOX[tone]} ${TONE_TEXT[tone]}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ${TONE_BOX[tone]} ${TONE_TEXT[tone]}`}
     >
+      {dot && <span aria-hidden="true" className="size-1.5 flex-none rounded-full bg-current" />}
       {children}
     </span>
   );
 }
 
-/** Heading plus landmark, so the regions of a long screen are navigable rather than scrolled. */
+/**
+ * Heading plus landmark, so the regions of a long screen are navigable rather than scrolled.
+ *
+ * `card` sets the section in a surface card. It is opt-in, not the default, because most screens
+ * still wrap a bordered grid or empty state inside their sections, and turning all 52 call sites
+ * into cards at once would draw a card inside a card on each of them until that screen is
+ * converted (plan 2026-11-03-ui-redesign-phase-1, "Deliberate change to the spec").
+ */
 export function Section({
   id,
   title,
   action,
   children,
+  card = false,
 }: {
   id: string;
   title: string;
   action?: React.ReactNode;
   children: React.ReactNode;
+  card?: boolean;
 }) {
   return (
-    <section aria-labelledby={id}>
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id={id} className="text-sm font-semibold uppercase tracking-wide text-(--color-muted)">
+    <section
+      aria-labelledby={id}
+      className={card ? 'rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)' : ''}
+    >
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id={id} className="text-[15px] font-semibold text-(--color-text)">
           {title}
         </h2>
         {action}
@@ -221,20 +277,43 @@ export function Ago({ at, never = 'hiç' }: { at: number | null | undefined; nev
  * One `<h1>` per screen (doc 15 §3.7), with room for the sentence that says what the screen is
  * for and the one dominant action it exists to trigger (doc 15 §3.1). Centralised so no screen
  * has to decide on its own how large the title is or where the primary button sits relative to it.
+ * `breadcrumb` sits above the title; its last entry is the current page. Several actions go in
+ * `action` as a fragment.
  */
 export function PageHeader({
   title,
   description,
   action,
+  breadcrumb,
 }: {
   title: string;
   description?: React.ReactNode;
   action?: React.ReactNode;
+  breadcrumb?: { label: string; href?: string }[];
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold">{title}</h1>
+        {breadcrumb && breadcrumb.length > 0 && (
+          <nav aria-label="Konum" className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-(--color-muted)">
+            {breadcrumb.map((crumb, i) => {
+              const last = i === breadcrumb.length - 1;
+              return (
+                <span key={`${crumb.label}-${i}`} className="flex items-center gap-1.5">
+                  {i > 0 && <span aria-hidden="true">/</span>}
+                  {last || !crumb.href ? (
+                    <span aria-current={last ? 'page' : undefined}>{crumb.label}</span>
+                  ) : (
+                    <Link href={crumb.href} className="hover:underline">
+                      {crumb.label}
+                    </Link>
+                  )}
+                </span>
+              );
+            })}
+          </nav>
+        )}
+        <h1 className="text-2xl font-bold">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-sm text-(--color-muted)">{description}</p>}
       </div>
       {action && <div className="flex-none">{action}</div>}
@@ -258,10 +337,13 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded border border-(--color-border) bg-(--color-surface) p-4 text-sm">
-      <p className="font-medium">{message}</p>
-      {reason && <p className="mt-1 text-(--color-muted)">{reason}</p>}
-      {action && <div className="mt-3">{action}</div>}
+    <div className="flex gap-3 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 text-sm">
+      <Icon icon={Inbox} size={20} className="mt-0.5 flex-none text-(--color-muted)" />
+      <div>
+        <p className="font-medium">{message}</p>
+        {reason && <p className="mt-1 text-(--color-muted)">{reason}</p>}
+        {action && <div className="mt-3">{action}</div>}
+      </div>
     </div>
   );
 }
@@ -273,16 +355,15 @@ export function EmptyState({
  */
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className={`rounded border p-4 ${TONE_BOX.danger}`}>
-      <p className={`text-sm font-semibold ${TONE_TEXT.danger}`}>Yüklenemedi</p>
-      <p className="mt-1 text-sm">{message}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="mt-3 rounded border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm font-semibold hover:bg-(--color-hover)"
-      >
-        Tekrar dene
-      </button>
+    <div className={`flex gap-3 rounded-xl border p-4 ${TONE_BOX.danger}`}>
+      <Icon icon={AlertTriangle} size={20} className={`mt-0.5 flex-none ${TONE_TEXT.danger}`} />
+      <div>
+        <p className={`text-sm font-semibold ${TONE_TEXT.danger}`}>Yüklenemedi</p>
+        <p className="mt-1 text-sm">{message}</p>
+        <Button variant="secondary" type="button" onClick={onRetry} className="mt-3">
+          Tekrar dene
+        </Button>
+      </div>
     </div>
   );
 }
@@ -295,13 +376,14 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry: () 
 export function LoadingState({ message, skeletonRows = 0 }: { message: string; skeletonRows?: number }) {
   return (
     <div className="space-y-3">
-      <p aria-live="polite" className="text-sm text-(--color-muted)">
+      <p aria-live="polite" className="flex items-center gap-2 text-sm text-(--color-muted)">
+        <Icon icon={Loader2} className="motion-safe:animate-spin" />
         {message}
       </p>
       {Array.from({ length: skeletonRows }).map((_, i) => (
         <div
           key={i}
-          className="h-10 animate-pulse rounded border border-(--color-border) bg-(--color-surface)"
+          className="h-10 animate-pulse rounded-lg border border-(--color-border) bg-(--color-surface)"
         />
       ))}
     </div>
