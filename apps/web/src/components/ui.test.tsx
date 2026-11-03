@@ -97,6 +97,16 @@ describe('PageHeader', () => {
     expect(within(nav).getByText('Takip Edilen Ürünler').getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('heading', { level: 1, name: 'Takip Edilen Ürünler' })).toBeTruthy();
   });
+
+  // Phase 3 final review: a `flex-none` action box takes its max-content width and can never
+  // shrink, so a `flex-wrap` row of filters inside it overflows a narrow screen instead of wrapping.
+  it('action can shrink so its own row wraps', () => {
+    render(<PageHeader title="Rakip Satıcılar" action={<div data-testid="filters">x</div>} />);
+    const box = screen.getByTestId('filters').parentElement!;
+    expect(box.className).not.toContain('flex-none');
+    expect(box.className).toContain('max-w-full');
+    expect(box.className).toContain('min-w-0');
+  });
 });
 
 describe('TextInput', () => {
@@ -104,6 +114,18 @@ describe('TextInput', () => {
     const { container } = render(<TextInput icon={Search} aria-label="Ara" />);
     expect(screen.getByRole('textbox', { name: 'Ara' })).toBeTruthy();
     expect(container.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  // Phase 3 final review: with an icon the input sits in a shrink-to-fit wrapper, so a width on
+  // the input alone (`w-full`) resolved against the wrapper and collapsed to the default width.
+  it.each(['w-full', 'w-56'])('icon input takes its width (%s) from the wrapper', (width) => {
+    render(<TextInput icon={Search} aria-label="Ara" className={`mt-2 ${width}`} />);
+    const input = screen.getByRole('textbox', { name: 'Ara' });
+    const wrapper = input.parentElement!;
+    expect(wrapper.className).toContain(width);
+    expect(input.className).toContain('w-full');
+    // Non-width classes stay on the input.
+    expect(input.className).toContain('mt-2');
   });
 });
 

@@ -60,10 +60,16 @@ const CONTROL =
  */
 export function TextInput({ icon, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { icon?: LucideIcon }) {
   if (!icon) return <input {...props} className={`${CONTROL} ${props.className ?? ''}`} />;
+  // The wrapper is what the layout sizes, so a width class (`w-full`, `w-56`) belongs on it; on
+  // the input alone `w-full` resolves against a shrink-to-fit span and collapses.
+  const classes = (props.className ?? '').split(/\s+/).filter(Boolean);
+  const isWidth = (c: string) => /^(w-|min-w-|max-w-|flex-1$)/.test(c);
+  const width = classes.filter(isWidth).join(' ');
+  const rest = classes.filter((c) => !isWidth(c)).join(' ');
   return (
-    <span className="relative inline-flex items-center">
+    <span className={`relative inline-flex items-center ${width}`}>
       <Icon icon={icon} className="pointer-events-none absolute left-2.5 text-(--color-muted)" />
-      <input {...props} className={`${CONTROL} pl-8 ${props.className ?? ''}`} />
+      <input {...props} className={`${CONTROL} pl-8 ${width ? 'w-full' : ''} ${rest}`} />
     </span>
   );
 }
@@ -319,7 +325,9 @@ export function PageHeader({
         <h1 className="text-2xl font-bold">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-sm text-(--color-muted)">{description}</p>}
       </div>
-      {action && <div className="flex-none">{action}</div>}
+      {/* Shrinkable, not `flex-none`: a row of filters passed as `action` must be able to wrap
+          on a narrow screen rather than push the header past the content edge. */}
+      {action && <div className="min-w-0 max-w-full">{action}</div>}
     </div>
   );
 }
