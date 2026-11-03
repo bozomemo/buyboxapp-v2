@@ -138,6 +138,7 @@ export function BrandListingsClient() {
     <div className="space-y-4">
       <PageHeader
         title="İlanlar"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'İlanlar' }]}
         description="Ürünlerinize bağlı kartlar ve yıldızladığınız kartlar. Yarım saatte bir taranır; fiyatlar bandınızla karşılaştırılır."
       />
 
@@ -252,6 +253,7 @@ export function BrandListingsClient() {
                   {rows.map((row) => (
                     <tr key={row.id} className="border-t border-(--color-border)">
                       <td className="p-2">
+                        {/* kit-exempt: favourite star toggle, a pressed icon state the kit has no control for */}
                         <button
                           type="button"
                           disabled={busy === row.id}

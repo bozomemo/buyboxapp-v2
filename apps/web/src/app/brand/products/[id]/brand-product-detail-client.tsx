@@ -19,6 +19,7 @@ import { STICKY_HEAD, TableFrame } from '@/components/table';
 import {
   Ago,
   Button,
+  buttonClass,
   ConfirmButton,
   EmptyState,
   ErrorState,
@@ -26,10 +27,11 @@ import {
   LoadingState,
   PageHeader,
   Section,
+  StatCard,
   StatusBanner,
   TextInput,
 } from '@/components/ui';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, formatNumber } from '@/lib/format';
 
 interface Product {
   id: string;
@@ -184,28 +186,31 @@ export function BrandProductDetailClient({ id }: { id: string }) {
     <div className="space-y-4">
       <PageHeader
         title={product.name}
-        description={
-          <>
-            Birim PSF <strong>{formatMoney(BigInt(product.referencePrice))}</strong>
-            {' · '}
-            min{' '}
-            {product.minPrice === null ? (
-              <span title="Alt sınır alarmı yok">—</span>
-            ) : (
-              <strong>{formatMoney(BigInt(product.minPrice))}</strong>
-            )}
-            {' · '}
-            üst sınır <strong>{formatMoney(BigInt(product.upperBound))}</strong>
-            {product.upperBoundIsReferencePrice && ' (max girilmemiş, PSF geçerli)'}
-            {product.barcode && ` · barkod ${product.barcode}`}
-          </>
-        }
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Stok', href: '/brand/products' }, { label: product.name }]}
+        description={product.barcode ? `Barkod ${product.barcode}` : undefined}
         action={
-          <Link className="text-sm underline" href="/brand/products">
+          <Link className={buttonClass('secondary', 'sm')} href="/brand/products">
             Stok listesine dön
           </Link>
         }
       />
+
+      {/* Detail pattern (spec 2026-11-03 §6.1, 3): the band this product is judged against, as
+          numbers rather than a sentence. Money stays bigint until `formatMoney`. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Birim PSF" value={formatMoney(BigInt(product.referencePrice))} />
+        <StatCard
+          label="Min"
+          value={product.minPrice === null ? '—' : formatMoney(BigInt(product.minPrice))}
+          delta={product.minPrice === null ? 'Alt sınır alarmı yok' : undefined}
+        />
+        <StatCard
+          label="Üst sınır"
+          value={formatMoney(BigInt(product.upperBound))}
+          delta={product.upperBoundIsReferencePrice ? 'Max girilmemiş, PSF geçerli' : undefined}
+        />
+        <StatCard label="Bağlı kart" value={formatNumber(cards.length)} />
+      </div>
 
       {notice && <StatusBanner ok={notice.ok} message={notice.message} />}
 
@@ -266,7 +271,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
                         <Button
                           variant="secondary"
                           type="button"
-                          className="px-2! py-1! text-xs"
+                          size="sm"
                           onClick={() => void patchCard(card.id, { isPrimary: true })}
                         >
                           Birincil yap
@@ -281,7 +286,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
                       <ConfirmButton
                         requireConfirm
                         confirmMessage="Kart bağı kaldırılsın mı? Kart takip listesinde kalır."
-                        className="rounded border border-(--color-border) px-2 py-1 text-xs"
+                        className={buttonClass('secondary', 'sm')}
                         onConfirmed={() => void unlink(card.id)}
                       >
                         Bağı kaldır
@@ -295,7 +300,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
         )}
       </Section>
 
-      <Section id="add-card" title="Kart ekle">
+      <Section id="add-card" title="Kart ekle" card>
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Ürün linki" hint="Trendyol veya Hepsiburada ürün sayfası">
             <TextInput
@@ -328,9 +333,9 @@ export function BrandProductDetailClient({ id }: { id: string }) {
         {pickedCard && (
           <p className="mt-2 text-xs text-(--color-muted)">
             Öneriden seçildi: {pickedCard.productRef}.{' '}
-            <button type="button" className="underline" onClick={() => setPickedCard(null)}>
+            <Button variant="ghost" size="sm" type="button" onClick={() => setPickedCard(null)}>
               Vazgeç
-            </button>
+            </Button>
           </p>
         )}
       </Section>
@@ -350,7 +355,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
             {suggestions.map((suggestion) => (
               <li
                 key={suggestion.id}
-                className="flex flex-wrap items-center gap-3 rounded border border-(--color-border) p-2"
+                className="flex flex-wrap items-center gap-3 rounded-lg border border-(--color-border) bg-(--color-surface) p-3"
               >
                 <span className="text-xs text-(--color-muted)">{suggestion.marketplaceCode}</span>
                 <a className="underline" href={suggestion.productUrl} target="_blank" rel="noreferrer">
@@ -359,7 +364,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
                 <Button
                   variant="secondary"
                   type="button"
-                  className="ml-auto px-2! py-1! text-xs"
+                  size="sm" className="ml-auto"
                   onClick={() => {
                     // Fills the form and scrolls the multiplier into view: accepting a suggestion
                     // still has to answer "kaç adet?" before anything is written.
@@ -384,7 +389,7 @@ function MultiplierCell({ value, onChange }: { value: number; onChange: (next: n
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   return (
-    <input
+    <TextInput
       value={text}
       inputMode="numeric"
       aria-label="Adet çarpanı"
@@ -397,7 +402,7 @@ function MultiplierCell({ value, onChange }: { value: number; onChange: (next: n
         }
         if (next !== value) onChange(next);
       }}
-      className="w-16 rounded border border-(--color-border) px-2 py-1 text-sm tabular-nums"
+      className="w-16 tabular-nums"
     />
   );
 }

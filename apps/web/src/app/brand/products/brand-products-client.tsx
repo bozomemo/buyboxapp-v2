@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Button,
+  buttonClass,
   ConfirmButton,
   EmptyState,
   ErrorState,
@@ -178,6 +179,7 @@ export function BrandProductsClient() {
     <div className="space-y-4">
       <PageHeader
         title="Stok"
+        breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Stok' }]}
         description="Kendi ürünleriniz: PSF, min ve max birim başına yazılır; pazaryeri kartları bu ürüne bağlanır."
       />
 
@@ -237,7 +239,7 @@ export function BrandProductsClient() {
         </div>
 
         {formOpen && (
-          <div className="mb-4 rounded border border-(--color-border) p-3">
+          <div className="mb-4 rounded-xl border border-(--color-border) bg-(--color-bg) p-4">
             <div className="flex flex-wrap items-end gap-3">
               <Field label="Ürün adı">
                 <TextInput
@@ -377,7 +379,7 @@ export function BrandProductsClient() {
                           <Button
                             variant="secondary"
                             type="button"
-                            className="px-2! py-1! text-xs"
+                            size="sm"
                             onClick={() => edit(row)}
                           >
                             Düzenle
@@ -385,7 +387,7 @@ export function BrandProductsClient() {
                           <ConfirmButton
                             requireConfirm
                             confirmMessage={`"${row.name}" silinsin mi? Kartları takip listesinde kalır.`}
-                            className="rounded border border-(--color-border) px-2 py-1 text-xs"
+                            className={buttonClass('secondary', 'sm')}
                             onConfirmed={() => void remove(row.id)}
                           >
                             Sil

@@ -12,7 +12,7 @@
  */
 
 import { useRef, useState } from 'react';
-import { Button, Field, Section, StatusBanner } from '@/components/ui';
+import { Button, buttonClass, Field, Section, StatusBanner } from '@/components/ui';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatNumber } from '@/lib/format';
@@ -142,8 +142,9 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
     <Section
       id="brand-import"
       title="Excel'den yükle"
+      card
       action={
-        <a className="text-sm underline" href="/api/brand-products/import" download>
+        <a className={buttonClass('secondary', 'sm')} href="/api/brand-products/import" download>
           Şablon indir
         </a>
       }
@@ -163,7 +164,7 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
               setWarnings([]);
               setNotice(null);
             }}
-            className="w-80 rounded border border-(--color-border) px-2 py-1 text-sm"
+            className="w-80 text-sm file:mr-3 file:h-9 file:rounded-lg file:border file:border-(--color-border) file:bg-(--color-surface) file:px-3 file:font-semibold"
           />
         </Field>
         <Button variant="secondary" type="button" disabled={busy} onClick={() => void send(false)}>
@@ -196,7 +197,7 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
       )}
 
       {summary && (
-        <div className="mt-3 flex flex-wrap gap-4 rounded border border-(--color-border) p-3 text-sm">
+        <div className="mt-3 flex flex-wrap gap-4 rounded-lg border border-(--color-border) bg-(--color-bg) p-3 text-sm">
           <span>
             Toplam <strong>{formatNumber(summary.totalRows)}</strong> satır
           </span>
@@ -251,7 +252,7 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
             <Button
               variant="secondary"
               type="button"
-              className="px-2! py-1! text-xs"
+              size="sm"
               onClick={downloadProblems}
             >
               Hatalı satırları indir
