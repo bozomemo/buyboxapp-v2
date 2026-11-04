@@ -27,7 +27,11 @@ param(
   [switch] $SkipTests,
   [switch] $SkipSmokeTest,
   [switch] $FullInstaller,
-  [switch] $NoPublish
+  [switch] $NoPublish,
+  # Public, artefacts only, no source (spec decision D2). A scratch repository for trying the
+  # publish step out is passed here, never edited into the default.
+  [string] $ReleasesRepo = 'bozomemo/buybox-releases',
+  [switch] $SkipTagPush
 )
 
 $ErrorActionPreference = 'Stop'
@@ -108,6 +112,18 @@ if (-not $Ref) {
 }
 $commit = ((Exec { git -C $sourceRepo rev-parse --verify "$Ref^{commit}" }) | Select-Object -Last 1).Trim()
 Assert-Exit "Resolving $Ref"
+
+# A publish is refused up front, not after an hour of building, when it could not succeed or
+# should not happen: an unverified build is never published.
+$signingKey = Join-Path $env:USERPROFILE '.buybox\release-signing-key.pem'
+if (-not $NoPublish) {
+  if ($SkipTests -or $SkipSmokeTest) { throw 'A release built with -SkipTests or -SkipSmokeTest is never published. Add -NoPublish.' }
+  if (-not $NotesFile -or -not (Test-Path $NotesFile)) { throw 'Publishing needs -NotesFile <path>: the Turkish release notes shown on Settings > Guncelleme.' }
+  $NotesFile = (Resolve-Path $NotesFile).Path
+  if (-not (Test-Path $signingKey)) { throw "Release signing key not found at $signingKey (scripts/generate-release-keypair.mjs)." }
+  Exec { gh auth status } | Out-Null
+  Assert-Exit 'gh auth status (run gh auth login)'
+}
 
 # node_modules and Next's build cache survive between builds by being *moved* out of the old
 # checkout and back into the new one. A rename is instant, and npm's workspace junctions point
@@ -540,6 +556,45 @@ if ($FullInstaller) {
     Set-Content -Path "$setupExe.sha256" -Value "$hash  BuyBoxSetup-$Version.exe" -Encoding ascii
     Write-Output "Package: $setupExe"
     Write-Output "SHA-256: $hash"
+  }
+}
+
+# --- 10. Publish -------------------------------------------------------------------------------------
+# Spec section 4.6. The release becomes "latest", which is the URL every install polls. Archives
+# an earlier release already published are referenced, not uploaded again (buildManifest).
+if (-not $NoPublish) {
+  Invoke-Step 'publish' {
+    $tag = "v$Version"
+    Exec { gh release view $tag --repo $ReleasesRepo } | Out-Null
+    if ($LASTEXITCODE -eq 0) { throw "$ReleasesRepo already has a release $tag. Bump the version." }
+
+    $previousDir = Join-Path $outDir 'previous'
+    New-Item -ItemType Directory -Path $previousDir -Force | Out-Null
+    Exec { gh release download --repo $ReleasesRepo --pattern 'update.json' --dir $previousDir --clobber } | Out-Null
+    $previous = Join-Path $previousDir 'update.json'
+    if (-not (Test-Path $previous)) { Write-Output 'No earlier release: every component is uploaded.'; $previous = 'none' }
+
+    $publishDir = Join-Path $outDir 'publish'
+    Exec {
+      & node (Join-Path $src 'scripts\release\sign-manifest.mjs') `
+        --components (Join-Path $outDir 'components.json') --version $Version --notes-file $NotesFile `
+        --previous $previous --base-url "https://github.com/$ReleasesRepo/releases/download/$tag" `
+        --key $signingKey --out $publishDir
+    }
+    Assert-Exit 'Signing update.json (scripts/release/sign-manifest.mjs)'
+
+    $assets = @((Join-Path $publishDir 'update.json'), (Join-Path $publishDir 'update.json.sig'))
+    foreach ($name in (Get-Content (Join-Path $publishDir 'new-assets.txt') | Where-Object { $_ })) { $assets += (Join-Path $outDir $name) }
+    Exec { gh release create $tag --repo $ReleasesRepo --latest --title $Version --notes-file $NotesFile @assets }
+    Assert-Exit 'gh release create'
+    Write-Output "Published $tag to $ReleasesRepo ($($assets.Count) assets)."
+
+    if (-not $SkipTagPush) {
+      Exec { git -C $sourceRepo tag $tag $commit }
+      Assert-Exit "git tag $tag"
+      Exec { git -C $sourceRepo push origin $tag }
+      Assert-Exit "git push origin $tag"
+    }
   }
 }
 
