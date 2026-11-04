@@ -307,3 +307,51 @@ describe('startWorker', () => {
     appDb.close();
   });
 });
+
+/**
+ * The update check (docs/superpowers/specs/2026-11-04-auto-update-design.md §5.1) runs only on a
+ * packaged install: a developer checkout has no install directory to compare components against.
+ */
+describe('startWorker update check', () => {
+  let dir: string;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function boot(extraEnv: Record<string, string>) {
+    dir = mkdtempSync(path.join(tmpdir(), 'buybox-worker-update-'));
+    const dbFile = path.join(dir, 'test.db');
+    const appDb = createDb(`file:${dbFile}`, 'sqlite');
+    await runMigrations(appDb);
+    const handle = await startWorker({
+      appDb,
+      env: {
+        DATABASE_URL: `file:${dbFile}`,
+        SECRET_STORE_KEY: 'test-key',
+        SECRET_STORE_PATH: path.join(dir, 'secrets.enc.json'),
+        ...extraEnv,
+      },
+    });
+    return { handle, appDb };
+  }
+
+  it('does not start without an install directory', async () => {
+    const { handle, appDb } = await boot({ BUYBOX_DATA_DIR: dir ?? 'unused', APP_VERSION: '0.2.0' });
+    expect(handle.updateCheckActive).toBe(false);
+    await handle.shutdown();
+    appDb.close();
+  });
+
+  it('starts on a packaged install', async () => {
+    const { handle, appDb } = await boot({
+      BUYBOX_DATA_DIR: tmpdir(),
+      BUYBOX_INSTALL_DIR: tmpdir(),
+      APP_VERSION: '0.2.0',
+      UPDATE_MANIFEST_URL: '',
+    });
+    expect(handle.updateCheckActive).toBe(true);
+    await handle.shutdown();
+    appDb.close();
+  });
+});

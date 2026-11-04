@@ -71,4 +71,7 @@
        (2026-08-24). Paths written by the installer and the wizard are absolute anyway; this
        makes a relative one harmless rather than silently destructive. -->
   <env name="BUYBOX_DATA_DIR" value="{{DATA_DIR}}" />
+  <!-- Where installed.json and the replaceable component directories live. Its presence is what
+       turns the update check on: a developer checkout has neither (auto-update spec section 5.1). -->
+  <env name="BUYBOX_INSTALL_DIR" value="{{INSTALL_DIR}}" />
 </service>

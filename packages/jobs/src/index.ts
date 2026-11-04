@@ -260,3 +260,4 @@ export {
   workerInstanceId,
 } from './stale-locks.js';
 export type { DeadWorkerCheck, ParsedWorkerId } from './stale-locks.js';
+export * from './update/index.js';

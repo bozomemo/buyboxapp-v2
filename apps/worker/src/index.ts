@@ -130,12 +130,15 @@ import {
   isPidAlive,
   releaseLocksOfDeadLocalWorkers,
   workerInstanceId,
+  checkForUpdate,
+  resolveUpdateConfig,
 } from '@buybox/jobs';
 import {
   createLogger,
   FileSecretStore,
   marketplaceCredentialsKey,
   parseBootstrapEnv,
+  RELEASE_PUBLIC_KEYS_PEM,
   type BootstrapEnv,
   type ISecretStore,
 } from '@buybox/shared';
@@ -172,6 +175,8 @@ export interface WorkerHandle {
    * this the screen can show what will really happen, and say plainly when the two differ.
    */
   readonly cadenceMsByJobName: ReadonlyMap<string, number>;
+  /** Whether this worker looks for updates — only a packaged install does (`resolveUpdateConfig`). */
+  readonly updateCheckActive: boolean;
   shutdown(): Promise<void>;
 }
 
@@ -988,6 +993,28 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     }, MARKETPLACE_RELOAD_INTERVAL_MS),
   );
 
+  // The update check (docs/superpowers/specs/2026-11-04-auto-update-design.md §5.1). A ticker of
+  // its own rather than a scheduler job, deliberately: `Scheduler.tick()` does nothing while the
+  // system is paused or the licence has lapsed, and those are exactly the installs that must
+  // still be able to find a fix. Its failures are logged and never thrown — nothing waits on it.
+  const updateConfig = resolveUpdateConfig(options.env ?? process.env);
+  if (updateConfig) {
+    const runUpdateCheck = () => {
+      void checkForUpdate({
+        ...updateConfig,
+        publicKeysPem: RELEASE_PUBLIC_KEYS_PEM,
+        fetch,
+        now: () => new Date(),
+      })
+        .then((state) => logger.info('update.checked', { result: state.lastResult, ready: state.ready?.version ?? null }))
+        .catch((error) => logger.error('update.checkFailed', { error }));
+    };
+    // A minute after boot, not at boot: an update installed seconds ago is being health-checked,
+    // and the first thing it should do is serve, not download.
+    tickers.push(setTimeout(runUpdateCheck, 60_000) as unknown as ReturnType<typeof setInterval>);
+    tickers.push(setInterval(runUpdateCheck, updateConfig.intervalMs));
+  }
+
   // Boot isn't done until any overdue job this restart owes has at least been kicked off —
   // see `catchUpFires`'s doc comment above.
   await Promise.all(catchUpFires);
@@ -1015,6 +1042,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     databaseTarget: describeDatabaseTarget(env.DATABASE_URL),
     startedAtMs: Date.now(),
     cadenceMsByJobName,
+    updateCheckActive: updateConfig !== undefined,
     async shutdown() {
       for (const ticker of tickers) clearInterval(ticker);
       await scheduler.shutdown();
