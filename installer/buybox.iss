@@ -85,6 +85,8 @@ Type: filesandordirs; Name: "{app}\monitoring"
 Type: filesandordirs; Name: "{app}\*.previous"
 Type: filesandordirs; Name: "{app}\*.new"
 Type: filesandordirs; Name: "{app}\*.failed"
+Type: filesandordirs; Name: "{app}\.update-staging"
+Type: filesandordirs; Name: "{app}\.updater"
 
 [Dirs]
 ; Data lives outside {app} so an upgrade, which replaces {app} wholesale, cannot reach it
@@ -482,6 +484,14 @@ begin
                  '-Port ' + GetPort('') + ' -DataDir ' + DataDirArg,
                  'BuyBox servisi calisir duruma gelmedi; kurulum tamamlanamadi.') then
     exit;
+
+  { Review I1 (2026-11-05): the full installer is the documented recovery from a self-update whose
+    rollback failed, and that failure deliberately leaves updates\hold in place so pricing stays
+    stopped. Only now -- with this build installed and healthy -- is it safe to lift, together with
+    the dead run's lock and request; otherwise the recovered install would never claim a job. }
+  DeleteFile(ExpandConstant('{#DataDir}') + '\updates\hold');
+  DeleteFile(ExpandConstant('{#DataDir}') + '\updates\lock');
+  DeleteFile(ExpandConstant('{#DataDir}') + '\updates\request.json');
 
   { The service is up, so its first boot has run, and a token exists if the install has no
     administrator yet. Not Log()ged: the setup log is a file anyone reading the install can see. }

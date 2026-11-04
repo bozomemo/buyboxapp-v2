@@ -1276,9 +1276,20 @@ that changes.
   `BuyBoxUpdater` scheduled task. `apply-update.ps1` re-verifies with the installed verifier,
   writes `updates\hold` (the scheduler claims nothing while it exists), stops the service, takes a
   `pg_dump` / SQLite copy, swaps component directories, restarts and waits for `/api/health`.
+- **Nothing the updater runs or trusts comes from ProgramData** (review, 2026-11-05): every local
+  user can create files there and owns what they create. The script runs from `{app}\.updater`, and
+  the download is copied into `{app}\.update-staging`, verified there and extracted there, so a
+  file cannot be swapped between check and use, extracted folders inherit Program Files' ACL, and
+  the final rename stays on one volume. `updates\` and `backups\` are locked to SYSTEM and
+  Administrators (the pre-update dumps are a full copy of the database).
 - Unhealthy → the code is rolled back, and the database is restored when the new version ran
   migrations (or never answered). A rollback that fails leaves the hold: pricing stays stopped,
-  and re-running the full installer is the recovery, as before.
+  every page says so, and re-running the full installer is the recovery — it lifts the hold once
+  its own health check passes.
+- `installer\test\apply-update-harness.ps1` runs the real `apply-update.ps1` against a fake
+  install (stub service scripts, a fake health server): success, rollback with database restore,
+  a tampered archive, and a downgrade request. It does not replace U-1…U-7, which need WinSW,
+  PostgreSQL, ACLs and the Event Log.
 - The check is outside the pricing path, exempt from the licence gate, sends no licence id, and is
   a ticker of its own rather than a scheduler job, so a paused or lapsed install can still update.
 - **The first self-updating version (0.2.0) is installed once by hand** with the full installer.
