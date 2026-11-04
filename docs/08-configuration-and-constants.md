@@ -330,3 +330,21 @@ only through `apps/web/src/components/icon.tsx`) and IBM Plex Sans/Mono through
 `next/font/google`, which downloads the fonts at build time on the CI runner and serves them from
 the app, so no browser contacts Google. Both are an exception to doc 15 rule 9, authorised by the
 product owner on 2026-11-03 (spec `docs/superpowers/specs/2026-11-03-ui-redesign-design.md` §2).
+
+## 17. Self-update — **added 2026-11-04**
+
+Doc 14 §12; spec `docs/superpowers/specs/2026-11-04-auto-update-design.md` §10.
+
+| Name | Where | Default | Purpose |
+|---|---|---|---|
+| `UPDATE_MANIFEST_URL` | service env | `https://github.com/bozomemo/buybox-releases/releases/latest/download/update.json` | Where the update check looks. **Empty disables checking.** |
+| `UPDATE_CHECK_INTERVAL` | service env | `6h` | `<n>m` or `<n>h`; never under 15 minutes; an unreadable value falls back to the default |
+| `BUYBOX_INSTALL_DIR` | service env (template) | `{app}` | Turns the check on; a developer checkout has none and never checks |
+| `PG_BIN_DIR` | machine env | unset | Where `pg_dump`/`psql`/`pg_restore` live, when the PostgreSQL registry entry and `PATH` do not say |
+| `BUYBOX_BUILD_ROOT` | vendor machine | `C:\BuyBoxBuild` | `release.ps1`'s build root, outside OneDrive |
+
+Constants: manifest fetch limit 64 KB; updater health gate 180 s; updater lock considered stale
+after 30 minutes; the last 5 pre-update backups and the last 20 history entries are kept. The
+release signing public keys are `RELEASE_PUBLIC_KEYS_PEM` (`packages/shared/src/release/public-key.ts`);
+the private key lives at `%USERPROFILE%\.buybox\release-signing-key.pem` on the vendor machine and
+nowhere else.

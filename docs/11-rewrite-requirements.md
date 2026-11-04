@@ -187,8 +187,14 @@ Added 2026-08-23. Full detail, including the rejected alternatives, is in `docs/
 | R-DEP-17 | M | Moving an install to a new machine never leaves two instances able to submit prices. The old one is stopped and disabled before the new one's price jobs are released | 14 §13.4 |
 | R-DEP-18 | M | An upgrade keeps a network install in network mode: `PUBLIC_ORIGIN` and `TRUST_PROXY` set on the service survive it, and an upgrade that cannot read them stops rather than dropping them | 14 §13.7 |
 
-Automatic self-update is **out of scope** (decided 2026-08-24); doc 14 §12 records the conditions
-under which it would be reconsidered.
+| R-DEP-19 | M | A newer signed release is found and downloaded without operator action, and installed only when an administrator presses Şimdi kur — never silently. Only components whose hash differs are downloaded | 14 §12 |
+| R-DEP-20 | M | A manifest whose signature does not verify against the compiled-in release keys, or an archive whose hash does not match it, is never installed; the downloaded files are re-verified immediately before installing | 14 §12 |
+| R-DEP-21 | M | No job runs while an update holds pricing; the hold is lifted only once the new version reports healthy | 14 §12 |
+| R-DEP-22 | M | An update whose new version does not become healthy is rolled back — code, and the database when the new version migrated it; a rollback that fails leaves pricing held | 14 §12 |
+| R-DEP-23 | M | The update check is outside the pricing path, sends no licence id, and works while paused or unlicensed | 14 §12 |
+
+Automatic self-update was out of scope until 2026-11-04, when the product owner decided to build it
+(R-DEP-19 … R-DEP-23).
 
 ## 9c. Authentication and access
 

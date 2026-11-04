@@ -625,24 +625,38 @@ database name. The installer contributes nothing to it and must not persist one.
 Two constraints drive it: the ABI problem of §3.1, and the fact that Chromium's version is
 pinned by Playwright's version, so a hand-assembled `chromium\` folder goes stale silently.
 
-Everything therefore runs on a **Windows CI runner**, in this order:
+**Revised 2026-11-04** (spec `docs/superpowers/specs/2026-11-04-auto-update-design.md` §4): the
+build is `installer\release.ps1`, run on the vendor's Windows machine **outside OneDrive** —
+`C:\BuyBoxBuild` by default — from a clean `git worktree` of a commit. Building inside the synced
+repository, and re-processing ~900 MB that never changes, is what made a build take hours. In order:
 
-1. `npm ci` — on Windows, so `better-sqlite3` is built for the Windows Node ABI.
-2. `npm test` and `npm run typecheck`. An installer is not built from a red build.
-3. `npm run build` with `output: 'standalone'`.
-4. Assemble `app\`: the standalone output, plus `.next\static` and `public` copied in, **minus
-   every `.env*` file** — see §8.1.
-5. Copy the Node 22 runtime into `node\`. Its major version must match the one `npm ci` ran
-   under; CI asserts this rather than assuming it.
-6. `PLAYWRIGHT_BROWSERS_PATH=<staging>\chromium npx playwright install chromium`.
-7. Compile `installer\buybox.iss` with Inno Setup.
-8. Sign — see §9.
+1. Check out the commit into `<root>\src` (a dirty tree is refused unless `-Ref` names a commit).
+2. Restore `node_modules` (keyed by `package-lock.json` + Node version) or `npm ci
+   --ignore-scripts`; `better-sqlite3` ships win32-x64 prebuilds, and step 7 proves they load.
+3. `npm run typecheck`, then `npm test` with the database test containers started and stopped
+   around it. An installer is not built from a red build.
+4. `npm run build` with `output: 'standalone'`.
+5. Build the five **components** — `app`, `node`, `chromium`, `runtime`, `monitoring` — as zips,
+   each cached by a key derived from its inputs; only `app` is rebuilt every time. `app` is
+   assembled as before (§8.1 purge and assertion, §8.2 overlays) plus `verify-update.mjs`.
+6. Extract the components into `layout\` and write `installed.json`.
+7. ABI check (§3.1) and the smoke test (§8.2), both against `layout\` — what is shipped.
+8. With `-FullInstaller`, compile `installer\buybox.iss` from `layout\` (`/DLayoutDir`).
+9. Unless `-NoPublish`, sign `update.json` and publish a GitHub Release on
+   `bozomemo/buybox-releases` (§12).
+10. Sign — see §9.
+
+Every step is timed. Measured on the first run (2026-11-05): dependencies 0m34s, typecheck 0m27s,
+and the database suite dominating — one of its 21 files alone took 478 s.
 
 Files under `installer\`:
 
 | File | Role |
 |---|---|
-| `build-package.ps1` | The pipeline above, runnable locally and from CI |
+| `release.ps1` | The pipeline above |
+| `build-package.ps1` | Kept for the old command: `release.ps1 -NoPublish -FullInstaller` |
+| `apply-update.ps1` | §12 — installs a downloaded release: verify, hold, back up, swap, health-gate, roll back |
+| `register-updater-task.ps1` | §12 — the `BuyBoxUpdater` scheduled task "Şimdi kur" starts |
 | `buybox.iss` | Inno Setup script. Thin — it sequences the scripts below rather than reimplementing them in Pascal |
 | `preflight.ps1` | §5 step 1 |
 | `stop-service.ps1` | §5 step 3 — stops the running service before its files are replaced, and waits for the processes under `{app}` to actually exit |
@@ -823,6 +837,18 @@ so it is a development workaround and never a release check. D-1 still requires 
 | D-7 | The port is not reachable from a second machine on the same LAN (§4.4) |
 | D-8 | Trendyol competitor collection succeeds on the installed machine, proving the bundled Chromium is found via `PLAYWRIGHT_BROWSERS_PATH` |
 | D-9 | An ABI-mismatched package fails in CI, not on a customer machine (§3.1 assertion in step 5) |
+
+Self-update (§12), rehearsed on a Windows VM before production receives its first button update:
+
+| # | Check |
+|---|---|
+| U-1 | 0.2.0 → 0.2.1 succeeds; only changed components are downloaded; pricing resumes |
+| U-2 | A deliberately broken 0.2.2 (fails health after running a migration) is rolled back — code and database; the old version is healthy; history says `Geri dönüldü` |
+| U-3 | `pg_dump` unavailable → `İptal edildi`, the old version running, pricing not held |
+| U-4 | A zip altered after download is refused at re-verification |
+| U-5 | `PUBLIC_ORIGIN` / `TRUST_PROXY` survive an update |
+| U-6 | No network → nothing visible beyond the last-check result |
+| U-7 | A release changing only `app` downloads one archive of ~30 MB |
 
 ## 11. Ubuntu
 
@@ -1237,13 +1263,34 @@ Nothing in steps 1–3 has executed against a real Linux machine yet — they ar
 same reasoning as their Windows counterparts and syntax-checked, not proven. Step 5 is where
 that changes.
 
-## 12. Automatic self-update — deferred, and what it would take
+## 12. Automatic self-update
 
-Decided 2026-08-24: **not built.** Distribution is manual — the vendor sends a new
-`BuyBoxSetup-<version>.exe`, the operator runs it, and §5 handles the rest. With §5.2 in place an
-upgrade is genuinely one double-click, which is enough at the current number of installs.
+**Decision changed 2026-11-04 (product owner): built.** The design is
+`docs/superpowers/specs/2026-11-04-auto-update-design.md`; this section is the summary.
 
-Recorded here so the decision can be revisited on evidence rather than re-derived:
+- The worker checks `UPDATE_MANIFEST_URL` (default: the latest release of the public, artefact-only
+  repository `bozomemo/buybox-releases`) every `UPDATE_CHECK_INTERVAL`, verifies `update.json`'s
+  Ed25519 signature against the release keys compiled into the build (separate from the licence
+  key), and downloads only the components whose hash differs from `installed.json`.
+- Settings > Güncelleme shows the ready release; **Şimdi kur** (admin only) starts the
+  `BuyBoxUpdater` scheduled task. `apply-update.ps1` re-verifies with the installed verifier,
+  writes `updates\hold` (the scheduler claims nothing while it exists), stops the service, takes a
+  `pg_dump` / SQLite copy, swaps component directories, restarts and waits for `/api/health`.
+- Unhealthy → the code is rolled back, and the database is restored when the new version ran
+  migrations (or never answered). A rollback that fails leaves the hold: pricing stays stopped,
+  and re-running the full installer is the recovery, as before.
+- The check is outside the pricing path, exempt from the licence gate, sends no licence id, and is
+  a ticker of its own rather than a scheduler job, so a paused or lapsed install can still update.
+- **The first self-updating version (0.2.0) is installed once by hand** with the full installer.
+
+Two points below were **deliberately departed from** (spec §9): the artefacts are on GitHub
+Releases in a public repository holding no source, accepted for now with the URL configurable for
+a move to R2/S3; and code signing is not a prerequisite, because no installer exe is launched — a
+task the installer created runs the product's own script on archives verified against a signed
+manifest. That is an accepted risk; if Defender or an EDR product flags the updater, §9 is
+prioritised.
+
+The 2026-08-24 reasoning, kept because the rest of it still holds:
 
 **GitHub Releases is the right build host and the wrong distribution host.** GitHub Actions on a
 Windows runner is already what §8 requires. Serving the artefact from Releases is not: a private
