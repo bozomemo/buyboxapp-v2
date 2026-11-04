@@ -352,7 +352,9 @@ function Add-Component {
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     & $Stage $dir
-    $top = Get-ChildItem $dir -Directory | ForEach-Object { $_.Name }
+    # @(...) matters: with one top-level directory this is a plain string, and splatting a string
+    # hands tar its characters one by one ('a','p','p'). Measured 2026-11-05.
+    $top = @(Get-ChildItem $dir -Directory | ForEach-Object { $_.Name })
     if (-not $top) { throw "Component $Name staged nothing." }
     if (Test-Path $cached) { Remove-Item $cached -Force }
     # bsdtar, bundled with Windows 10+, writes zip with -a; Compress-Archive is far slower.
