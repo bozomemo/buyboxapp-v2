@@ -135,7 +135,11 @@ function SchedulerBanner({ status }: { status: SchedulerStatus | undefined }) {
   if (!status) return null;
 
   let message: string | undefined;
-  if (status.systemPaused) {
+  // First: during an update the operator's own pause is not the reason, and apply-update.ps1
+  // lifts the hold itself once the new version is healthy (auto-update spec §5.2).
+  if (status.lastTickOutcome === 'update-hold') {
+    message = 'Güncelleme doğrulanıyor — fiyat işleri duraklatıldı.';
+  } else if (status.systemPaused) {
     message = 'Genel durdurma açık — hiçbir iş çalışmıyor. Panel ekranından devam ettirin.';
   } else if (!status.running) {
     message = 'Worker çalışmıyor — kuyruktaki işleri alacak kimse yok. Servis günlüğünü kontrol edin.';

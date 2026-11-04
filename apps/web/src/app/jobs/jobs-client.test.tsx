@@ -265,4 +265,25 @@ describe('JobsClient', () => {
     expect(run.disabled).toBe(true);
     expect(run.className).toContain('h-8');
   });
+
+  // Auto-update spec §5.2: an update holding pricing must be named as the reason nothing runs,
+  // not left to look like a stalled scheduler.
+  it('names an update in progress as the reason nothing runs', async () => {
+    stubFetch({
+      '/api/jobs': {
+        body: {
+          jobs: [],
+          scheduler: { running: true, systemPaused: false, lastTickOutcome: 'update-hold', msSinceLastTick: 1000 },
+          queueDepth: {},
+          claimed: [],
+          circuitBreakers: [],
+        },
+      },
+      ...EMPTY_SIDE_ROUTES,
+    });
+
+    render(<JobsClient />);
+
+    expect(await screen.findByText('Güncelleme doğrulanıyor — fiyat işleri duraklatıldı.')).toBeTruthy();
+  });
 });

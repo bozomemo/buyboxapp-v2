@@ -14,8 +14,10 @@
  * `status` is therefore about the process: `ok` once the database answers and its schema matches
  * this build, `degraded` while anything below that is still true.
  */
+import { existsSync } from 'node:fs';
 import { NextResponse } from 'next/server';
 import { checkSchemaVersion, configRepo, describeDatabaseTarget } from '@buybox/db';
+import { updatePaths } from '@buybox/jobs';
 import { bootstrapEnvProblems, getAppDb, isBootstrapped, tryGetBootstrapEnv } from '@/lib/server/db';
 import { readModules } from '@/lib/server/modules';
 import { getWorkerStatus } from '@/lib/server/worker-status';
@@ -149,9 +151,14 @@ export async function GET() {
 
   const healthy =
     database.reachable && database.schema?.drift === 'up-to-date' && warnings.length === 0;
+  // Information only, never part of `healthy`: apply-update.ps1's health gate runs while the hold
+  // is in place, so counting it would fail every update (auto-update spec §5.2).
+  const dataDir = process.env.BUYBOX_DATA_DIR;
+  const updateHold = dataDir !== undefined && existsSync(updatePaths(dataDir).hold);
   return NextResponse.json({
     status: healthy ? 'ok' : 'degraded',
     version: process.env.APP_VERSION ?? null,
+    updateHold,
     database,
     // `configured` is reported even when no worker runs here: on a split deployment the web
     // process has no embedded worker at all, and `running: false` is then correct, not a fault.

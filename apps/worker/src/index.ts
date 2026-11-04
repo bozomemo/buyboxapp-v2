@@ -37,6 +37,7 @@
  * full cadence for its first run. Granularity is per job name, not per marketplace — the same
  * granularity the ticker itself fires at (every marketplace together).
  */
+import { existsSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { checkEveryMs, createCadenceClock } from './cadence-clock.js';
 import type { MarketplaceCode } from '@buybox/core';
@@ -132,6 +133,7 @@ import {
   workerInstanceId,
   checkForUpdate,
   resolveUpdateConfig,
+  updatePaths,
 } from '@buybox/jobs';
 import {
   createLogger,
@@ -671,6 +673,10 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   // Names its host as well as its process, so a later worker on this machine can tell that the
   // one which held a claim is gone (`releaseLocksOfDeadLocalWorkers`, packages/jobs).
   const instanceId = workerInstanceId(process.pid, hostname(), Math.random().toString(36).slice(2, 8));
+  // Self-update (auto-update spec §5): `undefined` on a developer checkout, which has neither an
+  // install directory to update nor an updater that could hold it.
+  const updateConfig = resolveUpdateConfig(options.env ?? process.env);
+  const updateHoldFile = updateConfig ? updatePaths(updateConfig.dataDir).hold : undefined;
   const scheduler = new Scheduler({
     appDb,
     clock: systemClock,
@@ -683,6 +689,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     // A rejected tick must not become an unhandled rejection: in single-process mode that
     // terminates the web server too. Log it and let the next tick try again.
     onTickError: (error) => logger.error('scheduler.tickFailed', { error }),
+    // apply-update.ps1 writes `updates\hold` before it stops the old version and removes it only
+    // once this one is healthy (auto-update spec §5.2). Read on every tick: another process lifts it.
+    isUpdateHeld: updateHoldFile === undefined ? undefined : () => existsSync(updateHoldFile),
   });
 
   scheduler.register({
@@ -997,7 +1006,6 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   // its own rather than a scheduler job, deliberately: `Scheduler.tick()` does nothing while the
   // system is paused or the licence has lapsed, and those are exactly the installs that must
   // still be able to find a fix. Its failures are logged and never thrown — nothing waits on it.
-  const updateConfig = resolveUpdateConfig(options.env ?? process.env);
   if (updateConfig) {
     const runUpdateCheck = () => {
       void checkForUpdate({

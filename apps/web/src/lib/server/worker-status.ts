@@ -34,7 +34,7 @@ export interface WorkerStatus {
   readonly startedAt?: string;
   readonly lastTickAt?: string;
   readonly msSinceLastTick?: number;
-  /** Why the last tick stopped where it did: `ran`, `no-lock`, `paused`, `unlicensed`. */
+  /** Why the last tick stopped where it did: `ran`, `no-lock`, `update-hold`, `paused`, `unlicensed`. */
   readonly lastTickOutcome?: string;
   /**
    * The marketplace codes the running worker actually holds an adapter for.

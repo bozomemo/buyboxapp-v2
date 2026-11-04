@@ -252,6 +252,10 @@ function New-AppDir {
   # The break-glass command (doc 18 section 8.3), bundled beside server.js.
   Exec { & node (Join-Path $src 'scripts\build-admin-cli.mjs') (Join-Path $Into 'admin.mjs') }
   Assert-Exit 'Bundling the admin command (scripts/build-admin-cli.mjs)'
+  # The release verifier apply-update.ps1 runs from the *installed* app before it trusts a
+  # download (auto-update spec section 6 step 2).
+  Exec { & node (Join-Path $src 'scripts\build-verify-update.mjs') (Join-Path $Into 'verify-update.mjs') }
+  Assert-Exit 'Bundling the release verifier (scripts/build-verify-update.mjs)'
 
   # Developer state is purged, and the build refuses to continue if any survived (doc 14 section 8.1).
   foreach ($item in Get-PackagedDeveloperState -Root $Into -Patterns $forbiddenInPackage) {

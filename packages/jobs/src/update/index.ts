@@ -13,3 +13,5 @@ export {
   writeJsonFileAtomic,
 } from './update-files.js';
 export type { UpdateCheckResult, UpdateRequest, UpdateState, UpdateStatus } from './update-files.js';
+export { verifyDownloadedRelease } from './verify-downloaded.js';
+export type { VerifyDownloadedResult } from './verify-downloaded.js';

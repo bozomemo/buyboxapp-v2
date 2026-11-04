@@ -40,6 +40,13 @@ export interface SchedulerOptions {
   readonly maxClaimsPerTick?: number;
   /** Called when a `startLoop()` tick rejects. Without it the failure would be invisible. */
   readonly onTickError?: (error: unknown) => void;
+  /**
+   * True while `apply-update.ps1` holds pricing (auto-update spec §5.2): a freshly started
+   * version claims nothing until the updater has seen it healthy and lifted the hold. Checked
+   * before the system pause, and independent of it — the operator's pause is theirs to release,
+   * the hold is the updater's. A function, not a value: the hold is a file another process removes.
+   */
+  readonly isUpdateHeld?: () => boolean;
 }
 
 export interface TickResult {
@@ -50,6 +57,8 @@ export interface TickResult {
   /** True when this tick did nothing because the install is unlicensed or lapsed (doc 13 §6).
    *  Reported separately from `paused` so an operator is told to renew, not to un-pause. */
   readonly unlicensed: boolean;
+  /** Present, and true, only when this tick did nothing because an update holds pricing. */
+  readonly updateHeld?: true;
   readonly enqueued: readonly string[];
   readonly ran: readonly { jobName: string; ok: boolean }[];
 }
@@ -83,7 +92,7 @@ export { isJobEnabled } from './job-catalog.js';
  */
 export interface SchedulerTickReport {
   readonly atMs: number;
-  readonly outcome: 'ran' | 'no-lock' | 'paused' | 'unlicensed';
+  readonly outcome: 'ran' | 'no-lock' | 'update-hold' | 'paused' | 'unlicensed';
   readonly ranCount: number;
 }
 
@@ -100,6 +109,7 @@ export class Scheduler {
   private holdsLock = false;
   private lastTick: SchedulerTickReport | undefined;
   private readonly onTickError: ((error: unknown) => void) | undefined;
+  private readonly isUpdateHeld: () => boolean;
   /**
    * When each cadenced job may next be enqueued. Populated lazily from the job's last recorded
    * run, so a restart does not reset a six-hourly job to "due now" every time the process comes
@@ -114,6 +124,7 @@ export class Scheduler {
     this.lockTtlMs = options.lockTtlMs ?? 30_000;
     this.maxClaimsPerTick = options.maxClaimsPerTick ?? 5;
     this.onTickError = options.onTickError;
+    this.isUpdateHeld = options.isUpdateHeld ?? (() => false);
     this.runner = new JobRunner(
       this.appDb,
       this.clock,
@@ -233,6 +244,13 @@ export class Scheduler {
     if (!heldLock) {
       this.recordTick({ atMs: nowMs, outcome: 'no-lock', ranCount: 0 });
       return { heldLock: false, paused: false, unlicensed: false, enqueued: [], ran: [] };
+    }
+
+    // An update in progress holds everything (auto-update spec §5.2) until the updater has seen
+    // this version healthy. A rollback restores the database, so anything run now could be lost.
+    if (this.isUpdateHeld()) {
+      this.recordTick({ atMs: nowMs, outcome: 'update-hold', ranCount: 0 });
+      return { heldLock: true, paused: false, unlicensed: false, updateHeld: true, enqueued: [], ran: [] };
     }
 
     // The real "stop everything" switch (doc 06 §2) — checked before anything is enqueued or

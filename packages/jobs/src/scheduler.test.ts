@@ -457,4 +457,52 @@ describe('Scheduler', () => {
       }
     });
   });
+
+  // Auto-update spec §5.2: while apply-update.ps1 holds pricing, a freshly started version must
+  // claim nothing — not even with the system pause disengaged — until it has passed health.
+  describe('update hold', () => {
+    it('claims nothing while the hold is in place, whatever the system pause says', async () => {
+      const { appDb, cleanup } = await createSqliteTestDb();
+      try {
+        const clock = new FakeClock(1000);
+        const runs: number[] = [];
+        const scheduler = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a', isUpdateHeld: () => true });
+        scheduler.register({
+          jobName: 'Heartbeat',
+          cadenceMs: 60_000,
+          handler: async () => {
+            runs.push(clock.nowMs());
+            return { itemsTotal: 1, itemsOk: 1, itemsFailed: 0 };
+          },
+        });
+        await scheduler.enqueueNow('Heartbeat', '{}');
+
+        const result = await scheduler.tick();
+        expect(result).toEqual({ heldLock: true, paused: false, unlicensed: false, updateHeld: true, enqueued: [], ran: [] });
+        expect(runs).toHaveLength(0);
+        expect(scheduler.lastTickReport?.outcome).toBe('update-hold');
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('runs normally once the hold is lifted', async () => {
+      const { appDb, cleanup } = await createSqliteTestDb();
+      try {
+        const clock = new FakeClock(1000);
+        let held = true;
+        const scheduler = new Scheduler({ appDb, clock, adapters: emptyAdapters, instanceId: 'a', isUpdateHeld: () => held });
+        scheduler.register({
+          jobName: 'OneOff',
+          handler: async () => ({ itemsTotal: 1, itemsOk: 1, itemsFailed: 0 }),
+        });
+        await scheduler.enqueueNow('OneOff', '{}');
+        expect((await scheduler.tick()).ran).toHaveLength(0);
+        held = false;
+        expect((await scheduler.tick()).ran).toEqual([{ jobName: 'OneOff', ok: true }]);
+      } finally {
+        cleanup();
+      }
+    });
+  });
 });
