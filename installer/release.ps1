@@ -221,7 +221,18 @@ try {
       }
     }
   }
-  Invoke-Step 'build' { Exec { npm run build }; Assert-Exit 'build' }
+  # One retry, logged. Measured 2026-11-05: the first `next build` in a fresh checkout failed in
+  # next/font/google ("queries have exactly one entry") while downloading IBM Plex, and the same
+  # tree built cleanly on the next attempt. The Next cache kept between builds holds the fonts
+  # from then on, so this only ever bites a first build.
+  Invoke-Step 'build' {
+    Exec { npm run build }
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning 'npm run build failed once; retrying (see the font note in release.ps1).'
+      Exec { npm run build }
+    }
+    Assert-Exit 'build'
+  }
 } finally {
   Pop-Location
 }
