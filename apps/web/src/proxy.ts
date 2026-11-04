@@ -50,8 +50,20 @@ import { moduleForPath } from '@/lib/module-routes';
  * temporary password is sent here by the sign-in check and would otherwise be sent to
  * `/license` by this one, which sends them back here. (The sign-in screens themselves never
  * reach this gate; they are exempt one step earlier.)
+ *
+ * `/settings/update` and `/api/update` (auto-update spec §5.1): an install whose licence lapsed
+ * must still be able to install the build that carries a renewal fix, or it is stuck on the one
+ * that cannot be updated. Sign-in and the routes' own admin-only permission still apply.
  */
-const LICENSE_EXEMPT_PREFIXES = ['/license', '/api/license', '/account/password', '/account/mfa-setup', '/api/account/mfa'];
+const LICENSE_EXEMPT_PREFIXES = [
+  '/license',
+  '/api/license',
+  '/account/password',
+  '/account/mfa-setup',
+  '/api/account/mfa',
+  '/settings/update',
+  '/api/update',
+];
 
 function isApi(pathname: string): boolean {
   return pathname.startsWith('/api/');
