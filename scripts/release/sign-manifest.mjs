@@ -11,6 +11,7 @@
  * Refuses to sign with a key the app does not trust: a release signed by a key missing from
  * `RELEASE_PUBLIC_KEYS_PEM` would publish cleanly and then be rejected by every install.
  */
+import { Buffer } from 'node:buffer';
 import { createPublicKey, createPrivateKey } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -40,8 +41,11 @@ function args(argv) {
   return out;
 }
 
-// PowerShell 5.1 writes UTF-8 with a BOM, which JSON.parse rejects.
-const readText = (file) => readFileSync(file, 'utf8').replace(/^﻿/, '');
+// PowerShell 5.1 writes UTF-8 with a BOM (U+FEFF), which JSON.parse rejects.
+const readText = (file) => {
+  const text = readFileSync(file, 'utf8');
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+};
 
 const opts = args(process.argv.slice(2));
 

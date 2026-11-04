@@ -86,6 +86,11 @@ export type UpdateRequest = z.infer<typeof UpdateRequestSchema>;
  * `undefined` for a missing, unreadable or schema-invalid file — every caller treats those alike,
  * as "nothing recorded". Tolerates the UTF-8 BOM Windows PowerShell 5.1 writes.
  */
+/** Drops a leading byte-order mark (U+FEFF), which `JSON.parse` rejects. */
+export function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 export function readJsonFile<T>(file: string, schema: z.ZodType<T>): T | undefined {
   let text: string;
   try {
@@ -94,7 +99,7 @@ export function readJsonFile<T>(file: string, schema: z.ZodType<T>): T | undefin
     return undefined;
   }
   try {
-    const parsed = schema.safeParse(JSON.parse(text.replace(/^﻿/, '')));
+    const parsed = schema.safeParse(JSON.parse(stripBom(text)));
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
