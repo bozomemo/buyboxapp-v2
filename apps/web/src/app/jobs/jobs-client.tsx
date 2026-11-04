@@ -135,10 +135,12 @@ function SchedulerBanner({ status }: { status: SchedulerStatus | undefined }) {
   if (!status) return null;
 
   let message: string | undefined;
-  // First: during an update the operator's own pause is not the reason, and apply-update.ps1
-  // lifts the hold itself once the new version is healthy (auto-update spec §5.2).
+  // First: during an update the operator's own pause is not the reason (auto-update spec §5.2).
+  // Worded to be true in both cases this screen cannot tell apart: an update still running, which
+  // lifts the hold itself, and a rollback that failed and left it — Ayarlar > Güncelleme says which.
   if (status.lastTickOutcome === 'update-hold') {
-    message = 'Güncelleme doğrulanıyor — fiyat işleri duraklatıldı.';
+    message =
+      'Güncelleme nedeniyle fiyat işleri duraklatıldı. Bir güncelleme sürmüyorsa Ayarlar > Güncelleme ekranına bakın.';
   } else if (status.systemPaused) {
     message = 'Genel durdurma açık — hiçbir iş çalışmıyor. Panel ekranından devam ettirin.';
   } else if (!status.running) {

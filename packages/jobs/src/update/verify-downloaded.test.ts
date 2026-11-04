@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { signManifest, type UpdateManifest } from '@buybox/shared';
@@ -63,6 +63,22 @@ describe('verifyDownloadedRelease', () => {
     const other = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
     const result = verifyDownloadedRelease(releaseDir({ sign: (b) => signManifest(b, other) }), [publicPem]);
     expect(result).toEqual({ ok: false, reason: 'signature invalid' });
+  });
+
+  // Review I10: an archive the install needs that is absent (deleted, quarantined) must stop the
+  // install — otherwise installed.json claims a version whose component was never replaced.
+  it('refuses when an archive the install needs is missing', () => {
+    const dir = releaseDir();
+    rmSync(path.join(dir, 'app.zip'));
+    const installed = { version: '0.2.0', components: { app: { version: '0.2.0', sha256: 'f'.repeat(64) } } };
+    expect(verifyDownloadedRelease(dir, [publicPem], installed)).toEqual({ ok: false, reason: 'missing archive: app' });
+  });
+
+  it('does not require an archive the install already has', () => {
+    const dir = releaseDir();
+    rmSync(path.join(dir, 'app.zip'));
+    const installed = { version: '0.2.0', components: { app: { version: '0.2.1', sha256: sha(appZip) } } };
+    expect(verifyDownloadedRelease(dir, [publicPem], installed)).toMatchObject({ ok: true, zips: [] });
   });
 
   it('refuses a directory with no manifest', () => {

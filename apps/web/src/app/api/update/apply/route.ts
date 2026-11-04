@@ -6,9 +6,17 @@
  * the `BuyBoxUpdater` scheduled task; `apply-update.ps1` re-verifies everything before it acts,
  * so this route's checks are about refusing a request that cannot be right, not about trust.
  */
-import { existsSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { NextResponse } from 'next/server';
-import { readJsonFile, updatePaths, UpdateStateSchema, writeJsonFileAtomic, type UpdateRequest } from '@buybox/jobs';
+import {
+  isFreshFile,
+  offerableReady,
+  readJsonFile,
+  updatePaths,
+  UpdateStateSchema,
+  writeJsonFileAtomic,
+  type UpdateRequest,
+} from '@buybox/jobs';
 import { readJsonObject } from '@/lib/server/request-body';
 import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 import { runUpdaterTask, updateConfig } from '@/lib/server/update';
@@ -27,9 +35,12 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
 
   const paths = updatePaths(config.dataDir);
   // A second click while the first is still being picked up, or while an update runs, must not
-  // start the task again.
-  if (existsSync(paths.lock) || existsSync(paths.request)) return conflict('Bir güncelleme zaten sürüyor.');
-  const ready = readJsonFile(paths.state, UpdateStateSchema)?.ready;
+  // start the task again. Files older than UPDATE_STALE_MS belong to a run that died: without
+  // clearing them here nothing could ever start the updater again, since this is its only caller.
+  const now = Date.now();
+  if (isFreshFile(paths.lock, now) || isFreshFile(paths.request, now)) return conflict('Bir güncelleme zaten sürüyor.');
+  rmSync(paths.request, { force: true });
+  const ready = offerableReady(readJsonFile(paths.state, UpdateStateSchema), config.currentVersion);
   if (!ready) return conflict('Kurulmaya hazır bir sürüm yok.');
   if (ready.version !== raw.version) {
     return conflict(`Hazır olan sürüm ${ready.version}, istenen ${raw.version}. Sayfayı yenileyin.`);

@@ -352,13 +352,27 @@ const UPDATE_REREAD_MS = 10 * 60_000;
 function UpdateNotice() {
   const can = useCan();
   const [version, setVersion] = useState<string | undefined>();
+  const [stuck, setStuck] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const read = () =>
       fetch('/api/update')
-        .then((res) => (res.ok ? (res.json() as Promise<{ state: { ready: { version: string } | null } | null }>) : undefined))
-        .then((data) => !cancelled && setVersion(data?.state?.ready?.version))
-        .catch(() => !cancelled && setVersion(undefined));
+        .then((res) =>
+          res.ok
+            ? (res.json() as Promise<{ state: { ready: { version: string } | null } | null; status: { phase: string } | null }>)
+            : undefined,
+        )
+        .then((data) => {
+          if (cancelled) return;
+          setVersion(data?.state?.ready?.version);
+          setStuck(data?.status?.phase === 'manual-intervention-required');
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setVersion(undefined);
+            setStuck(false);
+          }
+        });
     void read();
     const interval = setInterval(read, UPDATE_REREAD_MS);
     return () => {
@@ -366,6 +380,15 @@ function UpdateNotice() {
       clearInterval(interval);
     };
   }, []);
+  // A rollback that failed left pricing held (review I1). Shown to everyone, on every page: it is
+  // the one state in which the system has stopped and nobody chose to stop it.
+  if (stuck) {
+    return (
+      <Link href="/settings/update" className="text-sm font-semibold text-(--color-danger) hover:underline">
+        Güncelleme geri alınamadı — fiyat işleri durduruldu
+      </Link>
+    );
+  }
   if (!version || !can('settings.manage')) return null;
   return (
     <Link href="/settings/update" className="text-sm font-semibold text-(--color-accent) hover:underline">

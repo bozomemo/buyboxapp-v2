@@ -10,18 +10,29 @@
  * The updater always runs the copy that is already installed: a copy taken from the archives it
  * is about to trust would be checking itself.
  */
+import { readFileSync } from 'node:fs';
+import { InstalledComponentsSchema } from '../packages/shared/src/release/manifest.ts';
 import { RELEASE_PUBLIC_KEYS_PEM } from '../packages/shared/src/release/public-key.ts';
 import { verifyDownloadedRelease } from '../packages/jobs/src/update/verify-downloaded.ts';
 
-const dir = process.argv[2];
+// node verify-update.mjs <version directory> [installed.json]
+// With installed.json, every component the install does not already hold must be present.
+const [dir, installedPath] = process.argv.slice(2);
 if (!dir) {
-  process.stdout.write(`${JSON.stringify({ ok: false, reason: 'usage: verify-update.mjs <version directory>' })}\n`);
+  process.stdout.write(`${JSON.stringify({ ok: false, reason: 'usage: verify-update.mjs <version directory> [installed.json]' })}\n`);
   process.exit(1);
 }
 
 let result;
 try {
-  result = verifyDownloadedRelease(dir, RELEASE_PUBLIC_KEYS_PEM);
+  let installed;
+  if (installedPath) {
+    const text = readFileSync(installedPath, 'utf8');
+    const parsed = InstalledComponentsSchema.safeParse(JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text));
+    if (!parsed.success) throw new Error(`installed.json invalid: ${installedPath}`);
+    installed = parsed.data;
+  }
+  result = verifyDownloadedRelease(dir, RELEASE_PUBLIC_KEYS_PEM, installed);
 } catch (error) {
   result = { ok: false, reason: error instanceof Error ? error.message : String(error) };
 }

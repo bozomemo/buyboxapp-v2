@@ -412,6 +412,28 @@ describe('NavShell', () => {
       expect(link.getAttribute('href')).toBe('/settings/update');
     });
 
+    // Review I1: a rollback that failed leaves pricing held. Every page must say so, to everyone,
+    // not only the Jobs screen.
+    it('warns on every page when an update could not be rolled back', async () => {
+      stubFetch({
+        [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },
+        [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
+        '/api/update': {
+          body: {
+            ...READY_UPDATE,
+            state: { ...READY_UPDATE.state, ready: null },
+            status: { phase: 'manual-intervention-required', step: null, history: [] },
+          },
+        },
+      });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await screen.findByRole('link', { name: 'Güncelleme geri alınamadı — fiyat işleri durduruldu' })).toBeTruthy();
+    });
+
     it('says nothing when there is no ready release', async () => {
       stubFetch({
         [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },

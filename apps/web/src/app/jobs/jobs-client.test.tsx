@@ -284,6 +284,11 @@ describe('JobsClient', () => {
 
     render(<JobsClient />);
 
-    expect(await screen.findByText('Güncelleme doğrulanıyor — fiyat işleri duraklatıldı.')).toBeTruthy();
+    // Review I1: true both while an update runs and after a rollback failed and left the hold.
+    expect(
+      await screen.findByText(
+        'Güncelleme nedeniyle fiyat işleri duraklatıldı. Bir güncelleme sürmüyorsa Ayarlar > Güncelleme ekranına bakın.',
+      ),
+    ).toBeTruthy();
   });
 });

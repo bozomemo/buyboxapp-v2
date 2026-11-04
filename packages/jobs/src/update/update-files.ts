@@ -12,9 +12,9 @@
  *   updates\<version>\    verified archives plus the signed manifest they came from
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { COMPONENT_NAMES } from '@buybox/shared';
+import { COMPONENT_NAMES, compareVersions } from '@buybox/shared';
 import { z } from 'zod';
 
 export function updatePaths(dataDir: string) {
@@ -86,6 +86,37 @@ export type UpdateRequest = z.infer<typeof UpdateRequestSchema>;
  * `undefined` for a missing, unreadable or schema-invalid file — every caller treats those alike,
  * as "nothing recorded". Tolerates the UTF-8 BOM Windows PowerShell 5.1 writes.
  */
+/**
+ * After this long a `lock` or `request.json` belongs to a run that died — killed by the task's
+ * time limit, a reboot or a power cut — and must not block updates for ever. apply-update.ps1
+ * uses the same figure for taking over its own lock, and the task's limit is shorter.
+ */
+export const UPDATE_STALE_MS = 45 * 60_000;
+
+/** True while `file` exists and is younger than {@link UPDATE_STALE_MS}. */
+export function isFreshFile(file: string, nowMs: number): boolean {
+  try {
+    return nowMs - statSync(file).mtimeMs < UPDATE_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The ready release only while it is newer than what runs. After an update `state.json` still
+ * names the version now running, and after a full-installer upgrade past it, offering it would be
+ * a downgrade.
+ */
+export function offerableReady(state: UpdateState | undefined, currentVersion: string): UpdateState['ready'] {
+  const ready = state?.ready ?? null;
+  if (!ready) return null;
+  try {
+    return compareVersions(ready.version, currentVersion) > 0 ? ready : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Drops a leading byte-order mark (U+FEFF), which `JSON.parse` rejects. */
 export function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;

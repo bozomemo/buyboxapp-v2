@@ -10,9 +10,11 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import {
   COMPONENT_NAMES,
+  componentsToDownload,
   UpdateManifestSchema,
   verifyManifestSignature,
   type ComponentName,
+  type InstalledComponents,
   type UpdateManifest,
 } from '@buybox/shared';
 
@@ -20,7 +22,16 @@ export type VerifyDownloadedResult =
   | { readonly ok: true; readonly manifest: UpdateManifest; readonly zips: ComponentName[] }
   | { readonly ok: false; readonly reason: string };
 
-export function verifyDownloadedRelease(versionDir: string, publicKeysPem: readonly string[]): VerifyDownloadedResult {
+/**
+ * With `installed`, every component the install does not already hold must be present: a needed
+ * archive that went missing (deleted, quarantined by antivirus) would otherwise be skipped, and
+ * installed.json would then claim a version whose component was never replaced.
+ */
+export function verifyDownloadedRelease(
+  versionDir: string,
+  publicKeysPem: readonly string[],
+  installed?: InstalledComponents,
+): VerifyDownloadedResult {
   let manifestBytes: Buffer;
   let signature: string;
   try {
@@ -54,5 +65,9 @@ export function verifyDownloadedRelease(versionDir: string, publicKeysPem: reado
     zips.push(name);
   }
   zips.sort((a, b) => COMPONENT_NAMES.indexOf(a) - COMPONENT_NAMES.indexOf(b));
+  if (installed) {
+    const missing = componentsToDownload(manifest, installed).find((name) => !zips.includes(name));
+    if (missing) return { ok: false, reason: `missing archive: ${missing}` };
+  }
   return { ok: true, manifest, zips };
 }

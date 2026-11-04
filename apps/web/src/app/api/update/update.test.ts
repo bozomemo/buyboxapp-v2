@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createDb, runMigrations, type AppDatabase } from '@buybox/db';
@@ -148,5 +148,37 @@ describe('/api/update/apply', () => {
   it('rejects a body without a version', async () => {
     writeReady();
     expect((await apply({})).status).toBe(400);
+  });
+
+  // Review I2: a task killed mid-run leaves its files behind; they must not block updates forever.
+  it('treats a request or lock older than 45 minutes as stale and starts the task', async () => {
+    writeReady();
+    writeFileSync(paths().lock, '');
+    writeFileSync(paths().request, '{}');
+    const old = new Date(Date.now() - 46 * 60_000);
+    utimesSync(paths().lock, old, old);
+    utimesSync(paths().request, old, old);
+    expect((await (await get()).json()).inProgress).toBe(false);
+    expect((await apply({ version: '0.2.1' })).status).toBe(202);
+    expect(runnerCalls).toBe(1);
+  });
+});
+
+// Review I3: a release that is not newer than the running build is never offered — after an
+// update the old state still names the version now running, and after a full-installer upgrade
+// past it, installing it would be a downgrade.
+describe('a ready release that is not newer', () => {
+  beforeEach(() => {
+    process.env.APP_VERSION = '0.2.1';
+    writeReady();
+  });
+
+  it('is not reported as ready', async () => {
+    expect((await (await get()).json()).state.ready).toBeNull();
+  });
+
+  it('cannot be installed', async () => {
+    expect((await apply({ version: '0.2.1' })).status).toBe(409);
+    expect(runnerCalls).toBe(0);
   });
 });

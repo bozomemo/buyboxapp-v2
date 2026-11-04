@@ -5,9 +5,8 @@
  * `view` (R-AUTH-10) — checking and installing are the admin-only actions. Reachable while
  * unlicensed (proxy.ts) so an expired install can still be moved to a build that fixes it.
  */
-import { existsSync } from 'node:fs';
 import { NextResponse } from 'next/server';
-import { readJsonFile, updatePaths, UpdateStateSchema, UpdateStatusSchema } from '@buybox/jobs';
+import { isFreshFile, offerableReady, readJsonFile, updatePaths, UpdateStateSchema, UpdateStatusSchema } from '@buybox/jobs';
 import { withPermission } from '@/lib/server/auth/guard';
 import { updateConfig } from '@/lib/server/update';
 
@@ -19,12 +18,15 @@ async function getHandler() {
     return NextResponse.json({ available: false, currentVersion: process.env.APP_VERSION ?? null, state: null, status: null, inProgress: false });
   }
   const paths = updatePaths(config.dataDir);
+  const state = readJsonFile(paths.state, UpdateStateSchema);
+  const now = Date.now();
   return NextResponse.json({
     available: true,
     currentVersion: config.currentVersion,
-    state: readJsonFile(paths.state, UpdateStateSchema) ?? null,
+    state: state ? { ...state, ready: offerableReady(state, config.currentVersion) } : null,
     status: readJsonFile(paths.status, UpdateStatusSchema) ?? null,
-    inProgress: existsSync(paths.lock) || existsSync(paths.request),
+    // A lock or request left by a run that died is not an update in progress (UPDATE_STALE_MS).
+    inProgress: isFreshFile(paths.lock, now) || isFreshFile(paths.request, now),
   });
 }
 
