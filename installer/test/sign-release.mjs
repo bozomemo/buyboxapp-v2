@@ -3,6 +3,7 @@
 // compiled into the build. Vendor machine only.
 //
 //   node sign-release.mjs <repo root> <version directory> <version>
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
