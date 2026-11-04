@@ -341,6 +341,39 @@ function ScanFreshness({ onPanel }: { onPanel: boolean }) {
   );
 }
 
+/** A downloaded release does not appear more often than the worker checks; this is plenty. */
+const UPDATE_REREAD_MS = 10 * 60_000;
+
+/**
+ * "Yeni sürüm … hazır" in the header (auto-update spec §5.3), linking to Settings > Güncelleme,
+ * for whoever may install. Silent while loading, on failure and on a developer checkout, like the
+ * scan pill beside it: the settings screen is where the update's state is reported in full.
+ */
+function UpdateNotice() {
+  const can = useCan();
+  const [version, setVersion] = useState<string | undefined>();
+  useEffect(() => {
+    let cancelled = false;
+    const read = () =>
+      fetch('/api/update')
+        .then((res) => (res.ok ? (res.json() as Promise<{ state: { ready: { version: string } | null } | null }>) : undefined))
+        .then((data) => !cancelled && setVersion(data?.state?.ready?.version))
+        .catch(() => !cancelled && setVersion(undefined));
+    void read();
+    const interval = setInterval(read, UPDATE_REREAD_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+  if (!version || !can('settings.manage')) return null;
+  return (
+    <Link href="/settings/update" className="text-sm font-semibold text-(--color-accent) hover:underline">
+      Yeni sürüm {version} hazır
+    </Link>
+  );
+}
+
 /** Rendered without the shell: doc 06 §10.1–§10.3. */
 const STANDALONE_PREFIXES = ['/login', '/bootstrap', '/account/password', '/account/mfa-setup'];
 
@@ -542,6 +575,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
         <LicenseGraceBanner />
         <header className="flex items-center justify-end gap-3 border-b border-(--color-border) bg-(--color-surface) px-6 py-3">
           <ScanFreshness onPanel={pathname === '/'} />
+          <UpdateNotice />
           {showsViewSwitch(modulesState) && (
             <ViewSwitch
               view={view}

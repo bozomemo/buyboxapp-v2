@@ -279,3 +279,23 @@ export function importErrorMessage(error: {
     ? `Bu kart "${error.otherProductName}" ürününe ek kart olarak bağlı.`
     : `${base} (${error.otherProductName})`;
 }
+
+/** `apply-update.ps1`'s outcomes, as `status.json` history records them (auto-update spec §6). */
+export const UPDATE_OUTCOME_LABELS: Record<string, string> = {
+  succeeded: 'Başarılı',
+  'rolled-back': 'Geri dönüldü',
+  aborted: 'İptal edildi',
+  'manual-intervention-required': 'Elle müdahale gerekli',
+};
+
+/** `packages/jobs` `UpdateCheckResult` — what the last update check found. */
+export const UPDATE_CHECK_LABELS: Record<string, string> = {
+  'up-to-date': 'Güncel',
+  ready: 'Yeni sürüm indirildi, kurulmaya hazır',
+  'signature-missing': 'Sürümün imzası yok',
+  'signature-invalid': 'Sürümün imzası doğrulanamadı',
+  'manifest-invalid': 'Sürüm bildirimi geçersiz',
+  'download-failed': 'İndirme başarısız',
+  'network-error': 'Sunucuya ulaşılamadı',
+  disabled: 'Kontrol kapalı',
+};

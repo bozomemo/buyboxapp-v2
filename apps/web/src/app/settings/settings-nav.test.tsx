@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PermissionsProvider } from '@/lib/permissions';
 import { mockNavigation, stubFetch } from '@/test-utils';
 import { SettingsNav } from './settings-nav';
 
@@ -36,5 +37,31 @@ describe('SettingsNav', () => {
 
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Ücretler' })).toBeNull());
     expect(screen.getByRole('link', { name: 'Modüller' })).toBeTruthy();
+  });
+
+  // Auto-update spec §5.3: installing is an administrator's act, so only `settings.manage` sees it.
+  it('shows the update tab only to someone who may install', async () => {
+    mockNavigation.pathname = '/settings/modules';
+    stubFetch({
+      '/api/modules': { body: { modules: { seller: true, brand: true } } },
+      '/api/auth/me': { body: { user: { permissions: ['view', 'automation.stop', 'prices.manage'] } } },
+    });
+
+    render(
+      <PermissionsProvider>
+        <SettingsNav />
+      </PermissionsProvider>,
+    );
+
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Güncelleme' })).toBeNull());
+  });
+
+  it('shows the update tab to an administrator', () => {
+    mockNavigation.pathname = '/settings/modules';
+    stubFetch({ '/api/modules': { body: { modules: { seller: true, brand: true } } } });
+
+    render(<SettingsNav />);
+
+    expect(screen.getByRole('link', { name: 'Güncelleme' })).toBeTruthy();
   });
 });

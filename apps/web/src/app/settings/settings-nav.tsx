@@ -20,6 +20,8 @@ const TABS = [
   { href: '/license', label: 'Lisans' },
   // doc 06 §10.4 — shown only with `users.manage`; the page refuses anyone else regardless.
   { href: '/settings/users', label: 'Kullanıcılar' },
+  // Auto-update spec §5.3 — shown only with `settings.manage`; installing is an administrator's act.
+  { href: '/settings/update', label: 'Güncelleme' },
 ];
 
 /**
@@ -46,7 +48,7 @@ export function SettingsNav() {
   const can = useCan();
   const tabs = TABS.filter((tab) => sellerEnabled || moduleForPath(tab.href) !== 'seller').filter(
     (tab) => tab.href !== '/settings/users' || can('users.manage'),
-  );
+  ).filter((tab) => tab.href !== '/settings/update' || can('settings.manage'));
   return (
     // An underline tab bar; the tab you are on is announced (`aria-current`), not only drawn
     // differently (doc 15 rule 8).

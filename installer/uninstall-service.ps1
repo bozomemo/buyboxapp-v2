@@ -39,6 +39,12 @@ if (Test-Path $winsw) {
 #
 # Entirely best effort. Alloy may have been installed by hand before BuyBox was, or be shared with
 # something else on this machine, and removing BuyBox must never depend on removing it.
+# The updater task (auto-update spec section 8). Absent on an install older than 0.2.0.
+if (Get-ScheduledTask -TaskName 'BuyBoxUpdater' -ErrorAction SilentlyContinue) {
+  Unregister-ScheduledTask -TaskName 'BuyBoxUpdater' -Confirm:$false -ErrorAction SilentlyContinue
+  Write-Output 'BuyBoxUpdater gorevi kaldirildi.'
+}
+
 $alloyService = Get-Service -Name 'Alloy' -ErrorAction SilentlyContinue
 if ($alloyService) {
   try {

@@ -386,4 +386,45 @@ describe('NavShell', () => {
       expect(within(screen.getByRole('banner')).queryByText(/Trendyol/)).toBeNull();
     });
   });
+
+  // Auto-update spec §5.3: a downloaded release is announced in the header, to whoever may install.
+  describe('update notice', () => {
+    const READY_UPDATE = {
+      available: true,
+      currentVersion: '0.2.0',
+      inProgress: false,
+      state: { lastCheckAt: null, lastResult: 'ready', lastError: null, ready: { version: '0.2.1', notes: '', downloadBytes: 1, components: ['app'] } },
+      status: null,
+    };
+
+    it('links an administrator to the ready release', async () => {
+      stubFetch({
+        [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },
+        [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
+        '/api/update': { body: READY_UPDATE },
+      });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      const link = await screen.findByRole('link', { name: 'Yeni sürüm 0.2.1 hazır' });
+      expect(link.getAttribute('href')).toBe('/settings/update');
+    });
+
+    it('says nothing when there is no ready release', async () => {
+      stubFetch({
+        [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },
+        [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
+        '/api/update': { body: { ...READY_UPDATE, state: { ...READY_UPDATE.state, ready: null } } },
+      });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await screen.findByRole('button', { name: 'Sistem Çalışıyor' })).toBeTruthy();
+      expect(screen.queryByText(/Yeni sürüm/)).toBeNull();
+    });
+  });
 });

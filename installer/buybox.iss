@@ -80,6 +80,11 @@ Type: filesandordirs; Name: "{app}\node"
 Type: filesandordirs; Name: "{app}\chromium"
 Type: filesandordirs; Name: "{app}\scripts"
 Type: filesandordirs; Name: "{app}\monitoring"
+; Leftovers of apply-update.ps1 (auto-update spec section 8): a full install is a clean slate, and
+; a stale `<name>.new` must never be renamed in by a later update.
+Type: filesandordirs; Name: "{app}\*.previous"
+Type: filesandordirs; Name: "{app}\*.new"
+Type: filesandordirs; Name: "{app}\*.failed"
 
 [Dirs]
 ; Data lives outside {app} so an upgrade, which replaces {app} wholesale, cannot reach it
@@ -462,6 +467,14 @@ begin
                  '-InstallDir ' + AppDirArg + ' -DataDir ' + DataDirArg +
                    ' -Port ' + GetPort('') + ' -Version ''{#AppVersion}''',
                  'BuyBox servisi kurulamadi; kurulum tamamlanamadi.') then
+    exit;
+
+  { Auto-update spec section 8: the task "Simdi kur" starts. Checked: an install that shows an
+    install button which can never work is a broken install, not a degraded one. }
+  Status('Guncelleme gorevi kaydediliyor...');
+  if not RunStep('register-updater-task.ps1',
+                 '-InstallDir ' + AppDirArg + ' -DataDir ' + DataDirArg,
+                 'Guncelleme gorevi (BuyBoxUpdater) kaydedilemedi; kurulum tamamlanamadi.') then
     exit;
 
   Status('Servis dogrulaniyor...');
