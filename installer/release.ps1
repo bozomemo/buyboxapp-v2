@@ -292,7 +292,7 @@ function New-AppDir {
 # --- 5. Components -----------------------------------------------------------------------------------
 # Installer scripts must be pure ASCII: PowerShell 5.1 reads a BOM-less UTF-8 file as ANSI, and
 # one em dash can make a script fail to *parse* on the customer's machine (doc 14 section 8.4).
-$runtimeScripts = @('preflight.ps1', 'stop-service.ps1', 'configure-env.ps1', 'install-service.ps1', 'install-monitoring.ps1', 'verify-health.ps1', 'uninstall-service.ps1')
+$runtimeScripts = @('preflight.ps1', 'stop-service.ps1', 'configure-env.ps1', 'install-service.ps1', 'install-monitoring.ps1', 'verify-health.ps1', 'uninstall-service.ps1', 'apply-update.ps1', 'register-updater-task.ps1')
 foreach ($name in $runtimeScripts) {
   $nonAscii = (Get-Content (Join-Path $srcInstaller $name) -Raw).ToCharArray() | Where-Object { [int]$_ -gt 127 }
   if ($nonAscii) { throw "$name contains non-ASCII characters ($($nonAscii -join '')). Keep installer scripts ASCII-only." }
