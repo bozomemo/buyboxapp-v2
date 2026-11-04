@@ -1,7 +1,10 @@
 ; BuyBox — Windows installer (docs/14-deployment.md §5)
 ;
-; Compiled by build-package.ps1, which assembles installer\staging first. Compiling this file
-; on its own produces nothing useful — the payload does not exist until that script has run.
+; Compiled by release.ps1 -FullInstaller, which extracts the release's components into a layout
+; directory and passes it as /DLayoutDir. Compiling this file on its own produces nothing
+; useful — the payload does not exist until that script has run. Only a new install (or the
+; one-time move to the self-updating 0.2.0) needs this; every later release is applied from
+; its component archives by apply-update.ps1.
 ;
 ; The Pascal below stays thin on purpose. Preflight, environment, service registration and
 ; health verification each live in their own PowerShell script under scripts\, where they can be
@@ -9,6 +12,10 @@
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
+#endif
+
+#ifndef LayoutDir
+  #define LayoutDir "staging"
 #endif
 
 #define AppName "BuyBox"
@@ -24,7 +31,9 @@ DefaultDirName={autopf}\BuyBox
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputBaseFilename=BuyBoxSetup-{#AppVersion}
-Compression=lzma2/max
+; lzma2/max spent 221 s (0.1.22) to save a few percent on a file that is now only built for new
+; installs; normal releases ship as component archives instead.
+Compression=lzma2/fast
 SolidCompression=yes
 ; Bundled Node, Chromium and native modules are all x64 (doc 14 §3).
 ArchitecturesAllowed=x64compatible
@@ -39,15 +48,17 @@ SetupLogging=yes
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Files]
-Source: "staging\app\*";      DestDir: "{app}\app";      Flags: recursesubdirs createallsubdirs ignoreversion
-Source: "staging\node\*";     DestDir: "{app}\node";     Flags: recursesubdirs createallsubdirs ignoreversion
-Source: "staging\chromium\*"; DestDir: "{app}\chromium"; Flags: recursesubdirs createallsubdirs ignoreversion
-Source: "staging\scripts\*";  DestDir: "{app}\scripts";  Flags: recursesubdirs createallsubdirs ignoreversion
-Source: "staging\service\*";  DestDir: "{app}\service";  Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#LayoutDir}\app\*";      DestDir: "{app}\app";      Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#LayoutDir}\node\*";     DestDir: "{app}\node";     Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#LayoutDir}\chromium\*"; DestDir: "{app}\chromium"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#LayoutDir}\scripts\*";  DestDir: "{app}\scripts";  Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#LayoutDir}\service\*";  DestDir: "{app}\service";  Flags: recursesubdirs createallsubdirs ignoreversion
+; Which component hashes this install holds, so the update check downloads only what differs.
+Source: "{#LayoutDir}\installed.json"; DestDir: "{app}"; Flags: ignoreversion
 ; Doc 16: the Alloy installer and its config template. `skipifsourcedoesntexist` because a build
 ; made without the vendored Alloy binary is a valid package -- it installs a working product with
 ; no remote monitoring, and install-monitoring.ps1 says so and carries on.
-Source: "staging\monitoring\*"; DestDir: "{app}\monitoring"; Flags: recursesubdirs createallsubdirs ignoreversion skipifsourcedoesntexist
+Source: "{#LayoutDir}\monitoring\*"; DestDir: "{app}\monitoring"; Flags: recursesubdirs createallsubdirs ignoreversion skipifsourcedoesntexist
 ; Preflight runs before anything is installed (InitializeSetup), and stop-service before the
 ; first file is replaced (PrepareToInstall). Both need a copy the wizard can extract to {tmp}
 ; rather than one that only exists after the files are laid down -- and on an upgrade the copy
