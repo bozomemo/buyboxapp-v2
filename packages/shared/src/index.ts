@@ -57,3 +57,4 @@ export {
   parseEnabledModules,
 } from './modules.js';
 export * from './auth/index.js';
+export * from './release/index.js';
