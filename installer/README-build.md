@@ -24,23 +24,51 @@ build day.
 
 ## Building
 
-```powershell
-# from the repository root
-powershell -ExecutionPolicy Bypass -File installer\build-package.ps1
-```
-
-Produces `installer\out\BuyBoxSetup-<version>.exe` and a `.sha256` next to it. The version comes
-from the root `package.json` unless you pass `-Version`.
-
-For local iteration:
+The build is `installer\release.ps1` (spec `docs/superpowers/specs/2026-11-04-auto-update-design.md`
+§4). It builds **outside the repository** — `C:\BuyBoxBuild` by default, `BUYBOX_BUILD_ROOT` to
+move it — from a clean `git worktree` of a commit. The repository lives under OneDrive, and the
+old build wrote ~1.1 GB of small files and a 385 MB installer into the synced folder on every
+run; that, plus re-processing ~900 MB that never changes, is why builds took hours.
 
 ```powershell
-# skip typecheck+tests (never do this for a release)
-powershell -ExecutionPolicy Bypass -File installer\build-package.ps1 -SkipTests
+# a release, published to GitHub (needs a clean, committed tree)
+powershell -ExecutionPolicy Bypass -File installer\release.ps1 -NotesFile notes-0.2.1.txt
 
-# assemble installer\staging without compiling, to inspect what would be packed
-powershell -ExecutionPolicy Bypass -File installer\build-package.ps1 -SkipCompile
+# build only, plus the full installer for a new install
+powershell -ExecutionPolicy Bypass -File installer\release.ps1 -NoPublish -FullInstaller
+
+# build a specific commit regardless of local edits
+powershell -ExecutionPolicy Bypass -File installer\release.ps1 -NoPublish -Ref <commit>
 ```
+
+`installer\build-package.ps1` still works: it is `release.ps1 -NoPublish -FullInstaller`.
+
+Output lands in `<root>\out\<version>\`: one zip per component, `components.json`, `layout\`
+(the exact install tree, with `installed.json`), the build log, and with `-FullInstaller`
+`BuyBoxSetup-<version>.exe` + `.sha256`.
+
+**What is cached.** Each component is a zip cached under `<root>\cache\components\` by a key
+derived from its inputs; a hit reuses it untouched and the log says `cache hit`:
+
+| Component | Contents | Rebuilt when |
+|---|---|---|
+| `app` | standalone server, static, public, `boot.mjs`, `admin.mjs`, `verify-update.mjs`, migrations | every release |
+| `node` | `node.exe` | the Node version on `PATH` changes |
+| `chromium` | Playwright's Chromium | `playwright-core` changes |
+| `runtime` | `scripts\`, `service\` (WinSW + XML template) | any of those files changes |
+| `monitoring` | Alloy installer + config template | either changes |
+
+`node_modules` is kept between builds too, keyed by `package-lock.json` and the Node version.
+
+**Every step is timed** and the log ends with a table. Look there before guessing where time goes.
+
+**Prerequisites beyond the one-time setup above:** Docker Desktop running (the test step starts and
+stops `packages/db/docker-compose.test.yml`), and for publishing, `gh auth login` and the release
+signing key at `%USERPROFILE%\.buybox\release-signing-key.pem` (`node scripts/generate-release-keypair.mjs`,
+once; **back it up offline** — installs only trust the keys compiled into them).
+
+A publish is refused before anything is built when `-SkipTests` or `-SkipSmokeTest` is passed,
+when `-NotesFile` is missing, or when the key or `gh` is not ready.
 
 **Do not pass `-SkipSmokeTest` for anything you intend to ship.** The smoke test boots the
 assembled package the way the service boots it, against a throwaway data directory, and requires
@@ -56,11 +84,14 @@ throwing. That log is usually enough to name the missing file.
 ## What ends up in the package
 
 ```
-app\        Next standalone output + .next\static + public + boot.mjs
-node\       node.exe
-chromium\   Playwright's browser
-scripts\    preflight, configure-env, install-service, verify-health, uninstall-service
-service\    WinSW as BuyBoxApp.exe, plus BuyBoxApp.xml.template
+app\            Next standalone output + .next\static + public + boot.mjs, admin.mjs, verify-update.mjs
+node\           node.exe
+chromium\       Playwright's browser
+scripts\        preflight, configure-env, install-service, verify-health, uninstall-service,
+                stop-service, install-monitoring, apply-update, register-updater-task
+service\        WinSW as BuyBoxApp.exe, plus BuyBoxApp.xml.template
+monitoring\     Alloy installer + config template (when vendored)
+installed.json  the component hashes this install holds, read by the update check
 ```
 
 Nothing else. In particular no `.env`, no database and no licence: the first two are created on
