@@ -168,6 +168,44 @@ Write-Output "Build root: $Root"
 $webDir = Join-Path $src 'apps\web'
 $srcInstaller = Join-Path $src 'installer'
 
+# --- 1b. Pinned Node runtime ---------------------------------------------------------------------
+# The bundled node.exe used to be whatever `node` was on the build machine's PATH (v25 on the
+# owner's machine, while the README says 22). The owner decided on 2026-11-05 to pin Node 22 LTS
+# without installing it: the official portable zip is downloaded once into the build cache,
+# checked against the hash below (from nodejs.org/dist/v<ver>/SHASUMS256.txt), and put first on
+# PATH *for this process only*. The whole build -- npm ci, tests, next build, the ABI check and
+# the node component -- then runs on the same runtime the install will run on, which matters
+# because native modules are chosen per ABI. The machine's own Node is never touched.
+$pinnedNodeVersion = 'v22.23.4'
+$pinnedNodeZipSha256 = 'cbc74b5e0982c9dbb41525fd8fb5dcd32fbee237863f7829072f4639a1ce5f20'
+
+Invoke-Step 'node runtime' {
+  $name = "node-$pinnedNodeVersion-win-x64"
+  $runtimeRoot = Join-Path $cacheDir 'node-runtime'
+  $nodeHome = Join-Path $runtimeRoot $name
+  if (-not (Test-Path (Join-Path $nodeHome 'node.exe'))) {
+    New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
+    $zip = Join-Path $runtimeRoot "$name.zip"
+    Write-Output "Downloading $name.zip"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -UseBasicParsing -Uri "https://nodejs.org/dist/$pinnedNodeVersion/$name.zip" -OutFile $zip
+    $actual = Get-Sha256 $zip
+    if ($actual -ne $pinnedNodeZipSha256) {
+      Remove-Item $zip -Force
+      throw "$name.zip hash mismatch: expected $pinnedNodeZipSha256, got $actual"
+    }
+    if (Test-Path $nodeHome) { Remove-Item $nodeHome -Recurse -Force }
+    Exec { & tar.exe -x -f $zip -C $runtimeRoot }
+    Assert-Exit "Extracting $name.zip"
+    Remove-Item $zip -Force
+  }
+  $env:PATH = "$nodeHome;$env:PATH"
+  $resolved = (Get-Command node).Source
+  $running = ((Exec { node --version }) | Select-Object -Last 1).Trim()
+  if ($running -ne $pinnedNodeVersion) { throw "Expected node $pinnedNodeVersion on PATH, got $running ($resolved)" }
+  Write-Output "Building with $resolved ($running)"
+}
+
 # --- 2. Dependencies --------------------------------------------------------------------------------
 # Keyed by the lockfile and the Node version: a native module built for one ABI is not the same
 # dependency tree under another. Install scripts are skipped on purpose -- better-sqlite3 ships
@@ -206,17 +244,20 @@ Push-Location $src
 try {
   if (-not $SkipTests) {
     Invoke-Step 'typecheck' { Exec { npm run typecheck }; Assert-Exit 'typecheck' }
-    # The database suite runs every repository test against SQLite, PostgreSQL and MySQL, and the
-    # last two need their containers. Started here and stopped afterwards, so the build does not
-    # depend on someone having remembered to.
+    # The database suite runs every repository test against SQLite and PostgreSQL here; PostgreSQL
+    # needs its container, started here and stopped afterwards, so the build does not depend on
+    # someone having remembered to. MySQL is left out of release builds (owner, 2026-11-05): it
+    # made the suite take hours and no install runs on it. CI still covers all three dialects.
     Invoke-Step 'test' {
       $compose = Join-Path $src 'packages\db\docker-compose.test.yml'
-      Exec { docker compose -f $compose up -d --wait }
-      Assert-Exit 'Starting the database test containers (is Docker Desktop running?)'
+      Exec { docker compose -f $compose up -d --wait postgres }
+      Assert-Exit 'Starting the PostgreSQL test container (is Docker Desktop running?)'
+      $env:BUYBOX_TEST_DIALECTS = 'sqlite,postgres'
       try {
         Exec { npm test }
         Assert-Exit 'tests'
       } finally {
+        Remove-Item Env:\BUYBOX_TEST_DIALECTS -ErrorAction SilentlyContinue
         Exec { docker compose -f $compose down } | Out-Null
       }
     }

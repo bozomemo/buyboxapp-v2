@@ -32,7 +32,9 @@ reasoning is kept where it still applies and departed from, explicitly, where no
 
 Assumed, not asked: the release build keeps running typecheck, the full test suite, the ABI
 check and the smoke test. Steps are timed; whether tests move out of the build is decided later
-on those timings.
+on those timings. **Decided 2026-11-05 on those timings:** release builds skip the MySQL tier of
+the DB suite (SQLite + PostgreSQL only; CI keeps all three), and the build runs on a pinned,
+downloaded Node 22 LTS rather than the machine's `PATH` Node.
 
 ## 3. Architecture
 

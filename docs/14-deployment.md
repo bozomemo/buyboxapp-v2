@@ -633,8 +633,13 @@ repository, and re-processing ~900 MB that never changes, is what made a build t
 1. Check out the commit into `<root>\src` (a dirty tree is refused unless `-Ref` names a commit).
 2. Restore `node_modules` (keyed by `package-lock.json` + Node version) or `npm ci
    --ignore-scripts`; `better-sqlite3` ships win32-x64 prebuilds, and step 7 proves they load.
-3. `npm run typecheck`, then `npm test` with the database test containers started and stopped
-   around it. An installer is not built from a red build.
+3. `npm run typecheck`, then `npm test` with the PostgreSQL test container started and stopped
+   around it. The database suite runs on SQLite and PostgreSQL only (`BUYBOX_TEST_DIALECTS=
+   sqlite,postgres`): the MySQL tier made the build take hours and no install runs on MySQL, so
+   the product owner dropped it from release builds on 2026-11-05; CI still runs all three. The
+   whole build runs on a pinned Node 22 LTS that `release.ps1` downloads into its cache and puts
+   on `PATH` for its own process (owner, 2026-11-05), so the bundled `node.exe` no longer depends
+   on the build machine. An installer is not built from a red build.
 4. `npm run build` with `output: 'standalone'`.
 5. Build the five **components** — `app`, `node`, `chromium`, `runtime`, `monitoring` — as zips,
    each cached by a key derived from its inputs; only `app` is rebuilt every time. `app` is

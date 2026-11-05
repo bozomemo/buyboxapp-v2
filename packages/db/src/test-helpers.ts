@@ -86,5 +86,25 @@ export async function createTestDb(dialect: Dialect, migrationsFolder?: string):
   };
 }
 
-/** The three dialects under test — iterate this in every integration test file. */
-export const ALL_DIALECTS: readonly Dialect[] = ['sqlite', 'postgres', 'mysql'];
+const KNOWN_DIALECTS: readonly Dialect[] = ['sqlite', 'postgres', 'mysql'];
+
+/**
+ * `BUYBOX_TEST_DIALECTS` (comma-separated) narrows the run. The release build sets it to
+ * `sqlite,postgres`: the MySQL tier made the suite take hours (measured 2026-11-05) and no
+ * install runs on MySQL, so the owner decided on 2026-11-05 that releases skip it. CI and a
+ * plain local run still cover all three. An unknown name fails loudly rather than silently
+ * running nothing.
+ */
+function selectDialects(raw: string | undefined): readonly Dialect[] {
+  if (!raw || raw.trim() === '') return KNOWN_DIALECTS;
+  const picked = raw.split(',').map((d) => d.trim()).filter((d) => d !== '');
+  for (const d of picked) {
+    if (!KNOWN_DIALECTS.includes(d as Dialect)) {
+      throw new Error(`BUYBOX_TEST_DIALECTS: unknown dialect "${d}" (known: ${KNOWN_DIALECTS.join(', ')})`);
+    }
+  }
+  return KNOWN_DIALECTS.filter((d) => picked.includes(d));
+}
+
+/** The dialects under test — iterate this in every integration test file. */
+export const ALL_DIALECTS: readonly Dialect[] = selectDialects(process.env.BUYBOX_TEST_DIALECTS);

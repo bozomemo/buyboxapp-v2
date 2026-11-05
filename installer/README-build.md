@@ -14,7 +14,8 @@ machine, under the same Node major version.
 
 | Need | How |
 |---|---|
-| Node 22 (x64) | `winget install OpenJS.NodeJS.LTS`. The **same major version** must be on `PATH` when you build — it is the runtime that gets bundled. |
+| Node (any) | Only to run `npm`/`git` tooling yourself. The release build does **not** use the Node on your `PATH`: `release.ps1` downloads the pinned Node 22 LTS portable zip (`$pinnedNodeVersion`, hash-checked) into `<root>\cache\node-runtime` and puts it first on `PATH` for its own process only — nothing is installed. To move to a newer 22.x, change `$pinnedNodeVersion` and `$pinnedNodeZipSha256` from `https://nodejs.org/dist/<ver>/SHASUMS256.txt`. |
+| Docker Desktop | For the PostgreSQL test container. Release builds run the DB suite on SQLite + PostgreSQL only; MySQL is skipped (`BUYBOX_TEST_DIALECTS`, owner decision 2026-11-05) and stays covered by CI. |
 | Inno Setup 6 | `winget install JRSoftware.InnoSetup`. Winget installs it per-user under `%LOCALAPPDATA%\Programs`; the build script finds it there, in Program Files, or via the uninstall registry, so you do not have to place it anywhere particular. |
 | WinSW | Download `WinSW-x64.exe` from `https://github.com/winsw/winsw/releases`, verify its SHA-256 against the release page, and save it as `installer\vendor\WinSW.exe`. |
 
@@ -53,7 +54,7 @@ derived from its inputs; a hit reuses it untouched and the log says `cache hit`:
 | Component | Contents | Rebuilt when |
 |---|---|---|
 | `app` | standalone server, static, public, `boot.mjs`, `admin.mjs`, `verify-update.mjs`, migrations | every release |
-| `node` | `node.exe` | the Node version on `PATH` changes |
+| `node` | `node.exe` | `$pinnedNodeVersion` in `release.ps1` changes |
 | `chromium` | Playwright's Chromium | `playwright-core` changes |
 | `runtime` | `scripts\`, `service\` (WinSW + XML template) | any of those files changes |
 | `monitoring` | Alloy installer + config template | either changes |
