@@ -3,58 +3,30 @@ import { describe, expect, it } from 'vitest';
 import {
   type CargoBand,
   type ExpenditureBand,
-  effectiveCommissionRate,
-  normaliseAmount,
+  type FeeSettings,
+  normalisedCargo,
+  normalisedExpenditure,
   selectCargoBandIndex,
   selectExpenditureBandIndex,
 } from './fee-model.js';
 import { Fraction } from './fraction.js';
 
-describe('effectiveCommissionRate (doc 02 §3.1)', () => {
-  it('grosses up an ex-VAT rate by the commission VAT rate by default', () => {
-    const rate = effectiveCommissionRate(16, {
-      commissionVatRate: 20,
-      commissionRateIncludesVat: false,
-      commissionVatDeductible: false,
-    });
-    expect(rate).toBeCloseTo(19.2, 10);
+describe('band amounts are used exactly as entered — no VAT adjustment (doc 02 §3)', () => {
+  const fees: FeeSettings = {
+    effectiveFrom: new Date(0),
+    defaultCommissionRate: 16,
+    cargoBands: [{ maxPrice: null, amount: Money.fromKurus(1000n) }],
+    expenditureBands: [{ minPrice: Money.fromKurus(0n), amount: Money.fromKurus(250n) }],
+  };
+
+  it('cargo', () => {
+    expect(Fraction.toMoneyRoundHalfUp(normalisedCargo(Money.fromKurus(5000n), fees)).toKurus()).toBe(1000n);
   });
 
-  it('uses the raw rate directly when it already includes VAT', () => {
-    const rate = effectiveCommissionRate(19.2, {
-      commissionVatRate: 20,
-      commissionRateIncludesVat: true,
-      commissionVatDeductible: false,
-    });
-    expect(rate).toBeCloseTo(19.2, 10);
-  });
-
-  it('uses the ex-VAT rate directly when the VAT is deductible (reclaimed)', () => {
-    const rate = effectiveCommissionRate(16, {
-      commissionVatRate: 20,
-      commissionRateIncludesVat: false,
-      commissionVatDeductible: true,
-    });
-    expect(rate).toBe(16);
-  });
-});
-
-describe('normaliseAmount (doc 02 §3.2)', () => {
-  const toMoney = (f: ReturnType<typeof normaliseAmount>) => Fraction.toMoneyRoundHalfUp(f).toKurus();
-
-  it('uses the amount as-is when it already includes VAT and is not deductible (the defaults)', () => {
-    const f = normaliseAmount(Money.fromKurus(1000n), true, 20, false);
-    expect(toMoney(f)).toBe(1000n);
-  });
-
-  it('grosses up an ex-VAT amount', () => {
-    const f = normaliseAmount(Money.fromKurus(1000n), false, 20, false);
-    expect(toMoney(f)).toBe(1200n);
-  });
-
-  it('nets a VAT-inclusive deductible amount back down', () => {
-    const f = normaliseAmount(Money.fromKurus(1200n), true, 20, true);
-    expect(toMoney(f)).toBe(1000n);
+  it('expenditure', () => {
+    expect(Fraction.toMoneyRoundHalfUp(normalisedExpenditure(Money.fromKurus(5000n), fees)).toKurus()).toBe(
+      250n,
+    );
   });
 });
 

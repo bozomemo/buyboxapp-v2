@@ -9,6 +9,41 @@ vectors in §7.
 
 ---
 
+## 0. No VAT in any price calculation — product owner's decision, 2026-11-03
+
+**No calculation in this system applies VAT (KDV).** Not the floor price, not net proceeds,
+not the repricing engine, not a preview, not a report. There is no product VAT rate, no
+commission VAT gross-up, no deductibility switch.
+
+This works because **every amount is on one basis — VAT-inclusive**, the basis the marketplace
+quotes its selling price on:
+
+| Amount | Entered as |
+|--------|-----------|
+| Unit cost (`stock_items.unit_cost`, brand product unit price) | VAT-inclusive, what is actually paid |
+| Selling price | VAT-inclusive (as the marketplace states it) |
+| Commission rate | as the marketplace states it, applied to the selling price |
+| Cargo, expenditure, fixed fees | VAT-inclusive, what is actually paid |
+
+With every amount on the same basis and the same VAT rate on purchase, sale and fees, whether a
+price makes or loses money comes out right without a VAT term. Where the rates differ (a 1 % or
+10 % VAT product against 20 % on commission and cargo) the result is slightly off; the product
+owner accepted that.
+
+> ⚠️ **This deliberately reverses the previous version of §6.1**, which called the VAT-less
+> legacy floor a defect. That reasoning holds only when unit cost is entered **VAT-exclusive**
+> against a VAT-inclusive price. Entering unit cost VAT-exclusive under this model produces a
+> floor that is too low, so a cost source that supplies VAT-exclusive figures must be converted
+> before import. Recorded in doc 09 §34.
+>
+> The database keeps its VAT columns (`fee_settings.*vat*`, `listings.vat_rate`,
+> `price_submissions.vat_rate`, `repricing_state.optimum_ctx_vat_rate`) so history is not
+> destroyed. Nothing reads them for a calculation; new fee rows write the values that mean "no
+> VAT" (`packages/db` `RETIRED_VAT_COLUMNS`). `listings.vat_rate` is still imported from the
+> marketplace and may be displayed.
+
+---
+
 ## 1. Money representation
 
 **All monetary values are `bigint` in minor units (kuruş).** Never `number`, never `float`,
@@ -16,7 +51,7 @@ in any layer.
 
 - Parse at the adapter boundary: `149.90` → `14990n`.
 - Format at the display boundary only.
-- Rates and multipliers (commission %, VAT %, ratios) are `number`, since they are not money.
+- Rates and multipliers (commission %, ratios) are `number`, since they are not money.
 - Rounding: **half-up to the nearest kuruş**, applied once, at the end of a calculation chain.
   Never round intermediate values.
 
@@ -29,13 +64,11 @@ in any layer.
 
 | Input | Symbol | Source | Notes |
 |-------|--------|--------|-------|
-| Unit cost | `U` | ERP / stock item | **VAT-exclusive** |
-| Selling price | `P` | Marketplace listing | **VAT-inclusive** (what the customer is quoted) |
-| Product VAT rate | `v` | Marketplace listing API (`vatRate`) | 1, 10 or 20 (%) |
-| Commission rate | `c₀` | Marketplace listing API (`commission` / `commissionRate`) | **Ex-VAT** percentage |
-| Commission VAT rate | `vc` | Config, default **20** | |
-| Cargo bands | `K(·)` | Config | |
-| Expenditure bands | `E(·)` | Config | |
+| Unit cost | `U` | ERP / stock item | **VAT-inclusive** (§0) |
+| Selling price | `P` | Marketplace listing | VAT-inclusive (what the customer is quoted) |
+| Commission rate | `c` | Marketplace listing API (`commission` / `commissionRate`) | Used as stated |
+| Cargo bands | `K(·)` | Config | Amounts used as entered |
+| Expenditure bands | `E(·)` | Config | Amounts used as entered |
 | Campaign final price | `Pf` | Marketplace (`priceSeenByCustomer` / `finalPrice`) | What the customer actually pays |
 | Store share of campaign | `s` | Marketplace (HB `debtors`) | % of the discount we fund |
 
@@ -46,52 +79,13 @@ in any layer.
 ```ts
 interface FeeSettings {
   effectiveFrom: Date;
-
-  // Commission
-  commissionVatRate: number;            // default 20
-  commissionRateIncludesVat: boolean;   // default false — APIs return ex-VAT
-  commissionVatDeductible: boolean;     // default false — VAT is a real cost
-  commissionBase: 'gross' | 'net';      // default 'gross' — charged on the VAT-inclusive price
   defaultCommissionRate: number;        // fallback when the API omits it
-
-  // Cargo — bands are ordered, first match wins
-  cargoBands: { maxPrice: bigint | null; amount: bigint }[];
-  cargoAmountsIncludeVat: boolean;      // default true — operator enters what they pay
-  cargoVatRate: number;                 // default 20
-  cargoVatDeductible: boolean;          // default false
-
-  // Other expenditure (marketing / service fees)
-  expenditureBands: { minPrice: bigint; amount: bigint }[];
-  expenditureIncludesVat: boolean;      // default true
-  expenditureVatRate: number;           // default 20
-  expenditureVatDeductible: boolean;    // default false
+  cargoBands: { maxPrice: bigint | null; amount: bigint }[];   // ordered, first match wins
+  expenditureBands: { minPrice: bigint; amount: bigint }[];    // ordered, first match wins
 }
 ```
 
-**Defaults treat commission, cargo and expenditure as VAT-inclusive costs** — i.e. the VAT on
-these invoices is a real expense, not reclaimed. This matches the legacy assumption and the
-operator's instruction. Flipping any `*VatDeductible` to `true` models reclaiming that input
-VAT and lowers the floor price accordingly.
-
-### 3.1 Effective commission rate
-
-```
-grossRate = commissionRateIncludesVat ? c₀ : c₀ × (1 + vc/100)
-
-c_eff = commissionVatDeductible ? c₀ : grossRate
-```
-
-With the defaults and `c₀ = 16`, `vc = 20`: `c_eff = 19.2%`.
-
-### 3.2 Effective cargo and expenditure amounts
-
-```
-normalise(amount, includesVat, vatRate, deductible):
-    withVat = includesVat ? amount : amount × (1 + vatRate/100)
-    return deductible ? withVat / (1 + vatRate/100) : withVat
-```
-
-With the defaults, the configured amount is used as entered.
+Band amounts are used exactly as configured — there is no VAT normalisation (§0).
 
 ---
 
@@ -139,7 +133,7 @@ must return `CostError.BundleCycle`.
 *Given a selling price, what actually reaches our account?*
 
 ```
-netProceeds(P, v, c_eff, campaign, fees):
+netProceeds(P, c, campaign, fees):
 
     # 1. Campaign: what the customer pays, and who funds the discount
     Pf                = campaign ? campaign.finalPrice : P
@@ -147,25 +141,20 @@ netProceeds(P, v, c_eff, campaign, fees):
     storeDiscount     = totalDiscount × (campaign ? campaign.storeSharePct/100 : 0)
     marketplaceRefund = totalDiscount - storeDiscount
 
-    # 2. Commission base
-    commissionBase = fees.commissionBase == 'gross' ? (P - storeDiscount)
-                                                    : (P - storeDiscount) / (1 + v/100)
-    commission     = commissionBase × c_eff/100
+    # 2. Commission, on the price net of our share of the discount
+    commission = (P - storeDiscount) × c/100
 
     # 3. Fixed costs, chosen from the price the customer sees
-    cargo       = normalisedCargo(Pf, fees)
-    expenditure = normalisedExpenditure(Pf, fees)
+    cargo       = cargoBand(Pf).amount
+    expenditure = expenditureBand(Pf).amount
 
-    # 4. Revenue is net of product VAT — the VAT portion is remitted to the state
-    revenueNet = Pf / (1 + v/100)
-
-    return revenueNet - commission - cargo - expenditure + marketplaceRefund
+    return Pf - commission - cargo - expenditure + marketplaceRefund
 ```
 
-With no campaign (`Pf = P`, `storeDiscount = 0`, `marketplaceRefund = 0`) this reduces to:
+With no campaign this reduces to:
 
 ```
-netProceeds = P/(1 + v/100) - P × c_eff/100 - cargo - expenditure
+netProceeds = P - P × c/100 - cargo - expenditure
 ```
 
 ### 5.2 Floor price — `floorPrice(U)`
@@ -175,18 +164,16 @@ netProceeds = P/(1 + v/100) - P × c_eff/100 - cargo - expenditure
 Solve `netProceeds(P) = U` for `P`. With no campaign:
 
 ```
-P × [ 1/(1 + v/100) - c_eff/100 ] = U + cargo + expenditure
-
-floorPrice = (U + cargo + expenditure) / [ 1/(1 + v/100) - c_eff/100 ]
+floorPrice = (U + cargo + expenditure) / (1 - c/100)
 ```
 
-Let `D = 1/(1 + v/100) - c_eff/100` — the **net retention factor**.
+Let `D = 1 - c/100` — the **net retention factor**.
 
 With a campaign, the price we set is `P` but the customer pays `Pf = P × r` where
 `r = campaignRatio`. Substituting and solving:
 
 ```
-D_campaign = r/(1 + v/100) - (1 - (1-r) × s/100) × c_eff/100 + (1-r) × (1 - s/100)
+D_campaign = r - (1 - (1-r) × s/100) × c/100 + (1-r) × (1 - s/100)
 
 floorPrice = (U + cargo + expenditure) / D_campaign
 ```
@@ -197,14 +184,14 @@ Cargo and expenditure depend on the price, but the price is what we are solving 
 by **iterating to a fixed point** rather than the legacy's hand-unrolled band descent:
 
 ```
-floorPrice(U, v, c_eff, campaign, fees):
-    D = retentionFactor(v, c_eff, campaign, fees)
+floorPrice(U, c, campaign, fees):
+    D = retentionFactor(c, campaign)
     if D <= 0: return PriceError.NotProfitableAtAnyPrice
 
     P = (U + fees.cargoBands.last.amount + fees.expenditureBands.last.amount) / D   # upper seed
     for i in 0..MAX_ITERATIONS (5):
-        cargo       = normalisedCargo(customerPrice(P, campaign), fees)
-        expenditure = normalisedExpenditure(customerPrice(P, campaign), fees)
+        cargo       = cargoBand(customerPrice(P, campaign)).amount
+        expenditure = expenditureBand(customerPrice(P, campaign)).amount
         next        = (U + cargo + expenditure) / D
         if bandsOf(next) == bandsOf(P): return roundUpToKurus(next)
         P = next
@@ -213,9 +200,11 @@ floorPrice(U, v, c_eff, campaign, fees):
 
 Seeding from the **highest** band and converging downward guarantees the result is never
 below the true floor, which is the safe direction. If the iteration oscillates between two
-adjacent bands (possible exactly at a band edge), take the **higher** price.
+adjacent bands (possible exactly at a band edge), take the **higher** price. Where two fixed
+points exist (a cost whose floor would be self-consistent in both a cheaper and a dearer cargo
+band), the higher one is returned for the same reason.
 
-`D <= 0` means no price is profitable — commission plus VAT exceeds 100% of revenue. Return an
+`D <= 0` means no price is profitable — the commission takes all of the revenue. Return an
 error; do not produce a price.
 
 > **This replaces the legacy `calcMinPrice` band descent entirely.** The legacy version tests
@@ -226,27 +215,20 @@ error; do not produce a price.
 
 ## 6. What changed from the legacy model, and why it matters
 
-### 6.1 Product VAT was missing entirely — floors were systematically too low
+### 6.1 VAT — superseded by §0
 
-The legacy floor is `(U + cargo) / (1 − c/100)`. It contains **no product VAT term**, while
-cost is VAT-exclusive and price is VAT-inclusive. The two are not on the same basis.
-
-| | Retention factor `D` | Floor at `U = 2000` kuruş |
-|---|---|---|
-| Legacy (`c = 16`) | `1 − 0.16 = 0.840` | **2948 kuruş** |
-| Correct (`v = 10`, `c₀ = 16`, `vc = 20`) | `1/1.10 − 0.192 = 0.7171` | **3454 kuruş** |
-| Correct (`v = 20`, `c₀ = 16`, `vc = 20`) | `1/1.20 − 0.192 = 0.6413` | **3861 kuruş** |
-
-The legacy floor understates the true break-even by **17%** at 10% VAT and **31%** at 20% VAT.
-Every "profitable" decision the legacy bot made near its floor was in fact a loss.
+Until 2026-11-03 this section required a product VAT term, on the grounds that the legacy floor
+`(U + cargo) / (1 − c/100)` compared a VAT-exclusive cost to a VAT-inclusive price. The product
+owner removed VAT from every calculation instead and moved unit cost onto the VAT-inclusive
+basis (§0), which removes the mismatch that made the legacy formula wrong. The VAT-less algebra
+is now the specified model; what remains a defect is entering a **VAT-exclusive** cost into it.
 
 > 📌 **Settlement validation is deferred.** The product owner cannot yet compare against a real
-> statement. Build to this model as specified — the algebra is property-tested and internally
-> consistent. What validation confirms is the **input parameters** (`commissionBase`, cargo
-> bands, expenditure bands), and those are configuration, not code. Ship provisional defaults,
-> mark them as provisional in the UI, and treat validation as a **hard gate before enabling
-> live writes** (doc 12 Phase 8.3b). Sources when it happens: Trendyol `getSettlements` and
-> `getCargoInvoiceItems`; Hepsiburada order `commission.amount` / `vat` / `vatRate`.
+> statement. What validation confirms is the **input parameters** (cargo bands, expenditure
+> bands, the commission rate actually charged), and those are configuration, not code. Ship
+> provisional defaults, mark them as provisional in the UI, and treat validation as a **hard
+> gate before enabling live writes** (doc 12 Phase 8.3b). Sources when it happens: Trendyol
+> `getSettlements` and `getCargoInvoiceItems`; Hepsiburada order `commission.amount`.
 
 ### 6.2 Campaign economics are now read from the API, not scraped
 
@@ -269,49 +251,34 @@ only tier 1 is applied. The band model above implements it properly.
 
 ## 7. Test vectors
 
-These are the acceptance tests for `packages/core`. Values in kuruş.
+These are the acceptance tests for `packages/core`. Values in kuruş. Rewritten 2026-11-03 for
+the VAT-less model (§0); the previous VAT-based vectors are in git history.
 
 ### 7.1 Retention factor
 
-| `v` | `c₀` | `vc` | deductible | `c_eff` | `D` |
-|-----|------|------|-----------|---------|-----|
-| 10 | 16.00 | 20 | false | 19.200 | 0.717091 |
-| 20 | 16.00 | 20 | false | 19.200 | 0.641333 |
-| 1  | 16.00 | 20 | false | 19.200 | 0.798099 |
-| 10 | 16.00 | 20 | **true** | 16.000 | 0.749091 |
-| 10 | 7.83  | 20 | false | 9.396  | 0.815131 |
-| 20 | 45.00 | 20 | false | 54.000 | 0.293333 |
-| 20 | 70.00 | 20 | false | 84.000 | **≤ 0 → error** |
-
-> **Correction (Phase 2 implementation, packages/core):** three `D` values above were
-> originally miscalculated — `0.717071`, `0.798218` and `0.815095` — apparently from a
-> rounded intermediate `c_eff`, which §1 itself says never to do ("never round
-> intermediate values"). Recomputed directly from `D = 1/(1+v/100) - c_eff/100` with
-> exact rational arithmetic: row 1 is `986/1375`, row 3 is `10076/12625`, row 5 is
-> `224161/275000`. The other four rows were already correct.
+| `c` | `D` |
+|-----|-----|
+| 16.00 | 21/25 = 0.84 |
+| 7.83 | 9217/10000 |
+| 45.00 | 11/20 = 0.55 |
+| 0 | 1 |
+| 100 | **0 → error** |
 
 ### 7.2 Floor price — no campaign
 
 Fees: cargo bands `[{maxPrice: 3000, amount: 476}, {maxPrice: 7500, amount: 900}, {maxPrice: null, amount: 1100}]`,
-no expenditure, all VAT-inclusive, commission ex-VAT with `vc = 20`.
+no expenditure.
 
-| `U` | `v` | `c₀` | Expected floor | Selected cargo band |
-|-----|-----|------|----------------|---------------------|
-| 2000 | 10 | 16 | 4045 | 900 (settles: 4045 > 3000) |
-| 2000 | 20 | 16 | 4522 | 900 |
-| 1000 | 10 | 16 | 2059 | 476 |
-| 5000 | 20 | 16 | 9512 | 1100 |
-| 500  | 1  | 7.83 | 1090 | 476 |
+| `U` | `c` | Expected floor | Selected cargo band |
+|-----|-----|----------------|---------------------|
+| 2000 | 16 | 3453 | 900 (2900 / 0.84 = 3452.38) |
+| 1000 | 16 | 1758 | 476 (1476 / 0.84 = 1757.14) |
+| 5000 | 16 | 7024 | 900 (5900 / 0.84 = 7023.81) |
+| 500 | 7.83 | 1059 | 476 (976 / 0.9217 = 1058.92) |
+| 5000 | 45 | 11091 | 1100 (6100 / 0.55 = 11090.91) |
 
-> **Correction (Phase 2 implementation, packages/core):** four of the five floors above
-> were originally wrong — most visibly row 1, which claimed floor `3454` selecting the
-> `900` cargo band, but `3454` does not fall inside that band's range (`3000 < p ≤ 7500`
-> selects `900`; `3454` would only be reachable through the `476` band, whose range is
-> `p ≤ 3000` — a self-contradiction). Recomputed with the corrected `D` values above and
-> the exact fixed-point iteration in §5.3; each corrected value was checked for
-> self-consistency (the settled price actually falls inside the cargo band used to
-> compute it) and against the round-trip property in §7.4. Row 3 (`U = 1000`) was already
-> correct and is unchanged.
+Row 1 has a second, lower self-consistent solution — (2000 + 476) / 0.84 = 2947.62 sits inside
+the 476 band — and §5.3 deliberately returns the higher one.
 
 > Implementers: compute these from the formula, assert equality, and treat any deviation as a
 > bug in the implementation — not in the table. If the table itself is wrong, fix it here and
@@ -330,8 +297,8 @@ no expenditure, all VAT-inclusive, commission ex-VAT with `vc = 20`.
 For any price `P` above the floor:
 `netProceeds(floorPrice(U)) ≈ U` within one kuruş.
 
-This is the single most valuable invariant. Property-test it across all VAT rates, commission
-rates, campaign ratios and cargo bands.
+This is the single most valuable invariant. Property-test it across commission rates,
+campaign ratios and cargo bands.
 
 ### 7.5 Unit cost
 
@@ -364,7 +331,10 @@ rates, campaign ratios and cargo bands.
 
 | # | Item | Owner |
 |---|------|-------|
-| Q-A | Confirm `commissionBase` per marketplace: is commission charged on the VAT-inclusive price or the net price? Default assumed `gross`. | verify against a settlement statement |
 | Q-B | Confirm current cargo tariff bands for both marketplaces. Trendyol `getCargoInvoiceItems` gives real invoiced amounts. | product owner |
 | Q-C | Confirm the marketing/service expenditure bands, if any still apply. | product owner |
-| Q-D | Confirm whether Hepsiburada exposes product VAT rate pre-sale (doc api-references §2.7). If not, VAT must be configured per category. | product owner |
+| Q-E | Every cost source must supply VAT-inclusive unit costs (§0). Confirm the ERP export and the Excel stock import are on that basis before live writes. | product owner |
+
+Closed 2026-11-03 by §0: Q-A (commission on the VAT-inclusive or net price — commission is
+applied to the selling price as stated) and Q-D (Hepsiburada product VAT rate pre-sale — no
+longer needed).

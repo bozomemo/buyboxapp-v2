@@ -311,6 +311,14 @@ Structure actually consumed:
 | `$.product.merchantListing.promotions[]` | Buybox seller's promotions. `hasPromotion` counts only those whose `promotionDiscountType` is not `"Cargo"` (shipping) — **changed 2026-09-25**, when 11,044 of 11,048 archived observations read true because nearly every offer carries a free-shipping campaign. Names are still stored as display text |
 | `$.product.merchantListing.otherMerchants[]` | Competing sellers; each carries `variants[]` with its own `listingId` and `price` |
 
+> **`barcode` on an offer is seller-entered, not the product's GTIN** *(measured 2026-11-03, four
+> live pages of three Acana/Orijen products through the production Playwright transport, read
+> only)*. The buybox seller's `winnerVariant.barcode` was a marketplace-generated `TYB…` code on
+> two pages, a Hepsiburada SKU (`HBCV…`) on one and a GTIN with its leading zero dropped on the
+> fourth; other sellers on the same page carried the true GTIN, `TYM…` codes or an unrelated
+> GTIN. Never match a product by an offer's barcode — doc 17 §8.2 matches the commission tariff to
+> the brand product's own barcode instead.
+
 Four things the shape gets wrong if assumed rather than read:
 
 1. **`merchantListing` is an object, not an array.** Iterating it iterates keys. The legacy

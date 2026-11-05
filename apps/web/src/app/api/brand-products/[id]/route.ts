@@ -42,6 +42,8 @@ async function getHandler(_request: Request, { params }: { params: Promise<{ id:
       upperBound: upperBound.toString(),
       upperBoundIsReferencePrice: product.maxPrice === null,
       barcode: product.barcode,
+      unitPrice: product.unitPrice?.toString() ?? null,
+      desi: product.desi,
       source: product.source,
       referencePriceSource: product.referencePriceSource,
       createdAt: product.createdAt,
@@ -96,6 +98,10 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
       barcode: body.barcode !== undefined ? body.barcode : existing.barcode,
       referencePriceSource:
         body.referencePriceSource !== undefined ? body.referencePriceSource : existing.referencePriceSource,
+      // Passed through as sent: `undefined` reaches the repository as "keep", which needs no
+      // round-trip through the stored value the way the band fields above do.
+      unitPrice: body.unitPrice,
+      desi: body.desi,
     },
     existing.barcode,
   );

@@ -26,19 +26,9 @@ export function mapFeeSettings(row: configRepo.FeeSettingsRow): FeeSettings {
 
   return {
     effectiveFrom: new Date(row.effectiveFrom),
-    commissionVatRate: row.commissionVatRate,
-    commissionRateIncludesVat: row.commissionRateIncludesVat,
-    commissionVatDeductible: row.commissionVatDeductible,
-    commissionBase: row.commissionBase,
     defaultCommissionRate: row.defaultCommissionRate,
     cargoBands,
-    cargoAmountsIncludeVat: row.cargoAmountsIncludeVat,
-    cargoVatRate: row.cargoVatRate,
-    cargoVatDeductible: row.cargoVatDeductible,
     expenditureBands,
-    expenditureIncludesVat: row.expenditureIncludesVat,
-    expenditureVatRate: row.expenditureVatRate,
-    expenditureVatDeductible: row.expenditureVatDeductible,
   };
 }
 

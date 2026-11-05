@@ -29,7 +29,6 @@ export type RepricingPhase = 'SEEKING' | 'CLIMBING' | 'REFINING' | 'OPTIMUM' | '
 export interface OptimumContext {
   readonly unitCost: Money;
   readonly commissionRate: number;
-  readonly vatRate: number;
   readonly campaignRatio: number;
   readonly secondPrice: Money | null;
   readonly secondSellerId: string | null;
@@ -63,8 +62,7 @@ export interface UpdateBudget {
 export interface ListingSnapshot {
   readonly currentPrice: Money;
   readonly physicalStock: number;
-  readonly commissionRate: number; // c0, ex-VAT percent
-  readonly vatRate: number; // percent
+  readonly commissionRate: number; // percent, as the marketplace states it
   readonly locked: boolean;
   readonly suspended: boolean;
   readonly salable: boolean;

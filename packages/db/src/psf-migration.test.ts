@@ -99,6 +99,9 @@ for (const dialect of ALL_DIALECTS) {
         barcode: null,
         source: 'migration',
         referencePriceSource: 'mars.csv',
+        // Added by migration 0025 (doc 17 §8), which runs after 0022 here; a migrated product has none.
+        unitPrice: null,
+        desi: null,
         createdAt: PRICED_AT,
         updatedAt: PRICED_AT,
       });

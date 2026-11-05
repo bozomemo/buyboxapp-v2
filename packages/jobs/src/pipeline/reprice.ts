@@ -11,7 +11,6 @@
  */
 import {
   decide,
-  effectiveCommissionRate,
   floorPrice,
   unitCost,
   type CampaignRatio,
@@ -88,7 +87,6 @@ async function loadState(
       ? {
           unitCost: Money.fromKurus(row.optimumCtxUnitCost),
           commissionRate: row.optimumCtxCommissionRate ?? 0,
-          vatRate: row.optimumCtxVatRate ?? 0,
           campaignRatio: row.optimumCtxCampaignRatio ?? 0,
           secondPrice: row.optimumCtxSecondPrice !== null ? Money.fromKurus(row.optimumCtxSecondPrice) : null,
           secondSellerId: row.optimumCtxSecondSellerRef,
@@ -227,9 +225,11 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
         });
         continue;
       }
-      if (listing.commissionRate === null || listing.vatRate === null) {
+      if (listing.commissionRate === null) {
         // Guessing a rate here risks an unsafely low floor price (CLAUDE.md: never below
         // floor) — skip rather than default to 0, and surface it as CostUnknown would be.
+        // VAT is no longer part of the price model (doc 02 §0), so a missing VAT rate is not
+        // a reason to skip.
         await eventsRepo.logEvent(ctx.appDb, {
           id: newId(),
           at: nowMs,
@@ -238,7 +238,7 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
           listingId: listing.id,
           jobRunId: ctx.correlationId,
           code: 'RepriceSkippedMissingRates',
-          message: `Listing ${listing.marketplaceListingId}: commissionRate or vatRate missing from the feed`,
+          message: `Listing ${listing.marketplaceListingId}: commissionRate missing from the feed`,
           context: null,
         });
         continue;
@@ -314,7 +314,6 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
           // offered stock is used as a proxy for physical stock.
           physicalStock: listing.offeredStock,
           commissionRate: listing.commissionRate,
-          vatRate: listing.vatRate,
           locked: listing.isLocked,
           suspended: listing.isSuspended,
           salable: listing.isSalable,
@@ -347,7 +346,8 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
         optimumPrice: decision.nextState.optimumPrice?.toKurus() ?? null,
         optimumCtxUnitCost: decision.nextState.optimumContext?.unitCost.toKurus() ?? null,
         optimumCtxCommissionRate: decision.nextState.optimumContext?.commissionRate ?? null,
-        optimumCtxVatRate: decision.nextState.optimumContext?.vatRate ?? null,
+        // Retired with VAT (doc 02 §0); the column stays for history and is no longer written.
+        optimumCtxVatRate: null,
         optimumCtxCampaignRatio: decision.nextState.optimumContext?.campaignRatio ?? null,
         optimumCtxSecondPrice: decision.nextState.optimumContext?.secondPrice?.toKurus() ?? null,
         optimumCtxSecondSellerRef: decision.nextState.optimumContext?.secondSellerId ?? null,
@@ -362,8 +362,7 @@ export async function reprice(ctx: JobContext): Promise<JobResult> {
         const floorResult = cost.ok
           ? floorPrice({
               unitCost: cost.value,
-              vatRate: listing.vatRate,
-              effectiveCommissionRate: effectiveCommissionRate(listing.commissionRate, fees),
+              commissionRate: listing.commissionRate,
               campaign: campaignRatioAt(Money.fromKurus(listing.price), campaignFinal),
               fees,
             })

@@ -20,19 +20,9 @@ afterEach(() => cleanup());
 const PRIMARY_ROUTE = '/api/settings/fees';
 
 const CURRENT: Record<string, unknown> = {
-  commissionVatRate: '20',
-  commissionRateIncludesVat: false,
-  commissionVatDeductible: false,
-  commissionBase: 'gross',
   defaultCommissionRate: '15',
   cargoBands: [{ edge: '', amount: '11.00' }],
-  cargoAmountsIncludeVat: true,
-  cargoVatRate: '20',
-  cargoVatDeductible: false,
   expenditureBands: [{ edge: '0', amount: '0' }],
-  expenditureIncludesVat: true,
-  expenditureVatRate: '20',
-  expenditureVatDeductible: false,
 };
 
 describe('FeesClient', () => {

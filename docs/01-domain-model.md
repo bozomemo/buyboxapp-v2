@@ -119,7 +119,7 @@ Identified by **HepsiburadaSku**. Notable fields:
 | `merchantSku` | API | Our stock code — parsed per §2 |
 | `price` | API | Current listing price (before basket discount) |
 | `availableStock` | API | Currently offered stock |
-| `commissionRate` | API | Commission %, **ex-VAT** |
+| `commissionRate` | API | Commission %, used as the marketplace states it (no VAT — doc 02 §0) |
 | `dispatchTime` | API | Days to ship; a buybox ranking factor |
 | `cargoCompany1..3` | API | Must be echoed back on every update |
 | `maximumPurchasableQuantity`, `minimumPurchasableQuantity` | API | Purchase limits |

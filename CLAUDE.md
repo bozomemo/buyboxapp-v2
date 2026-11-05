@@ -21,7 +21,10 @@ The retired .NET Framework WinForms application is kept under `reference/` **onl
 questions about what the business rules were. It is **not** a design reference:
 
 - It targets a Trendyol API host that no longer exists.
-- Its pricing formulas omit product VAT and are wrong (see `docs/02-cost-and-price-model.md` §6.1).
+- Its pricing formulas mix a VAT-exclusive cost with a VAT-inclusive price and are wrong. (The
+  new system uses no VAT at all, by the product owner's decision of 2026-11-03, with every amount
+  VAT-inclusive — `docs/02-cost-and-price-model.md` §0. That is not the legacy formula: the legacy
+  fed it a VAT-exclusive cost.)
 - `docs/09-known-defects-and-risks.md` lists 33 defects in it, seven of which risk money.
 
 **Never copy a pattern, a formula, a constant or a schema from it.** Read the specification
@@ -135,6 +138,9 @@ both a numeric `value` and a locale-formatted `text` of which only the first is 
 
 ## Hard rules
 
+- **No VAT (KDV) in any price calculation** (product owner, 2026-11-03, doc 02 §0). Every amount
+  — unit cost, price, commission, cargo, fees — is VAT-inclusive and used as entered. Do not
+  reintroduce a VAT rate, a gross-up or a deductibility switch into any formula.
 - **Money is `bigint` in minor units (kuruş).** Never a float, never a JS `number`, in any
   layer — database, domain, API, UI. Format only at the display boundary.
 - **No credential in source, in committed config, or in a database column.** Secrets come from

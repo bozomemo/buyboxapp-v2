@@ -376,6 +376,8 @@ for (const dialect of ALL_DIALECTS) {
           barcode: null,
           source: 'manual',
           referencePriceSource: 'liste.csv',
+          unitPrice: null,
+          desi: null,
           createdAt: NOW,
           updatedAt: NOW,
         });

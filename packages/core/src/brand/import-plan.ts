@@ -23,6 +23,12 @@ export type AmountCell =
   | { readonly kind: 'amount'; readonly value: bigint }
   | { readonly kind: 'invalid'; readonly text: string };
 
+/** A parsed desi cell (doc 17 §8). Desi is not money, so a plain number. */
+export type DesiCell =
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'desi'; readonly value: number }
+  | { readonly kind: 'invalid'; readonly text: string };
+
 /** A parsed link cell. Mirrors `ProductLinkProblem` in `packages/adapters`, without depending on it. */
 export type LinkCell =
   | { readonly kind: 'empty' }
@@ -44,6 +50,14 @@ export interface ImportRowInput {
   readonly trendyolLink: LinkCell;
   readonly hepsiburadaLink: LinkCell;
   readonly barcode: string;
+  /**
+   * _Birim Fiyat_ and _Desi_ (doc 17 §8). **`undefined` means the file has no such column**, and
+   * then the product's stored value is left alone — a file made from the template before these
+   * columns existed must not clear every product's unit price. A column that is present follows
+   * the rule of every other field: an empty cell clears.
+   */
+  readonly unitPrice?: AmountCell;
+  readonly desi?: DesiCell;
 }
 
 /** A card this install already knows, keyed by `cardKey(marketplace, ref)`. */
@@ -88,7 +102,9 @@ export type ImportErrorCode =
   | 'conflictingProducts'
   | 'duplicateLinkInFile'
   | 'marketplaceNotConfigured'
-  | 'barcodeScientific';
+  | 'barcodeScientific'
+  | 'unparseableUnitPrice'
+  | 'unparseableDesi';
 
 export interface ImportRowError {
   readonly code: ImportErrorCode;
@@ -100,7 +116,9 @@ export interface ImportRowError {
     | 'maxPrice'
     | 'trendyolLink'
     | 'hepsiburadaLink'
-    | 'barcode';
+    | 'barcode'
+    | 'unitPrice'
+    | 'desi';
   /** The other product's name, for the two errors that name one. */
   readonly otherProductName?: string;
 }
@@ -129,6 +147,9 @@ export interface PlannedFields {
   readonly minPrice: bigint | null;
   readonly maxPrice: bigint | null;
   readonly barcode: string | null;
+  /** `undefined` when the file has no such column — see `ImportRowInput.unitPrice`. */
+  readonly unitPrice?: bigint | null;
+  readonly desi?: number | null;
 }
 
 export type ImportRowPlan =
@@ -244,6 +265,16 @@ function planRow(
   if (row.referencePrice.kind === 'empty') {
     errors.push({ code: 'missingReferencePrice', column: 'referencePrice' });
   }
+  if (row.unitPrice?.kind === 'invalid') errors.push({ code: 'unparseableUnitPrice', column: 'unitPrice' });
+  if (row.desi?.kind === 'invalid') errors.push({ code: 'unparseableDesi', column: 'desi' });
+  const unitPrice =
+    row.unitPrice === undefined ? undefined : row.unitPrice.kind === 'amount' ? row.unitPrice.value : null;
+  const desi = row.desi === undefined ? undefined : row.desi.kind === 'desi' ? row.desi.value : null;
+  if (unitPrice !== undefined && unitPrice !== null) {
+    const check = checkBrandProductPrices({ referencePrice: unitPrice, minPrice: null, maxPrice: null });
+    if (check.errors.includes('nonPositive')) errors.push({ code: 'nonPositiveAmount', column: 'unitPrice' });
+    if (check.errors.includes('tooLarge')) errors.push({ code: 'amountTooLarge', column: 'unitPrice' });
+  }
 
   for (const [cell, column] of [
     [row.trendyolLink, 'trendyolLink'],
@@ -350,6 +381,8 @@ function planRow(
     minPrice,
     maxPrice,
     barcode: row.barcode.trim() || null,
+    ...(unitPrice === undefined ? {} : { unitPrice }),
+    ...(desi === undefined ? {} : { desi }),
   };
 
   const matched = [...matches.values()][0];

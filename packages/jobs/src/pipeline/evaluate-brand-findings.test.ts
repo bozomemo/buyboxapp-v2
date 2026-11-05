@@ -104,6 +104,8 @@ describe('EvaluateBrandFindings', () => {
       barcode: null,
       source: 'manual',
       referencePriceSource: 'liste.csv',
+      unitPrice: null,
+      desi: null,
       createdAt: NOW - 10 * DAY,
       updatedAt: NOW - 10 * DAY,
     });

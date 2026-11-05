@@ -205,7 +205,7 @@ interface IProductSource {
 interface StockItemInput {
   baseStockCode: string;
   name:          string;
-  unitCost:      Money;      // VAT-exclusive
+  unitCost:      Money;      // VAT-inclusive (doc 02 §0)
   unitStock:     number;
   sourceRef?:    string;
 }
@@ -299,8 +299,8 @@ configuration, **testing each step before accepting it**.
      → show what came back so the operator can confirm it is the right store
 
 4. Fee settings per marketplace
-     commission VAT rate & treatment · cargo bands · expenditure bands
-     → live preview: "a product costing X with VAT Y has floor price Z"
+     default commission rate · cargo bands · expenditure bands (no VAT — doc 02 §0)
+     → live preview: "a product costing X has floor price Z"
 
 5. Repricing policy per marketplace
      steps · tolerance · sole-seller margin · stock mode · settle time

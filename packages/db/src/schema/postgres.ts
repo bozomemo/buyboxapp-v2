@@ -1067,6 +1067,8 @@ export const brandProducts = pgTable(
     barcode: text('barcode'),
     source: text('source').notNull(),
     referencePriceSource: text('reference_price_source'),
+    unitPrice: money('unit_price'),
+    desi: real('desi'),
     createdAt: timestampMs('created_at').notNull(),
     updatedAt: timestampMs('updated_at').notNull(),
   },
@@ -1093,6 +1095,29 @@ export const brandProductCards = pgTable(
   (t) => [
     index('brand_product_cards_product').on(t.brandProductId),
     uniqueIndex('brand_product_cards_tracked_product').on(t.trackedProductId),
+  ],
+);
+
+/** See the doc comment on `commissionTariffs` in `schema/sqlite.ts`. */
+export const commissionTariffs = pgTable(
+  'commission_tariffs',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    productKey: text('product_key').notNull(),
+    barcode: text('barcode'),
+    sellerStockCode: text('seller_stock_code'),
+    validFrom: timestampMs('valid_from').notNull(),
+    validUntil: timestampMs('valid_until').notNull(),
+    tiersJson: json('tiers_json').notNull(),
+    sourceFile: text('source_file').notNull(),
+    importedAt: timestampMs('imported_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('commission_tariffs_product_period').on(t.marketplaceCode, t.productKey, t.validFrom),
+    index('commission_tariffs_valid_until').on(t.validUntil),
   ],
 );
 

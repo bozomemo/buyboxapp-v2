@@ -33,7 +33,8 @@ operator already knows the app by them; the interface language is Turkish.
 |-------|--------|---------|
 | `/brand/products` | Stok | The brand manager's own products: PSF, min, max, cards; Excel import (doc 17 §2–§3). **Built 2026-09-20** except the import (11.3): search, kartsız filter, inline create/edit, delete. Prices are typed in major units and parsed exactly; the _Üst sınır_ column marks a bound that is PSF standing in for an unset max |
 | `/brand/products/[id]` | Ürün detayı | Linked cards with multipliers, barcode suggestions, all sellers across cards per unit. **Built 2026-09-20** except the seller view (11.5/11.6): each card shows its own scaled PSF, min and upper bound, its multiplier is editable in place, _Birincil yap_ hands the primary over, and a suggestion fills the add-card form but still asks the multiplier |
-| `/brand/listings` | İlanlar | Linked cards + favourites, with buybox and band status (doc 17 §4.1). **Built 2026-09-20**: search, marketplace filter, favourite star, per-unit band beside a display-only unit price, live verdict, Excel export. _Açık ihlal süresi_ waits for 11.6's `band_violations` |
+| `/brand/listings` | İlanlar | Linked cards + favourites, with buybox and band status (doc 17 §4.1). **Built 2026-09-20**: search, marketplace filter, favourite star, per-unit band beside a display-only unit price (_Birim buybox_ since 2026-11-03), live verdict, Excel export. _Açık ihlal süresi_ waits for 11.6's `band_violations`. **2026-11-04:** _Komisyon_, _Tahmini kâr_ (+ %, breakdown on hover) and _0 kâr fiyatı_ — the reseller profit estimate (doc 17 §8), with the missing input named when it cannot be computed |
+| `/brand/profit` | Kâr Ayarları | The profit estimate's non-product inputs (doc 17 §8.1–§8.2): fixed per-sale fee, desi table, commission tariff workbook upload (preview → confirm) and the loaded periods. **Built 2026-11-04** |
 | `/brand/alerts` | Alarmlar | Price-band violations, open then resolved (doc 17 §5.4) |
 | `/settings/modules` | Modüller | Enable/disable the two modules (doc 17 §1.3) |
 | `/settings/notifications` | Bildirimler | Channels, recipients, test send (doc 17 §6) |
@@ -186,7 +187,7 @@ the legacy app loaded the whole catalogue into memory.
 | Group       | Columns                                                               |
 | ----------- | --------------------------------------------------------------------- |
 | Identity    | Pazaryeri · Marketplace SKU · Stok Kodu · Ürün Adı                    |
-| Cost        | Orj. Birim Fiyat · Birim Fiyat · **Dip Fiyat** · Komisyon · KDV       |
+| Cost        | Orj. Birim Fiyat · Birim Fiyat · **Dip Fiyat** · Komisyon             |
 | Price       | Satış Fiyatı · Müşteri Fiyatı · PSF · Marj %                          |
 | Stock       | Satış Stok · Fiziksel Stok                                            |
 | Competition | Sıra · Buybox Fiyatı · **Buybox Mağaza** · 2. Fiyat · 3. Fiyat · Fark |
@@ -237,7 +238,7 @@ Built structurally, never by string concatenation (doc 09 §20). Server-side.
 - Text: marketplace SKU, stock code, product name, brand, category. Brand is filterable today via
   `brandId` (cross-navigation from `/brands`, §12.1) — a free-text brand/category search box on
   this screen itself is not yet built.
-- Numeric with operator: commission, VAT, offered stock, physical stock, margin %
+- Numeric with operator: commission, offered stock, physical stock, margin %
 - Multi-select: marketplace, phase, last decision reason
 - Tri-state booleans (true / false / any): in buybox · can win buybox · selling at a loss ·
   locked · blacklisted · at list price · campaign active · automation enabled · observation
@@ -270,7 +271,7 @@ confirms, since it is a one-off action with a real consequence, not a toggle dir
 
 Four panels.
 
-**Now** — identity, cost breakdown (unit cost → cargo → commission → VAT → floor, shown as a
+**Now** — identity, cost breakdown (unit cost → cargo → commission → floor — no VAT step, doc 02 §0 — shown as a
 waterfall so the operator can see exactly where the floor comes from), current price, a stated
 margin over the floor (selling price − floor price, spelled out as a sentence rather than left for
 the operator to subtract), stock, status flags as `Chip`s (a clean listing shows an explicit "Sorun
@@ -588,7 +589,7 @@ marketplace, listing, job run, date range, code. Each row links to its listing o
 | Page            | Contents                                                                                                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Marketplaces    | Enable/disable, merchant ref, credentials (write-only, with a Test button), capabilities                                                                                 |
-| Fees            | Per marketplace, effective-dated. Commission VAT rate and treatment, cargo bands, expenditure bands. **Live floor-price preview** for a sample cost and VAT rate         |
+| Fees            | Per marketplace, effective-dated. Default commission rate, cargo bands, expenditure bands — no VAT fields (doc 02 §0). **Live floor-price preview** for a sample cost |
 | Policy          | Per marketplace: steps, tolerance, seek strategy, sole-seller margin, stock mode, low-stock guard, settle duration, poll interval, concurrency, daily budget and reserve |
 | Product sources | Choose and configure; column mapping for Excel; Test; ERP options shown disabled as "yakında"                                                                            |
 | Retention       | Per-table windows (doc 05 §10)                                                                                                                                           |

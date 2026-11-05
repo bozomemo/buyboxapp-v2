@@ -14,8 +14,13 @@
  * than a verdict it cannot have.
  *
  * Money is kuruş as decimal strings over the wire and `bigint` here; only `formatMoney` turns it
- * into text. The _birim fiyat_ column is the one divided figure in the system and it is display
- * only — every verdict multiplies the threshold instead (doc 17 §2.2).
+ * into text. The _birim buybox_ column is the one divided figure in the system and it is display
+ * only — every verdict multiplies the threshold instead (doc 17 §2.2). (It was labelled _birim
+ * fiyat_ until 2026-11-03, when _Birim Fiyat_ became the product's price to resellers.)
+ *
+ * The last three columns are the **reseller profit estimate** (doc 17 §8): what the buybox holder
+ * plausibly earns, from the product's unit price and desi, the desi table and the commission
+ * tariff. Reporting only. A row that cannot be estimated says which input is missing.
  */
 
 import Link from 'next/link';
@@ -57,6 +62,53 @@ interface Listing {
   upperBound: string | null;
   upperBoundIsReferencePrice: boolean;
   bandStatus: BandStatus;
+  profit: {
+    commissionRate: number;
+    commission: string;
+    cargo: string;
+    operation: string;
+    fixedSaleFee: string;
+    cost: string;
+    profit: string;
+    profitPct: number;
+    breakEvenPrice: string | null;
+  } | null;
+  profitMissing: ProfitMissing | null;
+}
+
+type ProfitMissing =
+  | 'noSettings'
+  | 'noUnitPrice'
+  | 'noDesi'
+  | 'noDesiBand'
+  | 'noTariff'
+  | 'packCard'
+  | 'priceOutsideTariff'
+  | 'noBuyboxPrice';
+
+/** Short cell text, then the sentence that says what to do about it. */
+const PROFIT_MISSING: Record<ProfitMissing, readonly [string, string]> = {
+  noSettings: ['ayar yok', 'Kâr Ayarları ekranında desi tablosu ve sabit bedel kaydedilmemiş.'],
+  noUnitPrice: ['birim fiyat yok', 'Stok ürününe birim fiyat girilmemiş.'],
+  noDesi: ['desi yok', 'Stok ürününe desi girilmemiş.'],
+  noDesiBand: ['desi bandı yok', 'Bu desi, Kâr Ayarları’ndaki desi tablosunun hiçbir satırına düşmüyor.'],
+  noTariff: ['tarife yok', 'Bu ürünün barkoduyla eşleşen, bugün geçerli bir komisyon tarifesi yüklenmemiş.'],
+  packCard: [
+    'paket kartı',
+    'Komisyon tarifesi tek ürün içindir; paket kartlarında kâr şimdilik hesaplanmıyor.',
+  ],
+  priceOutsideTariff: ['tarife dışı', 'Buybox fiyatı tarifenin hiçbir kademesine düşmüyor.'],
+  noBuyboxPrice: ['buybox yok', 'Kartta okunmuş bir buybox fiyatı yok.'],
+};
+
+function profitTitle(p: NonNullable<Listing['profit']>): string {
+  return [
+    `Komisyon %${String(p.commissionRate).replace('.', ',')}: ${formatMoney(BigInt(p.commission))}`,
+    `Kargo: ${formatMoney(BigInt(p.cargo))}`,
+    `Operasyon: ${formatMoney(BigInt(p.operation))}`,
+    `Sabit satış bedeli: ${formatMoney(BigInt(p.fixedSaleFee))}`,
+    `Birim fiyat: ${formatMoney(BigInt(p.cost))}`,
+  ].join('\n');
 }
 
 const STATUS_LABELS: Record<BandStatus, string> = {
@@ -240,11 +292,28 @@ export function BrandListingsClient() {
                     <th className="p-2">Çarpan</th>
                     <th className="p-2">Buybox satıcı</th>
                     <th className="p-2 text-right">Buybox fiyat</th>
-                    <th className="p-2 text-right">Birim fiyat</th>
+                    <th className="p-2 text-right" title="Buybox fiyatı ÷ çarpan — yalnızca okumak için">
+                      Birim buybox
+                    </th>
                     <th className="p-2 text-right">PSF</th>
                     <th className="p-2 text-right">Min</th>
                     <th className="p-2 text-right">Üst sınır</th>
                     <th className="p-2">Durum</th>
+                    <th
+                      className="p-2 text-right"
+                      title="Komisyon tarifesine göre, buybox fiyatının düştüğü kademe"
+                    >
+                      Komisyon
+                    </th>
+                    <th
+                      className="p-2 text-right"
+                      title="Buybox satıcısının tahmini kârı — raporlama amaçlı tahmindir"
+                    >
+                      Tahmini kâr
+                    </th>
+                    <th className="p-2 text-right" title="Satıcının kâr etmeye başladığı en düşük fiyat">
+                      0 kâr fiyatı
+                    </th>
                     <th className="p-2 text-right">Satıcı</th>
                     <th className="p-2">Son bakış</th>
                   </tr>
@@ -328,6 +397,31 @@ export function BrandListingsClient() {
                       <td className={`p-2 ${STATUS_CLASS[row.bandStatus]}`}>
                         {row.brandProduct ? STATUS_LABELS[row.bandStatus] : '—'}
                       </td>
+                      {row.profit ? (
+                        <>
+                          <td className="p-2 text-right tabular-nums">
+                            %{String(row.profit.commissionRate).replace('.', ',')}
+                          </td>
+                          <td
+                            className={`p-2 text-right tabular-nums ${BigInt(row.profit.profit) < 0n ? 'text-(--color-danger) font-medium' : ''}`}
+                            title={profitTitle(row.profit)}
+                          >
+                            {money(row.profit.profit)}
+                            <span className="ml-1 text-xs text-(--color-muted)">
+                              %{row.profit.profitPct.toFixed(1).replace('.', ',')}
+                            </span>
+                          </td>
+                          <td className="p-2 text-right tabular-nums">{money(row.profit.breakEvenPrice)}</td>
+                        </>
+                      ) : (
+                        <td
+                          colSpan={3}
+                          className="p-2 text-right text-xs text-(--color-muted)"
+                          title={row.profitMissing ? PROFIT_MISSING[row.profitMissing][1] : undefined}
+                        >
+                          {row.profitMissing ? PROFIT_MISSING[row.profitMissing][0] : '—'}
+                        </td>
+                      )}
                       <td className="p-2 text-right tabular-nums">{formatNumber(row.sellerCount)}</td>
                       <td className="p-2 text-xs text-(--color-muted)">
                         {row.lastScrapedAt === null ? 'hiç' : formatDateTime(row.lastScrapedAt)}
@@ -351,10 +445,17 @@ export function BrandListingsClient() {
               label="ilan"
             />
             <p className="mt-2 text-xs text-(--color-muted)">
-              <strong>Birim fiyat</strong> yalnızca okumak içindir: buybox fiyatının çarpana bölünmüş,
+              <strong>Birim buybox</strong> yalnızca okumak içindir: buybox fiyatının çarpana bölünmüş,
               yuvarlanmış hâli. Karar verirken sistem bölmez — eşiği çarpar, yani ×6 bir kart tam olarak
               PSF&apos;nin altı katıyla karşılaştırılır. <strong>Durum</strong> son başarılı bakışa aittir;
-              okunamayan bir sayfa &quot;bilinmiyor&quot;dur, ihlal değil.
+              okunamayan bir sayfa &quot;bilinmiyor&quot;dur, ihlal değil. <strong>Tahmini kâr</strong>,
+              buybox satıcısının bu fiyattan ne kazandığının tahminidir: buybox fiyatı − komisyon − kargo −
+              operasyon − sabit satış bedeli − birim fiyat. Ayrıntı için hücrenin üzerine gelin; desi tablosu
+              ve komisyon tarifesi{' '}
+              <Link className="underline" href="/brand/profit">
+                Kâr Ayarları
+              </Link>{' '}
+              ekranındadır.
             </p>
           </>
         )}

@@ -126,9 +126,9 @@ export function mapListingToSnapshot(listing: HepsiburadaListing, atMs: number):
     customerPrice: moneyFromLira(selectActivePricing(listing.pricings, atMs)?.finalPrice),
     offeredStock: listing.availableStock ?? 0,
     // §2.4 ⚠️ — `commissionRate` is *not* on this schema (the legacy field list was wrong); it
-    // comes from the dedicated service in §2.7. VAT is absent from the listing schema too, and
-    // §2.9 records it as the most important open item, because a wrong VAT rate produces a
-    // wrong floor price. Neither is guessed here.
+    // comes from the dedicated service in §2.7, and is not guessed here. VAT is absent from the
+    // listing schema too; since 2026-11-03 no price calculation reads it (doc 02 §0), so it is
+    // simply recorded as unknown.
     commissionRate: null,
     vatRate: null,
     dispatchTime: listing.dispatchTime ?? null,

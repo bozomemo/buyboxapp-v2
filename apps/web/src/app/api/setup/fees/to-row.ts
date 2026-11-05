@@ -8,23 +8,15 @@ import { z } from 'zod';
  * field by field, so a body missing `cargoBands` threw a TypeError into a 500, and one missing a
  * rate stored `undefined` — into the settings the floor price is computed from. A refused
  * request is the right outcome for both.
+ *
+ * No VAT fields (doc 02 §0, 2026-11-03). A stale form that still sends them is not refused: zod
+ * strips keys the schema does not name, so they are dropped rather than stored.
  */
-const VatRate = z.number().int().min(0).max(100);
 const FeesPayloadSchema = z.object({
   marketplaceCode: z.string().optional(),
-  commissionVatRate: VatRate,
-  commissionRateIncludesVat: z.boolean(),
-  commissionVatDeductible: z.boolean(),
-  commissionBase: z.enum(['gross', 'net']),
   defaultCommissionRate: z.number().min(0).max(100),
   cargoBands: z.array(z.object({ maxPrice: z.string().nullable(), amount: z.string() })),
-  cargoAmountsIncludeVat: z.boolean(),
-  cargoVatRate: VatRate,
-  cargoVatDeductible: z.boolean(),
   expenditureBands: z.array(z.object({ minPrice: z.string(), amount: z.string() })),
-  expenditureIncludesVat: z.boolean(),
-  expenditureVatRate: VatRate,
-  expenditureVatDeductible: z.boolean(),
 });
 
 /** A payload the fee form would never send. Routes answer it with a 400 naming the field. */
@@ -67,10 +59,6 @@ export function feesPayloadToRow(
     id: newId(),
     marketplaceCode: payload.marketplaceCode || marketplaceCodeFallback,
     effectiveFrom,
-    commissionVatRate: payload.commissionVatRate,
-    commissionRateIncludesVat: payload.commissionRateIncludesVat,
-    commissionVatDeductible: payload.commissionVatDeductible,
-    commissionBase: payload.commissionBase,
     defaultCommissionRate: payload.defaultCommissionRate,
     cargoBands: JSON.stringify(
       payload.cargoBands.map((b) => ({
@@ -78,17 +66,11 @@ export function feesPayloadToRow(
         amount: toStoredAmount(b.amount),
       })),
     ),
-    cargoAmountsIncludeVat: payload.cargoAmountsIncludeVat,
-    cargoVatRate: payload.cargoVatRate,
-    cargoVatDeductible: payload.cargoVatDeductible,
     expenditureBands: JSON.stringify(
       payload.expenditureBands.map((b) => ({
         minPrice: toStoredAmount(b.minPrice),
         amount: toStoredAmount(b.amount),
       })),
     ),
-    expenditureIncludesVat: payload.expenditureIncludesVat,
-    expenditureVatRate: payload.expenditureVatRate,
-    expenditureVatDeductible: payload.expenditureVatDeductible,
   };
 }

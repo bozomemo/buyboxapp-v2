@@ -248,6 +248,8 @@ export const IMPORT_ERROR_LABELS: Record<string, string> = {
   marketplaceNotConfigured: 'Bu pazaryeri kurulumda tanımlı değil. Ayarlar > Pazaryerleri.',
   barcodeScientific:
     'Barkod Excel’de bilimsel gösterime dönmüş (ör. 8.69E+12), rakamları kaybolmuş. Barkod sütununu Metin biçimine çevirip barkodu yeniden yazın.',
+  unparseableUnitPrice: 'Birim fiyat okunamadı. Örnek: 1.249,90',
+  unparseableDesi: 'Desi okunamadı. Sıfırdan büyük, en fazla iki ondalıklı bir sayı yazın, örn. 4,5',
 };
 
 export const IMPORT_WARNING_LABELS: Record<string, string> = {
@@ -265,6 +267,8 @@ export const IMPORT_COLUMN_LABELS: Record<string, string> = {
   trendyolLink: 'Trendyol Linki',
   hepsiburadaLink: 'Hepsiburada Linki',
   barcode: 'Barkod',
+  unitPrice: 'Birim Fiyat',
+  desi: 'Desi',
 };
 
 /** The message for one row problem, with the other product named where there is one. */

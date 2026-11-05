@@ -256,7 +256,7 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
         />
       </Field>
-      <Field label="Birim Fiyat (₺)">
+      <Field label="Birim Fiyat (₺, KDV dahil)">
         <TextInput
           value={form.unitCost}
           disabled={busy}

@@ -41,11 +41,21 @@ export interface BrandProductFields {
   readonly maxPrice: bigint | null;
   readonly barcode: string | null;
   readonly referencePriceSource: string | null;
+  /**
+   * _Birim Fiyat_ to resellers, per unit, kuruş, VAT-inclusive (doc 17 §8). Optional on a write:
+   * `undefined` leaves the stored value alone, `null` clears it. That difference is what lets an
+   * import file without the column leave every product's unit price where it was.
+   */
+  readonly unitPrice?: bigint | null;
+  /** One unit's desi (doc 17 §8). Same `undefined` / `null` rule as `unitPrice`. */
+  readonly desi?: number | null;
 }
 
 export interface BrandProductRow extends BrandProductFields {
   readonly id: string;
   readonly source: BrandProductSource;
+  readonly unitPrice: bigint | null;
+  readonly desi: number | null;
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -80,7 +90,8 @@ export async function insertBrandProduct(appDb: AppDatabase, row: BrandProductRo
 /**
  * Replaces every operator-stated field at once. A product edit — on the screen or as an import
  * row — is the product's complete statement for these fields (doc 17 §3.4): an absent `min` is
- * a cleared `min`, never a kept old one.
+ * a cleared `min`, never a kept old one. The one exception is `unitPrice`/`desi`, which a write
+ * may leave `undefined` to keep (see `BrandProductFields`); Drizzle omits undefined keys from SET.
  */
 export async function updateBrandProduct(
   appDb: AppDatabase,
@@ -185,6 +196,10 @@ export interface CardLink {
   readonly referencePrice: bigint;
   readonly minPrice: bigint | null;
   readonly maxPrice: bigint | null;
+  /** For the reseller profit estimate (doc 17 §8): the product's unit price, desi and barcode. */
+  readonly unitPrice: bigint | null;
+  readonly desi: number | null;
+  readonly barcode: string | null;
 }
 
 const LOOKUP_CHUNK = 200;
@@ -212,6 +227,9 @@ export async function cardLinksForTrackedProducts(
             referencePrice: p.referencePrice,
             minPrice: p.minPrice,
             maxPrice: p.maxPrice,
+            unitPrice: p.unitPrice,
+            desi: p.desi,
+            barcode: p.barcode,
           })
           .from(c)
           .innerJoin(p, eq(p.id, c.brandProductId))
@@ -231,6 +249,9 @@ export async function cardLinksForTrackedProducts(
             referencePrice: p.referencePrice,
             minPrice: p.minPrice,
             maxPrice: p.maxPrice,
+            unitPrice: p.unitPrice,
+            desi: p.desi,
+            barcode: p.barcode,
           })
           .from(c)
           .innerJoin(p, eq(p.id, c.brandProductId))
@@ -250,6 +271,9 @@ export async function cardLinksForTrackedProducts(
             referencePrice: p.referencePrice,
             minPrice: p.minPrice,
             maxPrice: p.maxPrice,
+            unitPrice: p.unitPrice,
+            desi: p.desi,
+            barcode: p.barcode,
           })
           .from(c)
           .innerJoin(p, eq(p.id, c.brandProductId))
@@ -1046,6 +1070,28 @@ export async function existingCardsForRefs(
 }
 
 /** Every product name, for the import's duplicate-name warning. Names only — one column. */
+/** Every stored product barcode — the tariff import's preview counts how many of its rows match. */
+export async function listBrandProductBarcodes(appDb: AppDatabase): Promise<string[]> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({ barcode: sqliteSchema.brandProducts.barcode })
+        .from(sqliteSchema.brandProducts)
+        .where(sql`${sqliteSchema.brandProducts.barcode} is not null`),
+    postgres: (db) =>
+      db
+        .select({ barcode: postgresSchema.brandProducts.barcode })
+        .from(postgresSchema.brandProducts)
+        .where(sql`${postgresSchema.brandProducts.barcode} is not null`),
+    mysql: (db) =>
+      db
+        .select({ barcode: mysqlSchema.brandProducts.barcode })
+        .from(mysqlSchema.brandProducts)
+        .where(sql`${mysqlSchema.brandProducts.barcode} is not null`),
+  })) as { barcode: string }[];
+  return rows.map((row) => row.barcode);
+}
+
 export async function listBrandProductNames(appDb: AppDatabase): Promise<string[]> {
   const rows = (await withDialect(appDb, {
     sqlite: (db) => db.select({ name: sqliteSchema.brandProducts.name }).from(sqliteSchema.brandProducts),

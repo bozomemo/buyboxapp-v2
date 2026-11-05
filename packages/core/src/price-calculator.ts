@@ -5,6 +5,9 @@
  * final step (doc 02 §1, §5.3). `floorPrice` is the special case of the more general
  * `priceForNetProceeds` where the target is the unit cost — the repricing engine (doc 03
  * §6.6 "sole seller") reuses the same solver with a different target net-proceeds value.
+ *
+ * **No VAT term** (product owner's decision, 2026-11-03, doc 02 §0): the price, the unit cost
+ * and every fee are on one VAT-inclusive basis, so nothing is grossed up or netted off.
  */
 import { Money, err, ok, type Result } from '@buybox/shared';
 import type { PriceError } from './errors.js';
@@ -32,15 +35,14 @@ export interface CampaignRatio {
 
 export interface NetProceedsInput {
   readonly price: Money;
-  readonly vatRate: number; // percent
-  readonly effectiveCommissionRate: number; // percent, c_eff
+  readonly commissionRate: number; // percent, as the marketplace states it
   readonly campaign: CampaignFinal | null;
   readonly fees: FeeSettings;
 }
 
 /** doc 02 §5.1 — given a selling price, what actually reaches our account. */
 export function netProceeds(input: NetProceedsInput): Money {
-  const { price, vatRate, effectiveCommissionRate, campaign, fees } = input;
+  const { price, commissionRate, campaign, fees } = input;
 
   const P = Fraction.fromMoney(price);
   const Pf = campaign ? Fraction.fromMoney(campaign.finalPrice) : P;
@@ -49,55 +51,43 @@ export function netProceeds(input: NetProceedsInput): Money {
   const storeDiscount = Fraction.mul(totalDiscount, Fraction.fromPercent(storeSharePct));
   const marketplaceRefund = Fraction.sub(totalDiscount, storeDiscount);
 
-  const vatFactor = Fraction.add(Fraction.one, Fraction.fromPercent(vatRate));
-  const priceNetOfStoreDiscount = Fraction.sub(P, storeDiscount);
-  const commissionBase =
-    fees.commissionBase === 'gross'
-      ? priceNetOfStoreDiscount
-      : Fraction.div(priceNetOfStoreDiscount, vatFactor);
-  const commission = Fraction.mul(commissionBase, Fraction.fromPercent(effectiveCommissionRate));
+  const commission = Fraction.mul(Fraction.sub(P, storeDiscount), Fraction.fromPercent(commissionRate));
 
   const customerPrice = campaign ? campaign.finalPrice : price;
   const cargo = normalisedCargoFraction(Fraction.fromMoney(customerPrice), fees);
   const expenditure = normalisedExpenditureFraction(Fraction.fromMoney(customerPrice), fees);
 
-  const revenueNet = Fraction.div(Pf, vatFactor);
-
   const result = Fraction.add(
-    Fraction.sub(Fraction.sub(Fraction.sub(revenueNet, commission), cargo), expenditure),
+    Fraction.sub(Fraction.sub(Fraction.sub(Pf, commission), cargo), expenditure),
     marketplaceRefund,
   );
   return Fraction.toMoneyRoundHalfUp(result);
 }
 
 export interface RetentionFactorInput {
-  readonly vatRate: number;
-  readonly effectiveCommissionRate: number;
+  readonly commissionRate: number;
   readonly campaign: CampaignRatio | null;
 }
 
 /** doc 02 §5.2/§5.3 — the "net retention factor" `D`. */
 export function retentionFactor(input: RetentionFactorInput): Fraction {
-  const vatFactor = Fraction.add(Fraction.one, Fraction.fromPercent(input.vatRate));
-  const cEff = Fraction.fromPercent(input.effectiveCommissionRate);
+  const c = Fraction.fromPercent(input.commissionRate);
 
   if (!input.campaign) {
-    return Fraction.sub(Fraction.div(Fraction.one, vatFactor), cEff);
+    return Fraction.sub(Fraction.one, c);
   }
 
   const r = Fraction.fromNumber(input.campaign.ratio);
   const s = Fraction.fromPercent(input.campaign.storeSharePct);
   const oneMinusR = Fraction.sub(Fraction.one, r);
 
-  const term1 = Fraction.div(r, vatFactor);
-  const term2 = Fraction.mul(Fraction.sub(Fraction.one, Fraction.mul(oneMinusR, s)), cEff);
+  const term2 = Fraction.mul(Fraction.sub(Fraction.one, Fraction.mul(oneMinusR, s)), c);
   const term3 = Fraction.mul(oneMinusR, Fraction.sub(Fraction.one, s));
-  return Fraction.add(Fraction.sub(term1, term2), term3);
+  return Fraction.add(Fraction.sub(r, term2), term3);
 }
 
 export interface SolvePriceInput {
-  readonly vatRate: number;
-  readonly effectiveCommissionRate: number;
+  readonly commissionRate: number;
   readonly campaign: CampaignRatio | null;
   readonly fees: FeeSettings;
 }
@@ -146,8 +136,7 @@ export function priceForNetProceeds(targetNet: Money, input: SolvePriceInput): R
 
 export interface FloorPriceInput {
   readonly unitCost: Money;
-  readonly vatRate: number;
-  readonly effectiveCommissionRate: number;
+  readonly commissionRate: number;
   readonly campaign: CampaignRatio | null;
   readonly fees: FeeSettings;
 }

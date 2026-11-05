@@ -22,6 +22,8 @@ const PRODUCT = {
   upperBound: '42990',
   upperBoundIsReferencePrice: true,
   barcode: '8690000000001',
+  unitPrice: '32500',
+  desi: 1.5,
   source: 'manual',
   referencePriceSource: null,
   cardCount: 2,

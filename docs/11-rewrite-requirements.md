@@ -15,13 +15,13 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | F-2 | M | Unit cost = base cost × pack size × per-marketplace multiplier | 02 §4 |
 | F-3 | M | Bundles expand to members with explicit quantity; no member cap; cost = Σ, stock = min; cycle detection | 01 §6, 05 §3 |
 | F-4 | M | An unresolvable cost excludes the listing from automation and alerts — never a sentinel price | 02 §4, 09 §7 |
-| F-5 | M | `netProceeds(P)` accounts for product VAT, commission (with VAT treatment), tiered cargo, tiered expenditure, and campaign cost-sharing | 02 §5.1 |
+| F-5 | M | `netProceeds(P)` accounts for commission, tiered cargo, tiered expenditure, and campaign cost-sharing — and **no VAT** (product owner, 2026-11-03) | 02 §0, §5.1 |
 | F-6 | M | `floorPrice(U)` is the inverse of F-5, resolved by fixed-point band iteration, erroring when no price is profitable | 02 §5.2–5.3 |
-| F-7 | M | Cargo and expenditure bands are data; commission VAT rate, VAT-inclusion and deductibility are configurable per marketplace | 02 §3 |
-| F-8 | M | Defaults treat commission, cargo and expenditure as VAT-inclusive costs | 02 §3 |
+| F-7 | M | Cargo and expenditure bands are data, configurable per marketplace | 02 §3 |
+| F-8 | M | Every amount — unit cost, commission, cargo, expenditure — is VAT-inclusive and used as entered | 02 §0 |
 | F-9 | M | Fee settings are effective-dated | 02 §3, 05 §2 |
 | F-10 | M | All money is `bigint` minor units; rounding half-up, applied once | 02 §1 |
-| F-11 | M | Product VAT rate and commission rate are read from the marketplace listing API | api-references §1.4, §2.7 |
+| F-11 | M | Commission rate is read from the marketplace listing API (the product VAT rate is imported for display only) | api-references §1.4, §2.7 |
 
 ## 2. Repricing engine
 
@@ -33,7 +33,7 @@ Settled product decisions are recorded in doc 10 §0 and are not re-litigated he
 | F-15 | M | `CLIMBING` records `lastGoodPrice` and probes upward; losing the buybox enters `REFINING` | 03 §6.2–6.3 |
 | F-16 | M | `REFINING` binary-searches between `lastGoodPrice` and `lastBadPrice` to `refineTolerance` | 03 §6.4 |
 | F-17 | M | `OPTIMUM` issues **no** updates until an invalidation trigger fires | 03 §6.5 |
-| F-18 | M | Invalidation triggers: unit cost, commission, VAT, campaign ratio, runner-up price, runner-up identity, buybox loss | 03 §6.5 |
+| F-18 | M | Invalidation triggers: unit cost, commission, campaign ratio, runner-up price, runner-up identity, buybox loss | 03 §6.5 |
 | F-19 | M | Seller-identity trigger degrades gracefully when scrape data is absent | 03 §6.5 |
 | F-20 | M | `SEEKING` jumps directly below the buybox price by default; stepped mode configurable | 03 §6.1 |
 | F-21 | M | No decrease may produce a price below the floor, on any marketplace, on any path | 03 §5 |
@@ -239,9 +239,9 @@ Added 2026-09-27. Full detail, including why each rule exists, is in
 
 | # | Question | Answer |
 |---|----------|--------|
-| Q-1 | VAT rates | 1 / 10 / 20 by category, supplied by the marketplace listing API |
+| Q-1 | VAT rates | Not used in any calculation (doc 02 §0, 2026-11-03) |
 | Q-2 | Commission source | Marketplace listing API (`commission` on Trendyol V2; `commissionRate` and the Commission Information service on Hepsiburada), configurable fallback |
-| Q-3 | Commission and cargo VAT | Treated as VAT-inclusive cost by default; configurable |
+| Q-3 | Commission and cargo VAT | No VAT treatment; amounts are VAT-inclusive as entered (doc 02 §0) |
 | Q-4 | Optimum-price behaviour | Climb to the ceiling, revert one step, hold; re-optimise on invalidation |
 | Q-5 | Sole-seller margin | Operator-configured, not a constant |
 | Q-6 | Scrape frequency | Operator-configured, tiered by listing state |
@@ -263,7 +263,7 @@ Added 2026-09-27. Full detail, including why each rule exists, is in
 | ~~O-1~~ | ~~Trendyol public product-data request shape for the reporting scrape~~ **Resolved 2026-08-13** — `docs/trendyol-merchants-scraping-guide.md`, api-references §1.6, implemented | ~~Phase 7~~ |
 | ~~O-7~~ | ~~Hepsiburada public product-page request shape for the reporting scrape~~ **Resolved 2026-08-13** — it is a public JSON endpoint, not a page scrape; verified by direct request and recorded in api-references §2.11, implemented as `HepsiburadaPublicListingsSource`. Note it stays dormant until O-2 lands, because it is keyed by the product SKU that `fetchListings` would supply | ~~Phase 7~~ |
 | O-2 | Hepsiburada 🔴 items in `api-references.md` §2.9 | Phase 4.4 |
-| O-3 | Is commission charged on the VAT-inclusive or the net price? (`commissionBase`) | Phase 8.3b only — ship a provisional default |
+| O-3 | ~~Is commission charged on the VAT-inclusive or the net price?~~ | Closed 2026-11-03 — commission applies to the selling price as stated (doc 02 §0) |
 | O-4 | Current cargo tariff bands and expenditure bands per marketplace | Phase 8.3b only — ship provisional defaults |
 | O-6 | 📌 Settlement validation of the whole cost model | Phase 8.4 (live writes). **Does not block development** |
-| O-5 | Does Hepsiburada expose product VAT rate pre-sale? | Phase 4.4 |
+| O-5 | ~~Does Hepsiburada expose product VAT rate pre-sale?~~ | Closed 2026-11-03 — no longer needed (doc 02 §0) |

@@ -53,7 +53,6 @@ const POPULATED_BODY = {
     unitCost: '5000',
     cargo: '500',
     commission: '1000',
-    vatRate: 20,
     floorPrice: '8000',
   },
   competition: {

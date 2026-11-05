@@ -96,6 +96,9 @@ function getHandler() {
     'https://www.trendyol.com/marka/urun-p-750104',
     '',
     '8690000000001',
+    // Birim Fiyat (to resellers, VAT-inclusive) and Desi — both optional (doc 17 §8).
+    '32,50',
+    '0,5',
   ];
   const csv = '\uFEFF' + [TEMPLATE_HEADERS.join(';'), example.join(';')].join('\r\n') + '\r\n';
   return new NextResponse(csv, {

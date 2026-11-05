@@ -17,7 +17,7 @@ export interface BundleMember {
 }
 
 export interface CostCalculatorDeps {
-  /** Purchase cost of one physical unit of the base stock code, VAT-exclusive. */
+  /** Purchase cost of one physical unit of the base stock code, VAT-inclusive (doc 02 §0). */
   getUnitCost(baseCode: string): Money | undefined;
   /** Bundle members for a full bundle stock code (e.g. "12345-k2"). `undefined` = not defined. */
   getBundleMembers(bundleStockCode: string): readonly BundleMember[] | undefined;

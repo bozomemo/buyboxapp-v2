@@ -336,6 +336,9 @@ standard VAT rate is 20%. Every Hepsiburada floor price is therefore understated
 
 **Action:** confirm current rates with the operator and make them effective-dated (R-CFG-3).
 
+> **Superseded 2026-11-03.** The new system applies no VAT at all (doc 02 §0), so there is no
+> VAT rate to go stale. The risk that replaces this one is §34.
+
 ---
 
 ## 33. No tests of any kind — **S4**
@@ -345,3 +348,19 @@ real money — have zero automated coverage.
 
 **Action:** the rewrite must ship with table-driven unit tests for every formula in doc 02 and
 every decision branch in doc 03, plus recorded-response integration tests per marketplace.
+
+---
+
+## 34. A VAT-exclusive cost entered into the VAT-less model — **S1** *(risk in the new system, 2026-11-03)*
+
+The product owner removed VAT from every calculation (doc 02 §0). The model is sound only when
+every amount is VAT-inclusive. A unit cost entered **VAT-exclusive** — the usual form of an ERP
+purchase price — is compared against a VAT-inclusive selling price, and the floor price comes out
+too low by roughly the VAT rate: at 20 % VAT and 16 % commission, a VAT-exclusive cost of
+₺20.00 plus ₺4.76 cargo gives a floor of ₺29.48 where the VAT-inclusive cost (₺24.00) gives
+₺34.24. This is exactly the legacy cost-model defect (doc 02 §6.1), reintroduced by input
+rather than by formula.
+
+**Action:** every cost source (manual entry, the stock Excel import, the ERP product source, the
+brand product unit price) is labelled VAT-inclusive on screen and in its template; confirm the
+ERP export's basis before live writes (doc 02 Q-E, doc 12 8.3b).

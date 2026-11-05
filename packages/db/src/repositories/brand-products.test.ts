@@ -58,6 +58,8 @@ async function addProduct(
     barcode: null,
     source: 'manual',
     referencePriceSource: null,
+    unitPrice: null,
+    desi: null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -140,6 +142,29 @@ for (const dialect of ALL_DIALECTS) {
         updatedAt: NOW + 1_000,
       });
     }, 30_000);
+
+    /**
+     * doc 17 §8.1: unit price and desi are the one exception to the complete statement — left
+     * `undefined` they are kept, so an import without those columns does not wipe them.
+     */
+    it('keeps unit price and desi when an update leaves them out, and clears them when it sends null', async () => {
+      db = await createTestDb(dialect);
+      const id = await addProduct(db.appDb, { unitPrice: 32_50n, desi: 4.5 });
+      const fields = {
+        name: 'Ton Balıklı 85g',
+        referencePrice: 49_90n,
+        minPrice: null,
+        maxPrice: null,
+        barcode: null,
+        referencePriceSource: null,
+      };
+
+      await brandProductsRepo.updateBrandProduct(db.appDb, id, fields, NOW + 1);
+      expect(await brandProductsRepo.getBrandProduct(db.appDb, id)).toMatchObject({ unitPrice: 32_50n, desi: 4.5 });
+
+      await brandProductsRepo.updateBrandProduct(db.appDb, id, { ...fields, unitPrice: null, desi: null }, NOW + 2);
+      expect(await brandProductsRepo.getBrandProduct(db.appDb, id)).toMatchObject({ unitPrice: null, desi: null });
+    }, 60_000);
 
     it('links a card, copying its marketplace from the tracked product', async () => {
       db = await createTestDb(dialect);
@@ -344,6 +369,10 @@ for (const dialect of ALL_DIALECTS) {
         referencePrice: 33_33n,
         minPrice: 30_00n,
         maxPrice: null,
+        // doc 17 §8: the profit estimate's per-product inputs travel with the link.
+        unitPrice: null,
+        desi: null,
+        barcode: null,
       });
     }, 30_000);
 

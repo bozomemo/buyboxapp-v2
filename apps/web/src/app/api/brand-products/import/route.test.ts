@@ -175,6 +175,46 @@ describe('POST /api/brand-products/import — applying', () => {
     });
   });
 
+  /**
+   * doc 17 §8: Birim Fiyat and Desi are optional columns. Present, they follow §3.4 (an empty
+   * cell clears); **absent**, they leave the stored value alone — a file made from the template
+   * before 2026-11-03 must not wipe every product's unit price.
+   */
+  it('writes Birim Fiyat and Desi when the columns are present, and keeps them when they are absent', async () => {
+    const withColumns = (line: string) =>
+      post({
+        fileBase64: Buffer.from(['﻿' + HEADER + ';Birim Fiyat;Desi', line].join('\r\n'), 'utf8').toString('base64'),
+        fileName: 'liste.csv',
+        confirm: true,
+      });
+
+    await withColumns(`Mama;49,90;;;${tyLink('750104')};;;32,50;4,5`);
+    expect((await products())[0]).toMatchObject({ unitPrice: 32_50n, desi: 4.5 });
+
+    // The old template: no such columns. The PSF changes, the unit price and desi stay.
+    await importCsv(`Mama;59,90;;;${tyLink('750104')};;`);
+    expect((await products())[0]).toMatchObject({ referencePrice: 59_90n, unitPrice: 32_50n, desi: 4.5 });
+
+    // Columns present but empty: cleared, like every other field.
+    await withColumns(`Mama;59,90;;;${tyLink('750104')};;;;`);
+    expect((await products())[0]).toMatchObject({ unitPrice: null, desi: null });
+  });
+
+  it('refuses an unreadable Birim Fiyat or Desi, naming the column', async () => {
+    const { body } = await post({
+      fileBase64: Buffer.from(
+        ['﻿' + HEADER + ';Birim Fiyat;Desi', `Mama;49,90;;;${tyLink('750104')};;;otuz;4,555`].join('\r\n'),
+        'utf8',
+      ).toString('base64'),
+      fileName: 'liste.csv',
+    });
+    const problems = (body as unknown as { problems: { errors: { code: string; column?: string }[] }[] }).problems;
+    expect(problems[0]!.errors).toEqual([
+      { code: 'unparseableUnitPrice', column: 'unitPrice' },
+      { code: 'unparseableDesi', column: 'desi' },
+    ]);
+  });
+
   it('adds the other marketplace’s card to the product the Trendyol link matched', async () => {
     await addMarketplace('hepsiburada');
     await importCsv(`Mama;49,90;;;${tyLink('750104')};;`);
