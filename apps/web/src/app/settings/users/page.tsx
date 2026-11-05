@@ -1,5 +1,6 @@
 import { PERMISSION_LABELS, PERMISSIONS, ROLE_LABELS, ROLES, hasPermission } from '@buybox/shared';
 import { requirePermission } from '@/lib/server/auth/page-guard';
+import { SettingsNav } from '../settings-nav';
 import { UsersClient, type RoleTable } from './users-client';
 
 /** doc 06 §10.4. */
@@ -21,5 +22,5 @@ const ROLE_TABLE: RoleTable = {
 export default async function UsersPage() {
   const gate = await requirePermission('users.manage');
   if (!gate.ok) return gate.element;
-  return <UsersClient roleTable={ROLE_TABLE} />;
+  return <UsersClient roleTable={ROLE_TABLE} nav={<SettingsNav />} />;
 }

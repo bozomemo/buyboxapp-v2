@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 // Types only: `@buybox/shared`'s barrel also carries Node-only code (the secret store) and must
 // not reach the browser bundle. The role tables arrive as props from the server page instead.
 import type { Role } from '@buybox/shared';
@@ -21,7 +21,6 @@ import {
   StatusBanner,
   TextInput,
 } from '@/components/ui';
-import { SettingsNav } from '../settings-nav';
 
 interface UserSummary {
   readonly id: string;
@@ -71,8 +70,8 @@ async function send(url: string, method: 'POST' | 'PATCH', body: unknown): Promi
   }
 }
 
-/** doc 06 §10.4. */
-export function UsersClient({ roleTable }: { roleTable: RoleTable }) {
+/** doc 06 §10.4. `nav` is the settings tab bar, a server component the page renders for us. */
+export function UsersClient({ roleTable, nav }: { roleTable: RoleTable; nav: ReactNode }) {
   const roleOptions = roleTable.roles.map((r) => ({ value: r.role, label: r.label }));
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
@@ -105,7 +104,7 @@ export function UsersClient({ roleTable }: { roleTable: RoleTable }) {
           </Link>
         }
       />
-      <SettingsNav />
+      {nav}
       {notice && <StatusBanner ok={notice.ok} message={notice.message} />}
 
       <Section id="users-list" title="Kullanıcılar">

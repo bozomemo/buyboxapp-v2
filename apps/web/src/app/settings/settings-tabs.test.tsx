@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PermissionsProvider } from '@/lib/permissions';
 import { mockNavigation, stubFetch } from '@/test-utils';
-import { SettingsNav } from './settings-nav';
+import { SettingsTabs } from './settings-tabs';
 
 /**
  * The settings tabs (redesign phase 3, plan `2026-11-03-ui-redesign-phase-3-rest.md` Task 2): the
@@ -17,25 +17,27 @@ vi.mock('next/navigation', () => ({
 
 afterEach(() => cleanup());
 
-describe('SettingsNav', () => {
-  it('active tab is marked', async () => {
+describe('SettingsTabs', () => {
+  it('active tab is marked', () => {
     mockNavigation.pathname = '/settings/fees';
-    stubFetch({ '/api/modules': { body: { modules: { seller: true, brand: true } } } });
 
-    render(<SettingsNav />);
+    render(<SettingsTabs sellerEnabled />);
 
     expect(screen.getByRole('link', { name: 'Ücretler' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('link', { name: 'Pazaryerleri' }).getAttribute('aria-current')).toBeNull();
     expect(screen.getByRole('navigation', { name: 'Ayarlar bölümleri' })).toBeTruthy();
   });
 
-  it('hides seller tabs when the module is off', async () => {
+  // The first paint is the final one: seller tabs are never drawn and then removed, which is
+  // what made every tab click flash three extra tabs while the module was off.
+  it('never draws seller tabs when the module is off', () => {
     mockNavigation.pathname = '/settings/modules';
-    stubFetch({ '/api/modules': { body: { modules: { seller: false, brand: true } } } });
 
-    render(<SettingsNav />);
+    render(<SettingsTabs sellerEnabled={false} />);
 
-    await waitFor(() => expect(screen.queryByRole('link', { name: 'Ücretler' })).toBeNull());
+    expect(screen.queryByRole('link', { name: 'Ücretler' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Politika' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Ürün Kaynakları' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Modüller' })).toBeTruthy();
   });
 
@@ -43,13 +45,12 @@ describe('SettingsNav', () => {
   it('shows the update tab only to someone who may install', async () => {
     mockNavigation.pathname = '/settings/modules';
     stubFetch({
-      '/api/modules': { body: { modules: { seller: true, brand: true } } },
       '/api/auth/me': { body: { user: { permissions: ['view', 'automation.stop', 'prices.manage'] } } },
     });
 
     render(
       <PermissionsProvider>
-        <SettingsNav />
+        <SettingsTabs sellerEnabled />
       </PermissionsProvider>,
     );
 
@@ -58,9 +59,8 @@ describe('SettingsNav', () => {
 
   it('shows the update tab to an administrator', () => {
     mockNavigation.pathname = '/settings/modules';
-    stubFetch({ '/api/modules': { body: { modules: { seller: true, brand: true } } } });
 
-    render(<SettingsNav />);
+    render(<SettingsTabs sellerEnabled />);
 
     expect(screen.getByRole('link', { name: 'Güncelleme' })).toBeTruthy();
   });
