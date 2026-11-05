@@ -56,7 +56,7 @@ interface ImportResponse {
   error?: string;
 }
 
-async function fileToBase64(file: File): Promise<string> {
+export async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -179,10 +179,12 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
 
       <p className="mt-2 max-w-3xl text-xs text-(--color-muted)">
         Sütunlar: <strong>Ürün Adı</strong>, <strong>PSF</strong>, Min Fiyat, Max Fiyat,{' '}
-        <strong>Trendyol Linki</strong> ya da <strong>Hepsiburada Linki</strong> (en az biri), Barkod.
-        Fiyatlar <em>birim başına</em>dır. Dolu bir hücre yazar, <em>boş bir hücre siler</em> — boş bir Min
-        Fiyat, daha önce girilmiş min&apos;i kaldırır. Boş bir link sütunu ise hiçbir şeyi değiştirmez: link,
-        satırın hangi ürün olduğunu bulmaya yarar; kart çıkarma ürün ekranından yapılır.
+        <strong>Trendyol Linki</strong> ya da <strong>Hepsiburada Linki</strong> (en az biri), Barkod, Birim
+        Fiyat, Desi. Fiyatlar <em>birim başına</em>dır. Dolu bir hücre yazar, <em>boş bir hücre siler</em> — boş
+        bir Min Fiyat, daha önce girilmiş min&apos;i kaldırır. Boş bir link sütunu ise hiçbir şeyi değiştirmez:
+        link, satırın hangi ürün olduğunu bulmaya yarar; kart çıkarma ürün ekranından yapılır.{' '}
+        <strong>Birim Fiyat</strong> (satıcılara satış fiyatınız, KDV dahil) ve <strong>Desi</strong> isteğe
+        bağlıdır: dosyada bu sütun hiç yoksa ürünlerdeki değer korunur.
       </p>
 
       {error && (

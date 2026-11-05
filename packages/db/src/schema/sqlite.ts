@@ -1351,6 +1351,14 @@ export const brandProducts = sqliteTable(
     source: text('source').notNull(),
     /** File name or list version the PSF came from, shown beside it. */
     referencePriceSource: text('reference_price_source'),
+    /**
+     * _Birim Fiyat_ — what the brand sells one unit to its resellers for, VAT-inclusive, kuruş
+     * (doc 17 §8). The reseller's cost in the profit estimate; it feeds no alarm and no price.
+     * Null = not entered, and the estimate says so rather than assuming zero.
+     */
+    unitPrice: money('unit_price'),
+    /** One unit's shipping desi (doc 17 §8). Not money, so a plain real. Null = not entered. */
+    desi: real('desi'),
     createdAt: timestampMs('created_at').notNull(),
     updatedAt: timestampMs('updated_at').notNull(),
   },
@@ -1389,6 +1397,42 @@ export const brandProductCards = sqliteTable(
   (t) => [
     index('brand_product_cards_product').on(t.brandProductId),
     uniqueIndex('brand_product_cards_tracked_product').on(t.trackedProductId),
+  ],
+);
+
+/**
+ * One product's commission tariff for one period, from the marketplace's tariff workbook
+ * (Trendyol _Komisyon Tarifeleri_, doc 17 §8.2). Reporting only: it feeds the reseller profit
+ * estimate on İlanlar and nothing in the pricing path.
+ *
+ * - `product_key` is the barcode — or, where the workbook's barcode is a marketplace-generated
+ *   code, the seller stock code — with leading zeros removed, because Excel drops them from a
+ *   barcode typed as a number (`64992280543` for `064992280543`). A brand product is matched by
+ *   its own barcode folded the same way. Both raw values are kept for display.
+ * - `tiers_json` is `[{ minPrice: string | null, maxPrice: string | null, rate: number }]` in
+ *   kuruş (`Money.toJSON()`), highest band first. A price matches the first tier whose bounds
+ *   contain it; one that matches none has no commission rather than a guessed one.
+ * - A re-import of the same period replaces it: the unique index makes the write an upsert.
+ */
+export const commissionTariffs = sqliteTable(
+  'commission_tariffs',
+  {
+    id: text('id').primaryKey(),
+    marketplaceCode: text('marketplace_code')
+      .notNull()
+      .references(() => marketplaces.code, { onDelete: 'cascade' }),
+    productKey: text('product_key').notNull(),
+    barcode: text('barcode'),
+    sellerStockCode: text('seller_stock_code'),
+    validFrom: timestampMs('valid_from').notNull(),
+    validUntil: timestampMs('valid_until').notNull(),
+    tiersJson: json('tiers_json').notNull(),
+    sourceFile: text('source_file').notNull(),
+    importedAt: timestampMs('imported_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('commission_tariffs_product_period').on(t.marketplaceCode, t.productKey, t.validFrom),
+    index('commission_tariffs_valid_until').on(t.validUntil),
   ],
 );
 

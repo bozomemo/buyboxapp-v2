@@ -24,7 +24,7 @@ quotas make it mandatory (§8).
 decide(input: DecisionInput): PriceDecision
 
 interface DecisionInput {
-  listing:      ListingSnapshot;    // our price, stock, commission, vatRate, status flags
+  listing:      ListingSnapshot;    // our price, stock, commission, status flags (no VAT — doc 02 §0)
   observation:  BuyboxObservation;  // rank, buybox/2nd/3rd price, observedAt
   state:        RepricingState;     // persisted phase + memory, see §4
   cost:         Result<Money, CostError>;
@@ -128,7 +128,6 @@ interface RepricingState {
   optimumContext: {
     unitCost:       Money;
     commissionRate: number;
-    vatRate:        number;
     campaignRatio:  number;
     secondPrice:    Money | null;
     secondSellerId: string | null;
@@ -330,7 +329,6 @@ ctx = state.optimumContext
 invalidated =
      costChanged            (|unitCost − ctx.unitCost| > 0)
   or commissionChanged      (commissionRate != ctx.commissionRate)
-  or vatChanged             (vatRate != ctx.vatRate)
   or campaignChanged        (campaignRatio != ctx.campaignRatio)
   or secondPriceChanged     (|secondPrice − ctx.secondPrice| > policy.competitorPriceDelta)
   or secondSellerChanged    (policy.useSellerIdentityTrigger

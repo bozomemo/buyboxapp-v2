@@ -16,8 +16,6 @@ export { originalUnitCost, unitCost } from './cost-calculator.js';
 
 export type { CargoBand, ExpenditureBand, FeeSettings } from './fee-model.js';
 export {
-  effectiveCommissionRate,
-  normaliseAmount,
   normalisedCargo,
   normalisedExpenditure,
   selectCargoBandIndex,
@@ -116,6 +114,7 @@ export {
 
 export type {
   AmountCell,
+  DesiCell,
   ExistingCard,
   ImportContext,
   ImportErrorCode,
@@ -131,4 +130,17 @@ export type {
 } from './brand/import-plan.js';
 export { cardKey, foldName, planBrandProductImport } from './brand/import-plan.js';
 export { classifyBarcode, isValidGtin } from './brand/barcode.js';
+
+export type {
+  CommissionTier,
+  DesiBand,
+  SellerProfitEstimate,
+  SellerProfitInput,
+  SellerProfitMissing,
+  SellerProfitResult,
+  SellerProfitSettings,
+} from './brand/seller-profit.js';
+export { breakEvenPrice, desiBandFor, estimateSellerProfit, tierAt } from './brand/seller-profit.js';
+export type { TariffLimits, TariffPeriod, TariffRowProblem } from './brand/commission-tariff.js';
+export { buildCommissionTiers, parseTariffPeriod, tariffProductKey } from './brand/commission-tariff.js';
 export type { BarcodeKind } from './brand/barcode.js';

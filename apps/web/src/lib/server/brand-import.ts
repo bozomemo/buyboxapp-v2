@@ -186,6 +186,8 @@ export async function applyImport(
         row: {
           id: brandProductId,
           ...row.fields,
+          unitPrice: row.fields.unitPrice ?? null,
+          desi: row.fields.desi ?? null,
           source: 'excel',
           referencePriceSource: null,
           createdAt: nowMs,

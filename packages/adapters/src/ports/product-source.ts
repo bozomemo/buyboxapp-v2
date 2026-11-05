@@ -11,7 +11,7 @@ export type ProductSourceCode = 'manual' | 'excel' | 'marketplaceListing' | 'erp
 export interface StockItemInput {
   readonly baseStockCode: string;
   readonly name: string;
-  readonly unitCost: Money; // VAT-exclusive
+  readonly unitCost: Money; // VAT-inclusive, the same basis as the selling price (doc 02 §0)
   readonly unitStock: number;
   readonly sourceRef?: string;
 }

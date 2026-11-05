@@ -4,7 +4,7 @@
  * SQL (doc 09 §20).
  */
 import { NextResponse } from 'next/server';
-import { effectiveCommissionRate, floorPrice } from '@buybox/core';
+import { floorPrice } from '@buybox/core';
 import { catalogRepo, competitionRepo, configRepo, listingsRepo, stockRepo } from '@buybox/db';
 import { mapFeeSettings } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
@@ -43,11 +43,9 @@ async function enrichRow(
   let floor: bigint | null = null;
   if (stockItem && feeRow) {
     const fees = mapFeeSettings(feeRow);
-    const commissionRate = effectiveCommissionRate(row.commissionRate ?? feeRow.defaultCommissionRate, fees);
     const result = floorPrice({
       unitCost: Money.fromKurus(stockItem.unitCost),
-      vatRate: row.vatRate ?? 20, // doc 02: fallback to standard Turkish VAT when the listing carries none yet
-      effectiveCommissionRate: commissionRate,
+      commissionRate: row.commissionRate ?? feeRow.defaultCommissionRate,
       campaign: null,
       fees,
     });

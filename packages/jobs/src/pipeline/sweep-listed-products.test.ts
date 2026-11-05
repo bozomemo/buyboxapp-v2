@@ -164,6 +164,8 @@ describe('SweepListedProducts (doc 07 §7.5, doc 17 §4.2)', () => {
       maxPrice: null,
       barcode: null,
       referencePriceSource: null,
+      unitPrice: null,
+      desi: null,
       source: 'manual',
       createdAt: NOW,
       updatedAt: NOW,

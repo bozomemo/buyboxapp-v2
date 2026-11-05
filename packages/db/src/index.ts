@@ -50,6 +50,7 @@ export * as sellerPoliciesRepo from './repositories/seller-policies.js';
 export * as sellerIdentitiesRepo from './repositories/seller-identities.js';
 export * as productBarcodesRepo from './repositories/product-barcodes.js';
 export * as brandProductsRepo from './repositories/brand-products.js';
+export * as commissionTariffsRepo from './repositories/commission-tariffs.js';
 export * as alertsRepo from './repositories/alerts.js';
 export * as repricingRepo from './repositories/repricing.js';
 export * as jobsRepo from './repositories/jobs.js';

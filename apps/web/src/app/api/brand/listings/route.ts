@@ -16,8 +16,17 @@
  * that, and a favourite star is one click.
  */
 import { NextResponse } from 'next/server';
-import { effectiveBand, evaluateBand, unitPriceForDisplay, type BandEvaluation } from '@buybox/core';
-import { brandProductsRepo, trackedProductsRepo } from '@buybox/db';
+import {
+  effectiveBand,
+  estimateSellerProfit,
+  evaluateBand,
+  tariffProductKey,
+  unitPriceForDisplay,
+  type BandEvaluation,
+  type SellerProfitMissing,
+} from '@buybox/core';
+import { brandProductsRepo, commissionTariffsRepo, trackedProductsRepo } from '@buybox/db';
+import { readSellerProfitSettings } from '@/lib/server/seller-profit-settings';
 import { marketSnapshot } from '@/lib/market-stats';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
@@ -86,6 +95,23 @@ interface ListingRow {
   cardUpperBound: string | null;
   cardMinPrice: string | null;
   bandStatus: BandEvaluation['status'];
+  /**
+   * The estimated profit of whoever holds the buybox (doc 17 §8) — reporting only. `null` on an
+   * unlinked favourite (no product, so nothing to estimate) and whenever `profitMissing` says
+   * which input is absent; amounts are kuruş strings.
+   */
+  profit: {
+    commissionRate: number;
+    commission: string;
+    cargo: string;
+    operation: string;
+    fixedSaleFee: string;
+    cost: string;
+    profit: string;
+    profitPct: number;
+    breakEvenPrice: string | null;
+  } | null;
+  profitMissing: SellerProfitMissing | 'noBuyboxPrice' | null;
 }
 
 async function getHandler(request: Request) {
@@ -114,6 +140,18 @@ async function getHandler(request: Request) {
     appDb,
     rows.map((r) => r.id),
   );
+
+  // Read once per page, not per row: the tariffs in force now for this page's products, and the
+  // desi table. Only Trendyol publishes a tariff workbook, so other marketplaces' cards have none.
+  const nowMs = Date.now();
+  const tariffKeys = rows.flatMap((row) => {
+    const key = row.marketplaceCode === 'trendyol' ? tariffProductKey(links.get(row.id)?.barcode) : null;
+    return key === null ? [] : [key];
+  });
+  const [tariffs, profitSettings] = await Promise.all([
+    commissionTariffsRepo.currentTariffs(appDb, 'trendyol', tariffKeys, nowMs),
+    readSellerProfitSettings(appDb),
+  ]);
 
   // Bounded by the page size (or the export cap), like the tracked-products grid's own
   // enrichment — İlanlar is tens of rows by design, not thousands.
@@ -158,6 +196,44 @@ async function getHandler(request: Request) {
     // the finalPrice rule), the market snapshot's buybox otherwise.
     const cardPrice = band?.observedPrice ?? market.buyboxPrice;
 
+    // The profit estimate reads the buybox's shelf `price`, not the coupon price the band judges:
+    // a coupon is the seller's own discount on one basket, while the tariff band is decided on the
+    // listed price (doc 17 §8.3).
+    let profit: ListingRow['profit'] = null;
+    let profitMissing: ListingRow['profitMissing'] = null;
+    if (link !== undefined) {
+      const shelfPrice = buybox?.price ?? null;
+      if (shelfPrice === null) {
+        profitMissing = 'noBuyboxPrice';
+      } else {
+        const key = row.marketplaceCode === 'trendyol' ? tariffProductKey(link.barcode) : null;
+        const result = estimateSellerProfit({
+          price: shelfPrice,
+          unitPrice: link.unitPrice,
+          desi: link.desi,
+          unitMultiplier: link.unitMultiplier,
+          tiers: key === null ? null : (tariffs.get(key) ?? null),
+          settings: profitSettings,
+        });
+        if (result.ok) {
+          const e = result.estimate;
+          profit = {
+            commissionRate: e.commissionRate,
+            commission: e.commission.toString(),
+            cargo: e.cargo.toString(),
+            operation: e.operation.toString(),
+            fixedSaleFee: e.fixedSaleFee.toString(),
+            cost: e.cost.toString(),
+            profit: e.profit.toString(),
+            profitPct: e.profitPct,
+            breakEvenPrice: e.breakEvenPrice?.toString() ?? null,
+          };
+        } else {
+          profitMissing = result.missing;
+        }
+      }
+    }
+
     return {
       id: row.id,
       marketplaceCode: row.marketplaceCode,
@@ -191,6 +267,8 @@ async function getHandler(request: Request) {
       cardUpperBound: band?.band.upper.toString() ?? null,
       cardMinPrice: band?.band.lower?.toString() ?? null,
       bandStatus: band?.status ?? 'unknown',
+      profit,
+      profitMissing,
     };
   });
 
@@ -203,13 +281,17 @@ async function getHandler(request: Request) {
       'Çarpan',
       'Buybox Satıcı',
       'Buybox Fiyat',
-      'Birim Fiyat',
+      'Birim Buybox',
       'PSF',
       'Min',
       'Üst Sınır',
       'Bant Durumu',
       'Satıcı Sayısı',
       'Son Bakış',
+      'Komisyon %',
+      'Tahmini Kâr',
+      'Kâr %',
+      '0 Kâr Fiyatı',
     ];
     const lines = [headers.map(csvEscape).join(',')];
     for (const row of listings) {
@@ -229,6 +311,10 @@ async function getHandler(request: Request) {
           row.brandProduct ? STATUS_LABELS[row.bandStatus] : '',
           row.sellerCount,
           row.lastScrapedAt === null ? '' : new Date(row.lastScrapedAt).toISOString(),
+          row.profit ? String(row.profit.commissionRate).replace('.', ',') : '',
+          csvMoney(row.profit ? BigInt(row.profit.profit) : null),
+          row.profit ? row.profit.profitPct.toFixed(1).replace('.', ',') : '',
+          csvMoney(row.profit?.breakEvenPrice ? BigInt(row.profit.breakEvenPrice) : null),
         ]
           .map(csvEscape)
           .join(','),

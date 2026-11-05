@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   brandProductsRepo,
+  commissionTariffsRepo,
   configRepo,
   createDb,
   newId,
@@ -21,6 +22,7 @@ import {
 } from '@buybox/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
+import { saveSellerProfitSettings } from '@/lib/server/seller-profit-settings';
 import { GET } from './route';
 
 let dir: string;
@@ -78,6 +80,8 @@ interface ListingResponse {
     upperBoundIsReferencePrice: boolean;
     sellerCount: number;
     brandProduct: { name: string; unitMultiplier: number } | null;
+    profit: { commissionRate: number; profit: string; breakEvenPrice: string | null; cost: string } | null;
+    profitMissing: string | null;
   }[];
 }
 
@@ -104,6 +108,7 @@ async function linkTo(
   name: string,
   prices: { referencePrice: bigint; minPrice?: bigint | null; maxPrice?: bigint | null },
   unitMultiplier = 1,
+  extras: { barcode?: string; unitPrice?: bigint; desi?: number } = {},
 ): Promise<void> {
   const brandProductId = `bp-${cardId}`;
   await brandProductsRepo.insertBrandProduct(appDb, {
@@ -112,8 +117,10 @@ async function linkTo(
     referencePrice: prices.referencePrice,
     minPrice: prices.minPrice ?? null,
     maxPrice: prices.maxPrice ?? null,
-    barcode: null,
+    barcode: extras.barcode ?? null,
     referencePriceSource: null,
+    unitPrice: extras.unitPrice ?? null,
+    desi: extras.desi ?? null,
     source: 'manual',
     createdAt: NOW,
     updatedAt: NOW,
@@ -299,6 +306,149 @@ describe('GET /api/brand/listings — the verdict', () => {
     const [row] = (await listings()).listings;
 
     expect(row).toMatchObject({ bandStatus: 'unknown', buyboxPrice: null });
+  });
+});
+
+describe('GET /api/brand/listings — reseller profit estimate (doc 17 §8)', () => {
+  // The product owner's sample: Acana Indoor Entree 4,5 Kg. Unit price 3.000 ₺, desi 7 → cargo
+  // 100 ₺ + operation 50 ₺, fixed fee 12,50 ₺.
+  const ACANA_TIERS = [
+    { minPrice: 426660n, maxPrice: null, rate: 16.5 },
+    { minPrice: 361360n, maxPrice: 426659n, rate: 6.2 },
+    { minPrice: 313565n, maxPrice: 361359n, rate: 2.8 },
+    { minPrice: null, maxPrice: 313564n, rate: 2.7 },
+  ];
+  const DAY = 86_400_000;
+
+  async function saveSettings(): Promise<void> {
+    await saveSellerProfitSettings(
+      appDb,
+      {
+        fixedSaleFee: '1250',
+        desiBands: [
+          { maxDesi: 5, cargo: '8000', operation: '3000' },
+          { maxDesi: null, cargo: '10000', operation: '5000' },
+        ],
+      },
+      'test',
+      NOW,
+    );
+  }
+
+  /** The route picks the tariff in force at the real clock, so the period is built around it. */
+  async function loadTariff(productKey: string, validUntil = Date.now() + DAY): Promise<void> {
+    await commissionTariffsRepo.replaceTariffs(appDb, [
+      {
+        id: newId(),
+        marketplaceCode: 'trendyol',
+        productKey,
+        barcode: `0${productKey}`,
+        sellerStockCode: null,
+        validFrom: Date.now() - DAY,
+        validUntil,
+        tiers: ACANA_TIERS,
+        sourceFile: 'tarife.xlsx',
+        importedAt: NOW,
+      },
+    ]);
+  }
+
+  async function acanaCard(id: string, unitMultiplier = 1): Promise<void> {
+    await addCard(id);
+    await linkTo(id, 'Acana Indoor Entree 4,5 Kg', { referencePrice: 6000_00n }, unitMultiplier, {
+      barcode: '064992714512',
+      unitPrice: 3000_00n,
+      desi: 7,
+    });
+  }
+
+  it('estimates the buybox holder\'s profit from the shelf price, matching the tariff by folded barcode', async () => {
+    await saveSettings();
+    // Stored without the leading zero, as Excel leaves a barcode typed as a number.
+    await loadTariff('64992714512');
+    await acanaCard('acana');
+    // A coupon below the shelf price: the band judges the coupon, the estimate the shelf price.
+    await look('acana', [{ rank: 1, seller: 'Bayi', price: 5000_00n, finalPrice: 4800_00n }]);
+
+    const [row] = (await listings()).listings;
+
+    expect(row!.buyboxPriceSource).toBe('finalPrice');
+    expect(row!.profitMissing).toBeNull();
+    // 5.000 − 825 (16,5 %) − 100 − 50 − 12,50 − 3.000 = 1.012,50
+    expect(row!.profit).toMatchObject({
+      commissionRate: 16.5,
+      profit: '101250',
+      cost: '300000',
+      breakEvenPrice: '325361',
+    });
+  });
+
+  it('picks the tier the price falls in — one kuruş under the 16,5 % limit is the 6,2 % tier', async () => {
+    await saveSettings();
+    await loadTariff('64992714512');
+    await acanaCard('edge');
+    await look('edge', [{ rank: 1, seller: 'Bayi', price: 4266_59n }]);
+
+    const [row] = (await listings()).listings;
+
+    expect(row!.profit).toMatchObject({ commissionRate: 6.2, profit: '83956' });
+  });
+
+  it.each([
+    ['noSettings', async () => loadTariff('64992714512')],
+    ['noTariff', async () => saveSettings()],
+    [
+      'noTariff',
+      async () => {
+        await saveSettings();
+        await loadTariff('64992714512', Date.now() - 1);
+      },
+    ],
+  ] as const)('says %s rather than estimating', async (missing, setUp) => {
+    await setUp();
+    await acanaCard('missing');
+    await look('missing', [{ rank: 1, seller: 'Bayi', price: 5000_00n }]);
+
+    const [row] = (await listings()).listings;
+
+    expect(row).toMatchObject({ profit: null, profitMissing: missing });
+  });
+
+  it('does not estimate a pack card, whose price no single-product tariff covers', async () => {
+    await saveSettings();
+    await loadTariff('64992714512');
+    await acanaCard('pack', 2);
+    await look('pack', [{ rank: 1, seller: 'Bayi', price: 10000_00n }]);
+
+    const [row] = (await listings()).listings;
+
+    expect(row).toMatchObject({ profit: null, profitMissing: 'packCard' });
+  });
+
+  it('says there is no buybox price on a card nobody has read, and nothing on an unlinked favourite', async () => {
+    await saveSettings();
+    await acanaCard('unseen');
+    await addCard('starred');
+    await trackedProductsRepo.setTrackedProductFavourite(appDb, 'starred', true, NOW);
+    await look('starred', [{ rank: 1, seller: 'Rakip', price: 50_00n }]);
+
+    const rows = (await listings()).listings;
+
+    expect(rows.find((row) => row.id === 'unseen')).toMatchObject({ profit: null, profitMissing: 'noBuyboxPrice' });
+    expect(rows.find((row) => row.id === 'starred')).toMatchObject({ profit: null, profitMissing: null });
+  });
+
+  it('exports the estimate', async () => {
+    await saveSettings();
+    await loadTariff('64992714512');
+    await acanaCard('exported');
+    await look('exported', [{ rank: 1, seller: 'Bayi', price: 5000_00n }]);
+
+    const text = await (await GET(authedRequest('http://localhost/api/brand/listings?format=csv'), routeContext())).text();
+
+    expect(text).toContain('Tahmini Kâr');
+    expect(text).toContain('"1012,50"');
+    expect(text).toContain('"3253,61"');
   });
 });
 

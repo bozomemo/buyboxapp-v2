@@ -13,7 +13,6 @@
 import { NextResponse } from 'next/server';
 import {
   decide,
-  effectiveCommissionRate,
   unitCost,
   type DecisionInput,
   type MarketplaceCode,
@@ -62,7 +61,6 @@ async function loadState(appDb: ReturnType<typeof getAppDb>, listingId: string):
       ? {
           unitCost: Money.fromKurus(row.optimumCtxUnitCost),
           commissionRate: row.optimumCtxCommissionRate ?? 0,
-          vatRate: row.optimumCtxVatRate ?? 0,
           campaignRatio: row.optimumCtxCampaignRatio ?? 0,
           secondPrice: row.optimumCtxSecondPrice !== null ? Money.fromKurus(row.optimumCtxSecondPrice) : null,
           secondSellerId: row.optimumCtxSecondSellerRef,
@@ -169,7 +167,7 @@ async function postHandler(request: Request) {
   }[] = [];
 
   for (const listing of candidates) {
-    if (listing.baseStockCode === null || listing.commissionRate === null || listing.vatRate === null) {
+    if (listing.baseStockCode === null || listing.commissionRate === null) {
       skipped += 1;
       continue;
     }
@@ -209,8 +207,7 @@ async function postHandler(request: Request) {
       listing: {
         currentPrice: Money.fromKurus(listing.price),
         physicalStock: listing.offeredStock,
-        commissionRate: effectiveCommissionRate(listing.commissionRate, fees),
-        vatRate: listing.vatRate,
+        commissionRate: listing.commissionRate,
         locked: listing.isLocked,
         suspended: listing.isSuspended,
         salable: listing.isSalable,

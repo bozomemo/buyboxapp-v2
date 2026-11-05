@@ -23,8 +23,8 @@ Every phase assumes `CLAUDE.md` has been read and its hard rules apply throughou
 >
 > - Build `packages/core` against the formulas and vectors in doc 02 as specified. They are
 >   internally consistent and property-tested; validation confirms the *inputs* (commission
->   base, cargo bands, VAT treatment), not the algebra.
-> - The open parameters (`commissionBase`, cargo bands, expenditure bands — doc 11 O-3, O-4)
+>   rate, cargo bands, expenditure bands), not the algebra.
+> - The open parameters (cargo bands, expenditure bands — doc 11 O-4)
 >   are **configuration**, not code. Changing them later is a settings edit, not a rewrite.
 >   Ship with best-known defaults and mark them provisional in the UI.
 > - **This becomes a hard gate before Phase 8.4** (enabling live writes). Do not send a real
@@ -32,9 +32,9 @@ Every phase assumes `CLAUDE.md` has been read and its hard rules apply throughou
 > - Until validated, run Phase 8.3 shadow mode and compare the engine's floor prices against
 >   actual observed profitability wherever data exists.
 >
-> Why it still matters: doc 02 §6.1 shows the legacy floors were understated by 17–31% because
-> product VAT was omitted entirely. The new model corrects this, but the *magnitude* of the
-> correction depends on parameters only a settlement statement can confirm.
+> Why it still matters: a wrong cargo band or commission figure moves every floor price, and
+> only a settlement statement can confirm them. Since 2026-11-03 the model applies no VAT
+> (doc 02 §0), so the gate must also confirm that every unit cost is VAT-inclusive (doc 09 §34).
 
 ---
 
@@ -59,7 +59,7 @@ Specification: docs 01, 02, 03. This phase has **no I/O of any kind**.
 |---|------|------|
 | 2.1 | `StockCode.parse()` → `{ baseCode, unitCount, isBundle }` or a typed error | 01 §2 |
 | 2.2 | `CostCalculator.unitCost()` with bundle expansion, multipliers, cycle detection, `Result` errors | 02 §4 |
-| 2.3 | `FeeModel`: effective commission rate, cargo band selection, expenditure band selection, VAT treatment flags | 02 §3 |
+| 2.3 | `FeeModel`: cargo band selection, expenditure band selection (no VAT treatment since 2026-11-03) | 02 §0, §3 |
 | 2.4 | `PriceCalculator.netProceeds()` | 02 §5.1 |
 | 2.5 | `PriceCalculator.floorPrice()` with fixed-point band resolution | 02 §5.3 |
 | 2.6 | `RepricingPolicy` type and validation | 03 §3 |
@@ -146,9 +146,8 @@ only against fixtures, never live APIs.
 > OpenAPI declares their 200 responses with **no schema**. One SIT session closes both — call
 > each once and record the response as a fixture, exactly as §2.11 was done; writing a
 > normaliser against the guide's prose field list is what CLAUDE.md's "never infer an
-> endpoint's shape" forbids. Commission may also be where the pre-sale product VAT rate lives;
-> it is confirmed absent from the listing schema, and a wrong VAT rate produces a wrong floor
-> price (doc 02). The `HepsiburadaCredentials` schema's account question (§2.9: merchant login
+> endpoint's shape" forbids. (The pre-sale product VAT rate, absent from the listing schema, is
+> no longer needed: no calculation uses VAT since 2026-11-03, doc 02 §0.) The `HepsiburadaCredentials` schema's account question (§2.9: merchant login
 > vs. integrator service key) also needs that session to resolve.
 >
 > `fetchListings` supplies the SKUs Phase 7's `HepsiburadaPublicListingsSource` keys on, so that
@@ -273,14 +272,14 @@ Additional decisions taken in this phase, beyond the tasks above:
 | 8.1 | Register the store's marketplaces (Hepsiburada, Trendyol) and fee settings through the setup wizard | `testConnection` succeeds for each; `fee_settings` has a current row |
 | 8.2 | Add the first products through a product source (Manual entry or Excel to start) | Listings grid shows them; `repriceEnabled` still `false` for all (doc 10 §6 step 8) |
 | 8.3 | `ImportListings`/`ObserveBuybox` run against real marketplace listings with submissions still disabled | Prices, stock and buybox observations populate correctly; every listing starts phase `SEEKING` — there is no history to seed `OPTIMUM` from, and none should be invented |
-| 8.3b | **GATE — cost model sanity check, no settlement statement available yet** | Commission, VAT and cargo figures cross-checked line-by-line against the marketplace's own published fee schedule and `docs/api-references.md` (§2.7 for Hepsiburada; Trendyol's public rate card), not a real settlement — **do not proceed to 8.4 without this**, and treat its confidence as provisional |
+| 8.3b | **GATE — cost model sanity check, no settlement statement available yet** | Commission and cargo figures, and the VAT-inclusive basis of every unit cost (doc 09 §34), cross-checked line-by-line against the marketplace's own published fee schedule and `docs/api-references.md` (§2.7 for Hepsiburada; Trendyol's public rate card), not a real settlement — **do not proceed to 8.4 without this**, and treat its confidence as provisional |
 | 8.4 | Enable writes for Hepsiburada only, starting with a small, watched subset of listings | One to two weeks, tight kill switch, no price below floor, no budget exhaustion |
 | 8.5 | The moment the first real settlement statement exists, validate the cost model against it and correct forward if it diverges | Confirms or corrects 8.3b's estimate — this is the real gate 8.3b stood in for |
 | 8.6 | Enable writes for Trendyol | Same watch period as 8.4 |
 | 8.7 | Widen to the full catalogue | Same guardrails hold at scale |
 
 **Definition of done for 8.3b — do not skip this, even without settlement data.** A wrong
-commission or VAT figure produces a wrong floor price and a real loss on the very first sale.
+commission or cargo figure, or a VAT-exclusive unit cost, produces a wrong floor price and a real loss on the very first sale.
 Cross-checking against the vendor's own documentation is weaker evidence than a settlement
 statement, which is exactly why 8.5 exists as a mandatory follow-up the moment real data is
 available, not an optional one.

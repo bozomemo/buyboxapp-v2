@@ -86,8 +86,8 @@ export async function createSqliteTestDb(): Promise<TestDb> {
 
 export const NOW = Date.UTC(2026, 0, 1);
 
-// Zero cargo/expenditure keeps the floor-price math in tests driven purely by commission and
-// VAT, so test prices (already small, in kuruş) don't need to model realistic cargo tariffs.
+// Zero cargo/expenditure keeps the floor-price math in tests driven purely by commission, so
+// test prices (already small, in kuruş) don't need to model realistic cargo tariffs.
 const FLAT_CARGO_BANDS = JSON.stringify([{ maxPrice: null, amount: '0' }]);
 const FLAT_EXPENDITURE_BANDS = JSON.stringify([{ minPrice: '0', amount: '0' }]);
 
@@ -104,19 +104,9 @@ export async function seedMarketplace(appDb: AppDatabase, marketplaceCode = 'tre
     id: newId(),
     marketplaceCode,
     effectiveFrom: NOW - 1000,
-    commissionVatRate: 20,
-    commissionRateIncludesVat: false,
-    commissionVatDeductible: false,
-    commissionBase: 'gross',
     defaultCommissionRate: 15,
     cargoBands: FLAT_CARGO_BANDS,
-    cargoAmountsIncludeVat: true,
-    cargoVatRate: 20,
-    cargoVatDeductible: false,
     expenditureBands: FLAT_EXPENDITURE_BANDS,
-    expenditureIncludesVat: true,
-    expenditureVatRate: 20,
-    expenditureVatDeductible: false,
   });
   await configRepo.upsertRepricingPolicy(appDb, {
     marketplaceCode,

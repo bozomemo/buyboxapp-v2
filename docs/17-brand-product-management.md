@@ -4,7 +4,8 @@ Status: **specified 2026-09-19.** §1 (modules) **built 2026-09-19** (doc 12 11.
 rules, band derivation and PSF migration **built 2026-09-19** (11.2); §2.4's screens — Stok
 (`/brand/products`), the product detail with cards, multipliers, primary and barcode suggestions,
 and _Ürünüme bağla_ + the favourite star on Takip Edilen Ürünler — **built 2026-09-20** (11.4).
-§3 (the Excel import) **built 2026-09-20** (11.3). §4–§6 not built.
+§3 (the Excel import) **built 2026-09-20** (11.3). §4–§6 not built. §8 (the reseller profit
+estimate) **built 2026-11-04** — numbered after the open items' table, kept last so §7 stays put.
 Build tasks: doc 12 Phase 11.
 
 Decided with the product owner in conversation on 2026-09-19. This document is the single place
@@ -507,6 +508,82 @@ _Test gönder_ button per channel.
   hour. The violation history stays honest; only the channel is quiet.
 - Moving `EvaluateBrandFindings`' webhook onto the same port is a later cleanup, not part of this
   phase.
+
+---
+
+## 8. Reseller profit estimate — **built 2026-11-04**
+
+Decided with the product owner on 2026-11-02/03. The customer is the brand's **distributor**: it
+knows what it sells each product to resellers for, and wants to see how profitably whoever holds
+the buybox is selling it. **Reporting only** — nothing here feeds a price, an alarm or a
+decision. The model has **no VAT** (doc 02 §0): every amount is VAT-inclusive and used as entered.
+
+```
+profit = P − P × c(P) − cargo(desi) − operation(desi) − fixedSaleFee − unitPrice
+```
+
+| Input | Where it comes from |
+|-------|---------------------|
+| `P` | the buybox offer's **shelf** `price` — not the coupon `finalPrice` the band judges (§5.1). A coupon is the seller's own discount on one basket; the tariff band is decided on the listed price |
+| `c(P)` | the product's **tiered** commission (§8.2) — the rate of the band `P` falls in |
+| `cargo`, `operation` | the desi table row the product's desi falls in (§8.1) |
+| `fixedSaleFee` | setting; ₺12,50 at the time of writing |
+| `unitPrice` | `brand_products.unit_price` — _Birim Fiyat_, what the brand sells one unit to resellers for |
+
+İlanlar (§4.1) shows _Komisyon_, _Tahmini kâr_ (with % of the price, and the breakdown on hover)
+and _0 kâr fiyatı_ — the **lowest** price at which the seller breaks even. Because the commission
+is tiered, profit is not monotonic in price: in the sample, ₺4.266,59 earns ₺839,56 and one
+kuruş more earns ₺400,11, because the rate jumps from 6,2 % to 16,5 %. So the break-even is solved
+per tier (`P = fixed / (1 − rate)`, rounded **up**, kept only if it lies inside that tier) and the
+lowest valid one is shown. Implementation: `packages/core` `brand/seller-profit.ts`.
+
+**Every missing input is reported, never defaulted** — a zero cost or commission would print a
+confident, wrong profit. The cell says which: _ayar yok_, _birim fiyat yok_, _desi yok_, _desi
+bandı yok_, _tarife yok_, _tarife dışı_, _paket kartı_, _buybox yok_. An unlinked favourite has no
+product and shows _—_.
+
+**Packs (v1):** a tariff is stated per single product, so a card with multiplier ≠ 1 is _paket
+kartı_ and not estimated. The core model already scales unit price and desi by the multiplier
+(`unitPrice × m`, `desi × m`), which is the product owner's rule for packs; a per-pack desi and a
+pack's own tariff are **deferred**.
+
+### 8.1 Product inputs and settings
+
+- `brand_products.unit_price` (money, nullable) and `brand_products.desi` (real, nullable), per
+  unit. Entered on Stok (`/brand/products`) and in the import file as the optional columns
+  _Birim Fiyat_ and _Desi_. **An import file without these columns leaves them alone**; a file
+  that has them follows §3.4 (an empty cell clears). That exception exists so a file made from the
+  pre-2026-11-03 template cannot wipe every product's unit price.
+- _Kâr Ayarları_ (`/brand/profit`): the fixed per-sale fee and the desi table — rows of _desi
+  upper bound → cargo ₺, operation ₺_, rising, only the last row may leave its bound empty
+  ("everything above"). Stored as the `app_settings` key `brand.sellerProfit` (audited). An install
+  that never saved them shows _ayar yok_ rather than using a default table.
+
+### 8.2 The commission tariff workbook
+
+Trendyol's seller panel exports _Komisyon Tarifeleri_ as a workbook: one row per product with four
+price limits and, per tariff period, four commission rates (`1.Fiyat Alt Limit` → 1.KOMİSYON …
+`4.Fiyat Üst Limiti` → 4.KOMİSYON). Measured on the product owner's sample (22 rows, 2026-11-02):
+these bands applied to _KOMİSYONA ESAS FİYAT_ reproduce the workbook's own _GÜNCEL KOMİSYON_ on
+every row. No official API returning these tiers was found (api-references §1.4 has one
+`commission` per variant), so the workbook is uploaded on _Kâr Ayarları_ — preview, then confirm.
+
+- **Two blocks under identical headers.** The four commission columns repeat once per period
+  (`Tarih aralığı (3 Gün)`, `(4 Gün)`); they are found by position after each period column.
+- **The period has no year** (`1 Kasım 08.00-5 Kasım 07.59`). The year that puts the start nearest
+  the upload is taken; the preview shows the dates so the operator confirms them. Türkiye time,
+  end minute inclusive. Re-uploading a period replaces it; a period that has ended is not used.
+- **Matching** is by barcode, folded: leading zeros removed (Excel drops them from a barcode typed
+  as a number) and upper-cased. A row whose barcode is a marketplace-generated code (`TYBX…`) is
+  also keyed by its seller stock code. A brand product matches by its own barcode — **not** by the
+  card's: a card's barcode is seller-entered and unreliable (measured 2026-11-03 on four live
+  pages: the buybox seller's barcode was a `TYB…` code, an HB SKU or a zero-dropped GTIN on three
+  of four).
+- **Same tariff for every seller** — the product owner's statement (2026-11-03) that the
+  marketplace offers everyone the same limits and rates. Whether a given seller opted in to a
+  tariff is not knowable, which is one reason the figure is labelled an estimate.
+- Refused rows (reported, not written): no code, an unreadable or three-decimal limit, limits that
+  do not descend, a rate outside 0–100, an unreadable period, the same product twice in a period.
 
 ---
 

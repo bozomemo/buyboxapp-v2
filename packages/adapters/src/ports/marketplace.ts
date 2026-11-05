@@ -51,8 +51,9 @@ export interface ListingSnapshot {
   /** Final checkout price after campaigns/coupons, when the marketplace exposes it. */
   readonly customerPrice: Money | null;
   readonly offeredStock: number;
-  /** Commission percent, ex-VAT, as required by doc 02's cost model. `null` if unavailable. */
+  /** Commission percent as the marketplace states it, used as-is by doc 02's cost model. `null` if unavailable. */
   readonly commissionRate: number | null;
+  /** Recorded for display only — no price calculation reads it (doc 02 §0). */
   readonly vatRate: number | null;
   readonly dispatchTime: number | null;
   readonly isSalable: boolean;

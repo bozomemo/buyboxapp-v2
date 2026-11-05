@@ -14,12 +14,14 @@
  */
 import { NextResponse } from 'next/server';
 import {
+  BRAND_PRICE_MAX_KURUS,
   checkBrandProductPrices,
   classifyBarcode,
   type BrandPriceError,
   type BrandPriceWarning,
 } from '@buybox/core';
 import { brandProductsRepo, newId } from '@buybox/db';
+import { parseDesi } from '@/lib/desi';
 import { parseTurkishDecimal } from '@/lib/reference-price-import';
 import { getAppDb } from '@/lib/server/db';
 import { pageLimit, pageOffset } from '@/lib/pagination';
@@ -37,6 +39,13 @@ export interface BrandProductBody {
   readonly maxPrice?: string | null;
   readonly barcode?: string | null;
   readonly referencePriceSource?: string | null;
+  /**
+   * _Birim Fiyat_ to resellers, per unit, VAT-inclusive, as typed (doc 17 §8). Absent keeps the
+   * stored value; sent empty clears it.
+   */
+  readonly unitPrice?: string | null;
+  /** One unit's desi as typed, e.g. "4,5". Absent keeps; sent empty clears. */
+  readonly desi?: string | null;
 }
 
 const PRICE_ERRORS: Record<BrandPriceError, string> = {
@@ -61,6 +70,9 @@ export interface ParsedFields {
     maxPrice: bigint | null;
     barcode: string | null;
     referencePriceSource: string | null;
+    /** `undefined` when the body did not state it — the repository then leaves it alone. */
+    unitPrice?: bigint | null;
+    desi?: number | null;
   };
   readonly warnings: string[];
 }
@@ -98,6 +110,17 @@ export function parseBrandProductBody(
   const check = checkBrandProductPrices({ referencePrice, minPrice, maxPrice });
   if (check.errors.length > 0) return PRICE_ERRORS[check.errors[0]!];
 
+  // Not part of the band, so `checkBrandProductPrices` does not judge it; held to the same bounds.
+  const unitPrice = body.unitPrice === undefined ? undefined : amount(body.unitPrice);
+  if (unitPrice === 'invalid') return 'Birim fiyat okunamadı.';
+  if (unitPrice !== undefined && unitPrice !== null) {
+    if (unitPrice <= 0n) return PRICE_ERRORS.nonPositive;
+    if (unitPrice > BRAND_PRICE_MAX_KURUS) return PRICE_ERRORS.tooLarge;
+  }
+  const desi = body.desi === undefined ? undefined : parseDesi(body.desi);
+  if (desi === 'invalid')
+    return 'Desi okunamadı — sıfırdan büyük, en fazla iki ondalıklı bir sayı olmalı (ör. 4,5).';
+
   const barcode = (body.barcode ?? '').trim() || null;
   const barcodeWarnings: string[] = [];
   if (barcode !== null) {
@@ -116,6 +139,8 @@ export function parseBrandProductBody(
       maxPrice,
       barcode,
       referencePriceSource: (body.referencePriceSource ?? '').trim() || null,
+      ...(unitPrice === undefined ? {} : { unitPrice }),
+      ...(desi === undefined ? {} : { desi }),
     },
     warnings: [...check.warnings.map((warning) => PRICE_WARNINGS[warning]), ...barcodeWarnings],
   };
@@ -133,6 +158,8 @@ export function serialiseBrandProduct(row: brandProductsRepo.BrandProductListRow
     upperBound: (row.maxPrice ?? row.referencePrice).toString(),
     upperBoundIsReferencePrice: row.maxPrice === null,
     barcode: row.barcode,
+    unitPrice: row.unitPrice?.toString() ?? null,
+    desi: row.desi,
     source: row.source,
     referencePriceSource: row.referencePriceSource,
     cardCount: row.cardCount,
@@ -166,6 +193,8 @@ async function postHandler(request: Request) {
   await brandProductsRepo.insertBrandProduct(getAppDb(), {
     id,
     ...parsed.fields,
+    unitPrice: parsed.fields.unitPrice ?? null,
+    desi: parsed.fields.desi ?? null,
     // Typed on the screen. `excel` is the import's (doc 17 §3), `migration` the old per-card
     // price's (§2.5) — the three stay distinguishable because they answer different questions
     // about where a number came from.

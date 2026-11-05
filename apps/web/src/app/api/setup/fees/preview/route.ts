@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { floorPrice, effectiveCommissionRate } from '@buybox/core';
+import { floorPrice } from '@buybox/core';
 import { mapFeeSettings } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
 import { formatMoneyValue } from '@/lib/format';
@@ -8,23 +8,21 @@ import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
 
 async function postHandler(request: Request) {
-  const body = await readJsonBody<{ fees: unknown; sampleCost: string; sampleVatRate: number }>(request);
+  const body = await readJsonBody<{ fees: unknown; sampleCost: string }>(request);
   if (body === null) return invalidBody();
   try {
     const row = feesPayloadToRow(body.fees, 'preview', Date.now());
     const fees = mapFeeSettings(row);
-    const commissionRate = effectiveCommissionRate(row.defaultCommissionRate, fees);
     const result = floorPrice({
       unitCost: Money.fromMajorUnitsString(body.sampleCost),
-      vatRate: body.sampleVatRate,
-      effectiveCommissionRate: commissionRate,
+      commissionRate: row.defaultCommissionRate,
       campaign: null,
       fees,
     });
     if (!result.ok) {
       return NextResponse.json({
         ok: false,
-        error: 'Bu maliyet ve KDV oranıyla hiçbir fiyatta kâr mümkün değil.',
+        error: 'Bu komisyon oranıyla hiçbir fiyatta kâr mümkün değil.',
       });
     }
     return NextResponse.json({ ok: true, floorPrice: formatMoneyValue(result.value) });

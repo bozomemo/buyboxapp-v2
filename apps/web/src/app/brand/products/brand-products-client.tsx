@@ -29,6 +29,7 @@ import {
 } from '@/components/ui';
 import { errorMessage } from '@/components/auth-card';
 import { DEFAULT_PAGE_SIZE, Pagination, STICKY_HEAD, TableFrame } from '@/components/table';
+import { formatDesi } from '@/lib/desi';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import { ImportPanel } from './import-panel';
 
@@ -43,6 +44,9 @@ interface BrandProduct {
   /** The upper bound is PSF standing in for an unset max — the column says so rather than lying. */
   upperBoundIsReferencePrice: boolean;
   barcode: string | null;
+  /** Price to resellers, per unit, kuruş (doc 17 §8). Feeds the profit estimate only. */
+  unitPrice: string | null;
+  desi: number | null;
   source: string;
   referencePriceSource: string | null;
   cardCount: number;
@@ -57,6 +61,8 @@ interface FormState {
   minPrice: string;
   maxPrice: string;
   barcode: string;
+  unitPrice: string;
+  desi: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -66,6 +72,8 @@ const EMPTY_FORM: FormState = {
   minPrice: '',
   maxPrice: '',
   barcode: '',
+  unitPrice: '',
+  desi: '',
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -130,6 +138,8 @@ export function BrandProductsClient() {
       minPrice: toInput(row.minPrice),
       maxPrice: toInput(row.maxPrice),
       barcode: row.barcode ?? '',
+      unitPrice: toInput(row.unitPrice),
+      desi: formatDesi(row.desi),
     });
     setFormOpen(true);
     setNotice(null);
@@ -145,6 +155,8 @@ export function BrandProductsClient() {
         minPrice: form.minPrice,
         maxPrice: form.maxPrice,
         barcode: form.barcode,
+        unitPrice: form.unitPrice,
+        desi: form.desi,
       };
       const res = await fetch(form.id ? `/api/brand-products/${form.id}` : '/api/brand-products', {
         method: form.id ? 'PATCH' : 'POST',
@@ -289,6 +301,22 @@ export function BrandProductsClient() {
                   className="w-40"
                 />
               </Field>
+              <Field label="Birim fiyat (KDV dahil)">
+                <TextInput
+                  value={form.unitPrice}
+                  onChange={(e) => setForm({ ...form, unitPrice: e.target.value })}
+                  placeholder="satıcıya satış"
+                  className="w-32"
+                />
+              </Field>
+              <Field label="Desi">
+                <TextInput
+                  value={form.desi}
+                  onChange={(e) => setForm({ ...form, desi: e.target.value })}
+                  placeholder="4,5"
+                  className="w-20"
+                />
+              </Field>
               <Button type="button" disabled={busy} onClick={() => void save()}>
                 {busy ? 'Kaydediliyor…' : form.id ? 'Güncelle' : 'Ekle'}
               </Button>
@@ -305,7 +333,9 @@ export function BrandProductsClient() {
             </div>
             <p className="mt-2 text-xs text-(--color-muted)">
               Fiyatlar <strong>birim başına</strong>dır. Üç&apos;lü paket satan bir kart, çarpanıyla
-              ölçeklenerek karşılaştırılır. Max boşsa üst sınır PSF olur.
+              ölçeklenerek karşılaştırılır. Max boşsa üst sınır PSF olur. <strong>Birim fiyat</strong>, ürünü
+              satıcılara sattığınız fiyattır (KDV dahil); <strong>desi</strong> ile birlikte yalnızca İlanlar&apos;daki
+              tahmini satıcı kârında kullanılır, alarmı etkilemez.
             </p>
           </div>
         )}
@@ -334,6 +364,8 @@ export function BrandProductsClient() {
                     <th className="p-2">Min</th>
                     <th className="p-2">Üst sınır</th>
                     <th className="p-2">Barkod</th>
+                    <th className="p-2">Birim fiyat</th>
+                    <th className="p-2">Desi</th>
                     <th className="p-2">Kart</th>
                     <th className="p-2">Kaynak</th>
                     <th className="p-2">Güncellendi</th>
@@ -367,6 +399,10 @@ export function BrandProductsClient() {
                         )}
                       </td>
                       <td className="p-2">{row.barcode ?? '—'}</td>
+                      <td className="p-2 tabular-nums">
+                        {row.unitPrice === null ? '—' : formatMoney(BigInt(row.unitPrice))}
+                      </td>
+                      <td className="p-2 tabular-nums">{row.desi === null ? '—' : formatDesi(row.desi)}</td>
                       <td className="p-2">
                         {row.cardCount === 0 ? (
                           <span className="text-(--color-warning)" title="Bu ürün hiçbir karta bağlı değil">

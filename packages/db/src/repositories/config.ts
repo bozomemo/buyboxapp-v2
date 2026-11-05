@@ -86,10 +86,6 @@ export interface FeeSettingsRow {
   readonly id: string;
   readonly marketplaceCode: string;
   readonly effectiveFrom: number;
-  readonly commissionVatRate: number;
-  readonly commissionRateIncludesVat: boolean;
-  readonly commissionVatDeductible: boolean;
-  readonly commissionBase: 'gross' | 'net';
   readonly defaultCommissionRate: number;
   /**
    * Serialised JSON: `{ maxPrice: string | null; amount: string }[]`, where each amount is
@@ -97,22 +93,37 @@ export interface FeeSettingsRow {
    * back with `Money.fromJSON` (packages/jobs' `mapFeeSettings`). Not a decimal string.
    */
   readonly cargoBands: string;
-  readonly cargoAmountsIncludeVat: boolean;
-  readonly cargoVatRate: number;
-  readonly cargoVatDeductible: boolean;
   /** Serialised JSON: `{ minPrice: string; amount: string }[]`, same `Money.toJSON()` convention. */
   readonly expenditureBands: string;
-  readonly expenditureIncludesVat: boolean;
-  readonly expenditureVatRate: number;
-  readonly expenditureVatDeductible: boolean;
 }
+
+/**
+ * What the retired VAT columns of `fee_settings` are written as. No price calculation reads VAT
+ * any more (product owner's decision, 2026-11-03, doc 02 §0), so nothing above this repository
+ * sees these columns. They stay in the schema because dropping them would destroy the history of
+ * every fee row already saved; new rows fill them with the values that *mean* "no VAT", so a
+ * reader of the raw table is never told a rate was applied.
+ */
+const RETIRED_VAT_COLUMNS = {
+  commissionVatRate: 0,
+  commissionRateIncludesVat: true,
+  commissionVatDeductible: false,
+  commissionBase: 'gross',
+  cargoAmountsIncludeVat: true,
+  cargoVatRate: 0,
+  cargoVatDeductible: false,
+  expenditureIncludesVat: true,
+  expenditureVatRate: 0,
+  expenditureVatDeductible: false,
+} as const;
 
 /** Fee settings are never updated in place (doc 05 §2) — always a fresh insert. */
 export async function insertFeeSettings(appDb: AppDatabase, row: FeeSettingsRow): Promise<void> {
+  const values = { ...row, ...RETIRED_VAT_COLUMNS };
   await runDialect(appDb, {
-    sqlite: (db) => db.insert(sqliteSchema.feeSettings).values(row as never),
-    postgres: (db) => db.insert(postgresSchema.feeSettings).values(row as never),
-    mysql: (db) => db.insert(mysqlSchema.feeSettings).values(row as never),
+    sqlite: (db) => db.insert(sqliteSchema.feeSettings).values(values as never),
+    postgres: (db) => db.insert(postgresSchema.feeSettings).values(values as never),
+    mysql: (db) => db.insert(mysqlSchema.feeSettings).values(values as never),
   });
 }
 
@@ -122,9 +133,8 @@ export async function getEffectiveFeeSettings(
   marketplaceCode: string,
   atMs: number,
 ): Promise<FeeSettingsRow | undefined> {
-  // `commissionBase` etc. are plain `text` at the Drizzle level (doc 05 §1: enums are
-  // "text + check constraint", not a native type) — see the note in
-  // repositories/competition.ts's latestBuyboxObservation for why this cast is safe.
+  // The selected row also carries the retired VAT columns (see `RETIRED_VAT_COLUMNS`); the
+  // cast narrows them away, so no caller can read them.
   return withDialect(appDb, {
     sqlite: async (db) =>
       (

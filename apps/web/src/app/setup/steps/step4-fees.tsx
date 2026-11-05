@@ -12,19 +12,10 @@ interface Band {
 interface FeeForm {
   code: 'trendyol' | 'hepsiburada';
   title: string;
-  commissionVatRate: string;
-  commissionRateIncludesVat: boolean;
-  commissionVatDeductible: boolean;
-  commissionBase: 'gross' | 'net';
+  // No VAT fields: no price calculation applies VAT (doc 02 §0, 2026-11-03).
   defaultCommissionRate: string;
   cargoBands: Band[];
-  cargoAmountsIncludeVat: boolean;
-  cargoVatRate: string;
-  cargoVatDeductible: boolean;
   expenditureBands: Band[];
-  expenditureIncludesVat: boolean;
-  expenditureVatRate: string;
-  expenditureVatDeductible: boolean;
   saved?: boolean;
   /** Set when `/api/settings/fees` already had a row for this marketplace on mount. */
   savedByServer?: boolean;
@@ -34,38 +25,18 @@ function initialForm(code: 'trendyol' | 'hepsiburada', title: string): FeeForm {
   return {
     code,
     title,
-    commissionVatRate: '20',
-    commissionRateIncludesVat: false,
-    commissionVatDeductible: false,
-    commissionBase: 'gross',
     defaultCommissionRate: '15',
     cargoBands: [{ edge: '', amount: '11.00' }],
-    cargoAmountsIncludeVat: true,
-    cargoVatRate: '20',
-    cargoVatDeductible: false,
     expenditureBands: [{ edge: '0', amount: '0' }],
-    expenditureIncludesVat: true,
-    expenditureVatRate: '20',
-    expenditureVatDeductible: false,
   };
 }
 
 function toPayload(form: FeeForm) {
   return {
     marketplaceCode: form.code,
-    commissionVatRate: Number(form.commissionVatRate),
-    commissionRateIncludesVat: form.commissionRateIncludesVat,
-    commissionVatDeductible: form.commissionVatDeductible,
-    commissionBase: form.commissionBase,
     defaultCommissionRate: Number(form.defaultCommissionRate),
     cargoBands: form.cargoBands.map((b) => ({ maxPrice: b.edge || null, amount: b.amount })),
-    cargoAmountsIncludeVat: form.cargoAmountsIncludeVat,
-    cargoVatRate: Number(form.cargoVatRate),
-    cargoVatDeductible: form.cargoVatDeductible,
     expenditureBands: form.expenditureBands.map((b) => ({ minPrice: b.edge || '0', amount: b.amount })),
-    expenditureIncludesVat: form.expenditureIncludesVat,
-    expenditureVatRate: Number(form.expenditureVatRate),
-    expenditureVatDeductible: form.expenditureVatDeductible,
   };
 }
 
@@ -243,7 +214,6 @@ export function Step4Fees({
 
   function formErrors(form: FeeForm): string[] {
     const errs: string[] = [];
-    if (percentError(form.commissionVatRate)) errs.push('commissionVatRate');
     if (percentError(form.defaultCommissionRate)) errs.push('defaultCommissionRate');
     form.cargoBands.forEach((b, i) => {
       if (amountError(b.edge, true)) errs.push(`cargo-edge-${i}`);
@@ -259,7 +229,6 @@ export function Step4Fees({
   function touchAll(form: FeeForm) {
     setTouched((prev) => {
       const next = new Set(prev);
-      next.add(`${form.code}:commissionVatRate`);
       next.add(`${form.code}:defaultCommissionRate`);
       form.cargoBands.forEach((_, i) => {
         next.add(`cargo:${form.code}:edge:${i}`);
@@ -283,13 +252,13 @@ export function Step4Fees({
       const res = await fetch('/api/setup/fees/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fees: toPayload(form), sampleCost: '100.00', sampleVatRate: 20 }),
+        body: JSON.stringify({ fees: toPayload(form), sampleCost: '100.00' }),
       });
       const data = (await res.json()) as { ok: boolean; floorPrice?: string; error?: string };
       setPreview((p) => ({
         ...p,
         [form.code]: data.ok
-          ? `100,00 ₺ maliyetli, %20 KDV'li bir ürün için dip fiyat: ${data.floorPrice}`
+          ? `100,00 ₺ maliyetli bir ürün için dip fiyat: ${data.floorPrice}`
           : (data.error ?? 'Hesaplanamadı'),
       }));
     } finally {
@@ -320,7 +289,8 @@ export function Step4Fees({
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-(--color-muted)">
-        Komisyon KDV oranı ve muamelesi, kargo bantları ve gider bantları (doc 02 §3). Kalıcı değerler
+        Varsayılan komisyon oranı, kargo bantları ve gider bantları (doc 02 §3). Fiyat hesaplarında KDV
+        kullanılmaz; tüm tutarlar satış fiyatıyla aynı (KDV dahil) temelde girilir. Kalıcı değerler
         mağazanızın gerçek sözleşme koşullarıyla eşleşmelidir — buradaki değerler başlangıç varsayımlarıdır ve
         Ayarlar ekranından daha sonra düzeltilebilir.
       </p>
@@ -335,20 +305,6 @@ export function Step4Fees({
           )}
           <div className="mt-3 grid grid-cols-2 gap-4">
             <Field
-              label="Komisyon KDV Oranı (%)"
-              error={
-                touched.has(`${form.code}:commissionVatRate`)
-                  ? percentError(form.commissionVatRate)
-                  : undefined
-              }
-            >
-              <TextInput
-                value={form.commissionVatRate}
-                onChange={(e) => update(form.code, { commissionVatRate: e.target.value })}
-                onBlur={() => touch(form.code, 'commissionVatRate')}
-              />
-            </Field>
-            <Field
               label="Varsayılan Komisyon Oranı (%)"
               error={
                 touched.has(`${form.code}:defaultCommissionRate`)
@@ -362,24 +318,6 @@ export function Step4Fees({
                 onBlur={() => touch(form.code, 'defaultCommissionRate')}
               />
             </Field>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={form.commissionRateIncludesVat}
-                onChange={(e) => update(form.code, { commissionRateIncludesVat: e.target.checked })}
-              />
-              API oranı KDV dahil
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={form.commissionVatDeductible}
-                onChange={(e) => update(form.code, { commissionVatDeductible: e.target.checked })}
-              />
-              Komisyon KDV&apos;si indirilebilir
-            </label>
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-4">

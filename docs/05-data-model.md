@@ -76,19 +76,10 @@ notice when they disagree. Never a store name: names are not identity (scraping 
 | `id` | text PK | |
 | `marketplace_code` | text FK | |
 | `effective_from` | bigint | |
-| `commission_vat_rate` | int | default 20 |
-| `commission_rate_includes_vat` | int | default 0 |
-| `commission_vat_deductible` | int | default 0 |
-| `commission_base` | text | `gross` \| `net` |
 | `default_commission_rate` | real | fallback |
 | `cargo_bands` | text (JSON) | `[{maxPrice, amount}]`, ordered |
-| `cargo_amounts_include_vat` | int | default 1 |
-| `cargo_vat_rate` | int | default 20 |
-| `cargo_vat_deductible` | int | default 0 |
 | `expenditure_bands` | text (JSON) | `[{minPrice, amount}]` |
-| `expenditure_includes_vat` | int | default 1 |
-| `expenditure_vat_rate` | int | default 20 |
-| `expenditure_vat_deductible` | int | default 0 |
+| `commission_vat_rate`, `commission_rate_includes_vat`, `commission_vat_deductible`, `commission_base`, `cargo_amounts_include_vat`, `cargo_vat_rate`, `cargo_vat_deductible`, `expenditure_includes_vat`, `expenditure_vat_rate`, `expenditure_vat_deductible` | — | **Retired 2026-11-03** (doc 02 §0). Kept so old rows keep their history; never read. New rows write the "no VAT" values (`0` rates, `includes_vat = 1`, `deductible = 0`, base `gross`) — `packages/db` `RETIRED_VAT_COLUMNS` |
 
 Unique on `(marketplace_code, effective_from)`. Never updated in place — a change inserts a new
 row so historical decisions stay explainable.
@@ -131,7 +122,7 @@ no foreign key is added, because `system`, `cli` and `operator` are not users. T
 |--------|------|-------|
 | `base_stock_code` | text PK | |
 | `name` | text | |
-| `unit_cost` | bigint | **VAT-exclusive**, kuruş |
+| `unit_cost` | bigint | **VAT-inclusive** (doc 02 §0), kuruş |
 | `unit_stock` | int | physical quantity |
 | `source_code` | text | which `IProductSource` produced it |
 | `source_ref` | text nullable | |
@@ -179,7 +170,7 @@ could not express quantity (doc 09 §28).
 | `customer_price` | bigint nullable | `priceSeenByCustomer` / campaign final price |
 | `offered_stock` | int | |
 | `commission_rate` | real nullable | from the marketplace |
-| `vat_rate` | int nullable | from the marketplace |
+| `vat_rate` | int nullable | from the marketplace; display only, no calculation reads it (doc 02 §0) |
 | `dispatch_time` | int nullable | |
 | `is_salable`, `is_locked`, `is_suspended`, `is_frozen`, `is_archived`, `is_blacklisted` | int | |
 | `lock_reasons`, `deactivation_reasons` | text nullable | JSON array |
@@ -805,6 +796,8 @@ No migration: an absent row reads as enabled, so an install that predates the mo
 | `barcode` | text nullable | Suggestions only (doc 17 §2.4) |
 | `source` | text | `excel` \| `manual` \| `migration` |
 | `reference_price_source` | text nullable | File name or list version, as on `tracked_products` before |
+| `unit_price` | money nullable | _Birim Fiyat_ to resellers, per unit, VAT-inclusive — the reseller profit estimate's cost (doc 17 §8). Feeds no alarm |
+| `desi` | real nullable | One unit's desi (doc 17 §8.1). Not money |
 | `created_at`, `updated_at` | bigint | |
 
 Index `(barcode)`, `(name)`. On MySQL `name` is `varchar(255)` rather than `text`, because MySQL
@@ -831,6 +824,22 @@ write transaction, not by an index: it needs a partial unique index, and MySQL h
 A new primary demotes the previous one to an ordinary card in the same transaction; on
 PostgreSQL and MySQL the product row is locked `FOR UPDATE` first, so two writes to one product's
 links serialise (`brand-products.ts`).
+
+#### `commission_tariffs` — reporting only (doc 17 §8.2)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `marketplace_code` | text FK, **cascade** | `trendyol` today |
+| `product_key` | text | Barcode — or, for a `TYB…` barcode, the seller stock code — upper-cased with leading zeros removed (`tariffProductKey`) |
+| `barcode`, `seller_stock_code` | text nullable | As the workbook stated them, for display |
+| `valid_from`, `valid_until` | bigint | Epoch ms; `valid_until` exclusive |
+| `tiers_json` | text (JSON) | `[{minPrice, maxPrice, rate}]`, kuruş strings, highest band first |
+| `source_file` | text | |
+| `imported_at` | bigint | |
+
+Unique `(marketplace_code, product_key, valid_from)` — a re-upload of a period replaces it
+(`replaceTariffs`, one transaction). Index `(valid_until)`.
 
 #### `band_violations`
 
@@ -887,7 +896,7 @@ One row per listing. Mirrors `RepricingState` in doc 03 §4.
 | `phase` | text | `SEEKING` \| `CLIMBING` \| `REFINING` \| `OPTIMUM` \| `BLOCKED` |
 | `last_good_price`, `last_bad_price`, `optimum_price` | bigint nullable |
 | `optimum_ctx_unit_cost` | bigint nullable |
-| `optimum_ctx_commission_rate`, `optimum_ctx_vat_rate`, `optimum_ctx_campaign_ratio` | real/int nullable |
+| `optimum_ctx_commission_rate`, `optimum_ctx_campaign_ratio` | real nullable | `optimum_ctx_vat_rate` is retired (doc 02 §0) and written `null` |
 | `optimum_ctx_second_price` | bigint nullable |
 | `optimum_ctx_second_seller_ref` | text nullable |
 | `pending_submission_id` | text nullable FK |

@@ -44,26 +44,15 @@ const post = (body: unknown) =>
 describe('fee settings (feed the floor price)', () => {
   const valid = {
     marketplaceCode: 'TY',
-    commissionVatRate: 20,
-    commissionRateIncludesVat: false,
-    commissionVatDeductible: false,
-    commissionBase: 'gross',
     defaultCommissionRate: 15,
     cargoBands: [{ maxPrice: '150', amount: '42,50' }],
-    cargoAmountsIncludeVat: true,
-    cargoVatRate: 20,
-    cargoVatDeductible: false,
     expenditureBands: [],
-    expenditureIncludesVat: true,
-    expenditureVatRate: 20,
-    expenditureVatDeductible: false,
   };
 
   const refused: readonly [string, unknown][] = [
     ['no bands at all', { marketplaceCode: 'TY' }],
-    ['a rate missing', { ...valid, commissionVatRate: undefined }],
-    ['a rate as text', { ...valid, cargoVatRate: '20' }],
-    ['an unknown commission base', { ...valid, commissionBase: 'both' }],
+    ['a rate missing', { ...valid, defaultCommissionRate: undefined }],
+    ['a rate as text', { ...valid, defaultCommissionRate: '15' }],
     ['an amount that is not money', { ...valid, cargoBands: [{ maxPrice: null, amount: 'kırk' }] }],
   ];
   it.each(refused)('refuses %s with a 400, and stores nothing', async (_name, body) => {
@@ -71,6 +60,33 @@ describe('fee settings (feed the floor price)', () => {
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toMatch(/Ücret ayarları|Geçersiz tutar/);
     expect(await configRepo.getEffectiveFeeSettings(appDb, 'TY', Date.now() + 1000)).toBeUndefined();
+  });
+
+  it('saves a stale form that still sends the retired VAT fields, without storing them as rates', async () => {
+    // VAT left the price model on 2026-11-03 (doc 02 §0). An open browser tab from before then
+    // still posts these; the save must neither fail nor record a VAT rate.
+    await configRepo.upsertMarketplace(appDb, {
+      code: 'TY',
+      displayName: 'Trendyol',
+      enabled: true,
+      merchantRef: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const stale = {
+      ...valid,
+      cargoBands: [{ maxPrice: '150.00', amount: '42.50' }],
+      commissionVatRate: 20,
+      commissionVatDeductible: true,
+      cargoVatRate: 20,
+    };
+    const res = await saveFees(post(stale), routeContext());
+    expect(res.status).toBe(200);
+    const stored = (await configRepo.getEffectiveFeeSettings(appDb, 'TY', Date.now() + 1000)) as unknown as
+      Record<string, unknown>;
+    expect(stored.defaultCommissionRate).toBe(15);
+    expect(stored.commissionVatRate).toBe(0);
+    expect(stored.cargoVatRate).toBe(0);
   });
 });
 

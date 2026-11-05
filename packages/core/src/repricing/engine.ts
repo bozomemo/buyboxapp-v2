@@ -22,7 +22,7 @@
  */
 import { Duration, Money, type Result } from '@buybox/shared';
 import type { CostError } from '../errors.js';
-import { type FeeSettings, effectiveCommissionRate } from '../fee-model.js';
+import type { FeeSettings } from '../fee-model.js';
 import { Fraction } from '../fraction.js';
 import { type CampaignRatio, floorPrice, netProceeds, priceForNetProceeds } from '../price-calculator.js';
 import type { ListingPriceOverrides, RepricingPolicy } from './policy.js';
@@ -46,7 +46,6 @@ interface Ctx {
   readonly now: Date;
   readonly currentPrice: Money;
   readonly floor: Money;
-  readonly effRate: number;
   readonly campaignRatio: number;
   readonly overrides: ListingPriceOverrides;
   readonly allowIncrease: boolean;
@@ -90,7 +89,6 @@ function buildOptimumContext(ctx: Ctx): OptimumContext {
   return {
     unitCost: ctx.cost,
     commissionRate: ctx.listing.commissionRate,
-    vatRate: ctx.listing.vatRate,
     campaignRatio: ctx.campaignRatio,
     secondPrice: ctx.observation.secondPrice,
     secondSellerId: ctx.observation.secondSellerId,
@@ -151,8 +149,7 @@ function seeking(ctx: Ctx, workingState: RepricingState): PriceDecision {
   ) {
     const npAtTarget = netProceeds({
       price: target,
-      vatRate: ctx.listing.vatRate,
-      effectiveCommissionRate: ctx.effRate,
+      commissionRate: ctx.listing.commissionRate,
       campaign: ctx.listing.campaign,
       fees: ctx.fees,
     });
@@ -163,8 +160,7 @@ function seeking(ctx: Ctx, workingState: RepricingState): PriceDecision {
       ),
     );
     const guardResult = priceForNetProceeds(requiredNet, {
-      vatRate: ctx.listing.vatRate,
-      effectiveCommissionRate: ctx.effRate,
+      commissionRate: ctx.listing.commissionRate,
       campaign: campaignRatioOf(ctx),
       fees: ctx.fees,
     });
@@ -209,14 +205,13 @@ function soleSeller(ctx: Ctx, workingState: RepricingState): PriceDecision {
     ),
   );
   const priceResult = priceForNetProceeds(targetNet, {
-    vatRate: ctx.listing.vatRate,
-    effectiveCommissionRate: ctx.effRate,
+    commissionRate: ctx.listing.commissionRate,
     campaign: campaignRatioOf(ctx),
     fees: ctx.fees,
   });
   const nextState: RepricingState = { ...workingState, phase: 'SEEKING' };
   if (!priceResult.ok) {
-    // Unreachable in practice: D depends only on vatRate/commission/campaign, already
+    // Unreachable in practice: D depends only on commission/campaign, already
     // validated positive by the floor computation that ran before dispatch (H1).
     return none(nextState, 'CostUnknown', 1, 'Sole-seller target price is not solvable at any price.');
   }
@@ -331,7 +326,6 @@ function optimum(ctx: Ctx, workingState: RepricingState): PriceDecision {
 
   const costChanged = !ctx.cost.equals(context.unitCost);
   const commissionChanged = ctx.listing.commissionRate !== context.commissionRate;
-  const vatChanged = ctx.listing.vatRate !== context.vatRate;
   const campaignChanged = ctx.campaignRatio !== context.campaignRatio;
   const secondPriceChanged = secondPriceMoved(
     ctx.observation.secondPrice,
@@ -347,7 +341,6 @@ function optimum(ctx: Ctx, workingState: RepricingState): PriceDecision {
   const invalidated =
     costChanged ||
     commissionChanged ||
-    vatChanged ||
     campaignChanged ||
     secondPriceChanged ||
     secondSellerChanged ||
@@ -477,14 +470,12 @@ export function decide(input: {
     return none(state, 'InsufficientData', 5, 'Buybox observation is stale.');
   }
 
-  const effRate = effectiveCommissionRate(listing.commissionRate, fees);
   const campaignRatio = listing.campaign
     ? Number(listing.campaign.finalPrice.toKurus()) / Number(listing.currentPrice.toKurus())
     : 1;
   const floorResult = floorPrice({
     unitCost: cost.value,
-    vatRate: listing.vatRate,
-    effectiveCommissionRate: effRate,
+    commissionRate: listing.commissionRate,
     campaign: listing.campaign
       ? { ratio: campaignRatio, storeSharePct: listing.campaign.storeSharePct }
       : null,
@@ -493,12 +484,7 @@ export function decide(input: {
 
   // H1
   if (!floorResult.ok) {
-    return none(
-      state,
-      'CostUnknown',
-      5,
-      'No price is profitable at any point (commission plus VAT exceeds revenue).',
-    );
+    return none(state, 'CostUnknown', 5, 'No price is profitable at any point (commission exceeds revenue).');
   }
   const floor = floorResult.value;
   const overrides = listing.overrides;
@@ -551,7 +537,6 @@ export function decide(input: {
     now,
     currentPrice: listing.currentPrice,
     floor,
-    effRate,
     campaignRatio,
     overrides,
     allowIncrease,

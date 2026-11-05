@@ -112,4 +112,40 @@ describe('BrandListingsClient', () => {
 
     expect(await screen.findByText('Bağlı değil (favori)')).toBeTruthy();
   });
+
+  /** doc 17 §8: the estimate, or the name of the input it is missing — never a silent blank. */
+  it('shows the reseller profit estimate, and names the missing input when there is none', async () => {
+    stubFetch({
+      '/api/brand/listings': {
+        body: {
+          listings: [
+            listing({
+              id: 'est',
+              label: 'Tahminli',
+              profit: {
+                commissionRate: 16.5,
+                commission: '82500',
+                cargo: '10000',
+                operation: '5000',
+                fixedSaleFee: '1250',
+                cost: '300000',
+                profit: '101250',
+                profitPct: 20.25,
+                breakEvenPrice: '325361',
+              },
+              profitMissing: null,
+            }),
+            listing({ id: 'miss', label: 'Tarifesiz', profit: null, profitMissing: 'noTariff' }),
+          ],
+          total: 2,
+        },
+      },
+    });
+
+    render(<BrandListingsClient />);
+
+    expect(await screen.findByText('%16,5')).toBeTruthy();
+    expect(screen.getByText('%20,3')).toBeTruthy();
+    expect(screen.getByText('tarife yok')).toBeTruthy();
+  });
 });

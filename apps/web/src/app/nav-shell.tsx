@@ -9,6 +9,7 @@ import {
   BarChart3,
   Bell,
   Bookmark,
+  Calculator,
   Cog,
   Eye,
   GitCompare,
@@ -128,6 +129,7 @@ const NAV_GROUPS: {
     items: [
       { href: '/brand/products', label: 'Stok', icon: Package },
       { href: '/brand/listings', label: 'İlanlar', icon: Tags },
+      { href: '/brand/profit', label: 'Kâr Ayarları', icon: Calculator },
       { href: '/watched-brands', label: 'İzlenen Markalar', icon: Eye },
       { href: '/tracked-products', label: 'Takip Edilen Ürünler', icon: ScanSearch },
       { href: '/watched-brands/sellers', label: 'Marka Satıcıları', icon: Store },

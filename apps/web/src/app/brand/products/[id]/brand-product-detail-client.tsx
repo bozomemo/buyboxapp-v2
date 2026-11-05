@@ -31,6 +31,7 @@ import {
   StatusBanner,
   TextInput,
 } from '@/components/ui';
+import { formatDesi } from '@/lib/desi';
 import { formatMoney, formatNumber } from '@/lib/format';
 
 interface Product {
@@ -42,6 +43,8 @@ interface Product {
   upperBound: string;
   upperBoundIsReferencePrice: boolean;
   barcode: string | null;
+  unitPrice: string | null;
+  desi: number | null;
   source: string;
   referencePriceSource: string | null;
   updatedAt: number;
@@ -210,6 +213,17 @@ export function BrandProductDetailClient({ id }: { id: string }) {
           delta={product.upperBoundIsReferencePrice ? 'Max girilmemiş, PSF geçerli' : undefined}
         />
         <StatCard label="Bağlı kart" value={formatNumber(cards.length)} />
+        {/* doc 17 §8: what the reseller pays and the parcel size — the profit estimate's inputs. */}
+        <StatCard
+          label="Birim fiyat (satıcıya)"
+          value={product.unitPrice === null ? '—' : formatMoney(BigInt(product.unitPrice))}
+          delta={product.unitPrice === null ? 'Girilmemiş — kâr tahmini yapılamaz' : undefined}
+        />
+        <StatCard
+          label="Desi"
+          value={product.desi === null ? '—' : formatDesi(product.desi)}
+          delta={product.desi === null ? 'Girilmemiş — kâr tahmini yapılamaz' : undefined}
+        />
       </div>
 
       {notice && <StatusBanner ok={notice.ok} message={notice.message} />}

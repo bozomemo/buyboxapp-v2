@@ -23,8 +23,8 @@
  * ≤10-SKU limit are confirmed, but the OpenAPI declares its 200 response with **no schema**
  * (§2.5), so there is nothing to normalise against except a prose field list. Record one real
  * SIT response as a fixture first, exactly as §2.11 was done. The same applies to the
- * commission service (§2.7), which is also where the pre-sale product VAT rate may live —
- * confirmed absent from the listing schema, and a wrong VAT rate produces a wrong floor price.
+ * commission service (§2.7). (It may also carry the pre-sale product VAT rate, absent from the
+ * listing schema — no longer needed for pricing, which uses no VAT since 2026-11-03, doc 02 §0.)
  *
  * Not enforced here, by design: the ≤5 simultaneous pending/processing uploads limit (§2.3).
  * The adapter cannot see how many batches the rest of the system has in flight; that budget

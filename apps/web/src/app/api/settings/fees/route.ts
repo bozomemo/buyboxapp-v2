@@ -45,19 +45,9 @@ async function getHandler(request: Request) {
   return NextResponse.json({
     current: current
       ? {
-          commissionVatRate: String(current.commissionVatRate),
-          commissionRateIncludesVat: current.commissionRateIncludesVat,
-          commissionVatDeductible: current.commissionVatDeductible,
-          commissionBase: current.commissionBase,
           defaultCommissionRate: String(current.defaultCommissionRate),
           cargoBands: toBandsPayload(current.cargoBands, 'maxPrice'),
-          cargoAmountsIncludeVat: current.cargoAmountsIncludeVat,
-          cargoVatRate: String(current.cargoVatRate),
-          cargoVatDeductible: current.cargoVatDeductible,
           expenditureBands: toBandsPayload(current.expenditureBands, 'minPrice'),
-          expenditureIncludesVat: current.expenditureIncludesVat,
-          expenditureVatRate: String(current.expenditureVatRate),
-          expenditureVatDeductible: current.expenditureVatDeductible,
         }
       : null,
     history: history.map((h) => ({

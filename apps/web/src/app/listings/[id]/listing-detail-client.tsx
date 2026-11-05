@@ -50,7 +50,6 @@ interface Detail {
     unitCost: string;
     cargo: string;
     commission: string;
-    vatRate: number;
     floorPrice: string;
   } | null;
   competition: {
@@ -335,7 +334,7 @@ export function ListingDetailClient({ id }: { id: string }) {
         {waterfall && (
           <div className="mt-4">
             <div className="text-xs text-(--color-muted)">
-              Fiyat Şelalesi (Birim Maliyet → Kargo/Gider → Komisyon → KDV → Dip Fiyat)
+              Fiyat Şelalesi (Birim Maliyet → Kargo/Gider → Komisyon → Dip Fiyat)
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
               <span className="rounded bg-(--color-chip-bg) px-2 py-1">
@@ -349,8 +348,6 @@ export function ListingDetailClient({ id }: { id: string }) {
               <span className="rounded bg-(--color-chip-bg) px-2 py-1">
                 +Komisyon {formatMoney(BigInt(waterfall.commission))}
               </span>
-              <span>→</span>
-              <span className="rounded bg-(--color-chip-bg) px-2 py-1">KDV %{waterfall.vatRate}</span>
               <span>=</span>
               <span className="rounded bg-(--color-accent) px-2 py-1 text-(--color-accent-ink)">
                 Dip Fiyat {formatMoney(BigInt(waterfall.floorPrice))}

@@ -1116,6 +1116,8 @@ export const brandProducts = mysqlTable(
     barcode: code('barcode', 32),
     source: code('source', 20).notNull(),
     referencePriceSource: text('reference_price_source'),
+    unitPrice: money('unit_price'),
+    desi: real('desi'),
     createdAt: timestampMs('created_at').notNull(),
     updatedAt: timestampMs('updated_at').notNull(),
   },
@@ -1148,6 +1150,32 @@ export const brandProductCards = mysqlTable(
       name: 'fk_brand_product_cards_tracked_product_id',
       columns: [t.trackedProductId],
       foreignColumns: [trackedProducts.id],
+    }).onDelete('cascade'),
+  ],
+);
+
+/** See the doc comment on `commissionTariffs` in `schema/sqlite.ts`. */
+export const commissionTariffs = mysqlTable(
+  'commission_tariffs',
+  {
+    id: code('id', 36).primaryKey(),
+    marketplaceCode: code('marketplace_code', 20).notNull(),
+    productKey: code('product_key', 64).notNull(),
+    barcode: code('barcode', 64),
+    sellerStockCode: code('seller_stock_code', 128),
+    validFrom: timestampMs('valid_from').notNull(),
+    validUntil: timestampMs('valid_until').notNull(),
+    tiersJson: json('tiers_json').notNull(),
+    sourceFile: text('source_file').notNull(),
+    importedAt: timestampMs('imported_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('commission_tariffs_product_period').on(t.marketplaceCode, t.productKey, t.validFrom),
+    index('commission_tariffs_valid_until').on(t.validUntil),
+    foreignKey({
+      name: 'fk_commission_tariffs_marketplace_code',
+      columns: [t.marketplaceCode],
+      foreignColumns: [marketplaces.code],
     }).onDelete('cascade'),
   ],
 );

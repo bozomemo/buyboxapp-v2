@@ -7,7 +7,6 @@
 import { NextResponse } from 'next/server';
 import {
   FractionOps,
-  effectiveCommissionRate,
   floorPrice,
   normalisedCargo,
   normalisedExpenditure,
@@ -50,40 +49,30 @@ async function getHandler(_request: Request, { params }: { params: Promise<{ id:
       repricingRepo.listPriceSubmissionsForListing(appDb, id),
     ]);
 
-  // Cost waterfall (doc 06 §5 "Now" panel): unit cost → cargo → commission → VAT → floor,
-  // each step evaluated at the floor price itself (the bands and commission base are all
-  // price-dependent), so what's shown is the exact decomposition that produced that floor —
+  // Cost waterfall (doc 06 §5 "Now" panel): unit cost → cargo → commission → floor, each step
+  // evaluated at the floor price itself (the bands are price-dependent), so what's shown is the exact decomposition that produced that floor —
   // not an approximation from the current selling price.
   let waterfall: {
     unitCost: string;
     cargo: string;
     commission: string;
-    vatRate: number;
     floorPrice: string;
   } | null = null;
   if (stockItem && feeRow) {
     const fees = mapFeeSettings(feeRow);
-    const vatRate = listing.vatRate ?? 20;
-    const commissionRate = effectiveCommissionRate(
-      listing.commissionRate ?? feeRow.defaultCommissionRate,
-      fees,
-    );
+    const commissionRate = listing.commissionRate ?? feeRow.defaultCommissionRate;
     const result = floorPrice({
       unitCost: Money.fromKurus(stockItem.unitCost),
-      vatRate,
-      effectiveCommissionRate: commissionRate,
+      commissionRate,
       campaign: null,
       fees,
     });
     if (result.ok) {
       const floor = result.value;
-      // Mirrors `netProceeds`'s own commission-base logic (doc 02 §5.1) exactly, via the same
-      // `Fraction` arithmetic, rounding to `Money` only at the end (doc 02 §1) — so this
-      // waterfall can never disagree with the floor price it is decomposing.
-      const floorF = FractionOps.fromMoney(floor);
-      const vatFactor = FractionOps.add(FractionOps.one, FractionOps.fromPercent(vatRate));
-      const commissionBaseF = fees.commissionBase === 'gross' ? floorF : FractionOps.div(floorF, vatFactor);
-      const commissionF = FractionOps.mul(commissionBaseF, FractionOps.fromPercent(commissionRate));
+      // Mirrors `netProceeds`'s commission (doc 02 §5.1) exactly, via the same `Fraction`
+      // arithmetic, rounding to `Money` only at the end (doc 02 §1) — so this waterfall can
+      // never disagree with the floor price it is decomposing.
+      const commissionF = FractionOps.mul(FractionOps.fromMoney(floor), FractionOps.fromPercent(commissionRate));
       const cargo = FractionOps.toMoneyRoundHalfUp(normalisedCargo(floor, fees));
       const expenditure = FractionOps.toMoneyRoundHalfUp(normalisedExpenditure(floor, fees));
       const commission = FractionOps.toMoneyRoundHalfUp(commissionF);
@@ -91,7 +80,6 @@ async function getHandler(_request: Request, { params }: { params: Promise<{ id:
         unitCost: stockItem.unitCost.toString(),
         cargo: (cargo.toKurus() + expenditure.toKurus()).toString(),
         commission: commission.toKurus().toString(),
-        vatRate,
         floorPrice: floor.toKurus().toString(),
       };
     }
@@ -184,7 +172,6 @@ async function getHandler(_request: Request, { params }: { params: Promise<{ id:
           optimumCtx: {
             unitCost: repricingState.optimumCtxUnitCost?.toString() ?? null,
             commissionRate: repricingState.optimumCtxCommissionRate,
-            vatRate: repricingState.optimumCtxVatRate,
             campaignRatio: repricingState.optimumCtxCampaignRatio,
             secondPrice: repricingState.optimumCtxSecondPrice?.toString() ?? null,
             secondSellerRef: repricingState.optimumCtxSecondSellerRef,

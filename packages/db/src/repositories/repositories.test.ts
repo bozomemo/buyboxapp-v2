@@ -103,42 +103,22 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
       id: newId(),
       marketplaceCode,
       effectiveFrom: NOW - 10_000,
-      commissionVatRate: 20,
-      commissionRateIncludesVat: false,
-      commissionVatDeductible: false,
-      commissionBase: 'gross',
       defaultCommissionRate: 16,
       cargoBands: '[]',
-      cargoAmountsIncludeVat: true,
-      cargoVatRate: 20,
-      cargoVatDeductible: false,
       expenditureBands: '[]',
-      expenditureIncludesVat: true,
-      expenditureVatRate: 20,
-      expenditureVatDeductible: false,
     });
     const laterId = newId();
     await configRepo.insertFeeSettings(appDb, {
       id: laterId,
       marketplaceCode,
       effectiveFrom: NOW - 1_000,
-      commissionVatRate: 20,
-      commissionRateIncludesVat: false,
-      commissionVatDeductible: false,
-      commissionBase: 'net',
       defaultCommissionRate: 18,
       cargoBands: '[]',
-      cargoAmountsIncludeVat: true,
-      cargoVatRate: 20,
-      cargoVatDeductible: false,
       expenditureBands: '[]',
-      expenditureIncludesVat: true,
-      expenditureVatRate: 20,
-      expenditureVatDeductible: false,
     });
     const effective = await configRepo.getEffectiveFeeSettings(appDb, marketplaceCode, NOW);
     expect(effective?.id).toBe(laterId);
-    expect(effective?.commissionBase).toBe('net');
+    expect(effective?.defaultCommissionRate).toBe(18);
 
     await configRepo.upsertRepricingPolicy(appDb, {
       marketplaceCode,

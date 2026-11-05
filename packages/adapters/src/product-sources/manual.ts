@@ -11,7 +11,7 @@ import type { IProductSource, StockItemInput } from '../ports/product-source.js'
 export const ManualEntrySchema = z.object({
   baseStockCode: z.string().min(1),
   name: z.string().min(1),
-  /** VAT-exclusive unit cost, entered as a decimal major-unit string, e.g. "42.50". */
+  /** VAT-inclusive unit cost (doc 02 §0), entered as a decimal major-unit string, e.g. "42.50". */
   unitCostMajor: z.string().min(1),
   unitStock: z.number().int().min(0),
 });

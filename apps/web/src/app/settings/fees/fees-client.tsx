@@ -21,36 +21,17 @@ interface Band {
   amount: string;
 }
 
+/** No VAT fields: no price calculation applies VAT (doc 02 §0, 2026-11-03). */
 interface Form {
-  commissionVatRate: string;
-  commissionRateIncludesVat: boolean;
-  commissionVatDeductible: boolean;
-  commissionBase: 'gross' | 'net';
   defaultCommissionRate: string;
   cargoBands: Band[];
-  cargoAmountsIncludeVat: boolean;
-  cargoVatRate: string;
-  cargoVatDeductible: boolean;
   expenditureBands: Band[];
-  expenditureIncludesVat: boolean;
-  expenditureVatRate: string;
-  expenditureVatDeductible: boolean;
 }
 
 const EMPTY: Form = {
-  commissionVatRate: '20',
-  commissionRateIncludesVat: false,
-  commissionVatDeductible: false,
-  commissionBase: 'gross',
   defaultCommissionRate: '15',
   cargoBands: [{ edge: '', amount: '11.00' }],
-  cargoAmountsIncludeVat: true,
-  cargoVatRate: '20',
-  cargoVatDeductible: false,
   expenditureBands: [{ edge: '0', amount: '0' }],
-  expenditureIncludesVat: true,
-  expenditureVatRate: '20',
-  expenditureVatDeductible: false,
 };
 
 const MARKETPLACE_OPTIONS = [
@@ -61,19 +42,9 @@ const MARKETPLACE_OPTIONS = [
 function toPayload(marketplaceCode: string, form: Form) {
   return {
     marketplaceCode,
-    commissionVatRate: Number(form.commissionVatRate),
-    commissionRateIncludesVat: form.commissionRateIncludesVat,
-    commissionVatDeductible: form.commissionVatDeductible,
-    commissionBase: form.commissionBase,
     defaultCommissionRate: Number(form.defaultCommissionRate),
     cargoBands: form.cargoBands.map((b) => ({ maxPrice: b.edge || null, amount: b.amount })),
-    cargoAmountsIncludeVat: form.cargoAmountsIncludeVat,
-    cargoVatRate: Number(form.cargoVatRate),
-    cargoVatDeductible: form.cargoVatDeductible,
     expenditureBands: form.expenditureBands.map((b) => ({ minPrice: b.edge || '0', amount: b.amount })),
-    expenditureIncludesVat: form.expenditureIncludesVat,
-    expenditureVatRate: Number(form.expenditureVatRate),
-    expenditureVatDeductible: form.expenditureVatDeductible,
   };
 }
 
@@ -191,12 +162,11 @@ export function FeesClient() {
         body: JSON.stringify({
           fees: toPayload(marketplaceCode, form),
           sampleCost: '100.00',
-          sampleVatRate: 20,
         }),
       });
       const data = (await res.json()) as { ok: boolean; floorPrice?: string; error?: string };
       if (data.ok) {
-        setPreview(`100,00 ₺ maliyetli, %20 KDV'li bir ürün için dip fiyat: ${data.floorPrice}`);
+        setPreview(`100,00 ₺ maliyetli bir ürün için dip fiyat: ${data.floorPrice}`);
       } else {
         setPreviewFailed(true);
         setPreview(data.error ?? 'Hesaplanamadı.');
@@ -291,12 +261,6 @@ export function FeesClient() {
                 Komisyon
               </h3>
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Komisyon KDV Oranı (%)">
-                  <TextInput
-                    value={form.commissionVatRate}
-                    onChange={(e) => update({ commissionVatRate: e.target.value })}
-                  />
-                </Field>
                 <Field label="Varsayılan Komisyon Oranı (%)">
                   <TextInput
                     value={form.defaultCommissionRate}
@@ -304,24 +268,10 @@ export function FeesClient() {
                   />
                 </Field>
               </div>
-              <div className="mt-3 flex flex-wrap gap-4 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.commissionRateIncludesVat}
-                    onChange={(e) => update({ commissionRateIncludesVat: e.target.checked })}
-                  />
-                  API oranı KDV dahil
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.commissionVatDeductible}
-                    onChange={(e) => update({ commissionVatDeductible: e.target.checked })}
-                  />
-                  Komisyon KDV&apos;si indirilebilir
-                </label>
-              </div>
+              <p className="mt-2 text-xs text-(--color-muted)">
+                Fiyat hesaplarında KDV kullanılmaz: maliyet, komisyon, kargo ve gider tutarları girildiği
+                gibi, satış fiyatıyla aynı (KDV dahil) temelde alınır.
+              </p>
             </div>
 
             <div>

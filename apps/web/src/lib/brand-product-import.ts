@@ -11,8 +11,9 @@
  * are a **thousands group** rather than a fraction. No amount is ever a float.
  */
 import { parseProductLinkForMarketplace } from '@buybox/adapters';
-import type { AmountCell, ImportMarketplace, ImportRowInput, LinkCell } from '@buybox/core';
+import type { AmountCell, DesiCell, ImportMarketplace, ImportRowInput, LinkCell } from '@buybox/core';
 import { foldHeader, parseCsvTable } from './csv-parse';
+import { parseDesi } from './desi';
 import { parseTurkishDecimal } from './reference-price-import';
 
 /** Accepted header names per column, folded by `foldHeader` (doc 17 §3.1). */
@@ -24,6 +25,9 @@ const HEADERS = {
   trendyolLink: ['trendyol linki', 'trendyol link', 'trendyol url', 'trendyol'],
   hepsiburadaLink: ['hepsiburada linki', 'hepsiburada link', 'hepsiburada url', 'hepsiburada', 'hb linki'],
   barcode: ['barkod', 'barcode', 'ean', 'gtin'],
+  // doc 17 §8 — optional; a file without them leaves the stored values alone.
+  unitPrice: ['birim fiyat', 'birim fiyati', 'satici fiyati', 'bayi fiyati', 'unit price'],
+  desi: ['desi'],
 } as const;
 
 export type ImportColumn = keyof typeof HEADERS;
@@ -37,6 +41,8 @@ export const TEMPLATE_HEADERS = [
   'Trendyol Linki',
   'Hepsiburada Linki',
   'Barkod',
+  'Birim Fiyat',
+  'Desi',
 ] as const;
 
 export interface BrandImportFile {
@@ -61,6 +67,12 @@ function amountCell(text: string): AmountCell {
   if (trimmed === '') return { kind: 'empty' };
   const parsed = parseTurkishDecimal(trimmed);
   return parsed === null ? { kind: 'invalid', text: trimmed } : { kind: 'amount', value: parsed };
+}
+
+function desiCell(text: string): DesiCell {
+  const parsed = parseDesi(text);
+  if (parsed === null) return { kind: 'empty' };
+  return parsed === 'invalid' ? { kind: 'invalid', text: text.trim() } : { kind: 'desi', value: parsed };
 }
 
 function linkCell(text: string, marketplace: ImportMarketplace): LinkCell {
@@ -122,6 +134,8 @@ export async function parseBrandImportFile(file: BrandImportFile): Promise<Brand
     trendyolLink: columnOf('trendyolLink'),
     hepsiburadaLink: columnOf('hepsiburadaLink'),
     barcode: columnOf('barcode'),
+    unitPrice: columnOf('unitPrice'),
+    desi: columnOf('desi'),
   };
 
   if (columns.name === -1 || columns.referencePrice === -1) {
@@ -155,6 +169,9 @@ export async function parseBrandImportFile(file: BrandImportFile): Promise<Brand
     trendyolLink: linkCell(at(row.fields, columns.trendyolLink), 'trendyol'),
     hepsiburadaLink: linkCell(at(row.fields, columns.hepsiburadaLink), 'hepsiburada'),
     barcode: at(row.fields, columns.barcode).trim(),
+    // Absent column → `undefined` → the stored value is kept (see `ImportRowInput.unitPrice`).
+    ...(columns.unitPrice === -1 ? {} : { unitPrice: amountCell(at(row.fields, columns.unitPrice)) }),
+    ...(columns.desi === -1 ? {} : { desi: desiCell(at(row.fields, columns.desi)) }),
   }));
 
   return { ok: true, rows, headerLine: table.headerLine };

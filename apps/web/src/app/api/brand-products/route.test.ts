@@ -296,6 +296,8 @@ describe('barcode on a manually entered product (2026-09-25)', () => {
       maxPrice: null,
       barcode: '8.69E+12',
       referencePriceSource: null,
+      unitPrice: null,
+      desi: null,
       source: 'excel',
       createdAt: 0,
       updatedAt: 0,

@@ -1,7 +1,7 @@
 import { Duration, Money, err, ok, type Result } from '@buybox/shared';
 import { describe, expect, it } from 'vitest';
 import type { CostError } from '../errors.js';
-import { effectiveCommissionRate, type FeeSettings } from '../fee-model.js';
+import type { FeeSettings } from '../fee-model.js';
 import { floorPrice, priceForNetProceeds } from '../price-calculator.js';
 import { decide } from './engine.js';
 import type { RepricingPolicy } from './policy.js';
@@ -14,40 +14,23 @@ import type {
 } from './types.js';
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
-const VAT_RATE = 10;
 const C0 = 16;
-const C_EFF = effectiveCommissionRate(C0, {
-  commissionVatRate: 20,
-  commissionRateIncludesVat: false,
-  commissionVatDeductible: false,
-});
 
 // Zero cargo/expenditure so `floor` is a clean function of unit cost alone — the gates and
 // phase machine are what these tests exercise, not the price model (covered separately in
 // price-calculator.test.ts).
 const FEES: FeeSettings = {
   effectiveFrom: new Date(0),
-  commissionVatRate: 20,
-  commissionRateIncludesVat: false,
-  commissionVatDeductible: false,
-  commissionBase: 'gross',
   defaultCommissionRate: C0,
   cargoBands: [{ maxPrice: null, amount: Money.zero }],
-  cargoAmountsIncludeVat: true,
-  cargoVatRate: 20,
-  cargoVatDeductible: false,
   expenditureBands: [],
-  expenditureIncludesVat: true,
-  expenditureVatRate: 20,
-  expenditureVatDeductible: false,
 };
 
 const UNIT_COST = Money.fromKurus(2000n);
 const FLOOR = (() => {
   const result = floorPrice({
     unitCost: UNIT_COST,
-    vatRate: VAT_RATE,
-    effectiveCommissionRate: C_EFF,
+    commissionRate: C0,
     campaign: null,
     fees: FEES,
   });
@@ -95,7 +78,6 @@ function listing(overrides: Partial<ListingSnapshot> = {}): ListingSnapshot {
     currentPrice: FLOOR.add(Money.fromKurus(1000n)),
     physicalStock: 100,
     commissionRate: C0,
-    vatRate: VAT_RATE,
     locked: false,
     suspended: false,
     salable: true,
@@ -258,7 +240,6 @@ describe('doc 03 §11 scenarios', () => {
       optimumContext: {
         unitCost: UNIT_COST,
         commissionRate: C0,
-        vatRate: VAT_RATE,
         campaignRatio: 1,
         secondPrice: obs.secondPrice,
         secondSellerId: obs.secondSellerId,
@@ -282,7 +263,6 @@ describe('doc 03 §11 scenarios', () => {
       optimumContext: {
         unitCost: UNIT_COST,
         commissionRate: C0,
-        vatRate: VAT_RATE,
         campaignRatio: 1,
         secondPrice: Money.fromKurus(500n),
         secondSellerId: null,
@@ -309,7 +289,6 @@ describe('doc 03 §11 scenarios', () => {
       optimumContext: {
         unitCost: UNIT_COST,
         commissionRate: C0,
-        vatRate: VAT_RATE,
         campaignRatio: 1,
         secondPrice: null,
         secondSellerId: null,
@@ -336,7 +315,6 @@ describe('doc 03 §11 scenarios', () => {
       optimumContext: {
         unitCost: UNIT_COST,
         commissionRate: C0,
-        vatRate: VAT_RATE,
         campaignRatio: 1,
         secondPrice: null,
         secondSellerId: null,
@@ -442,8 +420,7 @@ describe('doc 03 §11 scenarios', () => {
 
   it('T-18: sole seller -> price pinned to cost x (1 + soleSellerMarginPct%)', () => {
     const expected = priceForNetProceeds(Money.fromKurus((UNIT_COST.toKurus() * 120n) / 100n), {
-      vatRate: VAT_RATE,
-      effectiveCommissionRate: C_EFF,
+      commissionRate: C0,
       campaign: null,
       fees: FEES,
     });
@@ -506,7 +483,6 @@ describe('doc 03 §11 scenarios', () => {
       optimumContext: {
         unitCost: UNIT_COST,
         commissionRate: C0,
-        vatRate: VAT_RATE,
         campaignRatio: 1,
         secondPrice: Money.fromKurus(500n),
         secondSellerId: 'seller-old',
