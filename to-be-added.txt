@@ -56,17 +56,10 @@ Hâlâ açık:
   no-irregular-whitespace hatası veriyor (bu çalışmadan önce de vardı)
 
 
-Pazaryeri satıcı özelliklerini göz ardına alıcaz.
 
-İlanlar olmayacak Onun yerine takip edilenlerin favorileri olacak.
+ürün komisyonları çekilebiliyor mu araştıralacak. 
+Ürünlerin desilerinin ve kargonun desi bazlı fiyatlarının girilebildiği bir alan yapılacak. 
+Ürünün satılabilir fiyatını hesaplama mantığı => ((birimfiyat+kargo)*komisyon oranı)+12.5(sabit ama ayardan degisebilir)+tahmini_operasyon_maliyeti(ürünün kargosunda desi bazlı sabit olucak. Yine ayardan gelicek.) (ürünü distribütor olarak sattıgımız satıcının karlılıgını hesaplamak icin)
+Ana ekrana komisyon eklememiz lazım. 
 
-Takip edilen ürünlere excelle ekleme, Başlıklar : ürün linki, PSF, Max fiyatı
-
-Takip edilen ürünlerde aynı ürünü satan kartları görebilmeliyiz. 
-  Takip edilen ürünlere marka temsilcisi ürün tanımlayacak ve pazaryerinde 
-  bu ürünlerin hangi kartlarda satıldıgını girecek.
-
-Takip edilen ürünlerde buyboxta satan birisi bizim belirlediğimiz min fiyat max fiyat
- aralığının dışında satıyorsa bize alarm olarak vermeli. 
- Ekrandaki ilanlar ekranında da görünmeli. 
 
