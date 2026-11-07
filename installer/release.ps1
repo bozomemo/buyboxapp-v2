@@ -70,14 +70,18 @@ function Assert-Exit {
 # Runs a native command. Under ErrorActionPreference=Stop, Windows PowerShell 5.1 turns a native
 # program's stderr into a terminating NativeCommandError when output is captured -- git and npm
 # both write progress to stderr -- so success is judged by the exit code alone, via Assert-Exit.
+#
+# The scriptblock runs in a child of this function's scope, so it sees this function's locals in
+# place of the caller's variables of the same name. A local called $previous made the publish step
+# pass 'Stop' as sign-manifest's --previous (measured 2026-11-07), hence the unlikely name.
 function Exec {
   param([Parameter(Mandatory)] [scriptblock] $Command)
-  $previous = $ErrorActionPreference
+  $__execSavedErrorPreference = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
     & $Command 2>&1 | ForEach-Object { "$_" }
   } finally {
-    $ErrorActionPreference = $previous
+    $ErrorActionPreference = $__execSavedErrorPreference
   }
 }
 
