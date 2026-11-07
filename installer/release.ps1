@@ -258,17 +258,25 @@ try {
     # needs its container, started here and stopped afterwards, so the build does not depend on
     # someone having remembered to. MySQL is left out of release builds (owner, 2026-11-05): it
     # made the suite take hours and no install runs on it. CI still covers all three dialects.
+    # POSTGRES_ADMIN_URL set: the suite uses that server instead (a machine without Docker that
+    # already runs PostgreSQL, owner 2026-11-07). Each test file creates and drops its own
+    # buybox_test_* database there; nothing else on that server is touched.
     Invoke-Step 'test' {
+      $useContainer = [string]::IsNullOrEmpty($env:POSTGRES_ADMIN_URL)
       $compose = Join-Path $src 'packages\db\docker-compose.test.yml'
-      Exec { docker compose -f $compose up -d --wait postgres }
-      Assert-Exit 'Starting the PostgreSQL test container (is Docker Desktop running?)'
+      if ($useContainer) {
+        Exec { docker compose -f $compose up -d --wait postgres }
+        Assert-Exit 'Starting the PostgreSQL test container (is Docker Desktop running?)'
+      } else {
+        Write-Host 'PostgreSQL tests: using POSTGRES_ADMIN_URL, no container.'
+      }
       $env:BUYBOX_TEST_DIALECTS = 'sqlite,postgres'
       try {
         Exec { npm test }
         Assert-Exit 'tests'
       } finally {
         Remove-Item Env:\BUYBOX_TEST_DIALECTS -ErrorAction SilentlyContinue
-        Exec { docker compose -f $compose down } | Out-Null
+        if ($useContainer) { Exec { docker compose -f $compose down } | Out-Null }
       }
     }
   }

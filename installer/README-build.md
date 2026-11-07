@@ -15,7 +15,8 @@ machine, under the same Node major version.
 | Need | How |
 |---|---|
 | Node (any) | Only to run `npm`/`git` tooling yourself. The release build does **not** use the Node on your `PATH`: `release.ps1` downloads the pinned Node 22 LTS portable zip (`$pinnedNodeVersion`, hash-checked) into `<root>\cache\node-runtime` and puts it first on `PATH` for its own process only — nothing is installed. To move to a newer 22.x, change `$pinnedNodeVersion` and `$pinnedNodeZipSha256` from `https://nodejs.org/dist/<ver>/SHASUMS256.txt`. |
-| Docker Desktop | For the PostgreSQL test container. Release builds run the DB suite on SQLite + PostgreSQL only; MySQL is skipped (`BUYBOX_TEST_DIALECTS`, owner decision 2026-11-05) and stays covered by CI. |
+| Docker Desktop | For the PostgreSQL test container. Release builds run the DB suite on SQLite + PostgreSQL only; MySQL is skipped (`BUYBOX_TEST_DIALECTS`, owner decision 2026-11-05) and stays covered by CI. Not needed when `POSTGRES_ADMIN_URL` points at a PostgreSQL server you already run (see below). |
+| Playwright Chromium (per user) | The test step's `playwright-fetch` tests launch Chromium from `%LOCALAPPDATA%\ms-playwright`, which a fresh machine does not have (measured 2026-11-07: 5 failures, `Executable doesn't exist`). Once per machine, after the first build has run `npm ci`: in `C:\BuyBoxBuild\src`, with `C:\BuyBoxBuild\cache\node-runtime\node-v<ver>-win-x64` first on `PATH`, run `npx playwright install chromium`. Repeat when `playwright-core` changes. |
 | Inno Setup 6 | `winget install JRSoftware.InnoSetup`. Winget installs it per-user under `%LOCALAPPDATA%\Programs`; the build script finds it there, in Program Files, or via the uninstall registry, so you do not have to place it anywhere particular. |
 | WinSW | Download `WinSW-x64.exe` from `https://github.com/winsw/winsw/releases`, verify its SHA-256 against the release page, and save it as `installer\vendor\WinSW.exe`. |
 
@@ -64,7 +65,10 @@ derived from its inputs; a hit reuses it untouched and the log says `cache hit`:
 **Every step is timed** and the log ends with a table. Look there before guessing where time goes.
 
 **Prerequisites beyond the one-time setup above:** Docker Desktop running (the test step starts and
-stops `packages/db/docker-compose.test.yml`), and for publishing, `gh auth login` and the release
+stops `packages/db/docker-compose.test.yml`) — or, without Docker, `POSTGRES_ADMIN_URL` set to a
+superuser URL of an existing PostgreSQL server (e.g. `postgres://postgres:<pw>@localhost:5432/postgres`);
+the test step then skips the container, and each test file creates and drops its own
+`buybox_test_*` database there — and for publishing, `gh auth login` and the release
 signing key at `%USERPROFILE%\.buybox\release-signing-key.pem` (`node scripts/generate-release-keypair.mjs`,
 once; **back it up offline** — installs only trust the keys compiled into them).
 

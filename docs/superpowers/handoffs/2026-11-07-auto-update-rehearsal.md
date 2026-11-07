@@ -17,7 +17,7 @@ Build prosedürü: `installer/README-build.md` · Kabul kontrolleri: `docs/14-de
 | Release build | Çalışıyor, ~11–12 dk (eskiden saatler) |
 | Gerçek releases reposu `bozomemo/buybox-releases` | Açıldı (public), **henüz hiç release yok** |
 | Test reposu `bozomemo/buybox-releases-test` | Açıldı (public, "TEST ONLY"); v0.2.1 ve bozuk v0.2.2 yayında |
-| Prova (boştaki kişisel PC) | U-1 ✅, U-2 ✅ (DB geri yükleme teyidi bekliyor), U-3…U-7 açık |
+| Prova (boştaki kişisel PC) | U-1 ✅, U-2 ✅, U-7 ✅, U-3…U-6 açık |
 | Prod (takipsistemi.arosiapet.com) | Dokunulmadı. 0.2.0 bir kez elle kurulmalı (installer prod'u silerek kurar — önce yedek) |
 
 ## 2. Product owner kararları (2026-11-05)
@@ -69,12 +69,12 @@ UPDATE_CHECK_INTERVAL=15m
 | # | Sonuç |
 |---|---|
 | U-1 | ✅ 0.2.0 → 0.2.1 başarılı ("Başarılı 0.2.0 → 0.2.1") |
-| U-2 | ✅ Bozuk 0.2.2 (no-op migration 0026 + yalnız gerçek kurulumda `degraded` health) kuruldu → 180 sn'de sağlıklı olmadı → **0.2.1'e geri dönüldü**, geçmişte "Geri dönüldü". 0.2.2'nin son health'inde `applied: 27` (migration çalıştı). Güncelleme boyunca `updateHold: true`, worker `update-hold` (fiyatlama durdu). Geri dönülen 0.2.2 tekrar önerilmiyor ("Güncel"). **Açık teyit:** prova PC'de `/api/health` → `database.schema.applied` **26** olmalı (DB'nin geri yüklendiğinin kanıtı) |
+| U-2 | ✅ Bozuk 0.2.2 (no-op migration 0026 + yalnız gerçek kurulumda `degraded` health) kuruldu → 180 sn'de sağlıklı olmadı → **0.2.1'e geri dönüldü**, geçmişte "Geri dönüldü". 0.2.2'nin son health'inde `applied: 27` (migration çalıştı). Güncelleme boyunca `updateHold: true`, worker `update-hold` (fiyatlama durdu). Geri dönülen 0.2.2 tekrar önerilmiyor ("Güncel"). **Teyit edildi 2026-11-07:** `/api/health` → `version: 0.2.1`, `schema.applied: 26`/`expected: 26`, `drift: up-to-date`, `updateHold: false` — DB geri yüklendi |
 | U-3 | Açık — `pg_dump.exe`'yi geçici olarak yeniden adlandır, sağlam bir 0.2.3 kur → "İptal edildi", eski sürüm çalışır, fiyatlama tutulmaz |
 | U-4 | Açık — indirilen zip'te bir bayt değiştir, Kur → yeniden doğrulamada reddedilmeli |
 | U-5 | Açık — güncelleme öncesi/sonrası `.env.local` karşılaştır (`PUBLIC_ORIGIN`/`TRUST_PROXY` korunmalı) |
 | U-6 | Açık — ağ yokken yalnız son kontrol sonucu görünmeli |
-| U-7 | Teyit edilmedi — prova PC'nin `C:\ProgramData\BuyBox\updates\` içeriğine bakıp 0.2.1'de yalnız app zip'inin indiğini doğrula |
+| U-7 | ✅ 2026-11-07: yalnız `app` değiştiren 0.2.2 için `updates\0.2.2\` içinde sadece `app.zip` (33.182.172 bayt) + `update.json`/`.sig` var; node/chromium/runtime/monitoring indirilmedi. (Başarılı 0.2.1 klasörü kurulumdan sonra temizlenmiş.) |
 
 Test repoda sıradaki sürüm **0.2.3** olmalı (sağlam; U-3 için).
 
@@ -133,7 +133,7 @@ ağacı da reddedilir (`-Ref` verilmediyse).
 
 ## 8. Sıradaki adımlar
 
-1. Prova PC'de `/api/health` → `applied` = 26 teyidi (U-2'yi kapatır) ve `updates\` klasörü (U-7).
+1. ~~Prova PC'de `/api/health` → `applied` = 26 teyidi (U-2'yi kapatır) ve `updates\` klasörü (U-7).~~ Bitti 2026-11-07.
 2. Sağlam 0.2.3'ü test reposuna yayınla → U-3, U-4, U-5, U-6.
 3. §6'daki düzeltmeler; commit + push.
 4. Prova makinesindeki test ayarlarını temizle.
