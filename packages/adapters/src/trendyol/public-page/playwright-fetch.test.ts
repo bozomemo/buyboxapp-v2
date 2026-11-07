@@ -13,7 +13,11 @@ import {
   type PlaywrightSession,
 } from './playwright-fetch.js';
 
-describe('createPlaywrightFetcher', () => {
+// The fetcher launches Chromium lazily, so the first test to fetch (and each test with a fresh
+// fetcher) pays a cold browser launch inside its own time budget. Vitest's 5 s default was
+// measured too tight on 2026-11-07: 5178 ms on a loaded release-build machine, which failed a
+// publish. 30 s still catches a genuine hang.
+describe('createPlaywrightFetcher', { timeout: 30_000 }, () => {
   let server: http.Server;
   let baseUrl: string;
   let fetcher: PlaywrightFetcher;
