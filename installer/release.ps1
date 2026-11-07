@@ -81,6 +81,12 @@ function Exec {
   }
 }
 
+# Windows' own bsdtar, by full path. A bare `tar.exe` resolves to Git's GNU tar when the script is
+# started from Git Bash, and GNU tar reads `C:\...` as host `C` -- measured 2026-11-07: "Cannot
+# connect to C: resolve failed" while zipping app.
+$tarExe = Join-Path $env:SystemRoot 'System32\tar.exe'
+if (-not (Test-Path $tarExe)) { throw "Windows tar.exe not found at $tarExe (Windows 10 1803+ ships it)." }
+
 function Get-Sha256 {
   param([Parameter(Mandatory)] [string] $Path)
   (Get-FileHash $Path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -195,7 +201,7 @@ Invoke-Step 'node runtime' {
       throw "$name.zip hash mismatch: expected $pinnedNodeZipSha256, got $actual"
     }
     if (Test-Path $nodeHome) { Remove-Item $nodeHome -Recurse -Force }
-    Exec { & tar.exe -x -f $zip -C $runtimeRoot }
+    Exec { & $tarExe -x -f $zip -C $runtimeRoot }
     Assert-Exit "Extracting $name.zip"
     Remove-Item $zip -Force
   }
@@ -399,7 +405,7 @@ function Add-Component {
     if (-not $top) { throw "Component $Name staged nothing." }
     if (Test-Path $cached) { Remove-Item $cached -Force }
     # bsdtar, bundled with Windows 10+, writes zip with -a; Compress-Archive is far slower.
-    Exec { & tar.exe -a -c -f $cached -C $dir @top }
+    Exec { & $tarExe -a -c -f $cached -C $dir @top }
     Assert-Exit "Zipping $Name"
     Remove-Item $dir -Recurse -Force
   } else {
@@ -476,7 +482,7 @@ $layout = Join-Path $outDir 'layout'
 Invoke-Step 'layout' {
   New-Item -ItemType Directory -Path $layout -Force | Out-Null
   foreach ($component in $components) {
-    Exec { & tar.exe -x -f (Join-Path $outDir $component.fileName) -C $layout }
+    Exec { & $tarExe -x -f (Join-Path $outDir $component.fileName) -C $layout }
     Assert-Exit "Extracting $($component.name)"
   }
   $installed = [ordered]@{ version = $Version; components = [ordered]@{} }
