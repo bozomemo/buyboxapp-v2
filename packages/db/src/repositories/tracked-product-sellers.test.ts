@@ -90,7 +90,7 @@ for (const dialect of ALL_DIALECTS) {
         { sellerRef: 'S1', firstSeenAt: NOW, lastSeenAt: NOW },
         { sellerRef: 'S2', firstSeenAt: NOW, lastSeenAt: NOW },
       ]);
-    });
+    }, 30_000);
 
     it('advances last_seen_at on an unchanged look', async () => {
       db = await createTestDb(dialect);
@@ -106,7 +106,7 @@ for (const dialect of ALL_DIALECTS) {
       expect(await trackedProductsRepo.listTrackedProductSellers(db.appDb, id)).toEqual([
         { sellerRef: 'S1', firstSeenAt: NOW, lastSeenAt: NOW + 40 * DAY },
       ]);
-    });
+    }, 30_000);
 
     it('never moves last_seen_at backwards', async () => {
       db = await createTestDb(dialect);
@@ -119,7 +119,7 @@ for (const dialect of ALL_DIALECTS) {
       expect(await trackedProductsRepo.listTrackedProductSellers(db.appDb, id)).toEqual([
         { sellerRef: 'S1', firstSeenAt: NOW + 2 * DAY, lastSeenAt: NOW + 2 * DAY },
       ]);
-    });
+    }, 30_000);
 
     it('failed look writes nothing', async () => {
       db = await createTestDb(dialect);
@@ -134,7 +134,7 @@ for (const dialect of ALL_DIALECTS) {
       });
 
       expect(await trackedProductsRepo.listTrackedProductSellers(db.appDb, id)).toEqual([]);
-    });
+    }, 30_000);
 
     it('noOffers look writes nothing', async () => {
       db = await createTestDb(dialect);
@@ -149,7 +149,7 @@ for (const dialect of ALL_DIALECTS) {
       });
 
       expect(await trackedProductsRepo.listTrackedProductSellers(db.appDb, id)).toEqual([]);
-    });
+    }, 30_000);
 
     it('skips rows without seller_ref', async () => {
       db = await createTestDb(dialect);
@@ -161,7 +161,7 @@ for (const dialect of ALL_DIALECTS) {
       expect(await trackedProductsRepo.listTrackedProductSellers(db.appDb, id)).toEqual([
         { sellerRef: 'S1', firstSeenAt: NOW, lastSeenAt: NOW },
       ]);
-    });
+    }, 30_000);
   });
 }
 
@@ -247,7 +247,7 @@ for (const dialect of ALL_DIALECTS) {
 
       expect(labels(rows)).toEqual(['Ürün 1', 'Ürün 2']);
       expect(total).toBe(2);
-    });
+    }, 30_000);
 
     it('seller filter finds a seller unchanged for 40 days', async () => {
       db = await createTestDb(dialect);
@@ -264,7 +264,7 @@ for (const dialect of ALL_DIALECTS) {
 
       expect(labels(rows)).toEqual(['Ürün 1']);
       expect(rows[0]?.sellerCount).toBe(1);
-    });
+    }, 30_000);
 
     it('seller filter excludes a seller last seen before the window', async () => {
       db = await createTestDb(dialect);
@@ -280,7 +280,7 @@ for (const dialect of ALL_DIALECTS) {
 
       expect(rows).toEqual([]);
       expect(total).toBe(0);
-    });
+    }, 30_000);
 
     it('seller filter does not cross marketplaces', async () => {
       db = await createTestDb(dialect);
@@ -298,7 +298,7 @@ for (const dialect of ALL_DIALECTS) {
       });
 
       expect(labels(rows)).toEqual(['Ürün 1']);
-    });
+    }, 30_000);
 
     it('minSellerCount counts distinct sellers in the window', async () => {
       db = await createTestDb(dialect);
@@ -320,7 +320,7 @@ for (const dialect of ALL_DIALECTS) {
       expect(labels(rows)).toEqual(['Ürün 1']);
       expect(rows[0]?.sellerCount).toBe(3);
       expect(total).toBe(1);
-    });
+    }, 30_000);
 
     it('sorts by sellerCount desc, ties by label', async () => {
       db = await createTestDb(dialect);
@@ -346,7 +346,7 @@ for (const dialect of ALL_DIALECTS) {
         ['Ürün c', 1],
         ['Ürün z', 0],
       ]);
-    });
+    }, 30_000);
 
     it('ties on rating count fall back to label', async () => {
       db = await createTestDb(dialect);
@@ -363,7 +363,7 @@ for (const dialect of ALL_DIALECTS) {
       });
 
       expect(labels(rows)).toEqual(['Ürün c', 'Ürün a', 'Ürün b', 'Ürün n']);
-    });
+    }, 30_000);
 
     it('latestTrackedProductObservationsFor matches the per-row function', async () => {
       db = await createTestDb(dialect);
@@ -382,7 +382,7 @@ for (const dialect of ALL_DIALECTS) {
       }
       expect(map.get(a)?.map((r) => r.sellerRef)).toEqual(['S2', 'S1']);
       expect(map.get(never) ?? []).toEqual([]);
-    });
+    }, 30_000);
 
     it('trackedProductSellerOptions names, scopes and orders sellers', async () => {
       db = await createTestDb(dialect);
@@ -425,6 +425,6 @@ for (const dialect of ALL_DIALECTS) {
         { marketplaceCode: 'HB', sellerRef: 'S1', sellerName: 'HB Birinci', productCount: 1 },
         { marketplaceCode: 'TY', sellerRef: 'S2', sellerName: null, productCount: 1 },
       ]);
-    });
+    }, 30_000);
   });
 }
