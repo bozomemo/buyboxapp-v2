@@ -1044,7 +1044,48 @@ A lane with no pass yet (never enabled) shows nothing rather than a bar stuck at
 `?categoryRef=`, `?text=`, `?unratedOnly=` and `?searchTermOnly=`, which is what the brand links
 on `/watched-brands` navigate to (§12.4). Seeded **once, as the initial value** — the filter bar
 owns the state from then on. Syncing both directions would fight the operator every time they
-cleared a filter, and is the same call §12.1's `/listings?brandId=` link made.
+cleared a filter, and is the same call §12.1's `/listings?brandId=` link made. Since 2026-11-08
+also `?sellerMarketplace=`+`?sellerRef=` (both or neither), `?minSellerCount=` and
+`?includeNoSeller=`.
+
+**Priority order, seller filters, compact header (2026-11-08,** spec
+`docs/superpowers/specs/2026-11-08-tracked-products-filters-design.md`**).** A brand sweep puts
+thousands of cards here; the operator opens the screen for the few that sell and are contested.
+
+- **Default order: review count, most first** (`sort=ratingCount&sortDir=desc`), unreadable
+  counts last. Ties fall back to the label. A numeric column (Değerlendirme, Satıcı, Son Tarama,
+  Eklenme) opens descending on its first click; text columns open A→Z.
+- **Cards nobody sells are hidden by default** — `has_sellers = false`, the last *successful*
+  look found nobody. Not-yet-looked cards (`null`) stay visible: right after a sweep most cards
+  are in that state. _Satıcısızları göster_ (in _Diğer_) has three states: _Hayır_ (default),
+  _Dahil_ — every card (`includeNoSeller=true`) — and _Sadece_ — the hidden ones alone
+  (`noSellerOnly=true`). İzlenen Markalar' product-count and _değerlendirmesiz_ links arrive with
+  `includeNoSeller=true`, because their numbers include those cards; a link that hid them would
+  open on fewer rows than the number clicked.
+- **Satıcı filter** — a type-to-filter dropdown of every seller seen on a tracked card in the last
+  30 days (`GET /api/tracked-products/sellers`, scoped to the chosen brand), named from
+  `competitor_sellers`, most products first. It shows the cards that seller sold **at any moment
+  in the last 30 days**. Seller refs are unique only within a marketplace, so the filter carries
+  both and matches only that marketplace's cards; the marketplace is shown beside the name when
+  the list spans more than one.
+- **Satıcı ≥ N** — distinct sellers seen in the last 30 days. The **Satıcı column shows the same
+  number** (it no longer counts the latest look), sorts by it and exports it. The hidden _Dönem
+  Satıcı_ column is removed: it repeated this figure and, being computed over the change-only
+  observation archive, missed a seller whose offers had not moved for 30 days. All three read
+  `tracked_product_sellers` (doc 05), written on every successful look for exactly that reason.
+- **Layout A ("tek şerit").** Header: title, a one-line description, and _+ Link ile ekle_ (a
+  popover holding the link form), _Sütunlar_, _Excel'e Aktar_. A summary line replaces the three
+  stat cards and the separate sweep card: `N ürün · N marka · N kategori · [Tarama turu #n ▬ %p]`
+  — the sweep chip carries the card's details in its tooltip (`SweepPassCard variant="chip"`;
+  `/jobs` keeps the full card). One filter strip: `Ara · Marka · Kategori · Satıcı · Değ. ≥ ·
+  Satıcı ≥ · Diğer (n) · Kayıtlı · Temizle`. _Diğer_ holds Durum, _Sadece aramada çıkanlar_,
+  _Değerlendirmesi olmayanlar_ and _Satıcısızları göster_; `(n)` counts the active ones so a
+  tucked-away filter is never invisible. _Kayıtlı_ holds the saved presets (apply, delete,
+  _Mevcut filtreyi kaydet…_). The selection bar appears only when a row is ticked.
+- **Presets store filters, not the sort**, and _Temizle_ resets filters without touching the
+  sort. A preset saved before 2026-11-08 applies with the new keys at their defaults.
+- **One query for the page's latest looks** instead of two per row; the 200-row page took
+  716 ms before (PostgreSQL, rehearsal install); the after-figure is in the plan's results table.
 
 ### 12.4 Brand-owner audit — built (Faz 1–8, 2026-08-28; extended 2026-09-03)
 
@@ -1137,8 +1178,8 @@ are labelled so:
 
 | Family                     | Columns                                                | Source                                                         |
 | -------------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
-| The market right now       | Satıcı, Medyan, **Makas**, Buybox Fiyat, Buybox Satıcı | the latest look, reduced in `lib/market-stats.ts`              |
-| The market over the window | Dönem En Düşük, Dönem En Yüksek, Dönem Satıcı          | one `GROUP BY` in `brandReportsRepo.trackedProductPeriodStats` |
+| The market right now       | Medyan, **Makas**, Buybox Fiyat, Buybox Satıcı         | the latest look, reduced in `lib/market-stats.ts`              |
+| The market over the window | Satıcı, Dönem En Düşük, Dönem En Yüksek                | Satıcı: distinct sellers in 30 days, `tracked_product_sellers` (2026-11-08, §12.2); the band: one `GROUP BY` in `brandReportsRepo.trackedProductPeriodStats` |
 
 Makas (max ÷ min − 1 on the latest look) is the visible one of the current family: it is the
 figure worth scanning a page for, and ≥30% is highlighted. It is `—`, never `0`, for a
@@ -1151,7 +1192,9 @@ worse risk than computing it where the data already is — which is safe here be
 a few dozen offers and the grid asks for one page at a time. The period band genuinely cannot be
 computed that way and is aggregated in the database.
 
-Only the **period** family survives an Excel export. The line is cost, not importance: a column
+Only the **period** family (Satıcı included) survives an Excel export. _Dönem Satıcı_ was removed
+on 2026-11-08: Satıcı now carries the window figure, computed so that a seller whose offers never
+moved still counts (§12.2). The line is cost, not importance: a column
 is exportable when it comes from the row itself or from one aggregate query over the whole set,
 and not exportable when it needs the latest look _per row_ — that is one query per row, fine for
 a 50-row page and unbounded across a 5,000-row export.

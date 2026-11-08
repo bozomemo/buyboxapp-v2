@@ -414,6 +414,12 @@ These screens have genuinely wrong hierarchy. Full §4 procedure including the w
 must arrive somewhere that answers the question they were clicked for. Do this screen first in
 this phase.
 
+**2.2 note (2026-11-08):** `/tracked-products`' header was compacted further after this phase:
+the stat cards and the sweep card became one summary line, every filter sits in one strip with
+the rarely-used ones in a _Diğer (n)_ popover, presets moved into a _Kayıtlı_ dropdown, the
+add-by-link form into a header popover, and the selection bar shows only with a selection. Column
+prefs and presets were kept, as this brief asks. Doc 06 §12.2 has the details.
+
 ---
 
 ### Phase 3 — Tier B: detail screens (3 sessions, 2,784 lines)

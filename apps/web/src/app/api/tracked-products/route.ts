@@ -22,6 +22,8 @@ import { resolveProductLink } from '@/lib/server/product-link';
 import { pageLimit, pageOffset } from '@/lib/pagination';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
+// The window (default 30 days, `?periodDays=`) shared with the seller dropdown's route.
+import { periodWindowFrom } from '@/lib/server/tracked-product-period';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -32,14 +34,6 @@ const MAX_PAGE_SIZE = 200;
  * (4,863 for Royal Canin).
  */
 const CSV_EXPORT_LIMIT = 5000;
-
-/**
- * How far back the price band looks when the caller does not say (`?periodDays=`).
- *
- * Thirty days because that is the span the audit asks about — "bu ay kim ne fiyata sattı" — and
- * because the deep scrape runs daily, so it is thirty looks rather than thirty rows.
- */
-const DEFAULT_PERIOD_DAYS = 30;
 
 /**
  * Ids per period-stats query. The band is one `GROUP BY` however many products it covers, but
@@ -92,21 +86,31 @@ function optionalInt(params: URLSearchParams, key: string): number | undefined {
   return Number.isFinite(parsed) ? Math.trunc(parsed) : undefined;
 }
 
-const SORTS = ['label', 'ratingCount', 'categoryName', 'lastSweptAt', 'addedAt'] as const;
+const SORTS = ['label', 'ratingCount', 'categoryName', 'lastSweptAt', 'addedAt', 'sellerCount'] as const;
 type Sort = (typeof SORTS)[number];
 
 async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
 
+  // Review count, most first, by default (2026-11-08 seller filters spec §2): the cards with many
+  // reviews are the ones the operator opens this screen for. An explicit `sort` keeps its own
+  // direction, ascending unless `sortDir=desc`.
   const rawSort = params.get('sort');
-  const sort: Sort = SORTS.includes(rawSort as Sort) ? (rawSort as Sort) : 'label';
+  const explicitSort = SORTS.includes(rawSort as Sort);
+  const sort: Sort = explicitSort ? (rawSort as Sort) : 'ratingCount';
+  const rawDir = params.get('sortDir');
+  const sortDir: 'asc' | 'desc' =
+    rawDir === 'desc' || rawDir === 'asc' ? rawDir : explicitSort ? 'asc' : 'desc';
   const limit = pageLimit(params.get('limit'), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const offset = pageOffset(params.get('offset'));
 
-  const periodDays = Math.max(1, optionalInt(params, 'periodDays') ?? DEFAULT_PERIOD_DAYS);
-  const untilMs = Date.now();
-  const periodWindow = { sinceMs: untilMs - periodDays * 24 * 60 * 60 * 1000, untilMs };
+  const { periodDays, ...periodWindow } = periodWindowFrom(params);
+
+  // Both or neither: seller refs are unique only within a marketplace (spec §5.1).
+  const sellerMarketplace = optionalString(params, 'sellerMarketplace');
+  const sellerRef = optionalString(params, 'sellerRef');
+  const noSellerOnly = params.get('noSellerOnly') === 'true';
 
   const filters = {
     watchedBrandId: optionalString(params, 'watchedBrandId'),
@@ -116,10 +120,19 @@ async function getHandler(request: Request) {
     isActive: triState(params, 'isActive'),
     searchTermOnly: params.get('searchTermOnly') === 'true',
     unratedOnly: params.get('unratedOnly') === 'true',
-    noSellerOnly: params.get('noSellerOnly') === 'true',
+    noSellerOnly,
+    // Cards whose last successful look found nobody are hidden unless asked for (spec §2);
+    // `includeNoSeller=true` is the opt-out for a caller that wants every card.
+    hideNoSeller: !noSellerOnly && params.get('includeNoSeller') !== 'true',
+    seller:
+      sellerMarketplace !== undefined && sellerRef !== undefined
+        ? { marketplaceCode: sellerMarketplace, sellerRef }
+        : undefined,
+    minSellerCount: optionalInt(params, 'minSellerCount'),
+    sellerSinceMs: periodWindow.sinceMs,
     minRatingCount: optionalInt(params, 'minRatingCount'),
     sort,
-    sortDir: (params.get('sortDir') === 'desc' ? 'desc' : 'asc') as 'asc' | 'desc',
+    sortDir,
   };
 
   if (params.get('format') === 'csv') {
@@ -181,13 +194,13 @@ async function getHandler(request: Request) {
     offset,
   });
 
-  // Bounded by the page size, so this stays cheap regardless of how many products a brand has.
-  const withLatest = await Promise.all(
-    rows.map(async (row) => ({
-      row,
-      latest: await trackedProductsRepo.latestTrackedProductObservations(appDb, row.id),
-    })),
+  // One query for the page, not two per row (2026-11-08 seller filters spec §6: a 200-row page
+  // made 400 queries and took 716 ms).
+  const latestByProduct = await trackedProductsRepo.latestTrackedProductObservationsFor(
+    appDb,
+    rows.map((r) => r.id),
   );
+  const withLatest = rows.map((row) => ({ row, latest: latestByProduct.get(row.id) ?? [] }));
   // One query for the page, not one per row — see `periodStatsFor`.
   const periods = await periodStatsFor(
     appDb,
@@ -247,13 +260,17 @@ async function getHandler(request: Request) {
           : null;
       })(),
       isFavourite: row.isFavourite ?? false,
+      /**
+       * Distinct sellers seen in the window (`tracked_product_sellers`) — the _Satıcı_ column,
+       * its filter and its sort all read this one number (spec §4.3).
+       */
+      sellerCount: row.sellerCount,
       period: (() => {
         const stats = periods.get(row.id);
         return stats
           ? {
               minPrice: stats.minPrice?.toString() ?? null,
               maxPrice: stats.maxPrice?.toString() ?? null,
-              sellerCount: stats.sellerCount,
               changeCount: stats.changeCount,
             }
           : null;

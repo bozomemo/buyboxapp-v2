@@ -50,9 +50,21 @@ export interface SweepPassCardProps {
   readonly label: string;
   /** How often to poll. A pass moves at a page every few seconds, so a minute is plenty. */
   readonly pollMs?: number;
+  /**
+   * `card` (default, `/jobs`): the full block. `chip` (`/tracked-products` summary line,
+   * 2026-11-08 seller filters spec §5): one inline element — label, pass number, a small bar and
+   * the percentage — with the rest of the card's information in its tooltip.
+   */
+  readonly variant?: 'card' | 'chip';
 }
 
-export function SweepPassCard({ marketplaceCode, scope, label, pollMs = 60_000 }: SweepPassCardProps) {
+export function SweepPassCard({
+  marketplaceCode,
+  scope,
+  label,
+  pollMs = 60_000,
+  variant = 'card',
+}: SweepPassCardProps) {
   const [pass, setPass] = useState<SweepPass | null>(null);
   const [previous, setPrevious] = useState<PreviousPass[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -82,6 +94,45 @@ export function SweepPassCard({ marketplaceCode, scope, label, pollMs = 60_000 }
   const done = Math.min(pass.doneCount, pass.plannedCount);
   const percent = pass.plannedCount > 0 ? Math.round((done / pass.plannedCount) * 100) : 0;
   const last = previous[0];
+
+  if (variant === 'chip') {
+    // Plain text, one fact per line, in the same words the card uses.
+    const details = [
+      `${label} #${pass.passNo}: ${formatNumber(done)} / ${formatNumber(pass.plannedCount)} ürün (%${percent})`,
+      pass.failedCount > 0 ? `${formatNumber(pass.failedCount)} okunamadı` : null,
+      `Başlangıç ${formatClock(pass.startedAt)}`,
+      pass.finishedAt !== null
+        ? `Tamamlandı ${formatClock(pass.finishedAt)} · yeni tur birazdan başlar`
+        : pass.estimatedFinishAtMs !== null
+          ? `Tahmini bitiş ${formatClock(pass.estimatedFinishAtMs)}`
+          : null,
+      last ? `Önceki tur: ${formatNumber(last.doneCount)} ürün, ${formatSpan(last.durationMs)}` : null,
+    ]
+      .filter((line): line is string => line !== null)
+      .join('\n');
+    return (
+      <span
+        data-testid="sweep-pass-chip"
+        title={details}
+        className="inline-flex items-center gap-1.5 rounded-full border border-(--color-border) px-2 py-0.5 text-xs"
+      >
+        <span>
+          {label} #{pass.passNo}
+        </span>
+        <span
+          className="inline-block h-1.5 w-12 overflow-hidden rounded bg-(--color-border)"
+          role="progressbar"
+          aria-valuenow={percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${label} #${pass.passNo} ilerlemesi`}
+        >
+          <span className="block h-full bg-(--color-accent)" style={{ width: `${percent}%` }} />
+        </span>
+        <span className="tabular-nums">%{percent}</span>
+      </span>
+    );
+  }
 
   return (
     <div className="rounded border border-(--color-border) p-3 text-sm">

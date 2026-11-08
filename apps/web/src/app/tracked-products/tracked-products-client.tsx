@@ -29,9 +29,10 @@ import {
   PageHeader,
   SegmentedFilter,
   Select,
-  StatCard,
   TextInput,
 } from '@/components/ui';
+import { PopoverButton } from '@/components/popover-button';
+import { SearchableSelect } from '@/components/searchable-select';
 import { SweepPassCard } from '@/components/sweep-pass-card';
 import { formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { marketSnapshot } from '@/lib/market-stats';
@@ -76,14 +77,26 @@ interface TrackedProduct {
   /** The brand product this card is linked to, if any (doc 17 §2.1). */
   brandProduct: { id: string; name: string; unitMultiplier: number; isPrimary: boolean } | null;
   isFavourite: boolean;
+  /**
+   * Distinct sellers seen in the last 30 days — the _Satıcı_ column, its `Satıcı ≥` filter and
+   * its sort all use this one number (2026-11-08 seller filters spec §4.3).
+   */
+  sellerCount: number;
 }
 
 /** The window's price band, aggregated server-side over every look in it. */
 interface PeriodStats {
   minPrice: string | null;
   maxPrice: string | null;
-  sellerCount: number;
   changeCount: number;
+}
+
+/** One seller of the Satıcı dropdown (`/api/tracked-products/sellers`). */
+interface SellerOption {
+  marketplaceCode: string;
+  sellerRef: string;
+  sellerName: string | null;
+  productCount: number;
 }
 
 interface WatchedBrandOption {
@@ -97,9 +110,19 @@ interface CategoryOption {
   productCount: number;
 }
 
-type Sort = 'label' | 'ratingCount' | 'categoryName' | 'lastSweptAt' | 'addedAt';
+type Sort = 'label' | 'ratingCount' | 'categoryName' | 'lastSweptAt' | 'addedAt' | 'sellerCount';
 
-/** Everything the filter bar holds — the unit a saved preset stores and restores. */
+/**
+ * Sorts whose useful direction is "most first" — the first click on their column goes
+ * descending (spec §5.1). Text columns still open A→Z.
+ */
+const DESC_FIRST: ReadonlySet<Sort> = new Set<Sort>(['ratingCount', 'sellerCount', 'lastSweptAt', 'addedAt']);
+
+/**
+ * Everything the filter bar holds — the unit a saved preset stores and restores. The sort is
+ * deliberately not in it: Temizle does not touch the sort, and neither does applying a preset
+ * (spec §5.1). A preset saved before a key existed applies with that key at its default.
+ */
 interface Filters {
   text: string;
   brandId: string;
@@ -108,7 +131,16 @@ interface Filters {
   searchTermOnly: boolean;
   unratedOnly: boolean;
   noSellerOnly: boolean;
+  /**
+   * Keep cards nobody sells in the list alongside the rest (`includeNoSeller=true`), instead of
+   * the default of hiding them. What İzlenen Markalar' count links ask for, since their numbers
+   * include those cards. Mutually exclusive with `noSellerOnly`.
+   */
+  includeNoSeller: boolean;
   minRatingCount: string;
+  /** `"{marketplaceCode}:{sellerRef}"`, `''` = every seller. */
+  seller: string;
+  minSellerCount: string;
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -119,8 +151,18 @@ const EMPTY_FILTERS: Filters = {
   searchTermOnly: false,
   unratedOnly: false,
   noSellerOnly: false,
+  includeNoSeller: false,
   minRatingCount: '',
+  seller: '',
+  minSellerCount: '',
 };
+
+/** `"TY:123"` → its two halves; split on the first `:` only, since a ref may contain one. */
+function splitSeller(encoded: string): { marketplaceCode: string; sellerRef: string } | null {
+  const at = encoded.indexOf(':');
+  if (at <= 0 || at === encoded.length - 1) return null;
+  return { marketplaceCode: encoded.slice(0, at), sellerRef: encoded.slice(at + 1) };
+}
 
 /** Mirrors `CSV_EXPORT_LIMIT` in `api/tracked-products/route.ts` — shown in the button's title. */
 const CSV_EXPORT_ROW_CAP = 5000;
@@ -147,7 +189,6 @@ type ColumnId =
   | 'buyboxSeller'
   | 'periodMinPrice'
   | 'periodMaxPrice'
-  | 'periodSellerCount'
   | 'referencePrice'
   | 'refGapPct'
   | 'discovery'
@@ -161,12 +202,17 @@ type ColumnId =
  * is "already shown another way": a search-term-only row carries a badge in the Ürün column, so
  * the column is redundant until someone wants to sort or export by it.
  *
- * Two families of price column sit here and they answer different questions. **Satıcı, Medyan,
- * Makas, Buybox** describe the latest look — the market right now. **Dönem …** describe the
- * whole window, so they are the ones that catch a seller who dropped under the market for two
- * days and came back up. Only the period family survives an export (see
- * `tracked-product-columns.ts` for why), which is also why Makas is the visible one of the
- * current family: it is the figure worth scanning a page for.
+ * Two families of price column sit here and they answer different questions. **Medyan, Makas,
+ * Buybox** describe the latest look — the market right now. **Dönem …** describe the whole
+ * window, so they are the ones that catch a seller who dropped under the market for two days and
+ * came back up. Only the period family survives an export (see `tracked-product-columns.ts` for
+ * why), which is also why Makas is the visible one of the current family: it is the figure worth
+ * scanning a page for.
+ *
+ * **Satıcı** is the distinct sellers of the last 30 days since 2026-11-08 (spec §4.3), not the
+ * latest look's count — so it sorts, filters and exports. The old hidden _Dönem Satıcı_ column
+ * is gone (it would repeat it); a stored column preference naming it is ignored by
+ * `useColumnPrefs`.
  */
 const COLUMN_DEFS: readonly ColumnDef<ColumnId>[] = [
   // The star and the product it belongs to are the brand module's two "is this one of mine?"
@@ -187,7 +233,6 @@ const COLUMN_DEFS: readonly ColumnDef<ColumnId>[] = [
   { id: 'buyboxSeller', label: 'Buybox Satıcı', defaultWidth: 160 },
   { id: 'periodMinPrice', label: 'Dönem En Düşük', defaultWidth: 130, hiddenByDefault: true },
   { id: 'periodMaxPrice', label: 'Dönem En Yüksek', defaultWidth: 130, hiddenByDefault: true },
-  { id: 'periodSellerCount', label: 'Dönem Satıcı', defaultWidth: 110, hiddenByDefault: true },
   { id: 'referencePrice', label: 'Tavsiye Fiyat', defaultWidth: 120 },
   { id: 'refGapPct', label: 'Tavsiyeye Fark', defaultWidth: 120 },
   { id: 'discovery', label: 'Bulunma', defaultWidth: 130, hiddenByDefault: true },
@@ -201,6 +246,7 @@ const SORT_FOR_COLUMN: Partial<Record<ColumnId, Sort>> = {
   label: 'label',
   category: 'categoryName',
   rating: 'ratingCount',
+  sellerCount: 'sellerCount',
   lastSwept: 'lastSweptAt',
   addedAt: 'addedAt',
 };
@@ -253,6 +299,7 @@ export function TrackedProductsClient() {
 
   const [brands, setBrands] = useState<WatchedBrandOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [sellers, setSellers] = useState<SellerOption[]>([]);
 
   /**
    * Seeded from the query string, so `/tracked-products?watchedBrandId=…` lands on that brand's
@@ -270,10 +317,19 @@ export function TrackedProductsClient() {
     text: searchParams.get('text') ?? '',
     unratedOnly: searchParams.get('unratedOnly') === 'true',
     noSellerOnly: searchParams.get('noSellerOnly') === 'true',
+    includeNoSeller:
+      searchParams.get('noSellerOnly') !== 'true' && searchParams.get('includeNoSeller') === 'true',
     searchTermOnly: searchParams.get('searchTermOnly') === 'true',
+    // Both halves or neither — a seller ref means nothing without its marketplace (spec §5.1).
+    seller:
+      searchParams.get('sellerMarketplace') && searchParams.get('sellerRef')
+        ? `${searchParams.get('sellerMarketplace')}:${searchParams.get('sellerRef')}`
+        : '',
+    minSellerCount: searchParams.get('minSellerCount') ?? '',
   }));
-  const [sort, setSort] = useState<Sort>('label');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // Most-reviewed first (spec §2): those are the cards this screen is opened for.
+  const [sort, setSort] = useState<Sort>('ratingCount');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const [link, setLink] = useState('');
   const [label, setLabel] = useState('');
@@ -317,7 +373,14 @@ export function TrackedProductsClient() {
     if (filters.searchTermOnly) p.set('searchTermOnly', 'true');
     if (filters.unratedOnly) p.set('unratedOnly', 'true');
     if (filters.noSellerOnly) p.set('noSellerOnly', 'true');
+    else if (filters.includeNoSeller) p.set('includeNoSeller', 'true');
     if (filters.minRatingCount.trim()) p.set('minRatingCount', filters.minRatingCount.trim());
+    const seller = splitSeller(filters.seller);
+    if (seller) {
+      p.set('sellerMarketplace', seller.marketplaceCode);
+      p.set('sellerRef', seller.sellerRef);
+    }
+    if (filters.minSellerCount.trim()) p.set('minSellerCount', filters.minSellerCount.trim());
     return p;
   }, [filters, sort, sortDir]);
 
@@ -364,6 +427,36 @@ export function TrackedProductsClient() {
       .then((d: { categories: CategoryOption[] }) => setCategories(d.categories));
   }, [filters.brandId]);
 
+  // The Satıcı dropdown's options, scoped to the chosen brand like the category list. A failure
+  // leaves the list empty rather than breaking the screen — it is a convenience on the filter.
+  useEffect(() => {
+    const q = filters.brandId ? `?watchedBrandId=${encodeURIComponent(filters.brandId)}` : '';
+    fetch(`/api/tracked-products/sellers${q}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { sellers: SellerOption[] }) => setSellers(d.sellers))
+      .catch(() => setSellers([]));
+  }, [filters.brandId]);
+
+  const sellerOptions = useMemo(() => {
+    // The marketplace is shown only when the list spans more than one (spec §5.1).
+    const several = new Set(sellers.map((s) => s.marketplaceCode)).size > 1;
+    const options = sellers.map((s) => ({
+      value: `${s.marketplaceCode}:${s.sellerRef}`,
+      label: `${s.sellerName ?? s.sellerRef}${several ? ` (${s.marketplaceCode})` : ''}`,
+      hint: `${formatNumber(s.productCount)} ürün`,
+    }));
+    // A seller chosen earlier (a link, a preset, another brand) stays visible on the button even
+    // when the current list does not carry it.
+    if (filters.seller && !options.some((o) => o.value === filters.seller)) {
+      options.unshift({
+        value: filters.seller,
+        label: splitSeller(filters.seller)?.sellerRef ?? filters.seller,
+        hint: '',
+      });
+    }
+    return [{ value: '', label: 'Tümü' }, ...options];
+  }, [sellers, filters.seller]);
+
   function onSort(column: ColumnId) {
     const next = SORT_FOR_COLUMN[column];
     if (!next) return;
@@ -372,7 +465,7 @@ export function TrackedProductsClient() {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSort(next);
-      setSortDir('asc');
+      setSortDir(DESC_FIRST.has(next) ? 'desc' : 'asc');
     }
   }
 
@@ -525,11 +618,25 @@ export function TrackedProductsClient() {
     filters.searchTermOnly ||
     filters.unratedOnly ||
     filters.noSellerOnly ||
-    filters.minRatingCount !== '';
+    filters.includeNoSeller ||
+    filters.minRatingCount !== '' ||
+    filters.seller !== '' ||
+    filters.minSellerCount !== '';
+
+  /** How many of the filters tucked into _Diğer_ are on — so a hidden filter is never invisible. */
+  const otherActive =
+    (filters.active !== '' ? 1 : 0) +
+    (filters.searchTermOnly ? 1 : 0) +
+    (filters.unratedOnly ? 1 : 0) +
+    (filters.noSellerOnly || filters.includeNoSeller ? 1 : 0);
+
+  /** The three-way no-seller choice: hidden (default), shown with the rest, or shown alone. */
+  const noSellerMode = filters.noSellerOnly ? 'only' : filters.includeNoSeller ? 'include' : '';
 
   function renderCell(id: ColumnId, p: TrackedProduct) {
-    // One reduction of the latest look, shared by every current-market cell — so Satıcı, Medyan,
-    // Makas and Buybox cannot disagree with each other about the same row.
+    // One reduction of the latest look, shared by every current-market cell — so Medyan, Makas
+    // and Buybox cannot disagree with each other about the same row. (Satıcı is the 30-day count
+    // from the row since 2026-11-08, not part of this reduction.)
     const market = marketSnapshot(p.latest);
     switch (id) {
       case 'favourite':
@@ -621,7 +728,11 @@ export function TrackedProductsClient() {
           </span>
         );
       case 'sellerCount':
-        return <span className="tabular-nums">{formatNumber(market.sellerCount)}</span>;
+        return (
+          <span className="tabular-nums" title="Son 30 günde görülen farklı satıcı sayısı">
+            {formatNumber(p.sellerCount)}
+          </span>
+        );
       case 'medianPrice':
         return moneyCell(market.medianPrice?.toString() ?? null);
       case 'spreadPct':
@@ -644,8 +755,6 @@ export function TrackedProductsClient() {
         return moneyCell(p.period?.minPrice);
       case 'periodMaxPrice':
         return moneyCell(p.period?.maxPrice);
-      case 'periodSellerCount':
-        return <span className="tabular-nums">{p.period ? formatNumber(p.period.sellerCount) : '—'}</span>;
       case 'referencePrice':
         return moneyCell(p.referencePrice);
       case 'refGapPct': {
@@ -697,16 +806,46 @@ export function TrackedProductsClient() {
         breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Takip Edilen Ürünler' }]}
         description={
           <>
-            Satmadığımız ürünlerin fiyat, satıcı ve değerlendirme bilgisi. Buraya iki yoldan ürün gelir: tek
-            tek link yapıştırarak, veya{' '}
+            Satmadığımız ürünlerin fiyat, satıcı ve değerlendirme bilgisi — link ile ya da{' '}
             <Link href="/watched-brands" className="text-(--color-accent) hover:underline">
-              izlenen bir markanın
+              izlenen marka
             </Link>{' '}
-            taramasıyla. Bu liste <strong>raporlamadır</strong> — hiçbir fiyat kararını etkilemez.
+            taramasıyla gelir. <strong>Raporlamadır</strong>, hiçbir fiyat kararını etkilemez.
           </>
         }
         action={
           <div className="flex items-center gap-2">
+            {/* The add-by-link form, moved out of the page body into the header (spec §5 item 1). */}
+            <PopoverButton label="+ Link ile ekle" align="right" panelClassName="w-[28rem]">
+              <div className="flex flex-col gap-2">
+                <Field label="Ürün linki">
+                  <TextInput
+                    value={link}
+                    onChange={(e) => setLink(e.target.value)}
+                    placeholder="https://www.trendyol.com/... veya https://www.hepsiburada.com/..."
+                    className="w-full"
+                  />
+                </Field>
+                <Field label="Etiket (opsiyonel)">
+                  <TextInput
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                    placeholder="Kolay tanımak için bir isim"
+                    className="w-full"
+                  />
+                </Field>
+                <div>
+                  <Button type="button" disabled={busy || !link.trim()} onClick={() => void add()}>
+                    {busy ? 'Ekleniyor…' : 'Ekle'}
+                  </Button>
+                </div>
+                {error && (
+                  <p role="alert" className="text-xs text-(--color-danger)">
+                    {error}
+                  </p>
+                )}
+              </div>
+            </PopoverButton>
             <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
             <a
               href={`/api/tracked-products?${(() => {
@@ -727,12 +866,21 @@ export function TrackedProductsClient() {
         }
       />
 
-      {/* Only numbers the screen already holds — no extra query (plan 2026-11-03 phase 2, Task 3). */}
-      <div data-testid="tracked-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard label="Ürün" value={formatNumber(total)} delta="Geçerli filtreyle eşleşen" />
-        <StatCard label="Marka" value={formatNumber(brands.length)} delta="İzlenen marka" />
-        <StatCard label="Kategori" value={formatNumber(categories.length)} />
-      </div>
+      {/* One summary line instead of three stat cards and a separate sweep card (spec §5 item 3).
+          Only numbers the screen already holds — no extra query. "Ürün" is the filtered total. */}
+      <p
+        data-testid="tracked-summary"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-(--color-muted)"
+      >
+        <span>
+          <strong className="text-(--color-fg) tabular-nums">{formatNumber(total)}</strong> ürün
+        </span>
+        <span aria-hidden>·</span>
+        <span>{formatNumber(brands.length)} marka</span>
+        <span aria-hidden>·</span>
+        <span>{formatNumber(categories.length)} kategori</span>
+        <SweepPassCard marketplaceCode="trendyol" scope="all" label="Tarama turu" variant="chip" />
+      </p>
 
       {/* A refresh (filter/sayfa değişikliği) başarısız oldu ama önceki liste hâlâ ekranda —
           sessizce eskimesine izin vermek yerine söylüyoruz (§3.2 "Stale"). */}
@@ -745,172 +893,196 @@ export function TrackedProductsClient() {
         </p>
       )}
 
-      {/* ---- filtreler ---- */}
-      <div className="space-y-3 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
-        <div className="flex flex-wrap items-end gap-2">
-          <Field label="Ara">
-            <TextInput
-              icon={Search}
-              value={filters.text}
-              onChange={(e) => setFilters({ ...filters, text: e.target.value })}
-              placeholder="Ürün adı veya kodu"
-              className="w-56"
-            />
-          </Field>
-          <Field label="Marka">
-            <Select
-              value={filters.brandId}
-              onChange={(e) => setFilters({ ...filters, brandId: e.target.value, categoryRef: '' })}
-              className="w-40"
-              options={[
-                { value: '', label: 'Tümü' },
-                ...brands.map((b) => ({ value: b.id, label: b.label })),
-              ]}
-            />
-          </Field>
-          <Field label="Kategori">
-            <Select
-              value={filters.categoryRef}
-              onChange={(e) => setFilters({ ...filters, categoryRef: e.target.value })}
-              className="w-52"
-              options={[
-                { value: '', label: 'Tümü' },
-                ...categories.map((c) => ({ value: c.ref, label: `${c.name} (${c.productCount})` })),
-              ]}
-            />
-          </Field>
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Durum</span>
-            <SegmentedFilter
-              label="Durum"
-              value={filters.active}
-              onChange={(active) => setFilters({ ...filters, active })}
-              options={[
-                { value: '', label: 'Tümü' },
-                { value: 'true', label: 'Aktif' },
-                { value: 'false', label: 'Duraklatıldı' },
-              ]}
-            />
-          </div>
-          <Field label="En az değerlendirme">
-            <TextInput
-              type="number"
-              min={0}
-              value={filters.minRatingCount}
-              onChange={(e) => setFilters({ ...filters, minRatingCount: e.target.value })}
-              placeholder="0"
-              className="w-28"
-            />
-          </Field>
-          <label
-            className="flex items-center gap-1 text-xs"
-            title="Marka adını taşıyan ama pazaryerinin markaya atfetmediği ürünler"
-          >
-            <input
-              type="checkbox"
-              checked={filters.searchTermOnly}
-              onChange={(e) => setFilters({ ...filters, searchTermOnly: e.target.checked })}
-            />
-            Sadece aramada çıkanlar
-          </label>
-          <label
-            className="flex items-center gap-1 text-xs"
-            title="Pazaryerinin hiç değerlendirme kaydetmediği ürünler"
-          >
-            <input
-              type="checkbox"
-              checked={filters.unratedOnly}
-              onChange={(e) => setFilters({ ...filters, unratedOnly: e.target.checked })}
-            />
-            Değerlendirmesi olmayanlar
-          </label>
-          <label
-            className="flex items-center gap-1 text-xs"
-            title="Son başarılı bakışta bu ürünleri satan kimse yoktu. Henüz bakılmamış ürünler bu listede yer almaz — o başka bir durum."
-          >
-            <input
-              type="checkbox"
-              checked={filters.noSellerOnly}
-              onChange={(e) => setFilters({ ...filters, noSellerOnly: e.target.checked })}
-            />
-            Satıcısı olmayanlar
-          </label>
-          <Button variant="secondary" size="sm" type="button" onClick={() => setFilters(EMPTY_FILTERS)}>
-            Temizle
-          </Button>
-        </div>
-
-        {/* ---- kayıtlı filtreler ---- */}
-        <div className="flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-2 text-xs">
-          <span className="text-(--color-muted)">Kayıtlı filtreler:</span>
-          {presets.presets.length === 0 && <span className="text-(--color-muted)">yok</span>}
-          {presets.presets.map((preset) => (
-            <span key={preset.name} className="flex items-center gap-1">
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                onClick={() => setFilters({ ...EMPTY_FILTERS, ...preset.value })}
-              >
-                {preset.name}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
-                icon={X}
-                aria-label="Bu kaydı sil"
-                title="Bu kaydı sil"
-                onClick={() => presets.remove(preset.name)}
-              />
-            </span>
-          ))}
+      {/* ---- filtreler: tek şerit (spec §5 item 4, layout A) ---- */}
+      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-card)">
+        <Field label="Ara">
           <TextInput
-            value={presetName}
-            onChange={(e) => setPresetName(e.target.value)}
-            placeholder="Yeni kayıt adı"
-            aria-label="Yeni kayıt adı"
-            className="ml-auto w-40"
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            type="button"
-            disabled={!presetName.trim()}
-            onClick={() => {
-              presets.save(presetName, filters);
-              setPresetName('');
-            }}
-          >
-            Filtreyi kaydet
-          </Button>
-        </div>
-      </div>
-
-      <SweepPassCard marketplaceCode="trendyol" scope="all" label="Tarama turu" />
-
-      {/* ---- link ile ekle ---- */}
-      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-card)">
-        <Field label="Ürün linki">
-          <TextInput
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            placeholder="https://www.trendyol.com/... veya https://www.hepsiburada.com/..."
-            className="w-96"
+            icon={Search}
+            value={filters.text}
+            onChange={(e) => setFilters({ ...filters, text: e.target.value })}
+            placeholder="Ürün adı veya kodu"
+            className="w-52"
           />
         </Field>
-        <Field label="Etiket (opsiyonel)">
-          <TextInput
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="Kolay tanımak için bir isim"
+        <Field label="Marka">
+          <Select
+            value={filters.brandId}
+            onChange={(e) => setFilters({ ...filters, brandId: e.target.value, categoryRef: '' })}
+            className="w-36"
+            options={[{ value: '', label: 'Tümü' }, ...brands.map((b) => ({ value: b.id, label: b.label }))]}
+          />
+        </Field>
+        <Field label="Kategori">
+          <Select
+            value={filters.categoryRef}
+            onChange={(e) => setFilters({ ...filters, categoryRef: e.target.value })}
+            className="w-44"
+            options={[
+              { value: '', label: 'Tümü' },
+              ...categories.map((c) => ({ value: c.ref, label: `${c.name} (${c.productCount})` })),
+            ]}
+          />
+        </Field>
+        {/* Not a `Field`: a <label> around a popover would forward clicks inside it to the button. */}
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="font-medium" title="Son 30 günde bu ürünü herhangi bir anda satmış satıcı">
+            Satıcı
+          </span>
+          <SearchableSelect
+            label="Satıcı filtresi"
+            value={filters.seller}
+            options={sellerOptions}
+            onChange={(seller) => setFilters({ ...filters, seller })}
+            placeholder="Satıcı adı yazın…"
             className="w-48"
           />
+        </div>
+        <Field label="Değ. ≥">
+          <TextInput
+            type="number"
+            min={0}
+            value={filters.minRatingCount}
+            onChange={(e) => setFilters({ ...filters, minRatingCount: e.target.value })}
+            placeholder="0"
+            className="w-20"
+            title="En az değerlendirme sayısı"
+          />
         </Field>
-        <Button type="button" disabled={busy || !link.trim()} onClick={() => void add()}>
-          {busy ? 'Ekleniyor…' : 'Ekle'}
+        <Field label="Satıcı ≥">
+          <TextInput
+            type="number"
+            min={0}
+            value={filters.minSellerCount}
+            onChange={(e) => setFilters({ ...filters, minSellerCount: e.target.value })}
+            placeholder="0"
+            className="w-20"
+            title="Son 30 günde en az bu kadar farklı satıcı"
+          />
+        </Field>
+        <PopoverButton label={otherActive > 0 ? `Diğer (${otherActive})` : 'Diğer'} panelClassName="w-80">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <span className="font-medium">Durum</span>
+              <SegmentedFilter
+                label="Durum"
+                value={filters.active}
+                onChange={(active) => setFilters({ ...filters, active })}
+                options={[
+                  { value: '', label: 'Tümü' },
+                  { value: 'true', label: 'Aktif' },
+                  { value: 'false', label: 'Duraklatıldı' },
+                ]}
+              />
+            </div>
+            <label
+              className="flex items-center gap-2 text-xs"
+              title="Marka adını taşıyan ama pazaryerinin markaya atfetmediği ürünler"
+            >
+              <input
+                type="checkbox"
+                checked={filters.searchTermOnly}
+                onChange={(e) => setFilters({ ...filters, searchTermOnly: e.target.checked })}
+              />
+              Sadece aramada çıkanlar
+            </label>
+            <label
+              className="flex items-center gap-2 text-xs"
+              title="Pazaryerinin hiç değerlendirme kaydetmediği ürünler"
+            >
+              <input
+                type="checkbox"
+                checked={filters.unratedOnly}
+                onChange={(e) => setFilters({ ...filters, unratedOnly: e.target.checked })}
+              />
+              Değerlendirmesi olmayanlar
+            </label>
+            {/* Three states, not a checkbox: hidden by default, "Dahil" for the brand count links
+                (their numbers include these cards), "Sadece" for the lost-shelf shortlist. */}
+            <div
+              className="flex flex-col gap-1"
+              title="Son başarılı bakışta satanı olmayan ürünler varsayılan olarak gizlenir. Henüz bakılmamış ürünler satıcısız sayılmaz."
+            >
+              <span className="font-medium">Satıcısızları göster</span>
+              <SegmentedFilter
+                label="Satıcısızları göster"
+                value={noSellerMode}
+                onChange={(mode) =>
+                  setFilters({
+                    ...filters,
+                    noSellerOnly: mode === 'only',
+                    includeNoSeller: mode === 'include',
+                  })
+                }
+                options={[
+                  { value: '', label: 'Hayır' },
+                  { value: 'include', label: 'Dahil' },
+                  { value: 'only', label: 'Sadece' },
+                ]}
+              />
+            </div>
+          </div>
+        </PopoverButton>
+        {/* Saved presets in one dropdown (spec §5 item 4). They store filters, never the sort. */}
+        <PopoverButton label="Kayıtlı" panelClassName="w-72">
+          {(close) => (
+            <div className="flex flex-col gap-2 text-xs">
+              {presets.presets.length === 0 && (
+                <span className="text-(--color-muted)">Kayıtlı filtre yok.</span>
+              )}
+              {presets.presets.map((preset) => (
+                <span key={preset.name} className="flex items-center gap-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      setFilters({ ...EMPTY_FILTERS, ...preset.value });
+                      close();
+                    }}
+                  >
+                    {preset.name}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    icon={X}
+                    aria-label={`${preset.name} kaydını sil`}
+                    title="Bu kaydı sil"
+                    onClick={() => presets.remove(preset.name)}
+                  />
+                </span>
+              ))}
+              <div className="flex items-center gap-1 border-t border-(--color-border) pt-2">
+                <TextInput
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  placeholder="Kayıt adı"
+                  aria-label="Kayıt adı"
+                  className="w-32"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  disabled={!presetName.trim()}
+                  onClick={() => {
+                    presets.save(presetName, filters);
+                    setPresetName('');
+                  }}
+                >
+                  Mevcut filtreyi kaydet…
+                </Button>
+              </div>
+            </div>
+          )}
+        </PopoverButton>
+        {/* Filters only: the sort is not a filter and stays as it is (spec §5 item 4). */}
+        <Button variant="secondary" size="sm" type="button" onClick={() => setFilters(EMPTY_FILTERS)}>
+          Temizle
         </Button>
       </div>
+
       {linkFor && (
         <div
           role="group"
@@ -976,43 +1148,41 @@ export function TrackedProductsClient() {
         </p>
       )}
 
-      {/* ---- seçim işlemleri ---- */}
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className={selected.size === 0 ? 'text-(--color-muted)' : undefined}>
-          {selected.size === 0 ? 'Satır seçilmedi' : `${formatNumber(selected.size)} ürün seçildi`}
-        </span>
-        <Button
-          size="sm"
-          type="button"
-          disabled={busy || selected.size === 0 || selected.size > RESCAN_MAX_PRODUCTS}
-          onClick={() => void rescan([...selected])}
-          title={
-            selected.size > RESCAN_MAX_PRODUCTS
-              ? `Tek seferde en fazla ${RESCAN_MAX_PRODUCTS} ürün taranabilir`
-              : 'Seçilen ürünlerin satıcı ve fiyat verisini şimdi yeniden okur'
-          }
-        >
-          Seçilenleri Tekrar Tara
-        </Button>
-        {selected.size > RESCAN_MAX_PRODUCTS && (
-          <span className="text-xs text-(--color-warning)">
-            Tek seferde en fazla {RESCAN_MAX_PRODUCTS} ürün — bir markanın tamamı için İzlenen Markalar
-            ekranındaki &quot;Şimdi tara&quot; kullanılır.
-          </span>
-        )}
-        {selected.size > 0 && (
+      {/* ---- seçim işlemleri: yalnız bir satır seçiliyken (spec §5 item 5) ---- */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span>{formatNumber(selected.size)} ürün seçildi</span>
+          <Button
+            size="sm"
+            type="button"
+            disabled={busy || selected.size > RESCAN_MAX_PRODUCTS}
+            onClick={() => void rescan([...selected])}
+            title={
+              selected.size > RESCAN_MAX_PRODUCTS
+                ? `Tek seferde en fazla ${RESCAN_MAX_PRODUCTS} ürün taranabilir`
+                : 'Seçilen ürünlerin satıcı ve fiyat verisini şimdi yeniden okur'
+            }
+          >
+            Seçilenleri Tekrar Tara
+          </Button>
+          {selected.size > RESCAN_MAX_PRODUCTS && (
+            <span className="text-xs text-(--color-warning)">
+              Tek seferde en fazla {RESCAN_MAX_PRODUCTS} ürün — bir markanın tamamı için İzlenen Markalar
+              ekranındaki &quot;Şimdi tara&quot; kullanılır.
+            </span>
+          )}
           <Button variant="ghost" size="sm" type="button" onClick={() => setSelected(new Set())}>
             Seçimi temizle
           </Button>
-        )}
-        <span className="text-xs text-(--color-muted)">
-          Tarama arka planda çalışır; sırası ve ilerlemesi{' '}
-          <Link href="/jobs" className="text-(--color-accent) hover:underline">
-            İşler
-          </Link>{' '}
-          ekranında görünür.
-        </span>
-      </div>
+          <span className="text-xs text-(--color-muted)">
+            Tarama arka planda çalışır; sırası ve ilerlemesi{' '}
+            <Link href="/jobs" className="text-(--color-accent) hover:underline">
+              İşler
+            </Link>{' '}
+            ekranında görünür.
+          </span>
+        </div>
+      )}
 
       <Pagination state={{ page, pageSize, total, setPage, setPageSize }} label="ürün">
         {/* A filter/sayfa değişikliği sonrası yeniden yükleme — ilk yükleme değil, o zaten
@@ -1022,11 +1192,13 @@ export function TrackedProductsClient() {
 
       {products.length === 0 ? (
         <EmptyState
-          message={hasActiveFilters ? 'Bu filtrelerle ürün bulunamadı.' : 'Henüz takip edilen ürün yok.'}
+          message={hasActiveFilters ? 'Bu filtrelerle ürün bulunamadı.' : 'Gösterilecek ürün yok.'}
           reason={
             hasActiveFilters
               ? 'Farklı bir filtre deneyin ya da temizleyin.'
-              : 'Yukarıdan bir ürün linki yapıştırarak ekleyin, ya da izlenen bir markanın taramasını bekleyin.'
+              : // Not "no products": the default hides cards nobody sells, so the table may be
+                // full of them (spec §2). Say so, and where to show them.
+                'Satıcısı olmayan ürünler varsayılan olarak gizlidir — Diğer › Satıcısızları göster ile görebilirsiniz. Yeni ürün için + Link ile ekle, ya da izlenen bir markanın taramasını bekleyin.'
           }
           action={
             hasActiveFilters ? (

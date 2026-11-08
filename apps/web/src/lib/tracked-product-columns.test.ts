@@ -41,12 +41,27 @@ describe('resolveExportColumns', () => {
   it('drops the per-row competitive columns', () => {
     // Those come from a query per row, bounded to one page on screen. Exporting them across
     // 5,000 rows is the fan-out server paging exists to avoid.
-    expect(resolveExportColumns(['label', 'sellerCount', 'buyboxPrice', 'buyboxSeller'])).toEqual(['label']);
+    expect(resolveExportColumns(['label', 'buyboxPrice', 'buyboxSeller'])).toEqual(['label']);
+  });
+
+  it('exports the 30-day seller count, which comes off the row', () => {
+    // 2026-11-08 seller filters spec §4.3: Satıcı is the 30-day distinct count the list query
+    // computes per row, so it costs no per-row query and is exportable.
+    const columns = resolveExportColumns(['label', 'sellerCount']);
+    expect(columns).toEqual(['label', 'sellerCount']);
+    expect(exportHeaders(columns)).toEqual(['Ürün', 'Satıcı Sayısı (30 gün)']);
+    expect(exportRow(columns, { ...ROW, sellerCount: 3 })).toEqual([ROW.label, '3']);
+    expect(exportRow(columns, { ...ROW, sellerCount: 0 })).toEqual([ROW.label, '0']);
+  });
+
+  it('drops the removed Dönem Satıcı column from an old column list', () => {
+    expect(resolveExportColumns(['periodSellerCount', 'label'])).toEqual(['label']);
+    expect(DEFAULT_EXPORT_COLUMNS).not.toContain('periodSellerCount');
   });
 
   it('falls back to the default set when nothing resolves', () => {
     // An empty CSV is never what anyone meant.
-    expect(resolveExportColumns(['sellerCount'])).toEqual([...DEFAULT_EXPORT_COLUMNS]);
+    expect(resolveExportColumns(['buyboxPrice'])).toEqual([...DEFAULT_EXPORT_COLUMNS]);
     expect(resolveExportColumns([])).toEqual([...DEFAULT_EXPORT_COLUMNS]);
     expect(resolveExportColumns(undefined)).toEqual([...DEFAULT_EXPORT_COLUMNS]);
   });

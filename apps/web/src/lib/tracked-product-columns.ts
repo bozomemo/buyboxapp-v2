@@ -13,7 +13,10 @@
  * query over the whole set** — the catalogue data a sweep produces, and the period price band,
  * which is a single `GROUP BY` however many products are in it (`brand-reports.ts`).
  *
- * A column is **not** exportable when its value needs the latest look *per row*: `sellerCount`,
+ * `sellerCount` is exportable since 2026-11-08: it is the 30-day distinct-seller count the list
+ * query computes on the row itself (`tracked_product_sellers`), no longer the latest look's count.
+ *
+ * A column is **not** exportable when its value needs the latest look *per row*:
  * `medianPrice`, `spreadPct`, `buyboxPrice`, `buyboxSeller`. That is one query per row, bounded
  * to a page on screen and unbounded across a 5,000-row export — exactly the fan-out server
  * paging exists to avoid. Asking for one yields an empty column rather than a slow request; see
@@ -38,7 +41,6 @@ export type TrackedColumnId =
   | 'buyboxSeller'
   | 'periodMinPrice'
   | 'periodMaxPrice'
-  | 'periodSellerCount'
   | 'referencePrice'
   | 'discovery'
   | 'lastSwept'
@@ -69,8 +71,9 @@ export interface ExportableProduct {
   readonly period?: {
     readonly minPrice: bigint | null;
     readonly maxPrice: bigint | null;
-    readonly sellerCount: number;
   } | null;
+  /** Distinct sellers seen in the last 30 days (`queryTrackedProducts`' `sellerCount`). */
+  readonly sellerCount?: number;
   /**
    * The brand's own published price, in kuruş. Exportable — unlike the current-market columns —
    * because it comes off the row itself and costs no per-row query.
@@ -106,11 +109,9 @@ const EXPORTABLE: Readonly<Record<TrackedColumnId, ColumnSpec | null>> = {
   // Major units, no symbol — see `money`.
   periodMinPrice: { header: 'Dönem En Düşük', value: (r) => money(r.period?.minPrice) },
   periodMaxPrice: { header: 'Dönem En Yüksek', value: (r) => money(r.period?.maxPrice) },
-  periodSellerCount: {
-    header: 'Dönem Satıcı Sayısı',
-    // Empty rather than `0` when the product had no look at all in the window: "nobody sold it"
-    // and "we never looked" are different findings and must not render the same.
-    value: (r) => (r.period ? String(r.period.sellerCount) : ''),
+  sellerCount: {
+    header: 'Satıcı Sayısı (30 gün)',
+    value: (r) => (r.sellerCount === undefined ? '' : String(r.sellerCount)),
   },
   referencePrice: { header: 'Tavsiye Fiyat', value: (r) => money(r.referencePrice) },
   discovery: { header: 'Bulunma', value: (r) => discoveryLabel(r) },
@@ -118,7 +119,6 @@ const EXPORTABLE: Readonly<Record<TrackedColumnId, ColumnSpec | null>> = {
   lastScraped: { header: 'Son Bakış', value: (r) => isoOrEmpty(r.lastScrapedAt) },
   addedAt: { header: 'Eklenme', value: (r) => isoOrEmpty(r.addedAt) },
   // Per-row queries; see the module doc comment.
-  sellerCount: null,
   medianPrice: null,
   spreadPct: null,
   buyboxPrice: null,
@@ -134,9 +134,9 @@ export const DEFAULT_EXPORT_COLUMNS: readonly TrackedColumnId[] = [
   'productRef',
   'rating',
   'ratingAverage',
+  'sellerCount',
   'periodMinPrice',
   'periodMaxPrice',
-  'periodSellerCount',
   'referencePrice',
   'discovery',
   'lastSwept',

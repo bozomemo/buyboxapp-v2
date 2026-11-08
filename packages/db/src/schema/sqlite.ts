@@ -824,6 +824,8 @@ export const trackedProducts = sqliteTable(
     uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
     index('tracked_products_watched_brand').on(t.watchedBrandId),
     index('tracked_products_barcode').on(t.barcode),
+    // The list screen's default order (review count, most first; 2026-11-08 seller filters spec §6).
+    index('tracked_products_rating_count').on(t.ratingCount),
   ],
 );
 
@@ -892,6 +894,37 @@ export const trackedProductObservations = sqliteTable(
     listingRef: text('listing_ref'),
   },
   (t) => [index('tracked_product_observations_product_observed').on(t.trackedProductId, t.observedAt)],
+);
+
+/**
+ * Which sellers a tracked product has had, and when each was first and last seen (2026-11-08,
+ * spec docs/superpowers/specs/2026-11-08-tracked-products-filters-design.md §4.2).
+ *
+ * Exists because `tracked_product_observations` is **change-only**: a card sold by the same
+ * sellers for 40 days has no observation rows in the last 30, so "who sold this in the last 30
+ * days" cannot be answered from the archive. This table is written on **every successful look**,
+ * changed or not — the same rule `has_sellers` follows — so `last_seen_at` stays within one
+ * sweep pass of now for a seller continuously on the page.
+ *
+ * A failed look and a `noOffers` look write nothing; an offer without a `seller_ref` is
+ * skipped. `last_seen_at` only moves forward, like `last_scraped_at`. Marketplace is the
+ * tracked product's; the seller's name is read from `competitor_sellers`, never stored here.
+ */
+export const trackedProductSellers = sqliteTable(
+  'tracked_product_sellers',
+  {
+    trackedProductId: text('tracked_product_id')
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    sellerRef: text('seller_ref').notNull(),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.trackedProductId, t.sellerRef] }),
+    index('tracked_product_sellers_seller_seen').on(t.sellerRef, t.lastSeenAt),
+    index('tracked_product_sellers_product_seen').on(t.trackedProductId, t.lastSeenAt),
+  ],
 );
 
 /**

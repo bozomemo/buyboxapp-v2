@@ -674,6 +674,8 @@ export const trackedProducts = mysqlTable(
     uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
     index('tracked_products_watched_brand').on(t.watchedBrandId),
     index('tracked_products_barcode').on(t.barcode),
+    // The list screen's default order (review count, most first; 2026-11-08 seller filters spec §6).
+    index('tracked_products_rating_count').on(t.ratingCount),
     // Named explicitly: the auto-generated name exceeds MySQL's 64-char identifier limit.
     foreignKey({
       name: 'fk_tracked_products_watched_brand_id',
@@ -745,6 +747,31 @@ export const trackedProductObservations = mysqlTable(
     // Named explicitly: the auto-generated name exceeds MySQL's 64-char identifier limit.
     foreignKey({
       name: 'fk_tpo_tracked_product_id',
+      columns: [t.trackedProductId],
+      foreignColumns: [trackedProducts.id],
+    }).onDelete('cascade'),
+  ],
+);
+
+/** See the doc comment on `trackedProductSellers` in `schema/sqlite.ts`. */
+export const trackedProductSellers = mysqlTable(
+  'tracked_product_sellers',
+  {
+    trackedProductId: code('tracked_product_id', 36).notNull(),
+    // `varchar`, not `text`: half of the primary key, and InnoDB cannot index an unbounded
+    // TEXT without a prefix length (see this file's header note). Same width as
+    // `competitor_sellers.seller_ref`.
+    sellerRef: code('seller_ref', 64).notNull(),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.trackedProductId, t.sellerRef] }),
+    index('tracked_product_sellers_seller_seen').on(t.sellerRef, t.lastSeenAt),
+    index('tracked_product_sellers_product_seen').on(t.trackedProductId, t.lastSeenAt),
+    // Named explicitly: the auto-generated name exceeds MySQL's 64-char identifier limit.
+    foreignKey({
+      name: 'fk_tps_tracked_product_id',
       columns: [t.trackedProductId],
       foreignColumns: [trackedProducts.id],
     }).onDelete('cascade'),

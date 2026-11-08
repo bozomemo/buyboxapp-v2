@@ -124,6 +124,13 @@ describe('WatchedBrandsClient', () => {
       expect(screen.getByRole('button', { name: 'Sadece katalog' }).getAttribute('title')).toBe(
         'Yalnızca katalog: hangi ürünler var? Satıcı/buybox verisi toplanmaz.',
       );
+      // The counts include cards nobody sells, which Takip Edilen Ürünler hides by default since
+      // 2026-11-08 — so the count links ask for every card, or the list would show fewer rows
+      // than the number that was clicked.
+      expect(screen.getByRole('link', { name: '887' }).getAttribute('href')).toContain('includeNoSeller=true');
+      expect(screen.getByRole('link', { name: '(574 değerlendirmesiz)' }).getAttribute('href')).toContain(
+        'includeNoSeller=true',
+      );
     });
   });
 });

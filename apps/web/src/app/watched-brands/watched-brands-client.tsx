@@ -357,15 +357,16 @@ export function WatchedBrandsClient() {
       case 'products':
         return (
           <>
+            {/* includeNoSeller: these counts include cards nobody sells, which Takip Edilen Ürünler hides by default (2026-11-08). */}
             <Link
-              href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}`}
+              href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}&includeNoSeller=true`}
               className="text-(--color-accent) hover:underline"
             >
               {formatNumber(brand.productCount)}
             </Link>
             {brand.unratedCount > 0 && (
               <Link
-                href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}&unratedOnly=true`}
+                href={`/tracked-products?watchedBrandId=${encodeURIComponent(brand.id)}&unratedOnly=true&includeNoSeller=true`}
                 className="ml-1 text-xs text-(--color-muted) hover:text-(--color-accent) hover:underline"
                 title="Hiç değerlendirmesi olmayan ürünler. Bunları çıkarmak derin taramayı belirgin şekilde hızlandırır."
               >

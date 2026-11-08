@@ -10,6 +10,7 @@ import {
   count,
   desc,
   eq,
+  getTableColumns,
   gte,
   inArray,
   isNotNull,
@@ -582,7 +583,107 @@ export async function recordTrackedProductLook(
         .where(eq(mysqlSchema.trackedProducts.id, look.trackedProductId)),
   });
 
+  if (!failed) {
+    await recordSellerPresence(appDb, look);
+  }
+
   return { changed };
+}
+
+/**
+ * Upserts one `tracked_product_sellers` row per distinct seller of a successful look (2026-11-08,
+ * seller filters spec §4.2). Runs whether or not the offer set changed — that is the point of
+ * the table: the archive is change-only, so "seen in the last 30 days" has to be recorded here.
+ *
+ * Only `status = 'ok'` rows with a `seller_ref` count; a `noOffers` look therefore writes
+ * nothing. `last_seen_at` only moves forward, like `last_scraped_at`, so a retry of an older
+ * cycle landing late cannot pull a seller out of the window.
+ */
+async function recordSellerPresence(appDb: AppDatabase, look: TrackedProductLook): Promise<void> {
+  const refs = [
+    ...new Set(
+      look.rows
+        .filter((row) => row.status === 'ok' && row.sellerRef !== null && row.sellerRef !== undefined)
+        .map((row) => row.sellerRef as string),
+    ),
+  ];
+  if (refs.length === 0) return;
+  const values = refs.map((sellerRef) => ({
+    trackedProductId: look.trackedProductId,
+    sellerRef,
+    firstSeenAt: look.observedAt,
+    lastSeenAt: look.observedAt,
+  }));
+  await runDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .insert(sqliteSchema.trackedProductSellers)
+        .values(values)
+        .onConflictDoUpdate({
+          target: [
+            sqliteSchema.trackedProductSellers.trackedProductId,
+            sqliteSchema.trackedProductSellers.sellerRef,
+          ],
+          set: {
+            lastSeenAt: sql`max(${sqliteSchema.trackedProductSellers.lastSeenAt}, excluded.last_seen_at)`,
+          },
+        }),
+    postgres: (db) =>
+      db
+        .insert(postgresSchema.trackedProductSellers)
+        .values(values)
+        .onConflictDoUpdate({
+          target: [
+            postgresSchema.trackedProductSellers.trackedProductId,
+            postgresSchema.trackedProductSellers.sellerRef,
+          ],
+          set: {
+            lastSeenAt: sql`greatest(${postgresSchema.trackedProductSellers.lastSeenAt}, excluded.last_seen_at)`,
+          },
+        }),
+    mysql: (db) =>
+      db
+        .insert(mysqlSchema.trackedProductSellers)
+        .values(values)
+        .onDuplicateKeyUpdate({
+          set: {
+            lastSeenAt: sql`greatest(${mysqlSchema.trackedProductSellers.lastSeenAt}, values(last_seen_at))`,
+          },
+        }),
+  });
+}
+
+/** Every seller a tracked product has had, by `seller_ref` (tests and diagnostics). */
+export async function listTrackedProductSellers(
+  appDb: AppDatabase,
+  trackedProductId: string,
+): Promise<{ sellerRef: string; firstSeenAt: number; lastSeenAt: number }[]> {
+  return withDialect(appDb, {
+    sqlite: (db) => {
+      const t = sqliteSchema.trackedProductSellers;
+      return db
+        .select({ sellerRef: t.sellerRef, firstSeenAt: t.firstSeenAt, lastSeenAt: t.lastSeenAt })
+        .from(t)
+        .where(eq(t.trackedProductId, trackedProductId))
+        .orderBy(asc(t.sellerRef));
+    },
+    postgres: (db) => {
+      const t = postgresSchema.trackedProductSellers;
+      return db
+        .select({ sellerRef: t.sellerRef, firstSeenAt: t.firstSeenAt, lastSeenAt: t.lastSeenAt })
+        .from(t)
+        .where(eq(t.trackedProductId, trackedProductId))
+        .orderBy(asc(t.sellerRef));
+    },
+    mysql: (db) => {
+      const t = mysqlSchema.trackedProductSellers;
+      return db
+        .select({ sellerRef: t.sellerRef, firstSeenAt: t.firstSeenAt, lastSeenAt: t.lastSeenAt })
+        .from(t)
+        .where(eq(t.trackedProductId, trackedProductId))
+        .orderBy(asc(t.sellerRef));
+    },
+  });
 }
 
 /**
@@ -981,10 +1082,47 @@ export interface TrackedProductQueryOptions {
    * the rows that lane keeps fresh.
    */
   readonly listedOnly?: boolean;
-  readonly sort?: 'label' | 'ratingCount' | 'categoryName' | 'lastSweptAt' | 'addedAt';
+  /**
+   * Hides products whose last successful look found **nobody selling** (`has_sellers = false`)
+   * — the list screen's default (2026-11-08 seller filters spec §2). Not-yet-looked products
+   * (`null`) stay: right after a brand sweep most products are in that state.
+   */
+  readonly hideNoSeller?: boolean;
+  /**
+   * Products this seller was seen on at any successful look since `sellerSinceMs`. Seller refs
+   * are unique only within a marketplace, so the marketplace is part of the identity and only
+   * that marketplace's products match (spec §5.1).
+   */
+  readonly seller?: { readonly marketplaceCode: string; readonly sellerRef: string };
+  /** At least this many distinct sellers seen since `sellerSinceMs`. */
+  readonly minSellerCount?: number;
+  /**
+   * Start of the seller window, epoch ms — `tracked_product_sellers.last_seen_at >= this`.
+   * Also the window of each row's `sellerCount`. Absent = all time.
+   */
+  readonly sellerSinceMs?: number;
+  readonly sort?: 'label' | 'ratingCount' | 'categoryName' | 'lastSweptAt' | 'addedAt' | 'sellerCount';
   readonly sortDir?: 'asc' | 'desc';
   readonly limit: number;
   readonly offset: number;
+}
+
+/** A grid row: the product plus its distinct-seller count over the query's seller window. */
+export type TrackedProductListRow = TrackedProductRow & { readonly sellerCount: number };
+
+/**
+ * Distinct sellers of the outer `tracked_products` row seen since `sinceMs`, as a correlated
+ * subquery (spec §4.3, builder's call): it is evaluated only for the rows a page returns unless
+ * the caller filters or sorts on it, and `(tracked_product_id, last_seen_at)` serves it on every
+ * dialect. One row per product × seller, so `count(*)` is already distinct.
+ *
+ * Only schema identifiers and bound parameters are interpolated — no caller input reaches the
+ * SQL text (doc 09 §20).
+ */
+function sellerCountExpr(t: TrackedSchema, sinceMs: number): SQL<number> {
+  return sql<number>`(select count(*) from tracked_product_sellers tps where tps.tracked_product_id = ${t.id} and tps.last_seen_at >= ${sinceMs})`.mapWith(
+    Number,
+  );
 }
 
 type TrackedSchema =
@@ -1021,6 +1159,17 @@ function buildTrackedWhere(t: TrackedSchema, cards: CardsSchema, options: Tracke
   // offering it for removal on the strength of our own parse failure would be wrong.
   if (options.unratedOnly) parts.push(eq(t.ratingCount, 0));
   if (options.noSellerOnly) parts.push(eq(t.hasSellers, false));
+  // Spelled out rather than `is distinct from false`, which MySQL does not have.
+  if (options.hideNoSeller) parts.push(or(isNull(t.hasSellers), eq(t.hasSellers, true)));
+  const sinceMs = options.sellerSinceMs ?? 0;
+  if (options.seller !== undefined) {
+    parts.push(
+      eq(t.marketplaceCode, options.seller.marketplaceCode),
+      sql`exists (select 1 from tracked_product_sellers tps where tps.tracked_product_id = ${t.id} and tps.seller_ref = ${options.seller.sellerRef} and tps.last_seen_at >= ${sinceMs})`,
+    );
+  }
+  if (options.minSellerCount !== undefined)
+    parts.push(gte(sellerCountExpr(t, sinceMs), options.minSellerCount));
   if (options.minRatingCount !== undefined) parts.push(gte(t.ratingCount, options.minRatingCount));
   if (options.text !== undefined && options.text.trim() !== '') {
     // A bound parameter, not interpolation.
@@ -1030,8 +1179,10 @@ function buildTrackedWhere(t: TrackedSchema, cards: CardsSchema, options: Tracke
   return parts.length === 0 ? undefined : and(...parts);
 }
 
-function trackedSortColumn(t: TrackedSchema, sort: TrackedProductQueryOptions['sort']) {
-  switch (sort) {
+function trackedSortColumn(t: TrackedSchema, options: TrackedProductQueryOptions): AnyColumn | SQL {
+  switch (options.sort) {
+    case 'sellerCount':
+      return sellerCountExpr(t, options.sellerSinceMs ?? 0);
     case 'ratingCount':
       return t.ratingCount;
     case 'categoryName':
@@ -1059,9 +1210,18 @@ function trackedSortColumn(t: TrackedSchema, sort: TrackedProductQueryOptions['s
  * (false < true), SQLite and MySQL yield 0/1. No dialect needs a `NULLS LAST` clause, which
  * MySQL does not support anyway.
  */
-function trackedOrderBy(column: AnyColumn, sortDir: 'asc' | 'desc' | undefined): SQL[] {
+function trackedOrderBy(column: AnyColumn | SQL, sortDir: 'asc' | 'desc' | undefined): SQL[] {
   const direction = sortDir === 'desc' ? desc : asc;
   return [sql`${column} is null`, direction(column)];
+}
+
+/**
+ * The grid's full ORDER BY: the chosen column (nulls last), then label, then id — so ties (most
+ * products share a seller count, many a rating count) come back in a stable, readable order and
+ * a page boundary never shuffles a row onto two pages (2026-11-08 seller filters spec).
+ */
+function trackedGridOrder(t: TrackedSchema, options: TrackedProductQueryOptions): SQL[] {
+  return [...trackedOrderBy(trackedSortColumn(t, options), options.sortDir), asc(t.label), asc(t.id)];
 }
 
 /**
@@ -1076,65 +1236,227 @@ function trackedOrderBy(column: AnyColumn, sortDir: 'asc' | 'desc' | undefined):
 export async function queryTrackedProducts(
   appDb: AppDatabase,
   options: TrackedProductQueryOptions,
-): Promise<{ rows: TrackedProductRow[]; total: number }> {
+): Promise<{ rows: TrackedProductListRow[]; total: number }> {
   const { limit, offset } = options;
+  const sinceMs = options.sellerSinceMs ?? 0;
   return withDialect(appDb, {
     sqlite: async (db) => {
-      const where = buildTrackedWhere(sqliteSchema.trackedProducts, sqliteSchema.brandProductCards, options);
+      const t = sqliteSchema.trackedProducts;
+      const where = buildTrackedWhere(t, sqliteSchema.brandProductCards, options);
       const [rows, totalRow] = await Promise.all([
         db
-          .select()
-          .from(sqliteSchema.trackedProducts)
+          .select({ ...getTableColumns(t), sellerCount: sellerCountExpr(t, sinceMs) })
+          .from(t)
           .where(where)
-          .orderBy(
-            ...trackedOrderBy(trackedSortColumn(sqliteSchema.trackedProducts, options.sort), options.sortDir),
-          )
+          .orderBy(...trackedGridOrder(t, options))
           .limit(limit)
           .offset(offset),
-        db.select({ n: count() }).from(sqliteSchema.trackedProducts).where(where),
+        db.select({ n: count() }).from(t).where(where),
       ]);
-      return { rows: rows as TrackedProductRow[], total: Number(totalRow[0]?.n ?? 0) };
+      return { rows: rows as TrackedProductListRow[], total: Number(totalRow[0]?.n ?? 0) };
     },
     postgres: async (db) => {
-      const where = buildTrackedWhere(
-        postgresSchema.trackedProducts,
-        postgresSchema.brandProductCards,
-        options,
-      );
+      const t = postgresSchema.trackedProducts;
+      const where = buildTrackedWhere(t, postgresSchema.brandProductCards, options);
       const [rows, totalRow] = await Promise.all([
         db
-          .select()
-          .from(postgresSchema.trackedProducts)
+          .select({ ...getTableColumns(t), sellerCount: sellerCountExpr(t, sinceMs) })
+          .from(t)
           .where(where)
-          .orderBy(
-            ...trackedOrderBy(
-              trackedSortColumn(postgresSchema.trackedProducts, options.sort),
-              options.sortDir,
-            ),
-          )
+          .orderBy(...trackedGridOrder(t, options))
           .limit(limit)
           .offset(offset),
-        db.select({ n: count() }).from(postgresSchema.trackedProducts).where(where),
+        db.select({ n: count() }).from(t).where(where),
       ]);
-      return { rows: rows as TrackedProductRow[], total: Number(totalRow[0]?.n ?? 0) };
+      return { rows: rows as TrackedProductListRow[], total: Number(totalRow[0]?.n ?? 0) };
     },
     mysql: async (db) => {
-      const where = buildTrackedWhere(mysqlSchema.trackedProducts, mysqlSchema.brandProductCards, options);
+      const t = mysqlSchema.trackedProducts;
+      const where = buildTrackedWhere(t, mysqlSchema.brandProductCards, options);
       const [rows, totalRow] = await Promise.all([
         db
-          .select()
-          .from(mysqlSchema.trackedProducts)
+          .select({ ...getTableColumns(t), sellerCount: sellerCountExpr(t, sinceMs) })
+          .from(t)
           .where(where)
-          .orderBy(
-            ...trackedOrderBy(trackedSortColumn(mysqlSchema.trackedProducts, options.sort), options.sortDir),
-          )
+          .orderBy(...trackedGridOrder(t, options))
           .limit(limit)
           .offset(offset),
-        db.select({ n: count() }).from(mysqlSchema.trackedProducts).where(where),
+        db.select({ n: count() }).from(t).where(where),
       ]);
-      return { rows: rows as TrackedProductRow[], total: Number(totalRow[0]?.n ?? 0) };
+      return { rows: rows as TrackedProductListRow[], total: Number(totalRow[0]?.n ?? 0) };
     },
   });
+}
+
+/** SQLite's bound-parameter ceiling is the tightest of the three; stay well under it. */
+const ID_CHUNK = 500;
+
+/**
+ * The latest look of each product in `ids` — the same rows `latestTrackedProductObservations`
+ * returns per id, read in one query per chunk instead of two per row (2026-11-08 seller filters
+ * spec §6: a 200-row page made 400 queries). Products never looked at are absent from the map.
+ *
+ * "Latest" is a correlated `max(observed_at)` per product, which the
+ * `(tracked_product_id, observed_at)` index answers on every dialect.
+ */
+export async function latestTrackedProductObservationsFor(
+  appDb: AppDatabase,
+  ids: readonly string[],
+): Promise<Map<string, TrackedProductObservationRow[]>> {
+  const result = new Map<string, TrackedProductObservationRow[]>();
+  const unique = [...new Set(ids)];
+  for (let i = 0; i < unique.length; i += ID_CHUNK) {
+    const chunk = unique.slice(i, i + ID_CHUNK);
+    const rows = (await withDialect(appDb, {
+      sqlite: (db) => {
+        const o = sqliteSchema.trackedProductObservations;
+        return db
+          .select()
+          .from(o)
+          .where(
+            and(
+              inArray(o.trackedProductId, chunk),
+              sql`${o.observedAt} = (select max(o2.observed_at) from tracked_product_observations o2 where o2.tracked_product_id = ${o.trackedProductId})`,
+            ),
+          )
+          .orderBy(asc(o.trackedProductId), asc(o.rank));
+      },
+      postgres: (db) => {
+        const o = postgresSchema.trackedProductObservations;
+        return db
+          .select()
+          .from(o)
+          .where(
+            and(
+              inArray(o.trackedProductId, chunk),
+              sql`${o.observedAt} = (select max(o2.observed_at) from tracked_product_observations o2 where o2.tracked_product_id = ${o.trackedProductId})`,
+            ),
+          )
+          .orderBy(asc(o.trackedProductId), asc(o.rank));
+      },
+      mysql: (db) => {
+        const o = mysqlSchema.trackedProductObservations;
+        return db
+          .select()
+          .from(o)
+          .where(
+            and(
+              inArray(o.trackedProductId, chunk),
+              sql`${o.observedAt} = (select max(o2.observed_at) from tracked_product_observations o2 where o2.tracked_product_id = ${o.trackedProductId})`,
+            ),
+          )
+          .orderBy(asc(o.trackedProductId), asc(o.rank));
+      },
+    })) as TrackedProductObservationRow[];
+    for (const row of rows) {
+      const list = result.get(row.trackedProductId);
+      if (list) list.push(row);
+      else result.set(row.trackedProductId, [row]);
+    }
+  }
+  return result;
+}
+
+/** One entry of the list screen's seller dropdown (spec §4.5). */
+export interface TrackedProductSellerOption {
+  readonly marketplaceCode: string;
+  readonly sellerRef: string;
+  /** From `competitor_sellers`; `null` when that table has never seen the seller. */
+  readonly sellerName: string | null;
+  /** Products this seller was seen on since `sinceMs`, within the scope. */
+  readonly productCount: number;
+}
+
+/**
+ * The sellers seen on tracked products since `sinceMs`, most products first — the seller
+ * dropdown's source (spec §4.5). Scoped by marketplace and/or watched brand when given. Names
+ * come from `competitor_sellers` by (marketplace, seller_ref), never from display text.
+ */
+export async function trackedProductSellerOptions(
+  appDb: AppDatabase,
+  options: { readonly sinceMs: number; readonly marketplaceCode?: string; readonly watchedBrandId?: string },
+): Promise<TrackedProductSellerOption[]> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => {
+      const s = sqliteSchema.trackedProductSellers;
+      const t = sqliteSchema.trackedProducts;
+      const cs = sqliteSchema.competitorSellers;
+      const n = count();
+      return db
+        .select({
+          marketplaceCode: t.marketplaceCode,
+          sellerRef: s.sellerRef,
+          sellerName: cs.sellerName,
+          productCount: n,
+        })
+        .from(s)
+        .innerJoin(t, eq(t.id, s.trackedProductId))
+        .leftJoin(cs, and(eq(cs.marketplaceCode, t.marketplaceCode), eq(cs.sellerRef, s.sellerRef)))
+        .where(sellerOptionsWhere(s, t, options))
+        .groupBy(t.marketplaceCode, s.sellerRef, cs.sellerName)
+        .orderBy(desc(n), asc(s.sellerRef), asc(t.marketplaceCode));
+    },
+    postgres: (db) => {
+      const s = postgresSchema.trackedProductSellers;
+      const t = postgresSchema.trackedProducts;
+      const cs = postgresSchema.competitorSellers;
+      const n = count();
+      return db
+        .select({
+          marketplaceCode: t.marketplaceCode,
+          sellerRef: s.sellerRef,
+          sellerName: cs.sellerName,
+          productCount: n,
+        })
+        .from(s)
+        .innerJoin(t, eq(t.id, s.trackedProductId))
+        .leftJoin(cs, and(eq(cs.marketplaceCode, t.marketplaceCode), eq(cs.sellerRef, s.sellerRef)))
+        .where(sellerOptionsWhere(s, t, options))
+        .groupBy(t.marketplaceCode, s.sellerRef, cs.sellerName)
+        .orderBy(desc(n), asc(s.sellerRef), asc(t.marketplaceCode));
+    },
+    mysql: (db) => {
+      const s = mysqlSchema.trackedProductSellers;
+      const t = mysqlSchema.trackedProducts;
+      const cs = mysqlSchema.competitorSellers;
+      const n = count();
+      return db
+        .select({
+          marketplaceCode: t.marketplaceCode,
+          sellerRef: s.sellerRef,
+          sellerName: cs.sellerName,
+          productCount: n,
+        })
+        .from(s)
+        .innerJoin(t, eq(t.id, s.trackedProductId))
+        .leftJoin(cs, and(eq(cs.marketplaceCode, t.marketplaceCode), eq(cs.sellerRef, s.sellerRef)))
+        .where(sellerOptionsWhere(s, t, options))
+        .groupBy(t.marketplaceCode, s.sellerRef, cs.sellerName)
+        .orderBy(desc(n), asc(s.sellerRef), asc(t.marketplaceCode));
+    },
+  })) as {
+    marketplaceCode: string;
+    sellerRef: string;
+    sellerName: string | null;
+    productCount: number | string;
+  }[];
+  return rows.map((row) => ({ ...row, productCount: Number(row.productCount) }));
+}
+
+type SellersSchema =
+  | typeof sqliteSchema.trackedProductSellers
+  | typeof postgresSchema.trackedProductSellers
+  | typeof mysqlSchema.trackedProductSellers;
+
+function sellerOptionsWhere(
+  s: SellersSchema,
+  t: TrackedSchema,
+  options: { readonly sinceMs: number; readonly marketplaceCode?: string; readonly watchedBrandId?: string },
+) {
+  const parts = [gte(s.lastSeenAt, options.sinceMs)];
+  if (options.marketplaceCode !== undefined) parts.push(eq(t.marketplaceCode, options.marketplaceCode));
+  if (options.watchedBrandId !== undefined) parts.push(eq(t.watchedBrandId, options.watchedBrandId));
+  return and(...parts);
 }
 
 /** Distinct categories present among tracked products, for the grid's category filter. */

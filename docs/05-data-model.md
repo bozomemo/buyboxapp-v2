@@ -691,6 +691,42 @@ Written by whichever job read the page (`pipeline/scrape-tracked-products.ts`): 
 (doc 07 §7.4), a whole-brand scrape (§7.3) or an operator's rescan (§7.1). The rating comes free
 with a page already in hand, so no read exists for it alone.
 
+`tracked_product_sellers` — which sellers a tracked product has had, and when each was first and
+last seen (added 2026-11-08, spec `docs/superpowers/specs/2026-11-08-tracked-products-filters-design.md`
+§4). It answers "who sold this in the last 30 days" for the Takip Edilen Ürünler seller filter,
+the _Satıcı ≥_ filter and the _Satıcı_ column (doc 06 §12.2).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `tracked_product_id` | text FK, cascade | |
+| `seller_ref` | text not null (varchar(64) on MySQL) | the marketplace's seller id |
+| `first_seen_at` | bigint | set on insert |
+| `last_seen_at` | bigint | only moves forward (`max` / `greatest`), like `last_scraped_at` |
+
+Primary key `(tracked_product_id, seller_ref)`. Indexes `(seller_ref, last_seen_at)` for the
+seller filter and `(tracked_product_id, last_seen_at)` for the per-product count. Marketplace is
+the tracked product's; the seller's name is read from `competitor_sellers`, never stored here.
+
+**Why a table and not a query over `tracked_product_observations`.** That archive is
+change-only: a card sold by the same three sellers for 40 days has no observation rows in the
+last 30, so any windowed query over it reports zero sellers and a seller filter never finds the
+card. (The removed _Dönem Satıcı_ column was computed that way and had exactly this defect.)
+
+**Written on every successful look, changed or not** — the rule `has_sellers` follows — by
+`recordTrackedProductLook`: one upsert per distinct `seller_ref` of the look's `status = 'ok'`
+rows. A failed look writes nothing (a page we could not read is not evidence about sellers), a
+`noOffers` look writes nothing (there is nobody to record), and an offer without a `seller_ref`
+is skipped.
+
+**Backfill.** Migration 0026 fills the table once from `tracked_product_observations`
+(`status = 'ok'`, `seller_ref` not null), grouped by product and seller, `first_seen_at =
+min(observed_at)`, `last_seen_at = max(observed_at)`. Known, accepted gap: a seller whose offer
+set has not changed since before the window gets an old `last_seen_at`, so for up to one sweep
+pass after the upgrade the filter may miss them; the card's next successful look corrects it.
+
+Also added by migration 0026: index `tracked_products_rating_count` on
+`tracked_products(rating_count)`, the list screen's default order.
+
 ### `tracked_scrape_passes` — how far the sweep has got (2026-09-12)
 
 One row per **pass**: one lap of `SweepTrackedProducts` over every active tracked product of a
@@ -1169,6 +1205,7 @@ re-probe the entire catalogue).
 | `job_runs` | 90 days |
 | `job_queue` done/failed | 7 days |
 | `tracked_product_observations` | 90 days (added 2026-08-26) |
+| `tracked_product_sellers` | **indefinite** (added 2026-11-08) — one row per product × seller, not per look, so it does not grow with time; removed with its tracked product |
 | `brand_findings` | **indefinite** (added 2026-09-03) — one row per finding *span*, not per look; it is the record of what was already announced, and pruning it would re-announce old findings |
 | `band_violations` | resolved rows 365 days; open rows never (added 2026-09-19) |
 | `notification_deliveries` | 30 days (added 2026-09-19) |
