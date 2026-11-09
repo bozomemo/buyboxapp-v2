@@ -15,7 +15,7 @@ Plan: `docs/superpowers/plans/2026-11-08-tracked-products-filters.md` ·
 |---|---|
 | Özellik kodu (sıralama, satıcı filtreleri, sade üst bölüm) | Bitti, `development`'a commit edildi, push edildi |
 | Hız düzeltmeleri | İki tur: `666bad1` (son bakış sorgusu), `fe83993` (fiyat bandı) |
-| Test reposu `bozomemo/buybox-releases-test` | v0.2.4, v0.2.5 yayında; **v0.2.6 derleniyordu** (bkz. §5) |
+| Test reposu `bozomemo/buybox-releases-test` | v0.2.4, v0.2.5, v0.2.6 yayında (0.2.6: 2026-11-09, testler + smoke geçti) |
 | Gerçek repo `bozomemo/buybox-releases` | **Hâlâ hiç release yok.** 0.2.4 denemesi yayından önce durduruldu |
 | Bu PC'deki kurulum | 0.2.5, PostgreSQL, şema 27/27, worker çalışıyor |
 | Kaynak repoda sürüm etiketi | Yok. Test yayınları `-SkipTagPush` ile yapıldı; `v0.2.x` etiketi atılmadı |
