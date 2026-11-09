@@ -622,6 +622,51 @@ for (const dialect of ALL_DIALECTS) {
     });
 
     /**
+     * The tracked-products grid needs only the band. The distinct counts `trackedProductPeriodStats`
+     * adds cost a text sort under a `tr-TR` collation: 250 ms of a 200-row page on PostgreSQL.
+     */
+    describe('trackedProductPriceBands', () => {
+      it('reports the same band as trackedProductPeriodStats, failed and out-of-window looks ignored', async () => {
+        db = await createTestDb(dialect);
+        const { brandId } = await seed(db.appDb);
+        const productId = await addProduct(db.appDb, brandId, '2250165');
+        const other = await addProduct(db.appDb, brandId, '2250166');
+        const never = await addProduct(db.appDb, brandId, '2250167');
+        await look(db.appDb, productId, NOW - 90 * DAY, [['a', 10]]);
+        await look(db.appDb, productId, NOW - 2 * DAY, [
+          ['a', 100],
+          ['b', 120],
+        ]);
+        await look(db.appDb, productId, NOW - DAY, [
+          ['a', 90],
+          ['c', 150],
+        ]);
+        await look(db.appDb, other, NOW - DAY, [['a', 70]]);
+        await trackedProductsRepo.insertTrackedProductObservations(db.appDb, [
+          {
+            id: newId(),
+            trackedProductId: other,
+            observedAt: NOW,
+            status: 'fetchFailed',
+            rank: null,
+            sellerName: null,
+            sellerRef: null,
+            price: null,
+            finalPrice: null,
+            offeredStock: null,
+          },
+        ]);
+
+        const bands = await brandReportsRepo.trackedProductPriceBands(db.appDb, [productId, other, never], WINDOW);
+
+        expect(bands.get(productId)).toEqual({ minPrice: lira(90), maxPrice: lira(150) });
+        expect(bands.get(other)).toEqual({ minPrice: lira(70), maxPrice: lira(70) });
+        expect(bands.has(never)).toBe(false);
+        expect((await brandReportsRepo.trackedProductPriceBands(db.appDb, [], WINDOW)).size).toBe(0);
+      }, 30_000);
+    });
+
+    /**
      * The brand-side answer to `sellerListingBreakdown`, and the fix for the empty seller page
      * a brand-audit finding used to lead to: that query joins through `listings`, so a seller we
      * share no product with came back with nothing at all (doc 06 §12.4).

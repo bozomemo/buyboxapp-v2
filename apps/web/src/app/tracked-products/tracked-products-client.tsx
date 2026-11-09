@@ -88,7 +88,6 @@ interface TrackedProduct {
 interface PeriodStats {
   minPrice: string | null;
   maxPrice: string | null;
-  changeCount: number;
 }
 
 /** One seller of the Satıcı dropdown (`/api/tracked-products/sellers`). */

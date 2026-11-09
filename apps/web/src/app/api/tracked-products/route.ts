@@ -47,11 +47,11 @@ async function periodStatsFor(
   appDb: ReturnType<typeof getAppDb>,
   productIds: readonly string[],
   window: { sinceMs: number; untilMs: number },
-): Promise<Map<string, brandReportsRepo.BrandProductPeriodStats>> {
-  const merged = new Map<string, brandReportsRepo.BrandProductPeriodStats>();
+): Promise<Map<string, brandReportsRepo.TrackedProductPriceBand>> {
+  const merged = new Map<string, brandReportsRepo.TrackedProductPriceBand>();
   for (let i = 0; i < productIds.length; i += PERIOD_STATS_CHUNK) {
     const chunk = productIds.slice(i, i + PERIOD_STATS_CHUNK);
-    for (const [id, stats] of await brandReportsRepo.trackedProductPeriodStats(appDb, chunk, window)) {
+    for (const [id, stats] of await brandReportsRepo.trackedProductPriceBands(appDb, chunk, window)) {
       merged.set(id, stats);
     }
   }
@@ -271,7 +271,6 @@ async function getHandler(request: Request) {
           ? {
               minPrice: stats.minPrice?.toString() ?? null,
               maxPrice: stats.maxPrice?.toString() ?? null,
-              changeCount: stats.changeCount,
             }
           : null;
       })(),

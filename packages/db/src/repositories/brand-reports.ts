@@ -316,6 +316,78 @@ export async function trackedProductPeriodStats(
   return new Map(rows.map((row) => [row.trackedProductId, row]));
 }
 
+/** The window's price band for one tracked product; see `trackedProductPriceBands`. */
+export interface TrackedProductPriceBand {
+  readonly minPrice: bigint | null;
+  readonly maxPrice: bigint | null;
+}
+
+/**
+ * Only the band of `trackedProductPeriodStats` — the same rows, the same window, no distinct
+ * counts. The tracked-products grid reads nothing else, and the two `count(distinct …)` force a
+ * text sort that a `tr-TR` database collation makes slow: 250 ms against 40 ms for a 200-row
+ * page on the 2026-11-08 install. Products with no successful look in the window are absent.
+ */
+export async function trackedProductPriceBands(
+  appDb: AppDatabase,
+  productIds: readonly string[],
+  window: BrandReportWindow,
+): Promise<Map<string, TrackedProductPriceBand>> {
+  if (productIds.length === 0) return new Map();
+  const ids = [...productIds];
+  const toBand = (r: { minPrice: unknown; maxPrice: unknown }, decode: (v: unknown) => bigint | null) => ({
+    minPrice: decode(r.minPrice),
+    maxPrice: decode(r.maxPrice),
+  });
+
+  const rows = await withDialect(appDb, {
+    sqlite: async (db) => {
+      const o = sqliteSchema.trackedProductObservations;
+      return (
+        await db
+          .select({
+            trackedProductId: o.trackedProductId,
+            minPrice: sql<string | null>`min(${o.price})`,
+            maxPrice: sql<string | null>`max(${o.price})`,
+          })
+          .from(o)
+          .where(and(inArray(o.trackedProductId, ids), priceRowsClause(o, window)))
+          .groupBy(o.trackedProductId)
+      ).map((r) => [r.trackedProductId, toBand(r, decodeSqliteMoney)] as const);
+    },
+    postgres: async (db) => {
+      const o = postgresSchema.trackedProductObservations;
+      return (
+        await db
+          .select({
+            trackedProductId: o.trackedProductId,
+            minPrice: sql<string | null>`min(${o.price})`,
+            maxPrice: sql<string | null>`max(${o.price})`,
+          })
+          .from(o)
+          .where(and(inArray(o.trackedProductId, ids), priceRowsClause(o, window)))
+          .groupBy(o.trackedProductId)
+      ).map((r) => [r.trackedProductId, toBand(r, decodeNativeMoney)] as const);
+    },
+    mysql: async (db) => {
+      const o = mysqlSchema.trackedProductObservations;
+      return (
+        await db
+          .select({
+            trackedProductId: o.trackedProductId,
+            minPrice: sql<string | null>`min(${o.price})`,
+            maxPrice: sql<string | null>`max(${o.price})`,
+          })
+          .from(o)
+          .where(and(inArray(o.trackedProductId, ids), priceRowsClause(o, window)))
+          .groupBy(o.trackedProductId)
+      ).map((r) => [r.trackedProductId, toBand(r, decodeNativeMoney)] as const);
+    },
+  });
+
+  return new Map(rows);
+}
+
 /**
  * One row per identified seller, across every tracked product they were seen on in the window —
  * the brand-side answer to "who sells my products, and how".
