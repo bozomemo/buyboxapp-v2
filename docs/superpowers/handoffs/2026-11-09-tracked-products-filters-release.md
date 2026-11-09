@@ -16,9 +16,9 @@ Plan: `docs/superpowers/plans/2026-11-08-tracked-products-filters.md` ·
 | Özellik kodu (sıralama, satıcı filtreleri, sade üst bölüm) | Bitti, `development`'a commit edildi, push edildi |
 | Hız düzeltmeleri | İki tur: `666bad1` (son bakış sorgusu), `fe83993` (fiyat bandı) |
 | Test reposu `bozomemo/buybox-releases-test` | v0.2.4, v0.2.5, v0.2.6 yayında (0.2.6: 2026-11-09, testler + smoke geçti) |
-| Gerçek repo `bozomemo/buybox-releases` | **Hâlâ hiç release yok.** 0.2.4 denemesi yayından önce durduruldu |
-| Bu PC'deki kurulum | 0.2.5, PostgreSQL, şema 27/27, worker çalışıyor |
-| Kaynak repoda sürüm etiketi | Yok. Test yayınları `-SkipTagPush` ile yapıldı; `v0.2.x` etiketi atılmadı |
+| Gerçek repo `bozomemo/buybox-releases` | **v0.2.6 yayında (2026-11-09)**, ilk sürüm, 7 dosya (tüm bileşenler). 0.2.4 denemesi yayından önce durdurulmuştu |
+| Bu PC'deki kurulum | 0.2.6, PostgreSQL, şema 27/27 |
+| Kaynak repoda sürüm etiketi | `v0.2.6` → `fe83993` (gerçek yayınla atıldı). Test yayınları etiketsiz |
 
 ## 2. Yapılan özellik (0.2.4)
 
@@ -51,9 +51,9 @@ Hedef (spec): 200 satır < 300 ms, 50 satır < 150 ms. Tarayıcıdan `fetch` ile
 
 | İstek | 0.2.4 | 0.2.5 | 0.2.6 |
 |---|---|---|---|
-| 200 satır (varsayılan) | 1,2–1,8 sn | 450–820 ms | ölçülmedi |
-| 50 satır | ~370 ms | ~175 ms | ölçülmedi |
-| 200 satır, Satıcı ≥ 3 | 1,3 sn | 770 ms | ölçülmedi |
+| 200 satır (varsayılan) | 1,2–1,8 sn | 450–820 ms | 150–200 ms |
+| 50 satır | ~370 ms | ~175 ms | ~68 ms |
+| 200 satır, Satıcı ≥ 3 | 1,3 sn | 770 ms | 306 ms |
 | 200 satır, satıcı sayısına göre sıralı | 2,9 sn | — | ölçülmedi |
 | Satıcı listesi (`/api/tracked-products/sellers`) | 203 ms | — | — |
 
@@ -72,6 +72,8 @@ Bulunan nedenler (`EXPLAIN ANALYZE`, `buybox` veritabanı):
 Diğer sorgular hızlı: ana liste ~36–65 ms, sayım ~8 ms, kart linkleri < 1 ms.
 
 ## 5. Kaldığı yer ve sıradaki adımlar
+
+**2026-11-09 sonu: 1–4 tamamlandı.** 0.2.6 bu PC'ye kuruldu, hız hedefi tuttu, gerçek repoya yayınlandı. İlk gerçek yayın denemesi bir Vitest worker başlatma zaman aşımıyla düştü (952/952 test geçmişti, makine yüklüydü); tekrar denemede geçti. Not: Claude'un tarayıcı paneli `confirm()` pencerelerini engeller; "Şimdi kur" orada çalışmaz, normal tarayıcıda çalışır. Repo artık `C:UsersMEHMETDesktopMasaüstücodeuyboxapp-v2`.
 
 1. **0.2.6 test deposu derlemesi.** Arka planda başlatıldı (commit `fe83993`). Log:
    `%LOCALAPPDATA%\Temp\claude\...\scratchpad\release-test-0.2.6.log` (geçici klasör, kalıcı değil).
