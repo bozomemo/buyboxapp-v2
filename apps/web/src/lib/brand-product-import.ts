@@ -106,7 +106,16 @@ export async function readBrandImportTable(file: BrandImportFile): Promise<Table
   // Imported here rather than at module scope: `exceljs` is a server-side dependency, and this
   // module's pure half is also read by the column-name documentation on the screen.
   const { readXlsxTable } = await import('@buybox/adapters');
-  const table = await readXlsxTable(file.fileBase64);
+  // A truncated upload, a renamed .xls or a file that is not a workbook at all makes the zip
+  // reader throw. That is the operator's file, not a server fault: answered as a refusal they can
+  // act on, not a blank 500 (found 2026-11-10 with a mangled tariff upload). Both imports — stock
+  // products and the commission tariff — read through here.
+  let table: Awaited<ReturnType<typeof readXlsxTable>>;
+  try {
+    table = await readXlsxTable(file.fileBase64);
+  } catch {
+    return { error: 'Dosya okunamadı: bozuk ya da gerçek bir Excel (.xlsx) dosyası değil.' };
+  }
   if (!table) return { error: 'Çalışma sayfası okunamadı ya da boş.' };
   return { headerLine: table.headerLine, headers: table.headers.map(foldHeader), rows: table.rows };
 }

@@ -149,6 +149,17 @@ describe('parseCommissionTariffFile', () => {
     ]);
   });
 
+  it('reports a corrupt workbook instead of throwing (was a blank 500, 2026-11-10)', async () => {
+    const good = await xlsx([row('064992714512', '064992714512')]);
+    // A zip whose first local header is damaged: what a truncated or mangled upload looks like.
+    const corrupt = 'AAAA' + good.slice(4);
+    const result = await parseCommissionTariffFile({ fileBase64: corrupt, fileName: 'tarife.xlsx' }, NOV_2_2026);
+    expect(result).toEqual({
+      ok: false,
+      error: 'Dosya okunamadı: bozuk ya da gerçek bir Excel (.xlsx) dosyası değil.',
+    });
+  });
+
   it('refuses a file that is not a tariff workbook outright', async () => {
     const workbook = new ExcelJS.Workbook();
     workbook.addWorksheet('x').addRow(['Ürün Adı', 'PSF']);
