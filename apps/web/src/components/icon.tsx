@@ -42,6 +42,7 @@ export {
   GitCompare,
   History,
   Inbox,
+  Info,
   LayoutDashboard,
   Loader2,
   LogOut,

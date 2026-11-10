@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { formatDateTime, formatDuration } from '@/lib/format';
 import { AlertTriangle, CheckCircle2, Icon, Inbox, Loader2, PauseCircle, type LucideIcon } from './icon';
+import { useConfirm, type ConfirmTone } from './confirm-dialog';
 
 /**
  * The shared UI kit (doc 15 §1a). Everything a screen needs to render a form, a status, a
@@ -111,6 +112,7 @@ const BUTTON_PAD = { sm: 'px-3', md: 'px-4' } as const;
  * announces as "button" and nothing else.
  */
 export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  ref?: React.Ref<HTMLButtonElement>;
   variant?: ButtonVariant;
   size?: keyof typeof BUTTON_SIZE;
   icon?: LucideIcon;
@@ -422,30 +424,48 @@ export function LoadingState({ message, skeletonRows = 0 }: { message: string; s
 }
 
 /**
- * Wraps the §3.6 confirmation asymmetry so screens stop hand-rolling `window.confirm`: the
+ * Wraps the §3.6 confirmation asymmetry so screens stop hand-rolling a confirmation: the
  * direction that creates risk (`requireConfirm`) is confirmed with a message naming what is about
  * to happen; the safe direction is one click. A caller that always passes `requireConfirm={false}`
  * — the safe-direction case — gets a plain button, not a dialog nobody needed.
+ *
+ * The question is asked in the in-app `ConfirmDialog`, never the browser's `window.confirm`
+ * (2026-11-10). `confirmTone="danger"` for a delete or a stop; `confirmLabel` names the action.
  */
 export function ConfirmButton({
   requireConfirm,
   confirmMessage,
+  confirmTitle,
+  confirmLabel,
+  confirmTone,
   onConfirmed,
   children,
   ...rest
 }: {
   requireConfirm: boolean;
   confirmMessage: string;
+  confirmTitle?: string;
+  confirmLabel?: string;
+  confirmTone?: ConfirmTone;
   onConfirmed: () => void;
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'>) {
-  function handleClick() {
-    if (requireConfirm && !window.confirm(confirmMessage)) return;
+  const { ask, dialog } = useConfirm();
+  async function handleClick() {
+    if (
+      requireConfirm &&
+      !(await ask({ message: confirmMessage, title: confirmTitle, confirmLabel, tone: confirmTone }))
+    ) {
+      return;
+    }
     onConfirmed();
   }
   return (
-    <button {...rest} type="button" onClick={handleClick}>
-      {children}
-    </button>
+    <>
+      <button {...rest} type="button" onClick={() => void handleClick()}>
+        {children}
+      </button>
+      {dialog}
+    </>
   );
 }
 

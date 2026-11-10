@@ -299,6 +299,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
                     <td className="p-2 text-right">
                       <ConfirmButton
                         requireConfirm
+                        confirmTone="danger"
                         confirmMessage="Kart bağı kaldırılsın mı? Kart takip listesinde kalır."
                         className={buttonClass('secondary', 'sm')}
                         onConfirmed={() => void unlink(card.id)}

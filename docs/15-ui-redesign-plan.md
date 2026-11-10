@@ -167,6 +167,12 @@ Confirm the direction that creates risk. Do not confirm the direction that remov
 - Turning price submission **on** → confirm. Turning it **off** → one click.
 - Deleting → confirm, and the confirm names what is being deleted.
 - A confirm on a safe action trains the user to click through the dangerous one.
+- **Never a browser popup** (product owner, 2026-11-10). No `window.confirm`, `window.alert` or
+  `window.prompt` anywhere in the app: they cannot be styled, they block the tab, and some
+  embedded browsers suppress them silently — the self-update "Şimdi kur" did nothing in one. Ask
+  with the kit's `ConfirmButton`, or `useConfirm()` (`ask` / `notify`) from
+  `components/confirm-dialog.tsx` when the message is only known after a request. A delete or a
+  stop passes `confirmTone="danger"`. `app/kit-adoption.test.ts` fails on any popup call.
 
 ### 3.7 Accessibility floor (WCAG 2.2 AA)
 

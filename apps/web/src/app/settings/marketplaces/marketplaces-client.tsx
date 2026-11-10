@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   Ago,
   Button,
@@ -77,6 +78,7 @@ const INITIAL_FORMS: Form[] = [
 ];
 
 export function MarketplacesClient() {
+  const { ask, dialog } = useConfirm();
   const [forms, setForms] = useState<Form[]>(INITIAL_FORMS);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -140,14 +142,15 @@ export function MarketplacesClient() {
 
   // §3.6: turning a marketplace on lets the background jobs start submitting real prices to it —
   // the risk direction, so it is confirmed. Turning it off is one click, the safe direction.
-  // Raw `window.confirm` rather than the kit's `ConfirmButton` (sweep report §2.5): the control
-  // here is a checkbox, and `ConfirmButton` only wraps a button element — routing this through it
-  // would mean replacing the checkbox with a button-styled toggle, a UI change beyond this nit.
-  function setEnabled(form: Form, next: boolean) {
+  // The imperative `useConfirm` rather than the kit's `ConfirmButton` (sweep report §2.5): the
+  // control here is a checkbox, and `ConfirmButton` only wraps a button element.
+  async function setEnabled(form: Form, next: boolean) {
     if (next && !form.enabled && sellerModule) {
-      const confirmed = window.confirm(
-        `${TITLES[form.code]} etkinleştirilsin mi? Bu, arka plan işlerinin bu pazaryerinde gerçek fiyat göndermeye başlamasına izin verir.`,
-      );
+      const confirmed = await ask({
+        title: `${TITLES[form.code]} etkinleştirilsin mi?`,
+        message: 'Bu, arka plan işlerinin bu pazaryerinde gerçek fiyat göndermeye başlamasına izin verir.',
+        confirmLabel: 'Etkinleştir',
+      });
       if (!confirmed) return;
     }
     update(form.code, { enabled: next });
@@ -198,6 +201,7 @@ export function MarketplacesClient() {
 
   return (
     <div className="flex flex-col gap-6">
+      {dialog}
       {loadError && (
         <p
           role="alert"
@@ -228,7 +232,7 @@ export function MarketplacesClient() {
                 <input
                   type="checkbox"
                   checked={form.enabled}
-                  onChange={(e) => setEnabled(form, e.target.checked)}
+                  onChange={(e) => void setEnabled(form, e.target.checked)}
                 />
                 Etkin
               </label>

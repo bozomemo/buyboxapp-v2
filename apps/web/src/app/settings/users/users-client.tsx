@@ -208,6 +208,7 @@ function UsersTable({
                     {user.state === 'active' ? (
                       <ConfirmButton
                         requireConfirm
+                        confirmTone="danger"
                         confirmMessage={`${user.username} devre dışı bırakılsın mı? Tüm oturumları hemen kapanır.`}
                         onConfirmed={() => void act(user, { action: 'disable' }, `${user.username} devre dışı bırakıldı.`)}
                         disabled={rowBusy || lastAdmin}

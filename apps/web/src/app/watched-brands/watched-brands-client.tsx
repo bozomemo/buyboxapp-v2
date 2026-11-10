@@ -27,6 +27,7 @@ import {
   StatusBanner,
   TextInput,
 } from '@/components/ui';
+import { useConfirm } from '@/components/confirm-dialog';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatNumber } from '@/lib/format';
 
@@ -113,6 +114,7 @@ const COLUMN_LABEL = new Map(COLUMN_DEFS.map((d) => [d.id, d.label]));
  * grid en üstte kalır.
  */
 export function WatchedBrandsClient() {
+  const { ask, notify, dialog } = useConfirm();
   const [groups, setGroups] = useState<WatchedBrandGroup[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pruneSuggestions, setPruneSuggestions] = useState<PruneSuggestion[]>([]);
@@ -205,11 +207,12 @@ export function WatchedBrandsClient() {
   async function sweepNow(brand: WatchedBrand, withSellers: boolean) {
     if (await post(`/api/watched-brands/${brand.id}/sweep`, { withSellers })) {
       setError(null);
-      alert(
-        withSellers
+      await notify({
+        title: 'Tarama kuyruğa alındı',
+        message: withSellers
           ? `${brand.label} taraması kuyruğa alındı: önce katalog, ardından bulunan her ürünün satıcıları taranacak. Ürün başına bir sayfa okunduğu için bu iş saatler sürebilir; ilerlemeyi İşler ekranından izleyebilirsiniz.`
           : `${brand.label} katalog taraması kuyruğa alındı (satıcı verisi toplanmayacak). İlerlemeyi İşler ekranından izleyebilirsiniz.`,
-      );
+      });
     }
   }
 
@@ -268,9 +271,11 @@ export function WatchedBrandsClient() {
           ? `\n\nBu adımda ${ids.length} tanesi işlenecek; kalanı için tekrar çalıştırın.`
           : '';
       if (
-        !confirm(
-          `${suggestion.label}: hiç değerlendirmesi olmayan ${formatNumber(total)} ürün duraklatılacak.\n\nSilinmez — listede kalır ve istediğinizde geri alabilirsiniz. Derin tarama ${suggestion.currentScanMinutes} dk yerine ${suggestion.prunedScanMinutes} dk sürer.${more}`,
-        )
+        !(await ask({
+          title: 'Ürünler duraklatılsın mı?',
+          confirmLabel: 'Duraklat',
+          message: `${suggestion.label}: hiç değerlendirmesi olmayan ${formatNumber(total)} ürün duraklatılacak.\n\nSilinmez — listede kalır ve istediğinizde geri alabilirsiniz. Derin tarama ${suggestion.currentScanMinutes} dk yerine ${suggestion.prunedScanMinutes} dk sürer.${more}`,
+        }))
       ) {
         return;
       }
@@ -434,6 +439,7 @@ export function WatchedBrandsClient() {
 
   return (
     <div className="space-y-4">
+      {dialog}
       <PageHeader
         title="İzlenen Markalar"
         breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'İzlenen Markalar' }]}
@@ -614,6 +620,7 @@ export function WatchedBrandsClient() {
           action={
             <ConfirmButton
               requireConfirm
+              confirmTone="danger"
               confirmMessage={`${group.name} grubunu ve altındaki ${group.brands.length} markayı sil?`}
               onConfirmed={() => void removeGroup(group)}
               disabled={busy}
@@ -679,6 +686,7 @@ Başlatılsın mı?`}
                       </Button>
                       <ConfirmButton
                         requireConfirm
+                        confirmTone="danger"
                         confirmMessage={`${brand.label} markasını izleme listesinden çıkar?\n\nBulduğu ${formatNumber(brand.productCount)} ürün ve geçmişleri silinmez — sadece marka bağlantıları kalkar.`}
                         onConfirmed={() => void removeBrand(brand)}
                         disabled={busy}

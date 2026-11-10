@@ -431,6 +431,7 @@ export function BrandProductsClient() {
                           </Button>
                           <ConfirmButton
                             requireConfirm
+                            confirmTone="danger"
                             confirmMessage={`"${row.name}" silinsin mi? Kartları takip listesinde kalır.`}
                             className={buttonClass('secondary', 'sm')}
                             onConfirmed={() => void remove(row.id)}

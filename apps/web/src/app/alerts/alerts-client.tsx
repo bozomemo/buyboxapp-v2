@@ -947,6 +947,7 @@ export function AlertsClient() {
                   </Button>
                   <ConfirmButton
                     requireConfirm
+                    confirmTone="danger"
                     confirmMessage={`"${r.name}" kuralı silinsin mi? Bu kurala bağlı açık alarmlar da silinir.`}
                     onConfirmed={() => void remove(r)}
                     className={buttonClass('ghost-danger', 'sm')}

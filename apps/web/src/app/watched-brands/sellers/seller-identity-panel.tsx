@@ -176,6 +176,7 @@ export function SellerIdentityPanel({
             // misiniz?".
             <ConfirmButton
               requireConfirm
+              confirmTone="danger"
               confirmMessage={`${sellerName || sellerRef} için okunan kimlik silinsin mi? Yeniden çözmek pazaryerine yeni bir istek gerektirir.`}
               onConfirmed={() => void forget()}
               className={buttonClass('secondary', 'sm')}

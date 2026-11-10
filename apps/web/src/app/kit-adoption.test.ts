@@ -11,11 +11,19 @@ import { describe, expect, it } from 'vitest';
  * redesign converted every screen (phases 2 and 3); this walk is what keeps a new or edited
  * screen from sliding back. Comments are read too, so name a tag in prose without its brackets.
  *
+ * No browser popup either (owner, 2026-11-10): `window.confirm`, `window.alert` and
+ * `window.prompt` cannot be styled and some embedded browsers suppress them silently. Ask with the
+ * kit's `ConfirmButton` or `useConfirm` (`components/confirm-dialog.tsx`). This rule has no
+ * `kit-exempt` escape. A function merely named `confirm` is not a call to the browser's.
+ *
  * Two escapes, both explicit: a checkbox/radio/file/hidden input is not something `TextInput`
  * covers, and a control the kit has no equivalent for carries `kit-exempt: <reason>` on one of
  * the two lines above it.
  */
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+/** A call to the browser's own popup, bare or through `window.`; not `x.confirm(` or `function confirm(`. */
+const BROWSER_POPUP = /(?<!function |[\w.$])(?:window\.)?(?:alert|confirm|prompt)\(/g;
 
 const NON_TEXT_INPUT = /type=["'](checkbox|radio|file|hidden)["']/;
 
@@ -38,6 +46,9 @@ export function violations(source: string): string[] {
     if (exempt(line)) continue;
     if (m[0] === '<input' && NON_TEXT_INPUT.test(tagText(source, index))) continue;
     found.push(`line ${line + 1}: ${m[0]}`);
+  }
+  for (const m of source.matchAll(BROWSER_POPUP)) {
+    found.push(`line ${lineOf(m.index ?? 0) + 1}: ${m[0]}`);
   }
   return found;
 }
@@ -64,6 +75,14 @@ describe('violations', () => {
     ['<select>', 1],
     ['className="px-2! py-1! text-xs"', 1],
     ['<h1 className="x">', 1],
+    ['if (!window.confirm(msg)) return;', 1],
+    ['if (!confirm(msg)) return;', 1],
+    ['alert(`done`);', 1],
+    ['window.prompt("name")', 1],
+    ['{/* kit-exempt: x */}\nalert("y")', 1],
+    ['async function confirm(event) {}', 0],
+    ['if (!(await dialog.confirm({ message }))) return;', 0],
+    ['onConfirm()', 0],
   ])('%s → %d', (source, count) => {
     expect(violations(source)).toHaveLength(count);
   });

@@ -143,6 +143,7 @@ export function ModulesClient({ redirectedFrom }: { redirectedFrom: AppModule | 
         {turningSellerOff ? (
           <ConfirmButton
             requireConfirm
+            confirmTone="danger"
             confirmMessage="Satıcı modülünü kapatmak üzeresiniz. Fiyat kararları ve gönderimi duracak, fiyat gönderim anahtarı devreye alınacak. Emin misiniz?"
             onConfirmed={() => void save()}
             disabled={busy || noneSelected}

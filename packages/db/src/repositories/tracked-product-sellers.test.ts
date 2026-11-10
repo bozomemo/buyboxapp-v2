@@ -348,6 +348,57 @@ for (const dialect of ALL_DIALECTS) {
       ]);
     }, 30_000);
 
+    it('sorts by sellerCount asc with a product never seen first, counting only the window', async () => {
+      db = await createTestDb(dialect);
+      await seedMarketplace(db.appDb);
+      const a = await addListed(db.appDb, 'a');
+      const b = await addListed(db.appDb, 'b');
+      await addListed(db.appDb, 'z');
+      await look(db.appDb, a, NOW - DAY, ['S1', 'S2']);
+      await look(db.appDb, b, NOW - DAY, ['S1']);
+      // Out of the window: three old sellers must not lift b above a.
+      await look(db.appDb, b, NOW - 40 * DAY, ['S7', 'S8', 'S9']);
+
+      const { rows, total } = await trackedProductsRepo.queryTrackedProducts(db.appDb, {
+        ...PAGE,
+        sellerSinceMs: SINCE,
+        sort: 'sellerCount',
+        sortDir: 'asc',
+      });
+
+      expect(rows.map((r) => [r.label, r.sellerCount])).toEqual([
+        ['Ürün z', 0],
+        ['Ürün b', 1],
+        ['Ürün a', 2],
+      ]);
+      expect(total).toBe(3);
+    }, 30_000);
+
+    it('minSellerCount with the seller-count sort pages and totals over the filtered rows', async () => {
+      db = await createTestDb(dialect);
+      await seedMarketplace(db.appDb);
+      const a = await addListed(db.appDb, 'a');
+      const b = await addListed(db.appDb, 'b');
+      const c = await addListed(db.appDb, 'c');
+      await addListed(db.appDb, 'z');
+      await look(db.appDb, a, NOW - DAY, ['S1', 'S2', 'S3']);
+      await look(db.appDb, b, NOW - DAY, ['S1', 'S2']);
+      await look(db.appDb, c, NOW - DAY, ['S1']);
+
+      const { rows, total } = await trackedProductsRepo.queryTrackedProducts(db.appDb, {
+        ...PAGE,
+        limit: 1,
+        offset: 1,
+        sellerSinceMs: SINCE,
+        minSellerCount: 2,
+        sort: 'sellerCount',
+        sortDir: 'desc',
+      });
+
+      expect(rows.map((r) => [r.label, r.sellerCount])).toEqual([['Ürün b', 2]]);
+      expect(total).toBe(2);
+    }, 30_000);
+
     it('ties on rating count fall back to label', async () => {
       db = await createTestDb(dialect);
       await seedMarketplace(db.appDb);

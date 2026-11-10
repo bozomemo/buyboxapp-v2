@@ -32,3 +32,6 @@ installer/linux/out/
 # should ship monitoring.
 installer/vendor/alloy-installer-windows-amd64.exe
 installer/linux/vendor/alloy-linux-*
+
+# Superpowers skill workspaces (plan ledgers, review packages): local scratch, never committed.
+.superpowers/

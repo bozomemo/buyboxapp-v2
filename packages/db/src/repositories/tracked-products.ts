@@ -1135,7 +1135,12 @@ type CardsSchema =
   | typeof postgresSchema.brandProductCards
   | typeof mysqlSchema.brandProductCards;
 
-function buildTrackedWhere(t: TrackedSchema, cards: CardsSchema, options: TrackedProductQueryOptions) {
+function buildTrackedWhere(
+  t: TrackedSchema,
+  cards: CardsSchema,
+  options: TrackedProductQueryOptions,
+  sellerCount: SQL<number>,
+) {
   const parts = [];
   if (options.listedOnly) {
     // `exists`, not a join: a join would need a `distinct` to keep a product with two cards out
@@ -1169,7 +1174,7 @@ function buildTrackedWhere(t: TrackedSchema, cards: CardsSchema, options: Tracke
     );
   }
   if (options.minSellerCount !== undefined)
-    parts.push(gte(sellerCountExpr(t, sinceMs), options.minSellerCount));
+    parts.push(gte(sellerCount, options.minSellerCount));
   if (options.minRatingCount !== undefined) parts.push(gte(t.ratingCount, options.minRatingCount));
   if (options.text !== undefined && options.text.trim() !== '') {
     // A bound parameter, not interpolation.
@@ -1179,10 +1184,14 @@ function buildTrackedWhere(t: TrackedSchema, cards: CardsSchema, options: Tracke
   return parts.length === 0 ? undefined : and(...parts);
 }
 
-function trackedSortColumn(t: TrackedSchema, options: TrackedProductQueryOptions): AnyColumn | SQL {
+function trackedSortColumn(
+  t: TrackedSchema,
+  options: TrackedProductQueryOptions,
+  sellerCount: SQL<number>,
+): AnyColumn | SQL {
   switch (options.sort) {
     case 'sellerCount':
-      return sellerCountExpr(t, options.sellerSinceMs ?? 0);
+      return sellerCount;
     case 'ratingCount':
       return t.ratingCount;
     case 'categoryName':
@@ -1220,8 +1229,25 @@ function trackedOrderBy(column: AnyColumn | SQL, sortDir: 'asc' | 'desc' | undef
  * products share a seller count, many a rating count) come back in a stable, readable order and
  * a page boundary never shuffles a row onto two pages (2026-11-08 seller filters spec).
  */
-function trackedGridOrder(t: TrackedSchema, options: TrackedProductQueryOptions): SQL[] {
-  return [...trackedOrderBy(trackedSortColumn(t, options), options.sortDir), asc(t.label), asc(t.id)];
+function trackedGridOrder(t: TrackedSchema, options: TrackedProductQueryOptions, sellerCount: SQL<number>): SQL[] {
+  return [...trackedOrderBy(trackedSortColumn(t, options, sellerCount), options.sortDir), asc(t.label), asc(t.id)];
+}
+
+/**
+ * Whether the query filters or sorts on the seller count, so it must be known for every row and
+ * not only for the page's. Then it is read as one grouped count joined in, not the correlated
+ * subquery: measured on 6,866 products / 19,979 seller rows (PostgreSQL 16, 2026-11-10), sorting
+ * by it took 390–550 ms correlated — the subquery ran once per row, and again for each ORDER BY
+ * term — and 45–50 ms joined. A page that neither filters nor sorts on it keeps the correlated
+ * form, which then runs for the page's rows only.
+ */
+function needsSellerCountJoin(options: TrackedProductQueryOptions): boolean {
+  return options.sort === 'sellerCount' || options.minSellerCount !== undefined;
+}
+
+/** The joined count of a product with no seller in the window is NULL; it means 0. */
+function joinedSellerCount(n: SQL.Aliased<number>): SQL<number> {
+  return sql<number>`coalesce(${n}, 0)`.mapWith(Number);
 }
 
 /**
@@ -1242,46 +1268,85 @@ export async function queryTrackedProducts(
   return withDialect(appDb, {
     sqlite: async (db) => {
       const t = sqliteSchema.trackedProducts;
-      const where = buildTrackedWhere(t, sqliteSchema.brandProductCards, options);
+      const s = sqliteSchema.trackedProductSellers;
+      const counts = db
+        .select({ productId: s.trackedProductId, n: count().as('n') })
+        .from(s)
+        .where(sql`${s.lastSeenAt} >= ${sinceMs}`)
+        .groupBy(s.trackedProductId)
+        .as('seller_counts');
+      const join = needsSellerCountJoin(options);
+      const sellerCount = join ? joinedSellerCount(counts.n) : sellerCountExpr(t, sinceMs);
+      const where = buildTrackedWhere(t, sqliteSchema.brandProductCards, options, sellerCount);
+      const rowsQuery = db.select({ ...getTableColumns(t), sellerCount }).from(t).$dynamic();
+      const totalQuery = db.select({ n: count() }).from(t).$dynamic();
+      if (join) {
+        rowsQuery.leftJoin(counts, eq(counts.productId, t.id));
+        totalQuery.leftJoin(counts, eq(counts.productId, t.id));
+      }
       const [rows, totalRow] = await Promise.all([
-        db
-          .select({ ...getTableColumns(t), sellerCount: sellerCountExpr(t, sinceMs) })
-          .from(t)
+        rowsQuery
           .where(where)
-          .orderBy(...trackedGridOrder(t, options))
+          .orderBy(...trackedGridOrder(t, options, sellerCount))
           .limit(limit)
           .offset(offset),
-        db.select({ n: count() }).from(t).where(where),
+        totalQuery.where(where),
       ]);
       return { rows: rows as TrackedProductListRow[], total: Number(totalRow[0]?.n ?? 0) };
     },
     postgres: async (db) => {
       const t = postgresSchema.trackedProducts;
-      const where = buildTrackedWhere(t, postgresSchema.brandProductCards, options);
+      const s = postgresSchema.trackedProductSellers;
+      const counts = db
+        .select({ productId: s.trackedProductId, n: count().as('n') })
+        .from(s)
+        .where(sql`${s.lastSeenAt} >= ${sinceMs}`)
+        .groupBy(s.trackedProductId)
+        .as('seller_counts');
+      const join = needsSellerCountJoin(options);
+      const sellerCount = join ? joinedSellerCount(counts.n) : sellerCountExpr(t, sinceMs);
+      const where = buildTrackedWhere(t, postgresSchema.brandProductCards, options, sellerCount);
+      const rowsQuery = db.select({ ...getTableColumns(t), sellerCount }).from(t).$dynamic();
+      const totalQuery = db.select({ n: count() }).from(t).$dynamic();
+      if (join) {
+        rowsQuery.leftJoin(counts, eq(counts.productId, t.id));
+        totalQuery.leftJoin(counts, eq(counts.productId, t.id));
+      }
       const [rows, totalRow] = await Promise.all([
-        db
-          .select({ ...getTableColumns(t), sellerCount: sellerCountExpr(t, sinceMs) })
-          .from(t)
+        rowsQuery
           .where(where)
-          .orderBy(...trackedGridOrder(t, options))
+          .orderBy(...trackedGridOrder(t, options, sellerCount))
           .limit(limit)
           .offset(offset),
-        db.select({ n: count() }).from(t).where(where),
+        totalQuery.where(where),
       ]);
       return { rows: rows as TrackedProductListRow[], total: Number(totalRow[0]?.n ?? 0) };
     },
     mysql: async (db) => {
       const t = mysqlSchema.trackedProducts;
-      const where = buildTrackedWhere(t, mysqlSchema.brandProductCards, options);
+      const s = mysqlSchema.trackedProductSellers;
+      const counts = db
+        .select({ productId: s.trackedProductId, n: count().as('n') })
+        .from(s)
+        .where(sql`${s.lastSeenAt} >= ${sinceMs}`)
+        .groupBy(s.trackedProductId)
+        .as('seller_counts');
+      const join = needsSellerCountJoin(options);
+      const sellerCount = join ? joinedSellerCount(counts.n) : sellerCountExpr(t, sinceMs);
+      const where = buildTrackedWhere(t, mysqlSchema.brandProductCards, options, sellerCount);
+      const rowsQuery = db.select({ ...getTableColumns(t), sellerCount }).from(t).$dynamic();
+      const totalQuery = db.select({ n: count() }).from(t).$dynamic();
+      if (join) {
+        rowsQuery.leftJoin(counts, eq(counts.productId, t.id));
+        totalQuery.leftJoin(counts, eq(counts.productId, t.id));
+      }
       const [rows, totalRow] = await Promise.all([
-        db
-          .select({ ...getTableColumns(t), sellerCount: sellerCountExpr(t, sinceMs) })
-          .from(t)
+        rowsQuery
           .where(where)
-          .orderBy(...trackedGridOrder(t, options))
+          .orderBy(...trackedGridOrder(t, options, sellerCount))
           .limit(limit)
           .offset(offset),
-        db.select({ n: count() }).from(t).where(where),
+        totalQuery.where(where),
       ]);
       return { rows: rows as TrackedProductListRow[], total: Number(totalRow[0]?.n ?? 0) };
     },

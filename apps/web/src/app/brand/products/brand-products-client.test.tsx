@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { BrandProductsClient } from './brand-products-client';
@@ -74,9 +74,10 @@ describe('BrandProductsClient', () => {
       [ROUTE]: { body: { products: [PRODUCT], total: 1 } },
       '/api/brand-products/bp1': { status: 409, body: { error: 'Ürün silinemedi: kartları var' } },
     });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
     render(<BrandProductsClient />);
     fireEvent.click(await screen.findByRole('button', { name: 'Sil' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Onayla' }));
     expect(await screen.findByText(/Ürün silinemedi/)).toBeTruthy();
     expect(screen.queryByText(/Ürün silindi/)).toBeNull();
   });

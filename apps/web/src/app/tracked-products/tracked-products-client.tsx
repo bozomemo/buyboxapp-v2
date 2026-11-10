@@ -1314,6 +1314,7 @@ export function TrackedProductsClient() {
                     </Button>
                     <ConfirmButton
                       requireConfirm
+                      confirmTone="danger"
                       confirmMessage={`"${p.label}" takipten çıkarılsın mı?`}
                       onConfirmed={() => void remove(p.id)}
                       className={`${buttonClass('ghost', 'sm')} hover:text-(--color-danger)`}

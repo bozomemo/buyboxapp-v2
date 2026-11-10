@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { UpdateClient } from './update-client';
@@ -49,12 +49,14 @@ describe('UpdateClient', () => {
 
   it('asks before installing, then posts the ready version and reports installing', async () => {
     stubFetch({ '/api/update': { body: READY }, '/api/update/apply': { status: 202, body: { started: true } }, '/api/health': { pending: true } });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const browser = vi.spyOn(window, 'confirm');
     render(<UpdateClient />);
     fireEvent.click(await screen.findByRole('button', { name: 'Şimdi kur' }));
-    expect(confirm).toHaveBeenCalledWith(
+    expect(screen.getByRole('alertdialog').textContent).toContain(
       'Servis 2–3 dakika duracak. Fiyat işleri yeni sürüm doğrulanana kadar duraklatılmış kalacak.',
     );
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Şimdi kur' }));
+    expect(browser).not.toHaveBeenCalled();
     expect(await screen.findByText('Kuruluyor…')).toBeTruthy();
     const post = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/api/update/apply'));
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({ version: '0.2.1' });
@@ -62,9 +64,9 @@ describe('UpdateClient', () => {
 
   it('shows a refusal and does not claim to be installing', async () => {
     stubFetch({ '/api/update': { body: READY }, '/api/update/apply': { status: 409, body: { error: 'Bir güncelleme zaten sürüyor.' } } });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<UpdateClient />);
     fireEvent.click(await screen.findByRole('button', { name: 'Şimdi kur' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Şimdi kur' }));
     expect(await screen.findByText('Bir güncelleme zaten sürüyor.')).toBeTruthy();
     expect(screen.queryByText('Kuruluyor…')).toBeNull();
   });

@@ -163,6 +163,8 @@ export function UpdateClient() {
               <ConfirmButton
                 requireConfirm
                 confirmMessage={CONFIRM_MESSAGE}
+                confirmTitle={`${ready.version} kurulsun mu?`}
+                confirmLabel="Şimdi kur"
                 onConfirmed={() => void install(ready.version)}
                 className={buttonClass('primary')}
                 disabled={view.inProgress}

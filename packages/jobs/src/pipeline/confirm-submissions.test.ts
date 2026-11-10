@@ -94,7 +94,9 @@ describe('classifyRejection (doc 03 §7.1)', () => {
   });
 });
 
-describe('confirmSubmissions', () => {
+// 30 s like the other database tests: under a loaded build machine (release attempt of 2026-11-09)
+// one of these ran past vitest's 5 s default while passing on its own.
+describe('confirmSubmissions', { timeout: 30_000 }, () => {
   it('confirms on success, consumes budget only now, and sets the settle window', async () => {
     const { appDb, cleanup } = await createSqliteTestDb();
     try {

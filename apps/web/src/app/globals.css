@@ -288,3 +288,13 @@ optgroup {
   background-color: var(--color-surface);
   color: var(--color-text);
 }
+
+/* ConfirmDialog (components/confirm-dialog.tsx): backdrop fade and panel pop, motion-safe only. */
+@keyframes dialog-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dialog-pop {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
