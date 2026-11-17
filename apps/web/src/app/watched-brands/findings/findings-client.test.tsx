@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { stubFetch } from '@/test-utils';
+import { lastRequestParam, stubFetch } from '@/test-utils';
 import { FindingsClient } from './findings-client';
 
 /**
@@ -191,6 +191,24 @@ describe('FindingsClient', () => {
       const group = await screen.findByRole('group', { name: 'Dönem' });
       expect(within(group).getByRole('button', { name: 'Son 30 gün' }).getAttribute('aria-pressed')).toBe('true');
       vi.restoreAllMocks();
+    });
+
+    it('choosing a period re-fetches from that many days ago and keeps it pressed', async () => {
+      // A 7/30/90 option is a day count; storing it as the start instant asked for data since
+      // 1970 and left "Son 30 gün" pressed (user-guide review 2026-11-18).
+      const NOW = 1_800_000_000_000;
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(NOW);
+      try {
+        populated();
+        const group = await screen.findByRole('group', { name: 'Dönem' });
+        fireEvent.click(within(group).getByRole('button', { name: 'Son 7 gün' }));
+        const route = '/api/brand-reports/findings';
+        await waitFor(() => expect(Number(lastRequestParam(route, 'sinceMs'))).toBe(NOW - 7 * 24 * 60 * 60 * 1000));
+        expect(within(group).getByRole('button', { name: 'Son 7 gün' }).getAttribute('aria-pressed')).toBe('true');
+        expect(within(group).getByRole('button', { name: 'Son 30 gün' }).getAttribute('aria-pressed')).toBe('false');
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it('summary is a stat row', async () => {

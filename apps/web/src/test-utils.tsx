@@ -54,6 +54,22 @@ export function stubFetch(routes: Record<string, StubbedRoute>): void {
   vi.stubGlobal('fetch', vi.fn(impl));
 }
 
+/**
+ * The query parameter `name` of the most recent stubbed request to `path`, or null when that path
+ * was never requested or the parameter was absent. Reads the `fetch` mock that `stubFetch` set.
+ */
+export function lastRequestParam(path: string, name: string): string | null {
+  const urls = vi
+    .mocked(fetch)
+    .mock.calls.map((c) => {
+      const input = c[0];
+      const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      return new URL(href, 'http://localhost');
+    })
+    .filter((u) => u.pathname === path);
+  return urls.at(-1)?.searchParams.get(name) ?? null;
+}
+
 // --- next/navigation ----------------------------------------------------------------------------
 
 /**

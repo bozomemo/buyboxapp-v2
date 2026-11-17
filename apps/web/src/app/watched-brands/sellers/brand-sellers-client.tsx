@@ -363,7 +363,10 @@ export function BrandSellersClient() {
             <SegmentedFilter
               label="Dönem"
               value={periodDays}
-              onChange={(v) => setSinceMs(Number(v))}
+              onChange={(v) => {
+                setPeriodDays(v);
+                setSinceMs(daysAgo(Number(v)));
+              }}
               options={[
                 { value: '7', label: 'Son 7 gün' },
                 { value: '30', label: 'Son 30 gün' },
