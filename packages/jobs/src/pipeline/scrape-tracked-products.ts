@@ -26,9 +26,10 @@
  * lets one seller policy apply to both.
  */
 import type { MarketplaceCode } from '@buybox/core';
-import { competitorSellersRepo, eventsRepo, newId, trackedProductsRepo } from '@buybox/db';
+import { brandProductsRepo, competitorSellersRepo, eventsRepo, newId, trackedProductsRepo } from '@buybox/db';
 import { CompetitorSourceError, type ICompetitorSource } from '@buybox/adapters';
 import type { JobContext } from '../job.js';
+import { evaluateCardBand } from './band-alarm.js';
 import { SCRAPE_TRACKED_CONSECUTIVE_FAILURE_LIMIT } from '../scrape-config.js';
 
 /**
@@ -163,6 +164,16 @@ export async function scrapeTrackedProducts(
   const progressTotal = options.progressTotal;
 
   const due = await selectedProducts(ctx, marketplaceCode, options.ids);
+
+  /**
+   * The brand-product links of this chunk, read once (doc 07 §7.5). A linked card has its buybox
+   * judged against the band after every successful look; an unlinked one is skipped. A link made
+   * while the chunk runs is picked up on the card's next look.
+   */
+  const links = await brandProductsRepo.cardLinksForTrackedProducts(
+    ctx.appDb,
+    due.map((product) => product.id),
+  );
 
   let itemsOk = 0;
   let itemsFailed = 0;
@@ -314,6 +325,30 @@ export async function scrapeTrackedProducts(
               ],
         ),
       );
+
+      /**
+       * The price-band alarm (doc 17 §5, build plan 11.6), after the look is stored and in its own
+       * `try`: an exception in the band path is recorded and the look still counts as read.
+       * Without it the outer `catch` below would file a successful read as a failed one.
+       */
+      const link = links.get(product.id);
+      if (link) {
+        try {
+          await evaluateCardBand(ctx, product.id, link, snapshot.offers, nowMs);
+        } catch (bandError) {
+          await eventsRepo.logEvent(ctx.appDb, {
+            id: newId(),
+            at: nowMs,
+            level: 'warn',
+            marketplaceCode,
+            listingId: null,
+            jobRunId: ctx.correlationId,
+            code: 'BandEvaluationFailed',
+            message: `Band evaluation failed for tracked product ${product.id} (${product.label}): ${bandError instanceof Error ? bandError.message : String(bandError)}`,
+            context: JSON.stringify({ trackedProductId: product.id }),
+          });
+        }
+      }
     } catch (error) {
       /**
        * The operator deleted this row while the run was working (2026-09-12).

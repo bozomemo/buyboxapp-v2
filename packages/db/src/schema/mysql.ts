@@ -1181,6 +1181,44 @@ export const brandProductCards = mysqlTable(
   ],
 );
 
+/** See the doc comment on `bandViolations` in `schema/sqlite.ts`. */
+export const bandViolations = mysqlTable(
+  'band_violations',
+  {
+    id: code('id', 36).primaryKey(),
+    brandProductId: code('brand_product_id', 36).notNull(),
+    trackedProductId: code('tracked_product_id', 36).notNull(),
+    kind: code('kind', 20).notNull(),
+    sellerRef: code('seller_ref', 128),
+    sellerName: text('seller_name').notNull(),
+    state: code('state', 20).notNull(),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    resolvedAt: timestampMs('resolved_at'),
+    resolution: code('resolution', 32),
+    thresholdApplied: money('threshold_applied').notNull(),
+    unitMultiplier: int('unit_multiplier').notNull(),
+    observedPrice: money('observed_price').notNull(),
+    priceSource: code('price_source', 20).notNull(),
+    snapshot: json('snapshot').notNull(),
+  },
+  (t) => [
+    index('band_violations_state_first_seen').on(t.state, t.firstSeenAt),
+    index('band_violations_card_kind_state').on(t.trackedProductId, t.kind, t.state),
+    index('band_violations_product_state').on(t.brandProductId, t.state),
+    foreignKey({
+      name: 'fk_band_violations_brand_product_id',
+      columns: [t.brandProductId],
+      foreignColumns: [brandProducts.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'fk_band_violations_tracked_product_id',
+      columns: [t.trackedProductId],
+      foreignColumns: [trackedProducts.id],
+    }).onDelete('cascade'),
+  ],
+);
+
 /** See the doc comment on `commissionTariffs` in `schema/sqlite.ts`. */
 export const commissionTariffs = mysqlTable(
   'commission_tariffs',

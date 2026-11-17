@@ -129,6 +129,7 @@ const NAV_GROUPS: {
     items: [
       { href: '/brand/products', label: 'Stok', icon: Package },
       { href: '/brand/listings', label: 'İlanlar', icon: Tags },
+      { href: '/brand/alerts', label: 'Alarmlar', icon: Bell },
       { href: '/brand/profit', label: 'Kâr Ayarları', icon: Calculator },
       { href: '/watched-brands', label: 'İzlenen Markalar', icon: Eye },
       { href: '/tracked-products', label: 'Takip Edilen Ürünler', icon: ScanSearch },

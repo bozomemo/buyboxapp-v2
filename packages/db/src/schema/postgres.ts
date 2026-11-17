@@ -1118,6 +1118,38 @@ export const brandProductCards = pgTable(
   ],
 );
 
+/** See the doc comment on `bandViolations` in `schema/sqlite.ts`. */
+export const bandViolations = pgTable(
+  'band_violations',
+  {
+    id: text('id').primaryKey(),
+    brandProductId: text('brand_product_id')
+      .notNull()
+      .references(() => brandProducts.id, { onDelete: 'cascade' }),
+    trackedProductId: text('tracked_product_id')
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    sellerRef: text('seller_ref'),
+    sellerName: text('seller_name').notNull(),
+    state: text('state').notNull(),
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    resolvedAt: timestampMs('resolved_at'),
+    resolution: text('resolution'),
+    thresholdApplied: money('threshold_applied').notNull(),
+    unitMultiplier: integer('unit_multiplier').notNull(),
+    observedPrice: money('observed_price').notNull(),
+    priceSource: text('price_source').notNull(),
+    snapshot: json('snapshot').notNull(),
+  },
+  (t) => [
+    index('band_violations_state_first_seen').on(t.state, t.firstSeenAt),
+    index('band_violations_card_kind_state').on(t.trackedProductId, t.kind, t.state),
+    index('band_violations_product_state').on(t.brandProductId, t.state),
+  ],
+);
+
 /** See the doc comment on `commissionTariffs` in `schema/sqlite.ts`. */
 export const commissionTariffs = pgTable(
   'commission_tariffs',

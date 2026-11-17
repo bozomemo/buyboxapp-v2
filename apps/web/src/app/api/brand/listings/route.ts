@@ -25,7 +25,7 @@ import {
   type BandEvaluation,
   type SellerProfitMissing,
 } from '@buybox/core';
-import { brandProductsRepo, commissionTariffsRepo, trackedProductsRepo } from '@buybox/db';
+import { bandViolationsRepo, brandProductsRepo, commissionTariffsRepo, trackedProductsRepo } from '@buybox/db';
 import { readSellerProfitSettings } from '@/lib/server/seller-profit-settings';
 import { marketSnapshot } from '@/lib/market-stats';
 import { withBrand } from '@/lib/product-name';
@@ -96,6 +96,12 @@ interface ListingRow {
   cardMinPrice: string | null;
   bandStatus: BandEvaluation['status'];
   /**
+   * _Açık ihlal_ (doc 17 §4.1, 11.6): since when the card's oldest **open** band violation has
+   * been open, epoch ms, and its kind. `null` when none is open. This is the stored state, not
+   * the live verdict beside it: the two agree after the card's next successful look.
+   */
+  openViolation: { kind: 'belowMin' | 'aboveMax'; since: number } | null;
+  /**
    * The estimated profit of whoever holds the buybox (doc 17 §8) — reporting only. `null` on an
    * unlinked favourite (no product, so nothing to estimate) and whenever `profitMissing` says
    * which input is absent; amounts are kuruş strings.
@@ -112,6 +118,14 @@ interface ListingRow {
     breakEvenPrice: string | null;
   } | null;
   profitMissing: SellerProfitMissing | 'noBuyboxPrice' | null;
+}
+
+function oldestOpen(
+  rows: readonly { kind: 'belowMin' | 'aboveMax'; firstSeenAt: number }[] | undefined,
+): ListingRow['openViolation'] {
+  if (!rows || rows.length === 0) return null;
+  const oldest = rows.reduce((a, b) => (b.firstSeenAt < a.firstSeenAt ? b : a));
+  return { kind: oldest.kind, since: oldest.firstSeenAt };
 }
 
 async function getHandler(request: Request) {
@@ -136,10 +150,11 @@ async function getHandler(request: Request) {
     offset,
   });
 
-  const links = await brandProductsRepo.cardLinksForTrackedProducts(
-    appDb,
-    rows.map((r) => r.id),
-  );
+  const ids = rows.map((r) => r.id);
+  const [links, openViolations] = await Promise.all([
+    brandProductsRepo.cardLinksForTrackedProducts(appDb, ids),
+    bandViolationsRepo.openViolationsForCards(appDb, ids),
+  ]);
 
   // Read once per page, not per row: the tariffs in force now for this page's products, and the
   // desi table. Only Trendyol publishes a tariff workbook, so other marketplaces' cards have none.
@@ -267,6 +282,7 @@ async function getHandler(request: Request) {
       cardUpperBound: band?.band.upper.toString() ?? null,
       cardMinPrice: band?.band.lower?.toString() ?? null,
       bandStatus: band?.status ?? 'unknown',
+      openViolation: oldestOpen(openViolations.get(row.id)),
       profit,
       profitMissing,
     };
@@ -286,6 +302,7 @@ async function getHandler(request: Request) {
       'Min',
       'Üst Sınır',
       'Bant Durumu',
+      'Açık İhlal Başlangıcı',
       'Satıcı Sayısı',
       'Son Bakış',
       'Komisyon %',
@@ -309,6 +326,7 @@ async function getHandler(request: Request) {
           csvMoney(row.minPrice === null ? null : BigInt(row.minPrice)),
           csvMoney(row.upperBound === null ? null : BigInt(row.upperBound)),
           row.brandProduct ? STATUS_LABELS[row.bandStatus] : '',
+          row.openViolation === null ? '' : new Date(row.openViolation.since).toISOString(),
           row.sellerCount,
           row.lastScrapedAt === null ? '' : new Date(row.lastScrapedAt).toISOString(),
           row.profit ? String(row.profit.commissionRate).replace('.', ',') : '',

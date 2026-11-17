@@ -130,6 +130,14 @@ interface DashboardData {
   /** Absent from a server older than doc 17 — read as both enabled, which is what that server ran. */
   modules?: { seller: boolean; brand: boolean };
   brandAudit: BrandAudit | null;
+  /**
+   * Price-band alarm (doc 17 §5.4): open violations and the listings lane's freshness, together.
+   * Absent from an older server, `null` when there is nothing to watch.
+   */
+  bandAlarm?: {
+    open: number;
+    staleness: { marketplaceCode: string; displayName: string; lastOkAt: number | null; stale: boolean }[];
+  } | null;
   /** The "stop everything" control — genuinely separate from `globalKillSwitchEngaged` below. */
   systemPaused: boolean;
   /** The narrower price-submission-only control. Neither state is derived from the other. */
@@ -885,7 +893,46 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }) {
  * §6.1, pattern 2). They used to be three tiles inside the "Marka Denetimi" section at the bottom
  * of the page; on a brand-only install they are the numbers the page exists for.
  */
-function BrandStatRow({ audit }: { audit: BrandAudit }) {
+/**
+ * Open price-band violations (doc 17 §5.4), never without the staleness beside them: a zero next
+ * to a listings lane that has not read anything is "we have not looked", and says so.
+ */
+function BandAlarmCard({ alarm }: { alarm: NonNullable<DashboardData['bandAlarm']> }) {
+  const stale = alarm.staleness.filter((s) => s.stale);
+  return (
+    <StatCard
+      label="Fiyat bandı ihlali"
+      value={stale.length > 0 && alarm.open === 0 ? '?' : formatNumber(alarm.open)}
+      tone={stale.length > 0 ? 'danger' : alarm.open > 0 ? 'warn' : undefined}
+      delta={
+        <>
+          {stale.length > 0
+            ? `Veri güncel değil: ${stale.map((s) => s.displayName).join(', ')}`
+            : 'İlanlar güncel taranıyor'}
+          {' · '}
+          <Link href="/brand/alerts" className="text-(--color-link) hover:underline">
+            Aç →
+          </Link>
+        </>
+      }
+    />
+  );
+}
+
+function BrandStatRow({
+  audit,
+  bandAlarm,
+}: {
+  audit: BrandAudit | null;
+  bandAlarm: DashboardData['bandAlarm'];
+}) {
+  if (audit === null) {
+    return bandAlarm ? (
+      <div data-testid="dashboard-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <BandAlarmCard alarm={bandAlarm} />
+      </div>
+    ) : null;
+  }
   const noSeller = audit.brands.reduce((n, b) => n + b.noSellerCount, 0);
   const neverLooked = audit.brands.reduce((n, b) => n + b.neverLookedCount, 0);
   const products = audit.brands.reduce((n, b) => n + b.productCount, 0);
@@ -893,7 +940,11 @@ function BrandStatRow({ audit }: { audit: BrandAudit }) {
   const { productsWithPrice, productsTotal } = audit.referencePrice;
 
   return (
-    <div data-testid="dashboard-stats" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div
+      data-testid="dashboard-stats"
+      className={`grid grid-cols-2 gap-3 ${bandAlarm ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}
+    >
+      {bandAlarm && <BandAlarmCard alarm={bandAlarm} />}
       <StatCard
         label="Açık bulgu"
         value={formatNumber(openFindings)}
@@ -1197,7 +1248,9 @@ export function DashboardClient() {
 
       {/* Under the stale-refresh warning, not above it: that warning says "the information below"
           is as of the last good read, and these are the numbers it most needs to qualify. */}
-      {modules.brand && data.brandAudit && <BrandStatRow audit={data.brandAudit} />}
+      {modules.brand && (data.brandAudit || data.bandAlarm) && (
+        <BrandStatRow audit={data.brandAudit} bandAlarm={data.bandAlarm ?? null} />
+      )}
 
       <Section id="attention" title="Dikkat Gerekenler">
         <AttentionList items={attention} />

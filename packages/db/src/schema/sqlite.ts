@@ -1434,6 +1434,53 @@ export const brandProductCards = sqliteTable(
 );
 
 /**
+ * A brand product's card whose **buybox** sits outside the product's price band (doc 17 §5,
+ * build plan 11.6) — a state with a beginning, a duration and an end, like `alerts` and
+ * `brand_findings`, and deliberately neither of them (doc 05 §`band_violations` says why).
+ *
+ * - **At most one `open` row per (card, kind)**, enforced by the repository: it needs a partial
+ *   unique index, and MySQL has none (doc 05 §1).
+ * - `threshold_applied` is the **card-level** bound the price was judged against (unit bound ×
+ *   multiplier), and `unit_multiplier` the multiplier at opening, so a violation opened under an
+ *   old band still reads correctly after the band or the link is edited.
+ * - `seller_ref` / `seller_name` are the buybox holder at opening. `seller_ref` is nullable: a
+ *   page can name a seller without a merchant id, and the violation is still real.
+ * - `snapshot` is the opening look's offers as JSON, because `tracked_product_observations` is
+ *   pruned at 90 days and the evidence behind an old violation would otherwise vanish.
+ */
+export const bandViolations = sqliteTable(
+  'band_violations',
+  {
+    id: text('id').primaryKey(),
+    brandProductId: text('brand_product_id')
+      .notNull()
+      .references(() => brandProducts.id, { onDelete: 'cascade' }),
+    trackedProductId: text('tracked_product_id')
+      .notNull()
+      .references(() => trackedProducts.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'belowMin' | 'aboveMax'
+    sellerRef: text('seller_ref'),
+    sellerName: text('seller_name').notNull(),
+    state: text('state').notNull(), // 'open' | 'resolved'
+    firstSeenAt: timestampMs('first_seen_at').notNull(),
+    lastSeenAt: timestampMs('last_seen_at').notNull(),
+    resolvedAt: timestampMs('resolved_at'),
+    /** `inBand` | `buyboxChanged` | `noOffers` | `thresholdRemoved` | `unlinked`. */
+    resolution: text('resolution'),
+    thresholdApplied: money('threshold_applied').notNull(),
+    unitMultiplier: integer('unit_multiplier').notNull(),
+    observedPrice: money('observed_price').notNull(),
+    priceSource: text('price_source').notNull(), // 'finalPrice' | 'price'
+    snapshot: json('snapshot').notNull(),
+  },
+  (t) => [
+    index('band_violations_state_first_seen').on(t.state, t.firstSeenAt),
+    index('band_violations_card_kind_state').on(t.trackedProductId, t.kind, t.state),
+    index('band_violations_product_state').on(t.brandProductId, t.state),
+  ],
+);
+
+/**
  * One product's commission tariff for one period, from the marketplace's tariff workbook
  * (Trendyol _Komisyon Tarifeleri_, doc 17 §8.2). Reporting only: it feeds the reseller profit
  * estimate on İlanlar and nothing in the pricing path.

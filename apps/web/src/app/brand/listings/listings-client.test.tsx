@@ -87,6 +87,24 @@ describe('BrandListingsClient', () => {
     expect(screen.getByText(/kart bandın dışında/)).toBeTruthy();
   });
 
+  it('an open violation shows how long it has been open, linked to Alarmlar', async () => {
+    stubFetch({
+      '/api/brand/listings': {
+        body: {
+          listings: [
+            listing({ bandStatus: 'belowMin', openViolation: { kind: 'belowMin', since: Date.now() - 3 * 3_600_000 } }),
+          ],
+          total: 1,
+        },
+      },
+    });
+
+    render(<BrandListingsClient />);
+
+    const link = await screen.findByRole('link', { name: /^3sa/ });
+    expect(link.getAttribute('href')).toBe('/brand/alerts');
+  });
+
   /** No PSF, so no verdict — and the row says why rather than showing a silent dash. */
   it('an unlinked favourite is listed without a band', async () => {
     stubFetch({

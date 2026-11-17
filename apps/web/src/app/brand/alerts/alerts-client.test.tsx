@@ -1,0 +1,87 @@
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { stubFetch } from '@/test-utils';
+import { BrandAlertsClient } from './alerts-client';
+
+/**
+ * Smoke test for `/brand/alerts` (doc 15 §6): one `fetch` stub per case, one stable phrase
+ * asserted per case. The case beyond the usual four is staleness: an empty list beside a lane
+ * that has not read anything must say "we have not looked", not "all clear" (doc 17 §5.4).
+ */
+
+afterEach(() => cleanup());
+
+const fresh = { marketplaceCode: 'trendyol', displayName: 'Trendyol', lastOkAt: Date.now(), stale: false };
+
+function violation(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'v1',
+    brandProductId: 'bp1',
+    brandProductName: 'Ton Balıklı 85g',
+    trackedProductId: 'tp1',
+    cardLabel: 'Ton 85g 2li',
+    cardUrl: '/x-p-1',
+    marketplaceCode: 'trendyol',
+    kind: 'belowMin',
+    sellerRef: '9',
+    sellerName: 'Ucuzcu',
+    state: 'open',
+    firstSeenAt: Date.now() - 3_600_000,
+    lastSeenAt: Date.now(),
+    resolvedAt: null,
+    resolution: null,
+    thresholdApplied: '16000',
+    unitMultiplier: 2,
+    observedPrice: '15000',
+    priceSource: 'price',
+    ...overrides,
+  };
+}
+
+function body(overrides: Record<string, unknown> = {}) {
+  return { open: [], resolved: [], resolvedWindowMs: 7 * 86_400_000, staleness: [fresh], staleAfterMs: 7_200_000, ...overrides };
+}
+
+describe('BrandAlertsClient', () => {
+  it('loading: shows the loading message', async () => {
+    stubFetch({ '/api/brand/alerts': { pending: true } });
+    render(<BrandAlertsClient />);
+    expect(await screen.findByText('Alarmlar yükleniyor…')).toBeTruthy();
+  });
+
+  it('error: shows the failure and a retry button', async () => {
+    stubFetch({ '/api/brand/alerts': { reject: new Error('network down') } });
+    render(<BrandAlertsClient />);
+    expect(await screen.findByText('network down')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tekrar dene' })).toBeTruthy();
+  });
+
+  it('empty and fresh: says no card is out of band', async () => {
+    stubFetch({ '/api/brand/alerts': { body: body() } });
+    render(<BrandAlertsClient />);
+    expect(await screen.findByText('Açık ihlal yok.')).toBeTruthy();
+    expect(screen.getByText(/hiçbirinde buybox satıcısı bandın dışında değil/)).toBeTruthy();
+  });
+
+  it('empty but stale: leads with "not current", never "all clear"', async () => {
+    stubFetch({
+      '/api/brand/alerts': { body: body({ staleness: [{ ...fresh, lastOkAt: null, stale: true }] }) },
+    });
+    render(<BrandAlertsClient />);
+    expect(await screen.findByText('Bu alarmlar güncel veriye dayanmıyor')).toBeTruthy();
+    expect(screen.getByText(/ilanlar henüz hiç başarıyla taranmadı/)).toBeTruthy();
+  });
+
+  it('populated: groups by product and shows the gap to the bound', async () => {
+    stubFetch({
+      '/api/brand/alerts': {
+        body: body({ open: [violation()], resolved: [violation({ id: 'v2', state: 'resolved', resolution: 'buyboxChanged', resolvedAt: Date.now() })] }),
+      },
+    });
+    render(<BrandAlertsClient />);
+    expect(await screen.findByText('Açık ihlaller (1)')).toBeTruthy();
+    expect(screen.getAllByText('Ton Balıklı 85g').length).toBeGreaterThan(0);
+    expect(screen.getByText('−%6,2')).toBeTruthy();
+    expect(screen.getByText('Buybox el değiştirdi')).toBeTruthy();
+  });
+});

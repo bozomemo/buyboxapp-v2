@@ -14,7 +14,7 @@ import {
   type ICompetitorSource,
   type ProductPageRef,
 } from '@buybox/adapters';
-import { brandProductsRepo, eventsRepo, trackedProductsRepo } from '@buybox/db';
+import { bandViolationsRepo, brandProductsRepo, eventsRepo, trackedProductsRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildAdapterRegistry } from '../adapter-registry.js';
@@ -250,6 +250,84 @@ describe('SweepListedProducts (doc 07 §7.5, doc 17 §4.2)', () => {
     expect(events.some((e) => e.code === 'ListedSweepHalted')).toBe(true);
     expect(await trackedProductsRepo.latestTrackedScrapePass(db.appDb, 'trendyol', 'listed')).toMatchObject({
       finishedAt: null,
+    });
+  });
+
+  describe('band alarm inside the read (doc 07 §7.5, doc 17 §5)', () => {
+    const HOUR = 60 * 60 * 1000;
+
+    it('opens on a breach, confirms it, ignores a failed look, resolves when back in band', async () => {
+      await seedProduct('t-band');
+      await linkAsBrandProduct('t-band'); // PSF 100,00 ₺, no min, no max → upper bound is PSF
+
+      let price = 150_000n;
+      let fail = false;
+      const { source } = fakeSource(() =>
+        fail
+          ? new CompetitorSourceError('boom', 'fetchFailed')
+          : [offer({ price: Money.fromKurus(price), finalPrice: Money.fromKurus(price) })],
+      );
+
+      await runListed(source, NOW);
+      let open = await bandViolationsRepo.queryBandViolations(db.appDb, { state: 'open' });
+      expect(open).toHaveLength(1);
+      expect(open[0]).toMatchObject({
+        kind: 'aboveMax',
+        sellerRef: 'seller-a',
+        sellerName: 'Satıcı A',
+        thresholdApplied: 100_00n,
+        observedPrice: 150_000n,
+        priceSource: 'finalPrice',
+        firstSeenAt: NOW,
+      });
+      expect(JSON.parse(open[0]!.snapshot)).toEqual([
+        expect.objectContaining({ rank: 1, sellerRef: 'seller-a', finalPrice: '150000' }),
+      ]);
+
+      price = 120_00n;
+      await runListed(source, NOW + HOUR);
+      open = await bandViolationsRepo.queryBandViolations(db.appDb, { state: 'open' });
+      expect(open).toHaveLength(1);
+      expect(open[0]).toMatchObject({ firstSeenAt: NOW, lastSeenAt: NOW + HOUR, observedPrice: 120_00n });
+
+      fail = true;
+      await runListed(source, NOW + 2 * HOUR);
+      expect(await bandViolationsRepo.countOpenBandViolations(db.appDb)).toBe(1);
+
+      fail = false;
+      price = 99_00n;
+      // The failed run left its pass open with the card already looked at; this run only closes it.
+      await runListed(source, NOW + 2 * HOUR + 1);
+      await runListed(source, NOW + 3 * HOUR);
+      expect(await bandViolationsRepo.countOpenBandViolations(db.appDb)).toBe(0);
+      const [resolved] = await bandViolationsRepo.queryBandViolations(db.appDb, { state: 'resolved' });
+      expect(resolved).toMatchObject({ resolution: 'inBand', resolvedAt: NOW + 3 * HOUR });
+    });
+
+    it('a favourite with no link is read but never judged', async () => {
+      await seedProduct('t-fav');
+      await trackedProductsRepo.setTrackedProductFavourite(db.appDb, 't-fav', true, NOW);
+      const { source, calls } = fakeSource(() => [offer()]);
+
+      await runListed(source);
+
+      expect(calls).toHaveLength(1);
+      expect(await bandViolationsRepo.countOpenBandViolations(db.appDb)).toBe(0);
+    });
+
+    it('nobody selling resolves the open violation as noOffers', async () => {
+      await seedProduct('t-empty');
+      await linkAsBrandProduct('t-empty');
+      let offers: CompetitorOffer[] = [offer()];
+      const { source } = fakeSource(() => offers);
+
+      await runListed(source, NOW);
+      expect(await bandViolationsRepo.countOpenBandViolations(db.appDb)).toBe(1);
+
+      offers = [];
+      await runListed(source, NOW + HOUR);
+      const [resolved] = await bandViolationsRepo.queryBandViolations(db.appDb, { state: 'resolved' });
+      expect(resolved).toMatchObject({ resolution: 'noOffers' });
     });
   });
 

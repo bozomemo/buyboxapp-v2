@@ -37,7 +37,7 @@ import {
   Select,
   TextInput,
 } from '@/components/ui';
-import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { formatDateTime, formatDuration, formatMoney, formatNumber } from '@/lib/format';
 import { marketplaceProductUrl } from '@/lib/product-url';
 
 type BandStatus = 'inBand' | 'belowMin' | 'aboveMax' | 'unknown';
@@ -62,6 +62,8 @@ interface Listing {
   upperBound: string | null;
   upperBoundIsReferencePrice: boolean;
   bandStatus: BandStatus;
+  /** Absent from a server older than 11.6. */
+  openViolation?: { kind: 'belowMin' | 'aboveMax'; since: number } | null;
   profit: {
     commissionRate: number;
     commission: string;
@@ -299,6 +301,9 @@ export function BrandListingsClient() {
                     <th className="p-2 text-right">Min</th>
                     <th className="p-2 text-right">Üst sınır</th>
                     <th className="p-2">Durum</th>
+                    <th className="p-2" title="Alarmlar ekranındaki açık ihlalin ne zamandır sürdüğü">
+                      Açık ihlal
+                    </th>
                     <th
                       className="p-2 text-right"
                       title="Komisyon tarifesine göre, buybox fiyatının düştüğü kademe"
@@ -396,6 +401,19 @@ export function BrandListingsClient() {
                       </td>
                       <td className={`p-2 ${STATUS_CLASS[row.bandStatus]}`}>
                         {row.brandProduct ? STATUS_LABELS[row.bandStatus] : '—'}
+                      </td>
+                      <td className="p-2 text-xs">
+                        {row.openViolation == null ? (
+                          <span className="text-(--color-muted)">—</span>
+                        ) : (
+                          <Link
+                            className="underline"
+                            href="/brand/alerts"
+                            title={`${STATUS_LABELS[row.openViolation.kind]} · ${formatDateTime(row.openViolation.since)} tarihinden beri`}
+                          >
+                            {formatDuration(Date.now() - row.openViolation.since)}
+                          </Link>
+                        )}
                       </td>
                       {row.profit ? (
                         <>

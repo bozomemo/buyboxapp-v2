@@ -4,7 +4,7 @@ Status: **specified 2026-09-19.** §1 (modules) **built 2026-09-19** (doc 12 11.
 rules, band derivation and PSF migration **built 2026-09-19** (11.2); §2.4's screens — Stok
 (`/brand/products`), the product detail with cards, multipliers, primary and barcode suggestions,
 and _Ürünüme bağla_ + the favourite star on Takip Edilen Ürünler — **built 2026-09-20** (11.4).
-§3 (the Excel import) **built 2026-09-20** (11.3). §4–§6 not built. §8 (the reseller profit
+§3 (the Excel import) **built 2026-09-20** (11.3). §4 built 2026-09-20 (11.4, 11.5). §5 (the band alarm) **built 2026-11-12** (11.6). §6 not built. §8 (the reseller profit
 estimate) **built 2026-11-04** — numbered after the open items' table, kept last so §7 stays put.
 Build tasks: doc 12 Phase 11.
 
@@ -377,7 +377,7 @@ max üstünde / bilinmiyor_) · open violation since · seller count · last loo
 (column chooser, resize, persistence, sort, Excel export) follows doc 15.
 
 **Built 2026-09-20** (build plan 11.4, ahead of 11.6 — see its order note). Everything above
-except _açık ihlal süresi_, which needs `band_violations` and lands with 11.6. Two things the
+except _açık ihlal süresi_, which landed with 11.6 on 2026-11-12 (`openViolation` on the row). Two things the
 build settled:
 
 - **The band columns are per unit, and the buybox price is the card's.** That is why _birim
@@ -463,6 +463,16 @@ records the bound it was measured against, so a violation opened under an old ba
 correctly.
 
 ### 5.4 Where it shows
+
+**Built 2026-11-12** (11.6). Two decisions made while building, neither in conversation:
+
+- **A seller who jumps from below the min straight above the max** (or back) resolves the first
+  violation `inBand` and opens the other kind in the same look. `inBand` is per kind: that
+  condition is over. No sixth resolution was added for it.
+- **Staleness is measured from the listings lane** (`scope = 'listed'` passes that read at least
+  one card), with `BAND_STALE_AFTER_MS` = 2 h (doc 08). Cards read only by the catalogue sweep or
+  a rescan are still judged, but do not make the alarm count fresh: the lane is what promises the
+  30-minute cadence.
 
 - **Alarmlar** (`/brand/alerts`): open violations first, grouped by brand product, then recently
   resolved. The same staleness banner as `/alerts` (doc 06 §6.2): zero open violations beside a

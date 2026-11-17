@@ -13,6 +13,7 @@
 import { NextResponse } from 'next/server';
 import {
   alertsRepo,
+  bandViolationsRepo,
   brandFindingsRepo,
   brandReportsRepo,
   catalogRepo,
@@ -33,6 +34,7 @@ import {
   SYSTEM_PAUSE_SETTING_KEY,
 } from '@buybox/shared';
 import { withBrand } from '@/lib/product-name';
+import { bandStaleness } from '@/lib/server/band-staleness';
 import { getAppDb } from '@/lib/server/db';
 import { withPermission } from '@/lib/server/auth/guard';
 
@@ -197,11 +199,29 @@ async function getHandler() {
           };
         })();
 
+  const modules = await readEnabledModules(appDb);
+
+  /**
+   * The price-band alarm's open count (doc 17 §5.4), **never without its staleness**: zero open
+   * violations beside a listings lane that has not read anything is "we have not looked". `null`
+   * on a seller-only install, and when there is neither a card to watch nor an open violation.
+   */
+  const bandAlarm = !modules.brand
+    ? null
+    : await (async () => {
+        const [open, staleness] = await Promise.all([
+          bandViolationsRepo.countOpenBandViolations(appDb),
+          bandStaleness(appDb, nowMs),
+        ]);
+        return open === 0 && staleness.length === 0 ? null : { open, staleness };
+      })();
+
   return NextResponse.json({
     // doc 17 §1.3: which sections this install draws. Read here rather than by a second request
     // so the screen never renders one module's sections against another poll's answer.
-    modules: await readEnabledModules(appDb),
+    modules,
     brandAudit,
+    bandAlarm,
     // Two genuinely separate states — see /api/system-pause's and /api/kill-switch's doc
     // comments. `systemPaused` stops everything; `globalKillSwitchEngaged` stops only
     // SubmitPriceChanges. Neither is derived from the other.

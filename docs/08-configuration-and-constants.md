@@ -292,6 +292,7 @@ are `app_settings` rows (doc 05, brand module tables).
 | `DeliverNotifications` cadence | 1 min | `JOB_CATALOG` | Makes no marketplace request; the cadence only sets how soon a new violation reaches a phone. |
 | `MAX_VIOLATIONS_PER_MESSAGE` | 10 | `packages/jobs` | Same reasoning as `MAX_FINDINGS_PER_MESSAGE` (§13): a first sweep after a large import can open hundreds at once. |
 | `NOTIFY_MAX_ATTEMPTS` | 10 | `packages/jobs` | At one-minute cadence, ten minutes of a channel being down before a delivery is marked `failed` and shown as such. |
+| `BAND_STALE_AFTER_MS` | 2 h | `packages/jobs` | doc 17 §5.4: past this without a listings-lane pass that read a card successfully, Alarmlar and the dashboard say the band data is not current. Four times the lane's 30-minute cadence. |
 | `BAND_RENOTIFY_QUIET_MS` | 6 h | `packages/jobs` | A seller oscillating around a bound reopens a violation every listings pass (30 min). The violation history records every reopening; the channel stays quiet for a working half-day. |
 | `ALERTS_WEBHOOK_URL` | *(unset)* | env | Webhook for band violations. Separate from `FINDINGS_WEBHOOK_URL` so audit findings and price alarms can go to different channels. A credential in URL form (§13). |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | *(unset)* | env | E-mail channel. Unset disables the channel; deliveries stay pending with the reason shown. |

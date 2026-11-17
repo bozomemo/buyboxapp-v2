@@ -57,6 +57,14 @@ export const SELLER_IDENTITY_MAX_AGE_MS = 48 * 60 * 60_000;
 export const ALERT_STALE_AFTER_MS = 24 * 60 * 60_000;
 
 /**
+ * How long the listings lane (`SweepListedProducts`, doc 17 §4.2) may go without a pass that read
+ * anything before Alarmlar (`/brand/alerts`) and the dashboard's brand count say the band data is
+ * not current (doc 17 §5.4). Four times the lane's 30-minute cadence: one slow or failed pass is
+ * ordinary, two hours without a successful one is "we have not looked".
+ */
+export const BAND_STALE_AFTER_MS = 2 * 60 * 60_000;
+
+/**
  * Default silence window for a newly created alert rule (doc 08).
  *
  * Applies only to **re-opening**: once an alert resolves, the same condition on the same

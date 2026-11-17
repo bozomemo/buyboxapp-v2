@@ -111,6 +111,15 @@ export {
   scaleToCard,
   unitPriceForDisplay,
 } from './brand/band.js';
+export type {
+  BandLook,
+  BandReconcilePlan,
+  BandResolution,
+  BandSeller,
+  BandViolationToOpen,
+  OpenBandViolation,
+} from './brand/band-violations.js';
+export { planBandReconcile, sameSeller } from './brand/band-violations.js';
 
 export type {
   AmountCell,

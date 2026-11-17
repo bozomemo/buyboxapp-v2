@@ -18,9 +18,9 @@
  * - Consecutive-failure guard, `is_active` handling and disabled-by-default are exactly the
  *   catalogue sweep's — see `sweep-tracked-products.ts`'s doc comment.
  *
- * **Band evaluation is not here.** Doc 07 §7.5 describes it running inside this same read; it
- * lands with `evaluateBand` and `band_violations` in build-plan Phase 11.6, once those exist to
- * evaluate against. Until then this job only keeps İlanlar's prices and seller data fresh.
+ * **Band evaluation is not here but in the shared read** (`scrapeTrackedProducts` →
+ * `band-alarm.ts`, doc 07 §7.5, built 11.6), so a linked card is judged whichever lane read it.
+ * This lane matters to the alarm only because it reads the linked cards every 30 minutes.
  *
  * ⚠️ **Reporting only**, on the terms of doc 07 §7. It reads `tracked_products` and never
  * `listings`.

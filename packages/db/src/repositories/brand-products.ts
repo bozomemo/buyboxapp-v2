@@ -26,6 +26,7 @@ import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
 import * as sqliteSchema from '../schema/sqlite.js';
 import { runDialect, withDialect } from '../with-dialect.js';
+import { resolveOpenForCard } from './band-violations.js';
 
 export type BrandProductSource = 'excel' | 'manual' | 'migration';
 export type CardLinkSource = 'excel' | 'manual' | 'barcodeSuggestion' | 'migration';
@@ -596,11 +597,13 @@ export async function setCardMultiplier(
 }
 
 /**
- * Removes a card's link; the tracked product itself stays. Resolving the card's open band
- * violations with reason `unlinked` (doc 17 §5.3) joins this once `band_violations` exists
- * (Phase 11.6).
+ * Removes a card's link; the tracked product itself stays. The card's open band violations are
+ * resolved `unlinked` first (doc 17 §5.3): without a link there is no band, and a violation left
+ * open would stay on Alarmlar for a card nobody judges any more.
  */
-export async function unlinkCard(appDb: AppDatabase, cardId: string): Promise<void> {
+export async function unlinkCard(appDb: AppDatabase, cardId: string, nowMs: number = Date.now()): Promise<void> {
+  const card = await getBrandProductCard(appDb, cardId);
+  if (card) await resolveOpenForCard(appDb, card.trackedProductId, 'unlinked', nowMs);
   await runDialect(appDb, {
     sqlite: (db) =>
       db.delete(sqliteSchema.brandProductCards).where(eq(sqliteSchema.brandProductCards.id, cardId)),

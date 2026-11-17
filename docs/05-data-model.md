@@ -885,7 +885,7 @@ Unique `(marketplace_code, product_key, valid_from)` — a re-upload of a period
 | `brand_product_id` | text FK, cascade | |
 | `tracked_product_id` | text FK, cascade | The card |
 | `kind` | text | `belowMin` \| `aboveMax` |
-| `seller_ref`, `seller_name` | text | The buybox holder at opening |
+| `seller_ref`, `seller_name` | text | The buybox holder at opening. `seller_ref` nullable: a page can name a seller without a merchant id |
 | `state` | text | `open` \| `resolved` |
 | `first_seen_at`, `last_seen_at`, `resolved_at` | bigint | |
 | `resolution` | text nullable | `inBand` \| `buyboxChanged` \| `noOffers` \| `thresholdRemoved` \| `unlinked` |
@@ -895,8 +895,9 @@ Unique `(marketplace_code, product_key, valid_from)` — a re-upload of a period
 | `price_source` | text | `finalPrice` \| `price` |
 | `snapshot` | json | Offers of the opening look — observations are pruned at 90 days |
 
-Indexes `(state, first_seen_at)`, `(tracked_product_id, kind, state)`. At most one `open` row
-per `(tracked_product_id, kind)`, enforced by the repository.
+Indexes `(state, first_seen_at)`, `(tracked_product_id, kind, state)`, `(brand_product_id, state)`.
+At most one `open` row per `(tracked_product_id, kind)`, enforced by the repository. **Built
+2026-11-12**, migration 0027 (`repositories/band-violations.ts`).
 
 It is **not** an `alerts` row. `alerts.listing_id` references `listings`, and an alert belongs to
 an operator-written rule; a band violation belongs to no rule (every linked card has a band) and

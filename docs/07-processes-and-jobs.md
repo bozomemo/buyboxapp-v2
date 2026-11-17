@@ -747,10 +747,10 @@ product nobody sells and nobody has rated is read near the end of every pass.
 ### 7.5 `SweepListedProducts` — the listings lane, and band evaluation
 
 Specified 2026-09-19 (doc 17 §4.2, §5). The pass loop and its scope column built 2026-09-20
-(build plan Phase 11.5); band evaluation below is **not yet built** — it lands with `evaluateBand`
-and `band_violations` in Phase 11.6, once those exist to evaluate against. Until then this job
-only keeps İlanlar's prices and seller data fresh, exactly like the catalogue sweep over a smaller
-set.
+(build plan Phase 11.5); band evaluation below **built 2026-11-12** (Phase 11.6:
+`packages/jobs/src/pipeline/band-alarm.ts`, `planBandReconcile` in `packages/core`). The
+notification enqueue line below waits for 11.7. A card that moved to another brand product has
+its old product's open violations resolved `unlinked` on its next look.
 
 **The same pass loop as §7.4 over a smaller candidate set**: active tracked products that are
 linked to a brand product **or** marked favourite. Its passes are `tracked_scrape_passes` rows
