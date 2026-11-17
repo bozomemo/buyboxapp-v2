@@ -6,7 +6,14 @@ import { err, ok } from '@buybox/shared';
 import { describe, expect, it } from 'vitest';
 import type { NotificationMessage } from '../ports/notification-channel.js';
 import type { SmsSender } from '../ports/sms.js';
-import { EmailChannel, SmsChannel, WebhookChannel, smtpSettingsFromEnv, type MailTransport } from './channels.js';
+import {
+  EmailChannel,
+  SmsChannel,
+  WebhookChannel,
+  createSmtpTransport,
+  smtpSettingsFromEnv,
+  type MailTransport,
+} from './channels.js';
 
 const MESSAGE: NotificationMessage = {
   subject: '2 yeni fiyat ihlali',
@@ -134,5 +141,21 @@ describe('SmsChannel', () => {
   it('every number refused is a failure', async () => {
     const result = await new SmsChannel(sender({}), ['+9051']).send(MESSAGE);
     expect(result).toEqual({ ok: false, error: { detail: 'SMS: rejected' } });
+  });
+});
+
+describe('createSmtpTransport', () => {
+  // nodemailer is loaded on first send, so nothing failed until the web build bundled the
+  // adapters: it was never declared, and a clean install's `next build` could not resolve it
+  // (user-guide review 2026-11-18). Building a transport opens no connection.
+  it('builds a transport from the declared nodemailer package', async () => {
+    const transport = await createSmtpTransport({
+      host: 'smtp.example.test',
+      port: 587,
+      user: 'u',
+      password: 'p',
+      from: 'buybox@example.test',
+    });
+    expect(typeof transport.sendMail).toBe('function');
   });
 });
