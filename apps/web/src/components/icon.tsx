@@ -37,6 +37,7 @@ export {
   Calculator,
   Check,
   CheckCircle2,
+  CircleHelp,
   Download,
   Cog,
   Eye,

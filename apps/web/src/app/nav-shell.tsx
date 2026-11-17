@@ -24,6 +24,7 @@ import {
   ScrollText,
   Settings,
   BookOpen,
+  CircleHelp,
   ShieldCheck,
   ShoppingBag,
   Store,
@@ -45,6 +46,8 @@ import {
   type NavView,
 } from '@/lib/nav-modules';
 import { NO_PERMISSION_TITLE, PermissionsProvider, canToggleStop, useCan } from '@/lib/permissions';
+import { GUIDE_ROUTE_INDEX } from '@/lib/guide/generated-routes';
+import { topicIdForPath } from '@/lib/guide/route-match';
 import { ThemeToggle } from './theme-toggle';
 
 /**
@@ -152,6 +155,24 @@ const NAV_GROUPS: {
     ],
   },
 ];
+
+/**
+ * The header's "?" (doc 19 §6): the guide topic for the screen in view. Reads only the generated
+ * id → routes index, so the guide's text never enters the browser bundle of every screen.
+ */
+function GuideLink({ pathname }: { pathname: string | null }) {
+  const id = topicIdForPath(pathname ?? '/', GUIDE_ROUTE_INDEX);
+  return (
+    <Link
+      href={id === null ? '/rehber' : `/rehber/${id}`}
+      title="Bu ekranın rehberi"
+      aria-label="Bu ekranın rehberi"
+      className="flex h-8 w-8 items-center justify-center rounded-full text-(--color-muted) hover:bg-(--color-hover) hover:text-(--color-text)"
+    >
+      <Icon icon={CircleHelp} />
+    </Link>
+  );
+}
 
 /** Flattened, for the active-route match below — which is about paths, not about grouping. */
 const NAV_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
@@ -613,6 +634,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
               }}
             />
           )}
+          <GuideLink pathname={pathname} />
           <ThemeToggle />
           <SystemPauseButton />
         </header>

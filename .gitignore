@@ -11,6 +11,7 @@ data/
 
 # The guide's content embedded as code (doc 19 §4); scripts/generate-guide.mjs writes it.
 apps/web/src/lib/guide/generated.ts
+apps/web/src/lib/guide/generated-routes.ts
 
 # Licence signing key — the vendor private key. NEVER commit; keep an offline backup.
 .license-keys/

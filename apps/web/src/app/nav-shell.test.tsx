@@ -449,4 +449,28 @@ describe('NavShell', () => {
       expect(screen.queryByText(/Yeni sürüm/)).toBeNull();
     });
   });
+
+  describe('guide link (doc 19 §6)', () => {
+    afterEach(() => {
+      mockNavigation.pathname = '/';
+    });
+
+    it.each([
+      ['/listings/42', '/rehber/listings'],
+      ['/', '/rehber/panel'],
+      ['/no-such-screen', '/rehber'],
+    ])('on %s opens %s', async (pathname, href) => {
+      mockNavigation.pathname = pathname;
+      stubFetch({
+        [SYSTEM_PAUSE_ROUTE]: { body: { engaged: false } },
+        [LICENSE_ROUTE]: { body: { status: { state: 'valid' } } },
+      });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(screen.getByRole('link', { name: 'Bu ekranın rehberi' }).getAttribute('href')).toBe(href);
+    });
+  });
 });
