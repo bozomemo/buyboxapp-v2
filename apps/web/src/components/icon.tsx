@@ -32,6 +32,7 @@ export {
   AlertTriangle,
   BarChart3,
   Bell,
+  BookOpen,
   Bookmark,
   Calculator,
   Check,

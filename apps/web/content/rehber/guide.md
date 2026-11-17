@@ -4,7 +4,9 @@ title: Rehberi Kullanma
 section: screens
 order: 57
 module: null
-routes: []
+routes:
+  - /rehber
+  - /rehber/[id]
 ---
 
 Bu bölüm hazırlanıyor.

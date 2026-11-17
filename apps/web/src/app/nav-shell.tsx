@@ -23,6 +23,7 @@ import {
   ScanSearch,
   ScrollText,
   Settings,
+  BookOpen,
   ShieldCheck,
   ShoppingBag,
   Store,
@@ -147,6 +148,7 @@ const NAV_GROUPS: {
       { href: '/jobs', label: 'İşler', icon: Cog },
       { href: '/events', label: 'Olaylar', icon: ScrollText },
       { href: '/settings', label: 'Ayarlar', icon: Settings },
+      { href: '/rehber', label: 'Rehber', icon: BookOpen },
     ],
   },
 ];
