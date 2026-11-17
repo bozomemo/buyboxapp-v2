@@ -19,40 +19,6 @@ Her başlık bir belirtiyle başlar. Altında olası nedenler, en sık rastlanan
 4. **Panel'de "Veritabanı şeması bu sürümle uyuşmuyor".** Bir güncellemeden sonra veritabanının da güncellenmesi gerekiyor. Yönetici, uyarıdaki **Göçleri uygula** bağlantısıyla bunu yapabilir.
 5. **Lisans süresi doldu.** Bkz. [Lisans uyarısı](#lisans-uyarisi).
 
-## Fiyatlar pazaryerine gitmiyor (satış modülü)
-
-1. **Fiyat gönderimi kapalı.** **Panel → Güvenlik Anahtarları**'nda **Fiyat gönderimi: kapalı** yazıyorsa uygulama fiyatları hesaplar ama göndermez. Yeni kurulumda kapalı başlar.
-2. **Pazaryeri için gönderim durdurulmuş.** **Panel → Pazaryerleri**'nde o pazaryerinin yanında **Gönderim durduruldu** yazıyorsa **Aç**'a tıklayın.
-3. **Devre kesici açık.** Bir pazaryeri art arda hata verirse uygulama o pazaryerine gönderimi kendiliğinden keser. **İşler** ekranındaki **Devre Kesici (Circuit Breaker)** bölümünde **Açık (devre dışı)** ve son hata yazar. Hatanın nedenini giderin (çoğu zaman pazaryeri bağlantı bilgileri), sonra **Sıfırla**'ya tıklayın.
-4. **Günlük güncelleme bütçesi doldu.** Karar açıklamasında _Günlük güncelleme bütçesi doldu_ yazar. Ertesi gün kendiliğinden devam eder.
-5. **İlanın otomasyonu kapalı.** Bkz. [Fiyatım değişmiyor](#fiyatim-degismiyor).
-
-## Fiyatım değişmiyor
-
-**İlanlar** ekranında ilanı açın ve son karar açıklamasına bakın. Neden orada yazar:
-
-| Açıklama | Ne yapmalı |
-|---|---|
-| _En iyi fiyatta tutuluyor_ | Sorun yok. Buybox sizde ve en kârlı fiyattasınız. |
-| _Piyasa taban fiyatımızın altında — beklemede_ | Rakip, zarar etmeden inebileceğiniz fiyatın altında. Maliyetinizi ve ücretlerinizi kontrol edin; doğruysa beklenen davranıştır. |
-| _Bu ilan için fiyatlama kapalı_ | İlanın otomasyonu kapalı, ilan satışta değil ya da stok kuralına takılıyor. |
-| _Maliyet hesaplanamadı_ | **Stok** ekranında bu ürünün maliyetini girin. |
-| _Yeterli buybox verisi yok_ | Buybox bilgisi henüz gelmedi ya da eski. Sistem duraklatılmış veya bir iş başarısız olabilir; **İşler** ekranına bakın. |
-| _Önceki gönderimin onayı bekleniyor_ / _Piyasanın oturması bekleniyor_ | Son değişikliğin sonucu bekleniyor. Birkaç dakika içinde kendiliğinden ilerler. |
-| _Ayarlanan üst sınır taban fiyatın altında_ | İlanın **Min/Max** değerindeki üst sınır, taban fiyatın altında. Düzeltin. |
-| _Pazaryerinin izin verdiği aralık dışında_ | Pazaryeri bu fiyatı kabul etmedi. Pazaryerindeki fiyat sınırlarını kontrol edin. |
-
-Bkz. [Fiyat Nasıl Belirlenir](/rehber/concepts-repricing).
-
-## Fiyat beklenmedik şekilde yüksek veya düşük
-
-1. **Maliyet yanlış.** En sık neden budur. **Stok** ekranında ürünün **Birim Fiyat (₺, KDV dahil)** değerini kontrol edin. KDV hariç girilmiş bir maliyet taban fiyatı düşük gösterir.
-2. **Ücret ayarları yanlış.** **Ayarlar → Ücretler**'de kargo ve gider bantlarını kontrol edin.
-3. **Adet veya paket hatası.** Çoklu satılan bir ilanda adet sayısı ya da paket bileşenleri yanlış olabilir.
-4. **Tek satıcısınız.** Rakip yoksa fiyat hedef kâr oranına göre belirlenir; **Ayarlar → Politika**'yı kontrol edin.
-
-Acil durumda sağ üstteki düğmeyle sistemi durdurun; pazaryerindeki fiyatlar olduğu gibi kalır, yalnızca yeni değişiklik yapılmaz.
-
 ## Rakip verisi boş veya eski
 
 1. **Panel'de "Rakip verisi bayat".** Son başarılı toplama uzun zaman önce. Sistem duraklatılmış olabilir; **İşler** ekranında ilgili işin son çalışmasına ve hatasına bakın.
@@ -93,13 +59,6 @@ Bkz. [Güncelleme](/rehber/settings-update).
 
 - Parola unutuldu, hesap kilitlendi ya da doğrulama kodu yok: Bkz. [Giriş ve İlk Yönetici](/rehber/sign-in).
 - Giriş ekranı yerine **İlk yönetici** ekranı geliyor: Kurulumda henüz yönetici yok ya da veritabanı değişti. Kurulumu yapan kişiye başvurun.
-
-## Marka alarmları gelmiyor (marka modülü)
-
-1. Sistem duraklatılmış olabilir; üst çubuktaki düğmeye bakın.
-2. **Alarmlar** ekranının üstünde verilerin eski olduğuna dair bir uyarı varsa son tarama uzun zaman önce yapılmıştır; **İşler** ekranına bakın.
-3. Ürünün fiyat bandı (en düşük / en yüksek) girilmemiş ya da ürün bir karta bağlanmamış olabilir. Bkz. [Marka Stok](/rehber/brand-products).
-4. Bildirim gelmiyorsa **Ayarlar → Bildirimler**'de kanalın hazır olduğunu ve alıcıların girildiğini kontrol edin; **Test gönder** ile deneyin. Bkz. [Bildirimler](/rehber/settings-notifications).
 
 ## Hâlâ çözülmediyse
 
