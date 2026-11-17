@@ -218,6 +218,7 @@ export const JOB_LABELS: Record<string, string> = {
   RescanTrackedProducts: 'Seçili Ürün Taraması (raporlama)',
   ResolveProductBarcodes: 'Barkod Tamamlama (raporlama)',
   EvaluateBrandFindings: 'Denetim Bulguları (raporlama)',
+  DeliverNotifications: 'Bildirim Gönderimi',
   ResolveSellerIdentity: 'Satıcı Kimliği Çözümleme (raporlama)',
 };
 

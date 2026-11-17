@@ -4,7 +4,7 @@ Status: **specified 2026-09-19.** §1 (modules) **built 2026-09-19** (doc 12 11.
 rules, band derivation and PSF migration **built 2026-09-19** (11.2); §2.4's screens — Stok
 (`/brand/products`), the product detail with cards, multipliers, primary and barcode suggestions,
 and _Ürünüme bağla_ + the favourite star on Takip Edilen Ürünler — **built 2026-09-20** (11.4).
-§3 (the Excel import) **built 2026-09-20** (11.3). §4 built 2026-09-20 (11.4, 11.5). §5 (the band alarm) **built 2026-11-12** (11.6). §6 not built. §8 (the reseller profit
+§3 (the Excel import) **built 2026-09-20** (11.3). §4 built 2026-09-20 (11.4, 11.5). §5 (the band alarm) **built 2026-11-12** (11.6). §6 (notifications) **built 2026-11-17** (11.7), SMS provider adapter excepted. §8 (the reseller profit
 estimate) **built 2026-11-04** — numbered after the open items' table, kept last so §7 stays put.
 Build tasks: doc 12 Phase 11.
 
@@ -518,6 +518,21 @@ _Test gönder_ button per channel.
   hour. The violation history stays honest; only the channel is quiet.
 - Moving `EvaluateBrandFindings`' webhook onto the same port is a later cleanup, not part of this
   phase.
+
+**Built 2026-11-17** (11.7). Settled while building:
+
+- **Deliveries are enqueued for all three channels on every opening**, configured or not. An
+  unconfigured channel's rows stay `pending` with the reason in `last_error`, which is what lets
+  Alarmlar say who was not told. Configuring a channel later sends what is still pending as one
+  digest; `PruneHistory`'s 30-day window (11.8) bounds how far back that reaches.
+- **One message per channel per run covers every pending row** (up to 500), naming the first
+  `MAX_VIOLATIONS_PER_MESSAGE` and counting the rest; all covered rows are marked together.
+- **A row whose violation was deleted** (its brand product removed) is marked `failed` with
+  _ihlal kaydı silinmiş_ rather than left pending for ever.
+- **SMS succeeds when at least one number accepted it.** A refused number is not retried on its
+  own: retrying would resend the digest to the numbers that already have it.
+- **Recipients** are the `app_settings` row `notifications.recipients` (`{ email[], sms[] }`),
+  validated on save; a Turkish mobile typed as `0532…` or `532…` is stored as `+90532…`.
 
 ---
 

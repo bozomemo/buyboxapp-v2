@@ -21,6 +21,7 @@ import { IMPORT_LISTINGS_JOB } from './pipeline/import-listings.js';
 import { IMPORT_STOCK_ITEMS_JOB } from './pipeline/import-stock-items.js';
 import { OBSERVE_BUYBOX_JOB } from './pipeline/observe-buybox.js';
 import { PRUNE_HISTORY_JOB } from './pipeline/prune-history-job.js';
+import { DELIVER_NOTIFICATIONS_JOB } from './pipeline/deliver-notifications.js';
 import { REPRICE_JOB } from './pipeline/reprice.js';
 import { RESCAN_TRACKED_PRODUCTS_JOB } from './pipeline/rescan-tracked-products.js';
 import { RESET_BUDGET_JOB } from './pipeline/reset-budget.js';
@@ -63,6 +64,8 @@ export const JOB_MODULES: Readonly<Record<string, JobModule>> = {
   [RESOLVE_SELLER_IDENTITY_JOB]: 'brand',
   [EVALUATE_BRAND_FINDINGS_JOB]: 'brand',
   [PRUNE_HISTORY_JOB]: 'core',
+  // Both modules (doc 17 §1.2): it only ever sends what another job already stored.
+  [DELIVER_NOTIFICATIONS_JOB]: 'core',
 };
 
 export function jobModule(jobName: string): JobModule {

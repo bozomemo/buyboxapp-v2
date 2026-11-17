@@ -20,6 +20,7 @@ import { SWEEP_LISTED_PRODUCTS_JOB } from './pipeline/sweep-listed-products.js';
 import { SWEEP_TRACKED_PRODUCTS_JOB } from './pipeline/sweep-tracked-products.js';
 import { RESOLVE_PRODUCT_BARCODES_JOB } from './pipeline/resolve-product-barcodes.js';
 import { EVALUATE_BRAND_FINDINGS_JOB } from './pipeline/evaluate-brand-findings.js';
+import { DELIVER_NOTIFICATIONS_JOB } from './pipeline/deliver-notifications.js';
 import { SUBMIT_PRICE_CHANGES_JOB } from './pipeline/submit-price-changes.js';
 import { SCRAPE_CYCLE_MS } from './scrape-config.js';
 
@@ -207,6 +208,18 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
     // a marketplace and therefore need an explicit business decision; this one only reads what
     // they already stored, so an install that has enabled them has already made that decision
     // and would gain nothing from a second switch.
+    defaultEnabled: true,
+  },
+  {
+    jobName: DELIVER_NOTIFICATIONS_JOB,
+    label: 'Bildirim Gönderimi',
+    // Every minute (doc 07 §7.6): it makes no marketplace request, and a run with nothing pending
+    // is one indexed query per channel. The cadence is how late a price alarm may arrive.
+    cadenceMs: 60_000,
+    perMarketplace: false,
+    defaultPayload: {},
+    // On: with no channel configured it sends nothing and only notes why, so there is no
+    // decision for an operator to make before it may run.
     defaultEnabled: true,
   },
 ];

@@ -242,6 +242,22 @@ export {
   type EvaluateBrandFindingsPayload,
 } from './pipeline/evaluate-brand-findings.js';
 export {
+  DELIVER_NOTIFICATIONS_JOB,
+  DeliverNotificationsPayloadSchema,
+  channelsFromConfiguration,
+  deliverNotifications,
+} from './pipeline/deliver-notifications.js';
+export { formatBandViolationMessage } from './pipeline/band-notifications.js';
+export {
+  BAND_RENOTIFY_QUIET_MS,
+  MAX_VIOLATIONS_PER_MESSAGE,
+  NOTIFICATION_RECIPIENTS_SETTING_KEY,
+  NOTIFY_MAX_ATTEMPTS,
+  parseNotificationRecipients,
+  readNotificationRecipients,
+  type NotificationRecipients,
+} from './notify-config.js';
+export {
   formatFindingMessage,
   MAX_FINDINGS_PER_MESSAGE,
   WebhookFindingNotifier,

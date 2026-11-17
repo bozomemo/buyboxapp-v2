@@ -1219,6 +1219,26 @@ export const bandViolations = mysqlTable(
   ],
 );
 
+/** See the doc comment on `notificationDeliveries` in `schema/sqlite.ts`. */
+export const notificationDeliveries = mysqlTable(
+  'notification_deliveries',
+  {
+    id: code('id', 36).primaryKey(),
+    subjectType: code('subject_type', 32).notNull(),
+    subjectId: code('subject_id', 36).notNull(),
+    channel: code('channel', 16).notNull(),
+    state: code('state', 16).notNull(),
+    attempts: int('attempts').notNull(),
+    lastError: text('last_error'),
+    createdAt: timestampMs('created_at').notNull(),
+    sentAt: timestampMs('sent_at'),
+  },
+  (t) => [
+    index('notification_deliveries_state_created').on(t.state, t.createdAt),
+    index('notification_deliveries_subject').on(t.subjectType, t.subjectId),
+  ],
+);
+
 /** See the doc comment on `commissionTariffs` in `schema/sqlite.ts`. */
 export const commissionTariffs = mysqlTable(
   'commission_tariffs',

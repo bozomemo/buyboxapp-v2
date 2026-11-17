@@ -1481,6 +1481,37 @@ export const bandViolations = sqliteTable(
 );
 
 /**
+ * One notification of one subject on one channel (doc 17 §6, doc 05 §`notification_deliveries`,
+ * build plan 11.7). Enqueued when a band violation **opens**; drained by `DeliverNotifications`.
+ *
+ * - `state`: `pending` → `sent`, or `failed` after `NOTIFY_MAX_ATTEMPTS`. `suppressed` is a
+ *   violation reopened inside the re-notify quiet period: recorded, never sent, so the screen can
+ *   say why nobody was told.
+ * - `last_error` also carries the reason a pending row is waiting without an attempt — a channel
+ *   with no configuration (doc 07 §7.6).
+ * - No foreign key on `subject_id`: `subject_type` names the table, and a delivery outlives a
+ *   deleted brand product's violations only until `PruneHistory` (30 days).
+ */
+export const notificationDeliveries = sqliteTable(
+  'notification_deliveries',
+  {
+    id: text('id').primaryKey(),
+    subjectType: text('subject_type').notNull(), // 'bandViolation'
+    subjectId: text('subject_id').notNull(),
+    channel: text('channel').notNull(), // 'webhook' | 'email' | 'sms'
+    state: text('state').notNull(), // 'pending' | 'sent' | 'failed' | 'suppressed'
+    attempts: integer('attempts').notNull(),
+    lastError: text('last_error'),
+    createdAt: timestampMs('created_at').notNull(),
+    sentAt: timestampMs('sent_at'),
+  },
+  (t) => [
+    index('notification_deliveries_state_created').on(t.state, t.createdAt),
+    index('notification_deliveries_subject').on(t.subjectType, t.subjectId),
+  ],
+);
+
+/**
  * One product's commission tariff for one period, from the marketplace's tariff workbook
  * (Trendyol _Komisyon Tarifeleri_, doc 17 §8.2). Reporting only: it feeds the reseller profit
  * estimate on İlanlar and nothing in the pricing path.

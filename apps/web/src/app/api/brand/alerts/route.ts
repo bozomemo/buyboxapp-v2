@@ -8,7 +8,7 @@
  *
  * Amounts cross as decimal kuruş strings, like every other route.
  */
-import { bandViolationsRepo } from '@buybox/db';
+import { bandViolationsRepo, notificationDeliveriesRepo } from '@buybox/db';
 import { BAND_STALE_AFTER_MS } from '@buybox/jobs';
 import { NextResponse } from 'next/server';
 import { withPermission } from '@/lib/server/auth/guard';
@@ -18,8 +18,17 @@ import { getAppDb } from '@/lib/server/db';
 /** How far back the "recently resolved" list reaches. */
 const RESOLVED_WINDOW_MS = 7 * 24 * 60 * 60_000;
 
-function toWire(row: bandViolationsRepo.BandViolationListRow) {
+function toWire(
+  row: bandViolationsRepo.BandViolationListRow,
+  deliveries: Map<string, notificationDeliveriesRepo.NotificationDeliveryRow[]>,
+) {
   return {
+    /** Who was told, per channel (doc 07 §7.6): the screen says who was not, and why. */
+    notifications: (deliveries.get(row.id) ?? []).map((d) => ({
+      channel: d.channel,
+      state: d.state,
+      reason: d.lastError,
+    })),
     id: row.id,
     brandProductId: row.brandProductId,
     brandProductName: row.brandProductName,
@@ -54,9 +63,14 @@ async function getHandler() {
     }),
     bandStaleness(appDb, nowMs),
   ]);
+  const deliveries = await notificationDeliveriesRepo.deliveriesForSubjects(
+    appDb,
+    'bandViolation',
+    [...open, ...resolved].map((row) => row.id),
+  );
   return NextResponse.json({
-    open: open.map(toWire),
-    resolved: resolved.map(toWire),
+    open: open.map((row) => toWire(row, deliveries)),
+    resolved: resolved.map((row) => toWire(row, deliveries)),
     resolvedWindowMs: RESOLVED_WINDOW_MS,
     staleness,
     staleAfterMs: BAND_STALE_AFTER_MS,

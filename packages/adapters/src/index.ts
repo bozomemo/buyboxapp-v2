@@ -261,3 +261,19 @@ export { ErpApiProductSource, ErpApiConfigSchema } from './product-sources/erp-a
 // SMS (doc 18 §5.3, doc 17 §6.1)
 export type { SmsFailure, SmsFailureKind, SmsSender } from './ports/sms.js';
 export { DevConsoleSmsSender, DisabledSmsSender, SmsConfigurationError, createSmsSender } from './sms/senders.js';
+export type {
+  ChannelFailure,
+  ChannelReadiness,
+  NotificationChannel,
+  NotificationChannelCode,
+  NotificationMessage,
+} from './ports/notification-channel.js';
+export {
+  EmailChannel,
+  SmsChannel,
+  WebhookChannel,
+  createSmtpTransport,
+  smtpSettingsFromEnv,
+  type MailTransport,
+  type SmtpSettings,
+} from './notifications/channels.js';

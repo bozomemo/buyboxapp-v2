@@ -37,6 +37,7 @@ operator already knows the app by them; the interface language is Turkish.
 | `/brand/profit` | Kâr Ayarları | The profit estimate's non-product inputs (doc 17 §8.1–§8.2): fixed per-sale fee, desi table, commission tariff workbook upload (preview → confirm) and the loaded periods. **Built 2026-11-04** |
 | `/brand/alerts` | Alarmlar | Price-band violations, open then resolved (doc 17 §5.4). **Built 2026-11-12** (11.6): staleness banner first (listings lane, `BAND_STALE_AFTER_MS`); open violations grouped by brand product with card, kind, buybox seller, price (_kuponlu_ marked), card-level bound, gap %, duration; resolved in the last 7 days with the reason; Excel export of both. Dashboard: _Fiyat bandı ihlali_ card beside the brand figures, never without the staleness |
 | `/settings/modules` | Modüller | Enable/disable the two modules (doc 17 §1.3) |
+| `/settings/notifications` | Bildirimler | **Built 2026-11-17** (11.7): each channel's readiness as the worker sees it (never the credential), outbox counts per state, _Test gönder_ per channel (`settings.manage`), e-mail and SMS recipients one per line. Alarmlar shows each violation's delivery per channel, with the waiting reason on hover |
 | `/settings/notifications` | Bildirimler | Channels, recipients, test send (doc 17 §6) |
 
 together with the existing brand-audit screens (§12.2, §12.4). A module that is disabled has its

@@ -12,14 +12,16 @@
  * ⚠️ **Reporting only**, on doc 07 §7's terms. It reads no `listings` row and writes no price.
  * The caller wraps it so that an exception here is recorded and the look still counts.
  *
- * Notification of the rows opened here is build plan 11.7 (`notification_deliveries`). Until
- * that lands, the rows are on Alarmlar and on İlanlar, and this function returns them so the
- * notifier has one place to hook in.
+ * Every violation **opened** here enqueues one `notification_deliveries` row per channel
+ * (doc 07 §7.5, build plan 11.7); `DeliverNotifications` sends them. A reopening for the same
+ * (card, kind, seller) inside `BAND_RENOTIFY_QUIET_MS` is enqueued `suppressed`: recorded, never
+ * sent. Confirmations and resolutions enqueue nothing (doc 17 §6).
  */
 import { evaluateBand, planBandReconcile, type BandLook } from '@buybox/core';
 import type { CompetitorOffer } from '@buybox/adapters';
-import { bandViolationsRepo, type brandProductsRepo } from '@buybox/db';
+import { bandViolationsRepo, newId, notificationDeliveriesRepo, type brandProductsRepo } from '@buybox/db';
 import type { JobContext } from '../job.js';
+import { BAND_RENOTIFY_QUIET_MS } from '../notify-config.js';
 
 export interface BandAlarmResult {
   readonly opened: number;
@@ -83,5 +85,29 @@ export async function evaluateCardBand(
       resolve: [...stale.map((row) => ({ id: row.id, resolution: 'unlinked' as const })), ...plan.resolve],
     },
   });
+  for (const row of opened) {
+    const quiet = await bandViolationsRepo.resolvedRecentlyForSameSeller(ctx.appDb, {
+      trackedProductId,
+      kind: row.kind,
+      sellerRef: row.sellerRef,
+      sellerName: row.sellerName,
+      sinceMs: nowMs - BAND_RENOTIFY_QUIET_MS,
+    });
+    await notificationDeliveriesRepo.enqueueDeliveries(
+      ctx.appDb,
+      notificationDeliveriesRepo.NOTIFICATION_CHANNELS.map((channel) => ({
+        id: newId(),
+        subjectType: 'bandViolation',
+        subjectId: row.id,
+        channel,
+        state: quiet ? 'suppressed' : 'pending',
+        attempts: 0,
+        lastError: quiet ? 'sessiz dönem: aynı satıcı için kısa süre önce kapanan ihlal yeniden açıldı' : null,
+        createdAt: nowMs,
+        sentAt: null,
+      })),
+    );
+  }
+
   return { opened: opened.length, resolved: stale.length + plan.resolve.length };
 }

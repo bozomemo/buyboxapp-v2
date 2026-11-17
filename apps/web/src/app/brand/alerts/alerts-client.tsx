@@ -48,6 +48,8 @@ interface Violation {
   unitMultiplier: number;
   observedPrice: string;
   priceSource: 'finalPrice' | 'price';
+  /** Absent from a server older than 11.7. */
+  notifications?: { channel: 'webhook' | 'email' | 'sms'; state: 'pending' | 'sent' | 'failed' | 'suppressed'; reason: string | null }[];
 }
 
 interface Staleness {
@@ -108,6 +110,28 @@ function cardLink(v: Violation) {
       <span className="ml-2 text-xs text-(--color-muted)">{v.marketplaceCode}</span>
       {v.unitMultiplier !== 1 && <span className="ml-2 text-xs text-(--color-muted)">×{v.unitMultiplier}</span>}
     </>
+  );
+}
+
+const CHANNEL_SHORT = { webhook: 'webhook', email: 'e-posta', sms: 'SMS' } as const;
+const DELIVERY_SHORT = { pending: 'bekliyor', sent: '✓', failed: 'başarısız', suppressed: 'sessiz' } as const;
+
+/**
+ * Who was told, per channel. A channel with nobody configured shows as waiting with the reason on
+ * hover, so an empty inbox is never mistaken for "nothing happened" (doc 07 §7.6).
+ */
+function notifiedCell(v: Violation) {
+  const rows = v.notifications ?? [];
+  if (rows.length === 0) return <span className="text-(--color-muted)">—</span>;
+  return (
+    <span className="text-xs">
+      {rows.map((d, i) => (
+        <span key={d.channel} title={d.reason ?? undefined} className={d.state === 'failed' ? 'text-(--color-danger)' : d.state === 'sent' ? '' : 'text-(--color-muted)'}>
+          {i > 0 && ' · '}
+          {CHANNEL_SHORT[d.channel]} {DELIVERY_SHORT[d.state]}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -271,12 +295,13 @@ export function BrandAlertsClient() {
                   <th className="p-2 text-right">Fark</th>
                   <th className="p-2">Süre</th>
                   <th className="p-2">Son görülme</th>
+                  <th className="p-2">Bildirim</th>
                 </tr>
               </thead>
               {groups.map((group) => (
                 <tbody key={group.productId}>
                   <tr className="border-t border-(--color-border) bg-(--color-bg)">
-                    <td colSpan={8} className="p-2 font-medium">
+                    <td colSpan={9} className="p-2 font-medium">
                       <Link className="underline" href={`/brand/products/${group.productId}`}>
                         {group.productName}
                       </Link>
@@ -297,6 +322,7 @@ export function BrandAlertsClient() {
                       <td className="p-2 text-xs text-(--color-muted)">
                         <Ago at={v.lastSeenAt} />
                       </td>
+                      <td className="p-2">{notifiedCell(v)}</td>
                     </tr>
                   ))}
                 </tbody>

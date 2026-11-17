@@ -11,6 +11,7 @@ const TABS = [
   { href: '/settings/fees', label: 'Ücretler' },
   { href: '/settings/policy', label: 'Politika' },
   { href: '/settings/product-sources', label: 'Ürün Kaynakları' },
+  { href: '/settings/notifications', label: 'Bildirimler' },
   { href: '/settings/retention', label: 'Saklama' },
   { href: '/settings/database', label: 'Veritabanı' },
   // Doc 13 §6: the licence screen itself is the one route reachable while unlicensed, so it

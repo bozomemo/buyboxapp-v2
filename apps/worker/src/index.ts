@@ -120,6 +120,8 @@ import {
   sweepTrackedProducts,
   EVALUATE_BRAND_FINDINGS_JOB,
   evaluateBrandFindings,
+  DELIVER_NOTIFICATIONS_JOB,
+  deliverNotifications,
   submitPriceChanges,
   SUBMIT_PRICE_CHANGES_JOB,
   systemClock,
@@ -650,6 +652,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   const resolveProductBarcodesCadenceMs = resolveProductBarcodesCadence ?? 60 * 60_000;
   const evaluateBrandFindingsCadenceMs = evaluateBrandFindingsCadence ?? 6 * 60 * 60_000;
   const importStockItemsCadenceMs = importStockItemsCadence ?? 60_000;
+  const deliverNotificationsCadenceMs = (await getJobCadenceMs(appDb, DELIVER_NOTIFICATIONS_JOB)) ?? 60_000;
 
   // Exactly the values the tickers below are built from — assembled here, next to them, so the
   // two cannot drift. See `WorkerHandle.cadenceMsByJobName` for why anything outside needs them.
@@ -668,6 +671,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     [RESOLVE_PRODUCT_BARCODES_JOB, resolveProductBarcodesCadenceMs],
     [EVALUATE_BRAND_FINDINGS_JOB, evaluateBrandFindingsCadenceMs],
     [IMPORT_STOCK_ITEMS_JOB, importStockItemsCadenceMs],
+    [DELIVER_NOTIFICATIONS_JOB, deliverNotificationsCadenceMs],
   ]);
 
   // Names its host as well as its process, so a later worker on this machine can tell that the
@@ -742,6 +746,13 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     jobName: EVALUATE_BRAND_FINDINGS_JOB,
     handler: (ctx) => evaluateBrandFindings(ctx),
     cadenceMs: evaluateBrandFindingsCadenceMs,
+  });
+  // Global and scheduler-cadenced like `EvaluateBrandFindings`: one outbox, drained once a minute
+  // (doc 07 §7.6). Per-marketplace ticking would send each message once per marketplace.
+  scheduler.register({
+    jobName: DELIVER_NOTIFICATIONS_JOB,
+    handler: (ctx) => deliverNotifications(ctx),
+    cadenceMs: deliverNotificationsCadenceMs,
   });
   // On demand only — no cadence, and deliberately not in `JOB_CATALOG`: a resolution names
   // one firm, so it is enqueued from that seller's own row and nowhere else.

@@ -1150,6 +1150,26 @@ export const bandViolations = pgTable(
   ],
 );
 
+/** See the doc comment on `notificationDeliveries` in `schema/sqlite.ts`. */
+export const notificationDeliveries = pgTable(
+  'notification_deliveries',
+  {
+    id: text('id').primaryKey(),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    channel: text('channel').notNull(),
+    state: text('state').notNull(),
+    attempts: integer('attempts').notNull(),
+    lastError: text('last_error'),
+    createdAt: timestampMs('created_at').notNull(),
+    sentAt: timestampMs('sent_at'),
+  },
+  (t) => [
+    index('notification_deliveries_state_created').on(t.state, t.createdAt),
+    index('notification_deliveries_subject').on(t.subjectType, t.subjectId),
+  ],
+);
+
 /** See the doc comment on `commissionTariffs` in `schema/sqlite.ts`. */
 export const commissionTariffs = pgTable(
   'commission_tariffs',

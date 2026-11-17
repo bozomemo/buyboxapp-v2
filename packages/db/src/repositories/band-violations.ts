@@ -12,7 +12,7 @@
  * of one kind, the planner judges every row and the next look closes the extra — it never stays
  * open for ever.
  */
-import type { BandReconcilePlan, BandResolution, BandViolationKind, OpenBandViolation } from '@buybox/core';
+import { sameSeller, type BandReconcilePlan, type BandResolution, type BandViolationKind, type OpenBandViolation } from '@buybox/core';
 import { and, asc, count, desc, eq, getTableColumns, gte, inArray } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import { newId } from '../id.js';
@@ -321,4 +321,117 @@ export async function openViolationsForCards(
     }
   }
   return result;
+}
+
+/**
+ * Whether a violation of this card and kind, by this seller, was resolved at or after `sinceMs` —
+ * the re-notify quiet period (doc 17 §6.2, `BAND_RENOTIFY_QUIET_MS`). A seller oscillating
+ * around a bound reopens a violation every listings pass; the history records each reopening,
+ * the channel stays quiet.
+ *
+ * Seller identity follows `sameSeller` in `packages/core`: by merchant id when both have one, by
+ * name only when neither does.
+ */
+export async function resolvedRecentlyForSameSeller(
+  appDb: AppDatabase,
+  input: {
+    trackedProductId: string;
+    kind: BandViolationKind;
+    sellerRef: string | null;
+    sellerName: string;
+    sinceMs: number;
+  },
+): Promise<boolean> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => {
+      const v = sqliteSchema.bandViolations;
+      return db
+        .select({ sellerRef: v.sellerRef, sellerName: v.sellerName })
+        .from(v)
+        .where(
+          and(
+            eq(v.trackedProductId, input.trackedProductId),
+            eq(v.kind, input.kind),
+            eq(v.state, 'resolved'),
+            gte(v.resolvedAt, input.sinceMs),
+          ),
+        );
+    },
+    postgres: (db) => {
+      const v = postgresSchema.bandViolations;
+      return db
+        .select({ sellerRef: v.sellerRef, sellerName: v.sellerName })
+        .from(v)
+        .where(
+          and(
+            eq(v.trackedProductId, input.trackedProductId),
+            eq(v.kind, input.kind),
+            eq(v.state, 'resolved'),
+            gte(v.resolvedAt, input.sinceMs),
+          ),
+        );
+    },
+    mysql: (db) => {
+      const v = mysqlSchema.bandViolations;
+      return db
+        .select({ sellerRef: v.sellerRef, sellerName: v.sellerName })
+        .from(v)
+        .where(
+          and(
+            eq(v.trackedProductId, input.trackedProductId),
+            eq(v.kind, input.kind),
+            eq(v.state, 'resolved'),
+            gte(v.resolvedAt, input.sinceMs),
+          ),
+        );
+    },
+  })) as { sellerRef: string | null; sellerName: string }[];
+  return rows.some((row) => sameSeller(row, input));
+}
+
+/** These violations with what a message names beside them. Unknown ids are absent. */
+export async function bandViolationsByIds(
+  appDb: AppDatabase,
+  ids: readonly string[],
+): Promise<BandViolationListRow[]> {
+  if (ids.length === 0) return [];
+  const list = [...ids];
+  return (await withDialect(appDb, {
+    sqlite: (db) => {
+      const v = sqliteSchema.bandViolations;
+      const p = sqliteSchema.brandProducts;
+      const t = sqliteSchema.trackedProducts;
+      return db
+        .select({ ...getTableColumns(v), brandProductName: p.name, cardLabel: t.label, cardUrl: t.productUrl, marketplaceCode: t.marketplaceCode })
+        .from(v)
+        .innerJoin(p, eq(p.id, v.brandProductId))
+        .innerJoin(t, eq(t.id, v.trackedProductId))
+        .where(inArray(v.id, list))
+        .orderBy(asc(p.name), asc(v.firstSeenAt));
+    },
+    postgres: (db) => {
+      const v = postgresSchema.bandViolations;
+      const p = postgresSchema.brandProducts;
+      const t = postgresSchema.trackedProducts;
+      return db
+        .select({ ...getTableColumns(v), brandProductName: p.name, cardLabel: t.label, cardUrl: t.productUrl, marketplaceCode: t.marketplaceCode })
+        .from(v)
+        .innerJoin(p, eq(p.id, v.brandProductId))
+        .innerJoin(t, eq(t.id, v.trackedProductId))
+        .where(inArray(v.id, list))
+        .orderBy(asc(p.name), asc(v.firstSeenAt));
+    },
+    mysql: (db) => {
+      const v = mysqlSchema.bandViolations;
+      const p = mysqlSchema.brandProducts;
+      const t = mysqlSchema.trackedProducts;
+      return db
+        .select({ ...getTableColumns(v), brandProductName: p.name, cardLabel: t.label, cardUrl: t.productUrl, marketplaceCode: t.marketplaceCode })
+        .from(v)
+        .innerJoin(p, eq(p.id, v.brandProductId))
+        .innerJoin(t, eq(t.id, v.trackedProductId))
+        .where(inArray(v.id, list))
+        .orderBy(asc(p.name), asc(v.firstSeenAt));
+    },
+  })) as BandViolationListRow[];
 }

@@ -79,6 +79,17 @@ export const BootstrapEnvSchema = z.object({
    * that has configured nothing loses a notification, never a finding.
    */
   FINDINGS_WEBHOOK_URL: z.string().url().optional(),
+  /**
+   * Band-violation notifications (doc 17 §6.1, build plan 11.7). Credentials, so environment
+   * only: a webhook URL is a bearer token and SMTP has a password. All optional — an unset
+   * channel is skipped and its deliveries wait with the reason, never an error at boot.
+   */
+  ALERTS_WEBHOOK_URL: z.string().url().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().regex(/^\d+$/).optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
 });
 
 export type BootstrapEnv = z.infer<typeof BootstrapEnvSchema>;

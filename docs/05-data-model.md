@@ -917,8 +917,10 @@ readers check which kind of row it holds.
 | `last_error` | text nullable | |
 | `created_at`, `sent_at` | bigint | |
 
-Index `(state, created_at)`. `suppressed` is a violation reopened inside the re-notify quiet
-period (doc 17 §6.2): recorded, so the screen can say why nobody was told.
+Indexes `(state, created_at)`, `(subject_type, subject_id)`. `suppressed` is a violation reopened
+inside the re-notify quiet period (doc 17 §6.2): recorded, so the screen can say why nobody was
+told. `last_error` also holds why a `pending` row waits without an attempt (an unconfigured
+channel). **Built 2026-11-17**, migration 0028.
 
 ---
 

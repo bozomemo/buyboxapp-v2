@@ -786,7 +786,9 @@ turn a successful read into a failed one.
 
 ### 7.6 `DeliverNotifications`
 
-Specified 2026-09-19 (doc 17 §6). Runs every minute in both modules.
+Specified 2026-09-19 (doc 17 §6). Runs every minute in both modules. **Built 2026-11-17**
+(`pipeline/deliver-notifications.ts`, build plan 11.7); doc 17 §6.2 records what building it
+settled.
 
 - Takes `pending` deliveries, groups them **per channel**, and sends one message per channel per
   run with up to `MAX_VIOLATIONS_PER_MESSAGE` items and a count of the rest. SMS is always a

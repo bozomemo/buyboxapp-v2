@@ -20,6 +20,7 @@ import { RepricePayloadSchema } from './pipeline/reprice.js';
 import { ResetBudgetPayloadSchema } from './pipeline/reset-budget.js';
 import { ResolveProductBarcodesPayloadSchema } from './pipeline/resolve-product-barcodes.js';
 import { EvaluateBrandFindingsPayloadSchema } from './pipeline/evaluate-brand-findings.js';
+import { DeliverNotificationsPayloadSchema } from './pipeline/deliver-notifications.js';
 import { SCRAPE_COMPETITORS_JOB, ScrapeCompetitorsPayloadSchema } from './pipeline/scrape-competitors.js';
 import { SUBMIT_PRICE_CHANGES_JOB, SubmitPriceChangesPayloadSchema } from './pipeline/submit-price-changes.js';
 import { SweepBrandCataloguePayloadSchema } from './pipeline/sweep-brand-catalogue.js';
@@ -170,6 +171,7 @@ describe('catalogue default payloads are runnable', () => {
     SweepListedProducts: SweepListedProductsPayloadSchema,
     ResolveProductBarcodes: ResolveProductBarcodesPayloadSchema,
     EvaluateBrandFindings: EvaluateBrandFindingsPayloadSchema,
+    DeliverNotifications: DeliverNotificationsPayloadSchema,
   };
 
   for (const entry of JOB_CATALOG) {
