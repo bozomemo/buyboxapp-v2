@@ -4,7 +4,14 @@
  * far more than doc 19 allows. Every refusal names the file, because the person reading the error
  * is an agent or an editor who has to find it.
  */
-import { APP_MODULES, type AppModule } from '@buybox/shared';
+import type { AppModule } from '@buybox/shared';
+
+/**
+ * The modules a topic may name. A local copy, not `APP_MODULES`: this file reaches the browser
+ * through `/rehber`'s client, and a value import of `@buybox/shared` drags its Node-only barrel
+ * into the bundle (client-imports.test.ts). topic.test.ts pins the copy to `APP_MODULES`.
+ */
+export const GUIDE_MODULES: readonly AppModule[] = ['seller', 'brand'];
 
 export type GuideSection = 'start' | 'concepts' | 'screens' | 'faq' | 'troubleshooting' | 'glossary';
 
@@ -104,7 +111,7 @@ export function parseTopic(file: string, source: string): GuideTopic {
   const moduleText = fields.get('module') ?? fail('module missing');
   let module: AppModule | null = null;
   if (moduleText !== 'null') {
-    if (!(APP_MODULES as readonly string[]).includes(moduleText)) fail(`unknown module: ${moduleText}`);
+    if (!(GUIDE_MODULES as readonly string[]).includes(moduleText)) fail(`unknown module: ${moduleText}`);
     module = moduleText as AppModule;
   }
   if (routes === null) fail('routes missing (use routes: [] for a topic without a screen)');

@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { headingSlug, parseTopic, parseTopics } from './topic';
+import { APP_MODULES } from '@buybox/shared';
+import { GUIDE_MODULES, headingSlug, parseTopic, parseTopics } from './topic';
+
+describe('GUIDE_MODULES', () => {
+  it('is the app module list', () => {
+    expect([...GUIDE_MODULES].sort()).toEqual([...APP_MODULES].sort());
+  });
+});
 
 const VALID = `---
 id: listings
