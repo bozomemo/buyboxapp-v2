@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AuthCard, errorMessage, postJson } from '@/components/auth-card';
+import { AuthCard, LostAccessNote, errorMessage, postJson } from '@/components/auth-card';
 import { Button, Field, StatusBanner, TextInput } from '@/components/ui';
 
 /**
@@ -82,6 +82,7 @@ export function LoginClient({ next }: { next: string }) {
           {submitting ? 'Giriş yapılıyor…' : 'Giriş yap'}
         </Button>
       </form>
+      <LostAccessNote />
     </AuthCard>
   );
 }

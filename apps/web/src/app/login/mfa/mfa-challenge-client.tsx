@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AuthCard, errorMessage, postJson } from '@/components/auth-card';
+import { AuthCard, LostAccessNote, errorMessage, postJson } from '@/components/auth-card';
 import { Button, Field, LoadingState, StatusBanner, TextInput } from '@/components/ui';
 
 type Method = 'totp' | 'sms' | 'recovery';
@@ -92,6 +92,7 @@ export function MfaChallengeClient({ next }: { next: string }) {
         <Button type="button" onClick={() => window.location.assign('/login')}>
           Yeniden giriş yap
         </Button>
+        <LostAccessNote />
       </AuthCard>
     );
   }
@@ -187,6 +188,7 @@ export function MfaChallengeClient({ next }: { next: string }) {
           Farklı bir hesapla giriş yap
         </Button>
       </form>
+      <LostAccessNote />
     </AuthCard>
   );
 }

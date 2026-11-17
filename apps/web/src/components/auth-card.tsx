@@ -34,6 +34,20 @@ export function AuthCard({
   );
 }
 
+/**
+ * doc 19 §9, verbatim: the guide is behind sign-in, so the sign-in screens say what a locked-out
+ * user should do. Nothing about *why* a sign-in failed (doc 18 §3.3) — this is the same for all.
+ * If the users screen's name changes, this text changes with it.
+ */
+export function LostAccessNote() {
+  return (
+    <p data-testid="lost-access-note" className="mt-4 text-xs text-(--color-muted)">
+      Şifrenizi veya doğrulama kodunuzu kaybettiyseniz yöneticinize başvurun; yönetici <strong>Kullanıcılar</strong> ekranından
+      sıfırlayabilir.
+    </p>
+  );
+}
+
 /** POSTs JSON and returns the parsed body with `ok`, never throwing on a 4xx. */
 export async function postJson(
   url: string,
