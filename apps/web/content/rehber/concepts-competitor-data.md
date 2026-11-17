@@ -7,13 +7,13 @@ module: null
 routes: []
 ---
 
-Uygulama, ürünlerinizi satan diğer satıcıları ve fiyatlarını düzenli aralıklarla toplar. Bu bilgi pazaryerlerinin herkese açık ürün sayfalarından alınır ve **yalnızca raporlama içindir**.
+Uygulama, ürünlerinizi satan diğer satıcıları ve fiyatlarını düzenli aralıklarla toplar. Bu bilgi **yalnızca raporlama içindir**.
 
 ## Fiyat kararlarını etkilemez
 
 Satış modülünün fiyat kararları pazaryerinin kendi verdiği **buybox bilgisine** dayanır. Rakip verisi bu kararlara girmez. Bu bilinçli bir tercihtir:
 
-- Herkese açık sayfalar haber vermeden değişebilir ya da geçici olarak erişilemez olabilir.
+- Rakip verisi haber vermeden eksik kalabilir ya da gecikebilir.
 - Rakip verisi alınamadığında fiyatlama durmaz; yalnızca raporlarda o dönem için boşluk kalır.
 
 ## Nerede görünür
@@ -25,8 +25,8 @@ Satış modülünün fiyat kararları pazaryerinin kendi verdiği **buybox bilgi
 ## Neden bazen eksik veya gecikmeli
 
 - Toplama, pazaryerini yormamak için sınırlı bir hızla yapılır; çok sayıda ürün varsa bir turun tamamlanması zaman alır.
-- Pazaryeri bir sayfayı geçici olarak engellerse o tur kaydedilir ve sonraki turda yeniden denenir.
-- Bazı bilgiler (ör. rakibin kargoya verme süresi) sayfada güvenilir şekilde bulunmadığında **boş** bırakılır; uygulama tahmin yürütmez.
+- Bir tur başarısız olursa kaydedilir ve sonraki turda yeniden denenir.
+- Bazı bilgiler (ör. rakibin kargoya verme süresi) güvenilir şekilde bilinmediğinde **boş** bırakılır; uygulama tahmin yürütmez.
 
 ## Sık sorulanlar
 

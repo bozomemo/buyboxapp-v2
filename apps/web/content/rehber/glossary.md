@@ -31,7 +31,7 @@ Uygulamada geçen terimler, alfabetik sırayla.
 | **Modül** | Uygulamanın iki bölümü: **Satış** (kendi ilanlarınızın fiyatlaması) ve **Marka** (marka ürünlerinin pazarda izlenmesi). |
 | **Optimum** | En kârlı fiyatın bulunduğu ve piyasa değişene kadar fiyatın değiştirilmediği faz. |
 | **Paket** | Birden çok stok kaleminden oluşan ürün (set, koli). Maliyeti bileşenlerin toplamıdır. |
-| **Rakip verisi** | Pazaryerlerinin herkese açık sayfalarından toplanan rakip satıcı ve fiyat bilgisi. Yalnızca raporlama içindir. Bkz. [Rakip Verisi](/rehber/concepts-competitor-data). |
+| **Rakip verisi** | Ürünlerinizi satan diğer satıcılar ve fiyatları hakkında düzenli toplanan bilgi. Yalnızca raporlama içindir. Bkz. [Rakip Verisi](/rehber/concepts-competitor-data). |
 | **Stok kalemi** | Fiziksel ürününüz; stok kodu, adı, maliyeti ve miktarıyla. |
 | **Taban fiyat** | Zarar etmeden satılabilecek en düşük fiyat. Bkz. [Taban Fiyat](/rehber/concepts-floor-price). |
 | **Tırmanıyor** | Buybox sizdeyken kâr için fiyatın adım adım yükseltildiği faz. |

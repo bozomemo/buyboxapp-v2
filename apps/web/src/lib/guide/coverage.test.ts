@@ -78,6 +78,37 @@ describe('the guide covers the app (doc 19 §8)', () => {
     expect(broken).toEqual([]);
   });
 
+  /**
+   * doc 19 §3 "no internal names" and "not how competitor data is collected", for the text a
+   * customer actually sees (the `<!-- kaynak -->` comments are stripped before this). Catches the
+   * obvious spellings; it is a floor under review, not a replacement for it.
+   */
+  const FORBIDDEN: readonly [RegExp, string][] = [
+    [/\/api\//, 'API path'],
+    [/\b[A-Z][A-Z0-9]*_[A-Z0-9_]{2,}\b/, 'environment-variable-like name'],
+    [/\b(Scrape|Sweep|Evaluate|Prune|Submit|Confirm)[A-Z][A-Za-z]+\b/, 'job class name'],
+    [/scrap|playwright|impersonat|headless|user[- ]agent/i, 'how competitor data is collected'],
+    [/herkese açık (ürün )?sayfa|sayfa(sı|ları)? okun/i, 'how competitor data is collected'],
+  ];
+  const forbiddenIn = (text: string) => FORBIDDEN.filter(([re]) => re.test(text)).map(([, why]) => why);
+
+  it('the forbidden-text check recognises what it is meant to', () => {
+    expect(forbiddenIn('Veri pazaryerinin herkese açık sayfalarından toplanır.')).toEqual([
+      'how competitor data is collected',
+    ]);
+    expect(forbiddenIn('ScrapeCompetitors işi')).toContain('job class name');
+    expect(forbiddenIn('SMTP_HOST ayarı')).toEqual(['environment-variable-like name']);
+    expect(forbiddenIn('Fiyat gönderimi kapalı.')).toEqual([]);
+  });
+
+  it('rendered text names nothing internal (doc 19 §3)', () => {
+    // Bold spans are UI labels quoted verbatim (doc 19 §3 allows a label exactly as the UI shows
+    // it, e.g. the tracked-product status **Sayfa okunamadı**), so they are not checked here.
+    const prose = (body: string) => body.replace(/\*\*[^*]+\*\*/g, '');
+    const found = topics.flatMap((t) => forbiddenIn(prose(t.body)).map((why) => `${t.id}: ${why}`));
+    expect(found).toEqual([]);
+  });
+
   it('the generated module matches the content folder (run npm run guide:gen)', () => {
     expect(RAW_TOPICS.map((r) => r.file)).toEqual(contentFiles);
     for (const r of RAW_TOPICS) expect(r.source).toBe(readFileSync(path.join(CONTENT_DIR, r.file), 'utf8'));

@@ -43,7 +43,7 @@ Bu bilgileri pazaryerinin satıcı panelinden alırsınız. Gizli alanlar yazark
 
 ## Yalnızca marka modülü açıkken
 
-Kartta bağlantı bilgisi alanları görünmez. Marka izleme bu pazaryerinin herkese açık ürün sayfalarını okur; API bilgisi gerekmez. Yalnızca **Etkin** kutusunu ayarlayıp **Kaydet**'e tıklarsınız. Kapalı bir pazaryerindeki markalar taranmaz.
+Kartta bağlantı bilgisi alanları görünmez. Marka izleme için bu pazaryerinde bağlantı bilgisi gerekmez. Yalnızca **Etkin** kutusunu ayarlayıp **Kaydet**'e tıklarsınız. Kapalı bir pazaryerindeki markalar taranmaz.
 
 ## Kim değiştirebilir?
 

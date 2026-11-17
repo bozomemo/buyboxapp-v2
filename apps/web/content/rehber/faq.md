@@ -61,7 +61,7 @@ Evet, ilk kurulumda öneririz. **Panel → Güvenlik Anahtarları**'nda fiyat g�
 Hayır. Rakip verisi yalnızca raporlama içindir; fiyat kararları pazaryerinin verdiği buybox bilgisine dayanır. Bkz. [Rakip Verisi](/rehber/concepts-competitor-data).
 
 **Rakip verisi neden eksik ya da gecikmeli?**
-Toplama sınırlı bir hızla yapılır ve pazaryeri sayfaları bazen geçici olarak erişilemez. Uygulama sonraki turda yeniden dener.
+Toplama sınırlı bir hızla yapılır ve bir tur bazen başarısız olabilir. Uygulama sonraki turda yeniden dener.
 
 ## Marka modülü
 

@@ -11,7 +11,7 @@ routes:
 
 **Marka Denetimi → Takip Edilen Ürünler** ekranı, izlediğiniz tüm pazaryeri kartlarını (ürün sayfalarını) listeler: [İzlenen Markalar](/rehber/watched-brands) taramasının bulduğu kartlar ve sizin link ile eklediğiniz kartlar. Her kart için fiyat, satıcı ve değerlendirme bilgisi görürsünüz. Ekran yalnızca raporlama içindir; hiçbir fiyatı etkilemez. Bir markanın hangi ürünlerinin satıldığını, kimin sattığını ve hangi kartları kendi ürünlerinize bağlayacağınızı bulmak için açın.
 
-Rakip verisi pazaryerinin herkese açık sayfalarından toplanır. Bkz. [Rakip Verisi](/rehber/concepts-competitor-data).
+Rakip verisi yalnızca raporlama içindir. Bkz. [Rakip Verisi](/rehber/concepts-competitor-data).
 
 ## Üst bölüm
 

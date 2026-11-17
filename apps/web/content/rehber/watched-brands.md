@@ -10,7 +10,7 @@ routes:
 
 **Marka Denetimi → İzlenen Markalar** ekranı, pazaryerlerinde ürünlerini izlemek istediğiniz markaların listesidir. Bir markayı buraya eklediğinizde o markanın pazaryerindeki **bütün** ürünleri bulunur ve [Takip Edilen Ürünler](/rehber/tracked-products) listesine girer. Bu ekran yalnızca raporlama içindir; hiçbir fiyatı etkilemez. Yeni bir marka eklerken ve taramaların sağlıklı ilerleyip ilerlemediğini kontrol ederken açın.
 
-Rakip verisi pazaryerinin herkese açık sayfalarından toplanır. Bkz. [Rakip Verisi](/rehber/concepts-competitor-data).
+Rakip verisi yalnızca raporlama içindir. Bkz. [Rakip Verisi](/rehber/concepts-competitor-data).
 
 ## Gruplar ve markalar
 
@@ -57,7 +57,7 @@ Aynı markayı Trendyol ve Hepsiburada için ayrı ayrı eklersiniz.
 
 ## Satır düğmeleri
 
-- **Şimdi tara**: önce markanın kataloğunu tarar, sonra bulunan **her ürünün satıcılarını** tek tek okur. Ürün başına bir sayfa okunduğu için büyük bir markada saatler sürebilir. Onay ister ve arka planda çalışır.
+- **Şimdi tara**: önce markanın kataloğunu tarar, sonra bulunan **her ürünün satıcılarını** tek tek okur. Her ürün tek tek sorgulandığı için büyük bir markada saatler sürebilir. Onay ister ve arka planda çalışır.
 - **Sadece katalog**: yalnızca markada hangi ürünlerin olduğunu bulur; satıcı ve buybox verisi toplamaz. Çok daha hızlıdır.
 - **Kaldır**: markayı izleme listesinden çıkarır. Bulunan ürünler ve geçmişleri silinmez; yalnızca markayla bağları kalkar.
 

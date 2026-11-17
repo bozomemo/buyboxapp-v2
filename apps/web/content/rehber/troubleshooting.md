@@ -56,7 +56,7 @@ Acil durumda sağ üstteki düğmeyle sistemi durdurun; pazaryerindeki fiyatlar 
 ## Rakip verisi boş veya eski
 
 1. **Panel'de "Rakip verisi bayat".** Son başarılı toplama uzun zaman önce. Sistem duraklatılmış olabilir; **İşler** ekranında ilgili işin son çalışmasına ve hatasına bakın.
-2. Pazaryeri sayfaları geçici olarak erişilemiyor olabilir; uygulama sonraki turda yeniden dener.
+2. Son tur başarısız olmuş olabilir; uygulama sonraki turda yeniden dener.
 3. Rakip verisi fiyat kararlarını **etkilemez**; boş olması fiyatlamayı durdurmaz. Bkz. [Rakip Verisi](/rehber/concepts-competitor-data).
 
 ## Bir iş sürekli başarısız oluyor

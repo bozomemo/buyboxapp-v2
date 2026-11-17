@@ -83,7 +83,7 @@ Varsayılan olarak kapalıdır; başlığa tıklayınca açılır. Rakip verisin
 | Sütun | Anlamı |
 |---|---|
 | **Pazaryeri** | Ayarın ait olduğu pazaryeri. |
-| **İstek/Dakika** | Dakikada en fazla kaç sayfa okunacağı. Erişim hataları sıklaşırsa bu değeri düşürün. Trendyol'da bu bir üst sınırdır; pazaryeri yavaşlamamızı isterse hız kendiliğinden yarıya iner, sorun kalmayınca yeniden artar ve her değişiklik [Olaylar](/rehber/events) ekranına yazılır. |
+| **İstek/Dakika** | Rakip verisi toplanırken dakikada en fazla kaç istek yapılacağı. Hatalar sıklaşırsa bu değeri düşürün. Trendyol'da bu bir üst sınırdır; hatalar sıklaşırsa hız kendiliğinden düşer, sorun kalmayınca yeniden artar ve her değişiklik [Olaylar](/rehber/events) ekranına yazılır. |
 | **Patlama (burst)** | Kısa bir anda arka arkaya yapılabilecek istek sayısı. |
 | **Zaman Aşımı (sn)** | Tek bir sayfanın açılması için beklenen süre. Olaylarda "Timeout … exceeded" hataları görüyorsanız bu değeri yükseltin. |
 | **Varsayılan** | Varsayılan değerler; değiştirdiyseniz yanında **(özelleştirildi)** yazar. |

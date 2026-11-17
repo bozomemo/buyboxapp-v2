@@ -80,7 +80,7 @@ Bağlı olmayan favori kartta bu üç sütunda **—** görünür.
 Ya [Stok](/rehber/brand-products) ekranında bir ürüne bağlayın ya da [Takip Edilen Ürünler](/rehber/tracked-products) ekranında yıldızlayın.
 
 **Durum "Bilinmiyor" yazıyor, sorun var mı?**
-Karta henüz bakılmamış ya da son bakışta sayfa okunamamış olabilir. **Son bakış** sütununa ve [İşler](/rehber/jobs) ekranındaki İlanlar turuna bakın.
+Karta henüz bakılmamış ya da son bakışta bilgi alınamamış olabilir. **Son bakış** sütununa ve [İşler](/rehber/jobs) ekranındaki İlanlar turuna bakın.
 
 **Rakip markanın kartını da izleyebilir miyim?**
 Evet, yıldızlayın. Kart burada görünür ama ürününüze bağlı olmadığı için aralığı ve alarmı olmaz.

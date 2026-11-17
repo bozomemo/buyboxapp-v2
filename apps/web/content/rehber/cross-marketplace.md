@@ -22,10 +22,10 @@ Her pazaryeri için bir kart vardır:
 
 - Büyük yüzde ve altında **… / … üründe barkod biliniyor**: o pazaryerindeki ürünlerden kaçının barkodunun bilindiği.
 - **Sayfa barkod bildirmedi**: ürün sayfasına bakıldı ama sayfada barkod yoktu.
-- **Sorulup yanıt alınamadı**: ürün sayfası okunamadı.
+- **Sorulup yanıt alınamadı**: ürünün bilgisi alınamadı.
 - **Henüz sorulmadı**: bu ürüne barkod için henüz bakılmadı.
 
-Henüz sorulmamış ürün varsa kartların altında bir not çıkar. **Barkod Tamamlama** işi bu ürünleri saatte bir, azar azar tamamlar. Ürün başına bir sayfa okunduğu için büyük bir markanın tamamı günler sürebilir. İşin durumunu [İşler](/rehber/jobs) ekranından görebilirsiniz.
+Henüz sorulmamış ürün varsa kartların altında bir not çıkar. **Barkod Tamamlama** işi bu ürünleri saatte bir, azar azar tamamlar. Her ürün tek tek sorgulandığı için büyük bir markanın tamamı günler sürebilir. İşin durumunu [İşler](/rehber/jobs) ekranından görebilirsiniz.
 
 Kapsam düşükse eşleşme sayısı da düşük olur. Örneğin 40 eşleşme, 40 ürünlük bir markada neredeyse tam kapsam, 500 ürünlük bir markada ise çok az demektir.
 

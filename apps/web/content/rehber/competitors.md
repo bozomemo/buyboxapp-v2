@@ -10,7 +10,7 @@ routes:
 
 Rakip Geçmişi, ürünlerinizde hangi rakiplerin ne zaman satışta olduğunu, buybox'ı kimin ne kadar tuttuğunu ve rakip verisinin ne kadar düzenli toplandığını gösteren bir rapor ekranıdır. "Bu ürüne yeni bir satıcı ne zaman girdi?", "Geçen ay buybox en çok kimdeydi?" gibi soruları yanıtlamak için açın.
 
-Rakip verisi pazaryerinin herkese açık sayfalarından toplanır ve **yalnızca raporlama içindir**. Fiyat kararlarını etkilemez. Ayrıntı için [Rakip verisi](/rehber/concepts-competitor-data).
+Rakip verisi **yalnızca raporlama içindir**. Fiyat kararlarını etkilemez. Ayrıntı için [Rakip verisi](/rehber/concepts-competitor-data).
 
 Bu ekran yalnızca görüntüleme içindir; her rol kullanabilir.
 

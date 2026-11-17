@@ -10,7 +10,7 @@ routes:
 
 Alarmlar ekranı (başlıkta **Rakip Alarmları**), rakiplerle ilgili kurduğunuz kuralları ve bu kuralların şu anda açık olan alarmlarını gösterir. Örneğin "bir satıcı ürünümü 400 TL'nin altına koyarsa haber ver" gibi bir kural kurabilirsiniz. Panel'de **açık rakip alarmı** uyarısı gördüğünüzde veya yeni bir kural tanımlamak istediğinizde bu ekranı açın.
 
-Alarmlar **raporlamadır**: hiçbir fiyat kararını tetiklemez, hiçbir fiyatı değiştirmez. Rakip verisinden üretilir ve o veri kadar günceldir. Rakip verisi pazaryerinin herkese açık sayfalarından toplanır. Ayrıntı için [Rakip verisi](/rehber/concepts-competitor-data).
+Alarmlar **raporlamadır**: hiçbir fiyat kararını tetiklemez, hiçbir fiyatı değiştirmez. Rakip verisinden üretilir ve o veri kadar günceldir. Ayrıntı için [Rakip verisi](/rehber/concepts-competitor-data).
 
 Bir alarm tek seferlik bir bildirim değil, bir **durumdur**: koşul gerçekleştiği anda açılır, sürdüğü sürece açık kalır ve koşul ortadan kalkınca kapanır. Başarısız bir tarama alarm açmaz da kapatmaz da.
 

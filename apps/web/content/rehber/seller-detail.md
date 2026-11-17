@@ -17,7 +17,7 @@ Bir satıcı iki ayrı kayıtta görülebilir ve ikisi farklı soruyu yanıtlar:
 
 Bir marka sahibi için genellikle ikinci bölüm doludur, birincisi boştur. Bu bir veri eksikliği değildir; o firmayla ortak sattığınız ürün olmadığı anlamına gelir.
 
-Rakip verisi pazaryerinin herkese açık sayfalarından toplanır ve yalnızca raporlama içindir. Ayrıntı için [Rakip verisi](/rehber/concepts-competitor-data).
+Rakip verisi yalnızca raporlama içindir. Ayrıntı için [Rakip verisi](/rehber/concepts-competitor-data).
 
 ## Ekranın üstü
 
