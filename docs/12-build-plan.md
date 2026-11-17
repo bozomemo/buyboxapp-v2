@@ -468,6 +468,30 @@ Definition of done:
 
 ---
 
+## Phase 13 — User guide (Kullanım Rehberi)
+
+Specified 2026-11-17: doc 19. Plan: `docs/superpowers/plans/2026-11-17-user-guide.md`.
+
+The customer firm's first line of support, inside the app at `/rehber`, kept current by the
+CLAUDE.md hard rule and by tests. From this phase on, **every later phase's definition of done
+includes its guide changes** (doc 19 §7).
+
+Definition of done:
+
+- `/rehber` and `/rehber/[id]` render, filtered by enabled module, with Turkish-aware search;
+  **Rehber** is in the _Sistem_ nav group and the header "?" link opens the current screen's topic;
+- doc 19 §8 tests 1–5 pass;
+- the login and MFA screens carry the doc 19 §9 note;
+- every topic is written — no placeholder text left — and each screen topic was checked against
+  the running app (doc 19 §10);
+- the product owner has read **Başlangıç** and **Sorun Giderme**;
+- `/rehber` works from the packaged standalone build, not only `next dev`.
+
+Infrastructure may land first with a short placeholder topic per page so test 1 is green; the
+phase is not done until the placeholders are replaced.
+
+---
+
 ## Phase 9 — MAY-ADD-LATER
 
 Not in scope. Recorded so they are not forgotten.

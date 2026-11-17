@@ -633,6 +633,10 @@ Detailed in doc 06 §10. In summary:
 
 The header shows the signed-in user's display name and role, with a sign-out button.
 
+The login screen and the MFA step carry one static note telling a locked-out user to ask an
+administrator, who resets from **Kullanıcılar** (doc 19 §9, 2026-11-17). The user guide itself
+stays behind sign-in; §7.3's public paths are unchanged.
+
 ## 12. Open items
 
 | Item | Blocks | Owner |

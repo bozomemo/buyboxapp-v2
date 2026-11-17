@@ -24,6 +24,7 @@ operator already knows the app by them; the interface language is Turkish.
 | `/events`              | Event log          | Persisted, filterable operation log                                      |
 | `/settings/*`          | Settings           | Marketplaces, fees, policies, product sources, retention                 |
 | `/setup`               | Setup wizard       | First run and re-configuration (doc 10 §6)                               |
+| `/rehber`, `/rehber/[id]` | Kullanım Rehberi | The in-app user guide (doc 19). **Rehber** in the _Sistem_ nav group; the header's "?" link opens the current screen's topic. Added 2026-11-17 |
 | `/login`, `/account`, `/settings/users` | Sign-in and users | Sign-in, one's own account, user management (§10, doc 18). Added 2026-09-27 |
 
 **Two modules (doc 17 §1, 2026-09-19).** The routes above from `/stock` to `/alerts` belong to the

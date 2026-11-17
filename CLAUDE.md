@@ -57,6 +57,7 @@ Read the document that covers your task. Do not read all of them.
 | Remote logs/metrics, Grafana, Alloy | `docs/16-remote-observability.md` |
 | **Brand module:** modules, brand products, Excel import, band alarm, notifications | `docs/17-brand-product-management.md` |
 | **Sign-in, users, roles, MFA, permissions on routes** | `docs/18-authentication-and-access.md` |
+| **User guide (Rehber) — any user-visible change** | **`docs/19-user-guide.md` (mandatory — see Hard rules)** |
 
 ## Rule: marketplace API work
 
@@ -153,6 +154,10 @@ both a numeric `value` and a locale-formatted `text` of which only the first is 
   concern only.
 - **Never submit a price below the listing's floor price** on a decrease, on any marketplace.
 - **Write a price-change audit record only after the marketplace confirms the submission.**
+- **A user-visible change updates the in-app guide in the same commit.** Screens, columns,
+  buttons, labels, flows, permissions, messages and settings are described to the customer in
+  `apps/web/content/rehber/`; change them together, and end your report with the `Rehber:` line
+  (doc 19 §7). A new page without a guide topic fails the tests (doc 19 §8).
 
 ## Repository layout
 
