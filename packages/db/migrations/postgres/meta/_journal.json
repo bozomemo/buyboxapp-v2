@@ -204,6 +204,13 @@
       "when": 1794931728675,
       "tag": "0028_notification_deliveries",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794940291344,
+      "tag": "0029_drop_tracked_reference_price",
+      "breakpoints": true
     }
   ]
 }

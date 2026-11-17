@@ -121,7 +121,13 @@ describe('pruneHistoryJob', () => {
     it('gives a window missing from an older stored setting its default, not NaN', async () => {
       const { appDb, cleanup } = await createSqliteTestDb();
       try {
-        const { authEventsDays: _omitted, trackedProductMetricsDays: _alsoOmitted, ...older } = DEFAULT_RETENTION_WINDOWS;
+        const {
+          authEventsDays: _omitted,
+          trackedProductMetricsDays: _alsoOmitted,
+          bandViolationsResolvedDays: _added11_8,
+          notificationDeliveriesDays: _alsoAdded11_8,
+          ...older
+        } = DEFAULT_RETENTION_WINDOWS;
         await storeSetting(appDb, JSON.stringify({ ...older, buyboxObservationsDays: 30 }));
         expect(await readRetentionWindowsSetting(appDb, NOW)).toEqual({
           ...DEFAULT_RETENTION_WINDOWS,

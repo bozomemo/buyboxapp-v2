@@ -16,6 +16,8 @@ interface Windows {
   jobRunsDays: number;
   jobQueueFinishedDays: number;
   authEventsDays: number;
+  bandViolationsResolvedDays: number;
+  notificationDeliveriesDays: number;
 }
 
 const LABELS: { key: keyof Windows; label: string }[] = [
@@ -29,6 +31,8 @@ const LABELS: { key: keyof Windows; label: string }[] = [
   { key: 'jobRunsDays', label: 'İş çalıştırma geçmişi (gün)' },
   { key: 'jobQueueFinishedDays', label: 'Tamamlanmış iş kuyruğu satırları (gün)' },
   { key: 'authEventsDays', label: 'Giriş kayıtları (gün)' },
+  { key: 'bandViolationsResolvedDays', label: 'Kapanmış fiyat ihlalleri (gün)' },
+  { key: 'notificationDeliveriesDays', label: 'Bildirim gönderim kayıtları (gün)' },
 ];
 
 export function RetentionClient() {

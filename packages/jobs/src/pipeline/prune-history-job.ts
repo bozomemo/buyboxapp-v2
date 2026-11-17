@@ -45,6 +45,9 @@ export const RetentionWindowsSchema = z.object({
   jobQueueFinishedDays: z.number().int().min(1),
   // Defaulted like the windows above: added 2026-09-27, after installs already stored this setting.
   authEventsDays: z.number().int().min(1).default(365),
+  // Defaulted like the windows above: added 2026-11-17 (build plan 11.8).
+  bandViolationsResolvedDays: z.number().int().min(1).default(365),
+  notificationDeliveriesDays: z.number().int().min(1).default(30),
 });
 
 export const PruneHistoryPayloadSchema = z.object({

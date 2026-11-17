@@ -22,6 +22,8 @@ import {
   pruneTrackedProductObservations,
 } from './repositories/tracked-products.js';
 import { pruneAuth } from './repositories/auth.js';
+import { pruneResolvedBandViolations } from './repositories/band-violations.js';
+import { pruneNotificationDeliveries } from './repositories/notification-deliveries.js';
 
 export interface RetentionWindows {
   readonly priceSubmissionsDays: number;
@@ -35,6 +37,10 @@ export interface RetentionWindows {
   readonly jobQueueFinishedDays: number;
   /** The sign-in log (doc 18 §9.2). The other auth tables are working state with fixed windows — see `pruneAuth`. */
   readonly authEventsDays: number;
+  /** Resolved band violations only — an open one is never pruned (doc 17 §5, build plan 11.8). */
+  readonly bandViolationsResolvedDays: number;
+  /** The notification outbox, every state (doc 17 §6.2, build plan 11.8). */
+  readonly notificationDeliveriesDays: number;
 }
 
 /** doc 05 §10's defaults — a starting point, not a hard-coded policy; see the module note. */
@@ -62,6 +68,12 @@ export const DEFAULT_RETENTION_WINDOWS: RetentionWindows = {
   jobQueueFinishedDays: 7,
   // An audit record, not a diagnostic log — hence a year where `app_events` keeps days (doc 05 §10).
   authEventsDays: 365,
+  // A year, like the sign-in log: "has this seller broken the band before?" is asked of a
+  // season, not a week. Open rows are not covered by any window (doc 05 §10).
+  bandViolationsResolvedDays: 365,
+  // Short: a delivery row is plumbing, not history. Its violation keeps the record; this window
+  // also caps how old a digest a newly configured channel can send (doc 17 §6.2).
+  notificationDeliveriesDays: 30,
 };
 
 function daysAgo(nowMs: number, days: number): number {
@@ -86,4 +98,6 @@ export async function pruneHistory(
   await pruneJobRuns(appDb, daysAgo(nowMs, windows.jobRunsDays));
   await pruneFinishedJobs(appDb, daysAgo(nowMs, windows.jobQueueFinishedDays));
   await pruneAuth(appDb, nowMs, daysAgo(nowMs, windows.authEventsDays));
+  await pruneResolvedBandViolations(appDb, daysAgo(nowMs, windows.bandViolationsResolvedDays));
+  await pruneNotificationDeliveries(appDb, daysAgo(nowMs, windows.notificationDeliveriesDays));
 }

@@ -26,6 +26,8 @@ const WINDOWS = {
   jobRunsDays: 30,
   jobQueueFinishedDays: 7,
   authEventsDays: 365,
+  bandViolationsResolvedDays: 365,
+  notificationDeliveriesDays: 30,
 };
 
 describe('RetentionClient', () => {

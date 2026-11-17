@@ -500,15 +500,12 @@ Still no `scrape_runs` row — the proof of the look is two columns on `tracked_
 | `last_offers_hash` | text nullable | Hash of the last **stored** offer set |
 | `last_scraped_at` | bigint nullable | When the scrape last **looked** |
 
-#### Availability and the brand's own price (2026-09-03)
+#### Availability (2026-09-03)
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `has_sellers` | int nullable | Did the last **successful** look find anyone? `null` = no successful look yet — a third state, not `false` |
 | `last_seller_seen_at` | bigint nullable | When a seller was last on the page. Guarded forward like `last_scraped_at` |
-| `reference_price` | money nullable | The brand owner's own recommended retail price, kuruş |
-| `reference_price_source` | text nullable | Free text — the file or list version it came from |
-| `reference_price_updated_at` | bigint nullable | When it was imported |
 
 **`has_sellers` is derived from the look's own rows, not from what was stored**, because a look
 whose offer set has not moved stores nothing at all — and "we looked and the same three sellers
@@ -516,15 +513,11 @@ were there" is exactly the case where the flag must stay true. A **failed** look
 availability columns alone: a page we could not read is not evidence that nobody is selling, and
 writing `false` there would turn every network blip into a lost-shelf finding.
 
-> **Superseded 2026-09-19 (doc 17 §2.5).** PSF moves to `brand_products.reference_price`, per
-> unit. These three columns are migrated into brand products, every reader is repointed, and the
-> columns are dropped in a later migration. Do not add new readers.
-
-**The reference price is operator-owned**, like `competitor_sellers.tax_number`: no sweep and no
-scrape writes it. A marketplace has no idea what our list price is, and a value a nightly job
-could overwrite is one nobody would trust enough to write a notice from. It is also the **only
-price on the brand side that is not an observation** — which is what makes the finding built on
-it `stated` rather than `measured` (doc 06 §12.4).
+> **The per-card `reference_price`, `reference_price_source` and `reference_price_updated_at`
+> columns are gone.** Superseded 2026-09-19 (doc 17 §2.5): PSF moved to
+> `brand_products.reference_price`, per unit, migration 0022 copied every priced card into a brand
+> product, and every reader was repointed. Migration 0029 (2026-11-17, build plan 11.8) dropped
+> the three columns once nothing read them.
 
 #### Barcodes — the cross-marketplace key (Faz 8, 2026-08-28)
 
@@ -1210,8 +1203,8 @@ re-probe the entire catalogue).
 | `tracked_product_observations` | 90 days (added 2026-08-26) |
 | `tracked_product_sellers` | **indefinite** (added 2026-11-08) — one row per product × seller, not per look, so it does not grow with time; removed with its tracked product |
 | `brand_findings` | **indefinite** (added 2026-09-03) — one row per finding *span*, not per look; it is the record of what was already announced, and pruning it would re-announce old findings |
-| `band_violations` | resolved rows 365 days; open rows never (added 2026-09-19) |
-| `notification_deliveries` | 30 days (added 2026-09-19) |
+| `band_violations` | resolved rows 365 days, by `resolved_at`; open rows never (added 2026-09-19, built 2026-11-17) |
+| `notification_deliveries` | 30 days by `created_at`, every state (added 2026-09-19, built 2026-11-17) — a still-`pending` row that old is not sent late |
 | `brand_products`, `brand_product_cards` | **indefinite** — operator data, removed only by the operator |
 | `tracked_product_metrics` | 365 days (added 2026-08-28) — longer because it is change-detected and therefore a fraction of the rows, and because "is this product moving?" needs more than a quarter to answer |
 | `users` | **indefinite**: disabled, never deleted (doc 18 §3.1) |

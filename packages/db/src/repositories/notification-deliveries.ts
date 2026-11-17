@@ -5,7 +5,7 @@
  * `DeliverNotifications`. A failed send is retried, never lost, and never reaches back into the
  * violation that produced it: the violation is stored whether or not anybody is told.
  */
-import { and, asc, count, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, lte, sql } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -242,4 +242,19 @@ export async function countByChannelAndState(
     },
   })) as { channel: NotificationChannelCode; state: DeliveryState; n: number | string }[];
   return rows.map((r) => ({ ...r, n: Number(r.n) }));
+}
+
+/**
+ * Retention for `notification_deliveries` (doc 05 §10, build plan 11.8): every row created
+ * before the cutoff, **whatever its state**. A row still `pending` that old belongs to a channel
+ * nobody configured in a month; configuring it now should not send a month-old digest, which is
+ * exactly the bound doc 17 §6.2 promises ("the 30-day window bounds how far back that reaches").
+ */
+export async function pruneNotificationDeliveries(appDb: AppDatabase, cutoffMs: number): Promise<void> {
+  await runDialect(appDb, {
+    sqlite: (db) => db.delete(sqliteSchema.notificationDeliveries).where(lte(sqliteSchema.notificationDeliveries.createdAt, cutoffMs)),
+    postgres: (db) =>
+      db.delete(postgresSchema.notificationDeliveries).where(lte(postgresSchema.notificationDeliveries.createdAt, cutoffMs)),
+    mysql: (db) => db.delete(mysqlSchema.notificationDeliveries).where(lte(mysqlSchema.notificationDeliveries.createdAt, cutoffMs)),
+  });
 }

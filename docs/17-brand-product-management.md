@@ -230,8 +230,8 @@ exact amount parser in `lib/reference-price-import.ts` stays for that import to 
 **Migration.** For every `tracked_products` row with a `reference_price`, create a brand product
 (name = the row's `label`, PSF = the price, source `migration`) with that card as its ×1 primary.
 The live install has no such rows today; the migration exists so an install that does is not
-silently stripped of its prices. The three old columns are dropped in a **later** migration, once
-no reader remains.
+silently stripped of its prices. The three old columns were dropped by migration 0029
+(2026-11-17, build plan 11.8), once no reader remained.
 
 Built as plain SQL appended to migration 0022 in each dialect, so it runs inside the migration
 that creates the tables and cannot be half-applied. The product and the link **reuse the card's

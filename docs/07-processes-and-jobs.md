@@ -188,8 +188,8 @@ the moment anything increments it) — this job only makes the day's allowance v
 
 **`PruneHistory`** (`pipeline/prune-history-job.ts`) — thin wrapper around `packages/db`'s
 `pruneHistory`, which applies every retention window from doc 05 §10 (price submissions, buybox
-observations, app events by level, job runs, finished job-queue rows). Global, nightly by
-default.
+observations, app events by level, job runs, finished job-queue rows, the auth tables, resolved
+band violations and notification deliveries). Global, nightly by default.
 
 **`ImportOrders`** — **MAY-ADD-LATER** (doc 12), not implemented; no file exists yet.
 

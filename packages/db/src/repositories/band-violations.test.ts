@@ -10,6 +10,7 @@ import { ALL_DIALECTS, createTestDb, type TestDb } from '../test-helpers.js';
 import * as bandViolationsRepo from './band-violations.js';
 import * as brandProductsRepo from './brand-products.js';
 import * as configRepo from './config.js';
+import * as notificationDeliveriesRepo from './notification-deliveries.js';
 import * as trackedProductsRepo from './tracked-products.js';
 
 const NOW = Date.UTC(2026, 10, 12);
@@ -183,6 +184,73 @@ for (const dialect of ALL_DIALECTS) {
       await brandProductsRepo.deleteBrandProduct(db.appDb, productId);
       expect(await bandViolationsRepo.countOpenBandViolations(db.appDb)).toBe(0);
       expect(await bandViolationsRepo.queryBandViolations(db.appDb, { state: 'resolved' })).toHaveLength(0);
+    });
+
+    // Retention (doc 05 §10, build plan 11.8): an open row is never pruned however old, a
+    // resolved one goes by `resolved_at`, and deliveries go by `created_at` in any state.
+    it('pruning keeps every open violation and drops only resolved rows past the cutoff', async () => {
+      db = await createTestDb(dialect);
+      const { productId, trackedId } = await seed(db.appDb);
+      const open = (kind: 'belowMin' | 'aboveMax', nowMs: number) =>
+        bandViolationsRepo.applyBandPlan(db!.appDb, {
+          trackedProductId: trackedId,
+          brandProductId: productId,
+          unitMultiplier: 3,
+          snapshot: '[]',
+          nowMs,
+          plan: {
+            open: [{ kind, ...ALI, thresholdApplied: 240_00n, observedPrice: 239_99n, priceSource: 'price' }],
+            confirm: [],
+            resolve: [],
+          },
+        });
+      const resolve = (id: string, nowMs: number) =>
+        bandViolationsRepo.applyBandPlan(db!.appDb, {
+          trackedProductId: trackedId,
+          brandProductId: productId,
+          unitMultiplier: 3,
+          snapshot: '[]',
+          nowMs,
+          plan: { open: [], confirm: [], resolve: [{ id, resolution: 'inBand' }] },
+        });
+
+      // Opened long ago, resolved recently: kept. Opened and resolved long ago: pruned.
+      const [longRunning] = await open('belowMin', NOW - 500);
+      await resolve(longRunning!.id, NOW - 10);
+      const [stale] = await open('belowMin', NOW - 400);
+      await resolve(stale!.id, NOW - 300);
+      // Still open, older than any cutoff: kept.
+      const [stillOpen] = await open('aboveMax', NOW - 1000);
+
+      await bandViolationsRepo.pruneResolvedBandViolations(db.appDb, NOW - 100);
+
+      const resolvedIds = (await bandViolationsRepo.queryBandViolations(db.appDb, { state: 'resolved' })).map((r) => r.id);
+      expect(resolvedIds).toEqual([longRunning!.id]);
+      const openIds = (await bandViolationsRepo.queryBandViolations(db.appDb, { state: 'open' })).map((r) => r.id);
+      expect(openIds).toEqual([stillOpen!.id]);
+    });
+
+    it('pruning deliveries goes by created_at, whatever the state', async () => {
+      db = await createTestDb(dialect);
+      const row = (id: string, state: notificationDeliveriesRepo.DeliveryState, createdAt: number) => ({
+        id,
+        subjectType: 'bandViolation' as const,
+        subjectId: 'v1',
+        channel: 'email' as const,
+        state,
+        attempts: 0,
+        lastError: null,
+        createdAt,
+        sentAt: null,
+      });
+      await notificationDeliveriesRepo.enqueueDeliveries(db.appDb, [
+        row('old-pending', 'pending', NOW - 300),
+        row('old-sent', 'sent', NOW - 200),
+        row('new', 'pending', NOW - 10),
+      ]);
+      await notificationDeliveriesRepo.pruneNotificationDeliveries(db.appDb, NOW - 100);
+      const left = await notificationDeliveriesRepo.deliveriesForSubjects(db.appDb, 'bandViolation', ['v1']);
+      expect((left.get('v1') ?? []).map((d) => d.id)).toEqual(['new']);
     });
   });
 }

@@ -767,31 +767,6 @@ export const trackedProducts = sqliteTable(
      */
     barcodeAttempts: integer('barcode_attempts').notNull().default(0),
     /**
-     * The brand owner's own recommended retail price for this product, in kuruş, and where it
-     * came from (2026-09-03).
-     *
-     * **This is the only price on the brand side that is not an observation.** Every other price
-     * figure the audit reports — piyasa sapması, makas, dönem bandı — is measured against
-     * whoever happened to be on the page, which makes each of them an interpretation of a
-     * sample. A recommended price is a *statement the brand owner made*, so a seller below it is
-     * a `stated` finding in exactly the sense `audit-findings.ts` means: someone wrote it down,
-     * and the seller is under it. That is the difference between "22% below the market" and "18%
-     * below the price we published", and only the second is a thing an auditor can act on.
-     *
-     * **Operator-owned, like `competitor_sellers.tax_number`.** No sweep and no scrape writes
-     * these: a marketplace has no idea what our list price is, and a value that a nightly job
-     * could overwrite is one nobody would trust enough to write a notice from.
-     *
-     * `referencePriceSource` is free text — the file name or the price-list version the operator
-     * imported, shown back beside the value so "where did this number come from" has an answer
-     * on the screen rather than in someone's memory. `referencePriceUpdatedAt` dates it, because
-     * a list price from four seasons ago is worse than none: it produces confident findings
-     * about a price nobody sells at any more.
-     */
-    referencePrice: money('reference_price'),
-    referencePriceSource: text('reference_price_source'),
-    referencePriceUpdatedAt: timestampMs('reference_price_updated_at'),
-    /**
      * Whether the last successful look found **anyone** selling this product, and when a seller
      * was last seen on it (2026-09-03).
      *

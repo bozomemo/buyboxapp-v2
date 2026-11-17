@@ -13,7 +13,7 @@
  * open for ever.
  */
 import { sameSeller, type BandReconcilePlan, type BandResolution, type BandViolationKind, type OpenBandViolation } from '@buybox/core';
-import { and, asc, count, desc, eq, getTableColumns, gte, inArray } from 'drizzle-orm';
+import { and, asc, count, desc, eq, getTableColumns, gte, inArray, lte } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import { newId } from '../id.js';
 import * as mysqlSchema from '../schema/mysql.js';
@@ -434,4 +434,30 @@ export async function bandViolationsByIds(
         .orderBy(asc(p.name), asc(v.firstSeenAt));
     },
   })) as BandViolationListRow[];
+}
+
+/**
+ * Retention for `band_violations` (doc 05 §10, build plan 11.8): resolved rows older than the
+ * cutoff go; **open rows never do**, however old. An open row is a seller below the band right
+ * now, and Alarmlar, the İlanlar column and the dashboard count all read it — ageing it out would
+ * turn a violation that has lasted a year into "all clear".
+ *
+ * Measured from `resolved_at`, not `first_seen_at`: a violation that ran for months and closed
+ * yesterday is recent history.
+ */
+export async function pruneResolvedBandViolations(appDb: AppDatabase, cutoffMs: number): Promise<void> {
+  await runDialect(appDb, {
+    sqlite: (db) => {
+      const t = sqliteSchema.bandViolations;
+      return db.delete(t).where(and(eq(t.state, 'resolved'), lte(t.resolvedAt, cutoffMs)));
+    },
+    postgres: (db) => {
+      const t = postgresSchema.bandViolations;
+      return db.delete(t).where(and(eq(t.state, 'resolved'), lte(t.resolvedAt, cutoffMs)));
+    },
+    mysql: (db) => {
+      const t = mysqlSchema.bandViolations;
+      return db.delete(t).where(and(eq(t.state, 'resolved'), lte(t.resolvedAt, cutoffMs)));
+    },
+  });
 }
