@@ -45,7 +45,10 @@ describe('parseTopic', () => {
   });
 
   it('reads module null and an empty routes list', () => {
-    const t = parseTopic('faq.md', '---\nid: faq\ntitle: SSS\nsection: faq\norder: 1\nmodule: null\nroutes: []\n---\nMetin.\n');
+    const t = parseTopic(
+      'faq.md',
+      '---\nid: faq\ntitle: SSS\nsection: faq\norder: 1\nmodule: null\nroutes: []\n---\nMetin.\n',
+    );
     expect(t.module).toBeNull();
     expect(t.routes).toEqual([]);
   });

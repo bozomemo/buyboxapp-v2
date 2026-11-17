@@ -52,9 +52,18 @@ describe('client components import only types from server-side packages', () => 
         .filter((s) => !/^import type /.test(s))
         .map((s) => /from '([^']+)';$/.exec(s)?.[1] ?? '');
     const resolve = (from: string, spec: string): string | null => {
-      const base = spec.startsWith('@/') ? path.join(SRC, spec.slice(2)) : spec.startsWith('.') ? path.resolve(path.dirname(from), spec) : null;
+      const base = spec.startsWith('@/')
+        ? path.join(SRC, spec.slice(2))
+        : spec.startsWith('.')
+          ? path.resolve(path.dirname(from), spec)
+          : null;
       if (base === null) return null;
-      for (const candidate of [`${base}.ts`, `${base}.tsx`, path.join(base, 'index.ts'), path.join(base, 'index.tsx')]) {
+      for (const candidate of [
+        `${base}.ts`,
+        `${base}.tsx`,
+        path.join(base, 'index.ts'),
+        path.join(base, 'index.tsx'),
+      ]) {
         try {
           if (statSync(candidate).isFile()) return candidate;
         } catch {
@@ -73,7 +82,8 @@ describe('client components import only types from server-side packages', () => 
         const source = readFileSync(current, 'utf8');
         for (const spec of valueImports(source)) {
           const inGuide = path.relative(SRC, current).replace(/\\/g, '/').startsWith('lib/guide/');
-          if (inGuide && SERVER_PACKAGES.test(`from '${spec}'`)) offenders.push(`${chain.join(' → ')} → ${spec}`);
+          if (inGuide && SERVER_PACKAGES.test(`from '${spec}'`))
+            offenders.push(`${chain.join(' → ')} → ${spec}`);
           const next = resolve(current, spec);
           // Another 'use client' file is checked on its own; a server-only module is not a client import.
           if (next === null || seen.has(next) || /\.test\.tsx?$/.test(next)) continue;

@@ -4,7 +4,10 @@ import { foldTr, searchTopics } from './search';
 import { parseTopic } from './topic';
 
 const topic = (id: string, title: string, body: string) =>
-  parseTopic(`${id}.md`, `---\nid: ${id}\ntitle: ${title}\nsection: screens\norder: 1\nmodule: null\nroutes: []\n---\n${body}\n`);
+  parseTopic(
+    `${id}.md`,
+    `---\nid: ${id}\ntitle: ${title}\nsection: screens\norder: 1\nmodule: null\nroutes: []\n---\n${body}\n`,
+  );
 
 const LISTINGS = topic('listings', 'İlanlar', 'Fiyat ekranı.');
 const STOCK = topic('stock', 'Stok', 'Her ilan bir stok koduna bağlıdır.');

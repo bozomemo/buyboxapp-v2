@@ -35,7 +35,10 @@ export function GuideClient({ topics }: { topics: readonly GuideListItem[] }) {
       </div>
 
       {shown.length === 0 && (
-        <EmptyState message="Sonuç bulunamadı." reason="Başka bir kelime deneyin ya da aşağıdaki Sık Sorulanlar ve Sorun Giderme bölümlerine bakın." />
+        <EmptyState
+          message="Sonuç bulunamadı."
+          reason="Başka bir kelime deneyin ya da aşağıdaki Sık Sorulanlar ve Sorun Giderme bölümlerine bakın."
+        />
       )}
 
       {searching ? (
@@ -55,7 +58,10 @@ export function GuideClient({ topics }: { topics: readonly GuideListItem[] }) {
             const inSection = shown.filter((t) => t.section === section);
             if (inSection.length === 0) return null;
             return (
-              <section key={section} className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4">
+              <section
+                key={section}
+                className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4"
+              >
                 <h2 className="mb-3 text-sm font-bold">{SECTION_LABELS[section]}</h2>
                 <ul className="space-y-1.5 text-sm">
                   {inSection.map((t) => (

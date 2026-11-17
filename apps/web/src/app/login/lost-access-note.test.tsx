@@ -8,7 +8,8 @@ import { MfaChallengeClient } from './mfa/mfa-challenge-client';
  * doc 19 §9: the guide is behind sign-in, so the two sign-in screens themselves tell a locked-out
  * user what to do. The text is fixed by the spec, verbatim.
  */
-const NOTE = 'Şifrenizi veya doğrulama kodunuzu kaybettiyseniz yöneticinize başvurun; yönetici Kullanıcılar ekranından sıfırlayabilir.';
+const NOTE =
+  'Şifrenizi veya doğrulama kodunuzu kaybettiyseniz yöneticinize başvurun; yönetici Kullanıcılar ekranından sıfırlayabilir.';
 
 afterEach(() => cleanup());
 
@@ -27,7 +28,9 @@ describe('lost-access note', () => {
 
   it('is on the second-factor screen', async () => {
     stubFetch({
-      '/api/auth/mfa': { body: { methods: ['totp', 'recovery'], phoneHint: null, canRememberDevice: false, rememberDays: 30 } },
+      '/api/auth/mfa': {
+        body: { methods: ['totp', 'recovery'], phoneHint: null, canRememberDevice: false, rememberDays: 30 },
+      },
     });
     render(<MfaChallengeClient next="/" />);
     await screen.findByText('Doğrulama uygulamanızdaki 6 haneli kodu girin.');

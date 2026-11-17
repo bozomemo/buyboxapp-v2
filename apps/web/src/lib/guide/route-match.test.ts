@@ -39,7 +39,9 @@ describe('topicIdForPath', () => {
     const parsed = GUIDE_TOPICS.filter((t) => t.routes.length > 0)
       .map((t) => ({ id: t.id, routes: [...t.routes] }))
       .sort((a, b) => a.id.localeCompare(b.id));
-    const index = GUIDE_ROUTE_INDEX.map((t) => ({ id: t.id, routes: [...t.routes] })).sort((a, b) => a.id.localeCompare(b.id));
+    const index = GUIDE_ROUTE_INDEX.map((t) => ({ id: t.id, routes: [...t.routes] })).sort((a, b) =>
+      a.id.localeCompare(b.id),
+    );
     expect(index).toEqual(parsed);
   });
 

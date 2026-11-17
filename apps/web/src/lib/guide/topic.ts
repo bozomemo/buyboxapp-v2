@@ -16,7 +16,14 @@ export const GUIDE_MODULES: readonly AppModule[] = ['seller', 'brand'];
 export type GuideSection = 'start' | 'concepts' | 'screens' | 'faq' | 'troubleshooting' | 'glossary';
 
 /** Display order of the sections (doc 19 §2.1). */
-export const GUIDE_SECTIONS: readonly GuideSection[] = ['start', 'concepts', 'screens', 'faq', 'troubleshooting', 'glossary'];
+export const GUIDE_SECTIONS: readonly GuideSection[] = [
+  'start',
+  'concepts',
+  'screens',
+  'faq',
+  'troubleshooting',
+  'glossary',
+];
 
 export const SECTION_LABELS: Readonly<Record<GuideSection, string>> = {
   start: 'Başlangıç',
@@ -115,7 +122,8 @@ export function parseTopic(file: string, source: string): GuideTopic {
     module = moduleText as AppModule;
   }
   if (routes === null) fail('routes missing (use routes: [] for a topic without a screen)');
-  for (const route of routes!) if (!ROUTE_PATTERN.test(route)) fail(`route must be an absolute app path: ${route}`);
+  for (const route of routes!)
+    if (!ROUTE_PATTERN.test(route)) fail(`route must be an absolute app path: ${route}`);
 
   const body = rest.replace(/<!--[\s\S]*?-->/g, '').trim() + '\n';
   const headings: GuideHeading[] = [];
@@ -127,7 +135,16 @@ export function parseTopic(file: string, source: string): GuideTopic {
     if (h) headings.push({ depth: h[1]!.length as 2 | 3, text: h[2]!, slug: headingSlug(h[2]!) });
   }
 
-  return { id, title, section: section as GuideSection, order: Number(orderText), module, routes: routes!, body, headings };
+  return {
+    id,
+    title,
+    section: section as GuideSection,
+    order: Number(orderText),
+    module,
+    routes: routes!,
+    body,
+    headings,
+  };
 }
 
 export function parseTopics(raw: readonly RawTopic[]): readonly GuideTopic[] {

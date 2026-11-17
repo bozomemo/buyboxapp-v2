@@ -5,13 +5,19 @@ import { parseTopic } from './topic';
 import { visibleTopics } from './visible';
 
 const topic = (id: string, module: string) =>
-  parseTopic(`${id}.md`, `---\nid: ${id}\ntitle: ${id}\nsection: screens\norder: 1\nmodule: ${module}\nroutes: []\n---\nx\n`);
+  parseTopic(
+    `${id}.md`,
+    `---\nid: ${id}\ntitle: ${id}\nsection: screens\norder: 1\nmodule: ${module}\nroutes: []\n---\nx\n`,
+  );
 
 describe('visibleTopics', () => {
   const all = [topic('stock', 'seller'), topic('brand-alerts', 'brand'), topic('jobs', 'null')];
 
   it('drops a switched-off module and keeps shared topics', () => {
-    expect(visibleTopics(all, { seller: false, brand: true }).map((t) => t.id)).toEqual(['brand-alerts', 'jobs']);
+    expect(visibleTopics(all, { seller: false, brand: true }).map((t) => t.id)).toEqual([
+      'brand-alerts',
+      'jobs',
+    ]);
   });
 
   it('keeps everything with both modules on', () => {

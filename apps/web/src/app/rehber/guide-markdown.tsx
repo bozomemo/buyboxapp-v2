@@ -43,7 +43,12 @@ export function GuideMarkdown({ body, hiddenIds }: { body: string; hiddenIds: Re
         );
       }
       return (
-        <a href={href} className="font-medium text-(--color-accent) hover:underline" target="_blank" rel="noreferrer">
+        <a
+          href={href}
+          className="font-medium text-(--color-accent) hover:underline"
+          target="_blank"
+          rel="noreferrer"
+        >
           {children}
         </a>
       );
@@ -56,12 +61,20 @@ export function GuideMarkdown({ body, hiddenIds }: { body: string; hiddenIds: Re
         <table className="w-full border-collapse text-sm">{children}</table>
       </div>
     ),
-    th: ({ children }) => <th className="border-b border-(--color-border) px-3 py-2 text-left font-semibold">{children}</th>,
-    td: ({ children }) => <td className="border-b border-(--color-border) px-3 py-2 align-top">{children}</td>,
-    blockquote: ({ children }) => (
-      <blockquote className="my-4 rounded border-l-4 border-(--color-accent) bg-(--color-surface) px-4 py-2">{children}</blockquote>
+    th: ({ children }) => (
+      <th className="border-b border-(--color-border) px-3 py-2 text-left font-semibold">{children}</th>
     ),
-    code: ({ children }) => <code className="rounded bg-(--color-surface) px-1 py-0.5 text-[0.9em]">{children}</code>,
+    td: ({ children }) => (
+      <td className="border-b border-(--color-border) px-3 py-2 align-top">{children}</td>
+    ),
+    blockquote: ({ children }) => (
+      <blockquote className="my-4 rounded border-l-4 border-(--color-accent) bg-(--color-surface) px-4 py-2">
+        {children}
+      </blockquote>
+    ),
+    code: ({ children }) => (
+      <code className="rounded bg-(--color-surface) px-1 py-0.5 text-[0.9em]">{children}</code>
+    ),
   };
   return (
     <div className="max-w-3xl text-sm">

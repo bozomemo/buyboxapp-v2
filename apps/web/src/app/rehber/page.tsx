@@ -11,13 +11,15 @@ export const dynamic = 'force-dynamic';
 export default async function GuidePage() {
   const gate = await requirePermission('view');
   if (!gate.ok) return gate.element;
-  const topics = visibleTopics(GUIDE_TOPICS, await getCachedModules()).map(({ id, title, section, headings, body }) => ({
-    id,
-    title,
-    section,
-    headings,
-    body,
-  }));
+  const topics = visibleTopics(GUIDE_TOPICS, await getCachedModules()).map(
+    ({ id, title, section, headings, body }) => ({
+      id,
+      title,
+      section,
+      headings,
+      body,
+    }),
+  );
   return (
     <div className="space-y-4">
       <PageHeader

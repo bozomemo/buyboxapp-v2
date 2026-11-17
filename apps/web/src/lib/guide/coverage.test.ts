@@ -24,8 +24,12 @@ function pageRoutes(dir: string, prefix = ''): string[] {
   });
 }
 
-const contentFiles = readdirSync(CONTENT_DIR).filter((f) => f.endsWith('.md')).sort();
-const topics = parseTopics(contentFiles.map((file) => ({ file, source: readFileSync(path.join(CONTENT_DIR, file), 'utf8') })));
+const contentFiles = readdirSync(CONTENT_DIR)
+  .filter((f) => f.endsWith('.md'))
+  .sort();
+const topics = parseTopics(
+  contentFiles.map((file) => ({ file, source: readFileSync(path.join(CONTENT_DIR, file), 'utf8') })),
+);
 const pages = pageRoutes(APP_DIR).sort();
 
 describe('the guide covers the app (doc 19 §8)', () => {
@@ -37,12 +41,16 @@ describe('the guide covers the app (doc 19 §8)', () => {
     const claims = new Map<string, string[]>();
     for (const t of topics) for (const r of t.routes) claims.set(r, [...(claims.get(r) ?? []), t.id]);
     const unclaimed = pages.filter((p) => !claims.has(p));
-    const doubled = [...claims].filter(([, ids]) => ids.length > 1).map(([r, ids]) => `${r}: ${ids.join(', ')}`);
+    const doubled = [...claims]
+      .filter(([, ids]) => ids.length > 1)
+      .map(([r, ids]) => `${r}: ${ids.join(', ')}`);
     expect({ unclaimed, doubled }).toEqual({ unclaimed: [], doubled: [] });
   });
 
   it('no topic claims a page that does not exist', () => {
-    const dead = topics.flatMap((t) => t.routes.filter((r) => !pages.includes(r)).map((r) => `${t.id}: ${r}`));
+    const dead = topics.flatMap((t) =>
+      t.routes.filter((r) => !pages.includes(r)).map((r) => `${t.id}: ${r}`),
+    );
     expect(dead).toEqual([]);
   });
 
@@ -63,7 +71,8 @@ describe('the guide covers the app (doc 19 §8)', () => {
       for (const [, id = '', anchor] of t.body.matchAll(/\]\(\/rehber\/([^)#\s]+)(?:#([^)\s]+))?\)/g)) {
         const target = byId.get(id);
         if (target === undefined) broken.push(`${t.id} → ${id}`);
-        else if (anchor !== undefined && !target.headings.some((h) => h.slug === anchor)) broken.push(`${t.id} → ${id}#${anchor}`);
+        else if (anchor !== undefined && !target.headings.some((h) => h.slug === anchor))
+          broken.push(`${t.id} → ${id}#${anchor}`);
       }
     }
     expect(broken).toEqual([]);

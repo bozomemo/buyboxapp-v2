@@ -42,8 +42,8 @@ export function AuthCard({
 export function LostAccessNote() {
   return (
     <p data-testid="lost-access-note" className="mt-4 text-xs text-(--color-muted)">
-      Şifrenizi veya doğrulama kodunuzu kaybettiyseniz yöneticinize başvurun; yönetici <strong>Kullanıcılar</strong> ekranından
-      sıfırlayabilir.
+      Şifrenizi veya doğrulama kodunuzu kaybettiyseniz yöneticinize başvurun; yönetici{' '}
+      <strong>Kullanıcılar</strong> ekranından sıfırlayabilir.
     </p>
   );
 }

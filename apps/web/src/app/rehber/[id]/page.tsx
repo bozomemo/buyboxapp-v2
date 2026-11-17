@@ -25,7 +25,11 @@ export default async function GuideTopicPage({ params }: { params: Promise<{ id:
     <div className="space-y-4">
       <PageHeader
         title={topic.title}
-        breadcrumb={[{ label: 'Rehber', href: '/rehber' }, { label: SECTION_LABELS[topic.section] }, { label: topic.title }]}
+        breadcrumb={[
+          { label: 'Rehber', href: '/rehber' },
+          { label: SECTION_LABELS[topic.section] },
+          { label: topic.title },
+        ]}
       />
       <div className="flex gap-8">
         <nav aria-label="Rehber konuları" className="hidden w-56 flex-none text-sm lg:block">
@@ -34,14 +38,18 @@ export default async function GuideTopicPage({ params }: { params: Promise<{ id:
             if (inSection.length === 0) return null;
             return (
               <div key={section} className="mb-4">
-                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-(--color-muted)">{SECTION_LABELS[section]}</p>
+                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-(--color-muted)">
+                  {SECTION_LABELS[section]}
+                </p>
                 <ul className="space-y-1">
                   {inSection.map((t) => (
                     <li key={t.id}>
                       <Link
                         href={`/rehber/${t.id}`}
                         aria-current={t.id === topic.id ? 'page' : undefined}
-                        className={t.id === topic.id ? 'font-semibold' : 'text-(--color-accent) hover:underline'}
+                        className={
+                          t.id === topic.id ? 'font-semibold' : 'text-(--color-accent) hover:underline'
+                        }
                       >
                         {t.title}
                       </Link>
@@ -54,7 +62,10 @@ export default async function GuideTopicPage({ params }: { params: Promise<{ id:
         </nav>
         <article className="min-w-0 flex-1">
           {topic.headings.some((h) => h.depth === 2) && (
-            <nav aria-label="Bu sayfada" className="mb-4 rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm">
+            <nav
+              aria-label="Bu sayfada"
+              className="mb-4 rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm"
+            >
               <p className="mb-1 font-semibold">Bu sayfada</p>
               <ul className="space-y-0.5">
                 {topic.headings

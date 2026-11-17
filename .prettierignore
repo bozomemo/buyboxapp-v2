@@ -11,6 +11,13 @@ docs
 CLAUDE.md
 README.md
 
+# The in-app user guide's content (doc 19): hand-authored Turkish prose, edited like docs.
+# Prettier pads compact tables to full width, which makes them hard to edit by hand.
+apps/web/content/rehber
+# Written by scripts/generate-guide.mjs, gitignored.
+apps/web/src/lib/guide/generated.ts
+apps/web/src/lib/guide/generated-routes.ts
+
 # Recorded marketplace fixtures are kept byte-for-byte as the source delivered them; a
 # reformat would reflow the embedded page payload the parser is tested against.
 packages/adapters/src/trendyol/fixtures/public-page.html
