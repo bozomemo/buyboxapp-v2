@@ -4,11 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "guide:gen": "node scripts/generate-guide.mjs",
+    "predev": "npm run guide:gen",
     "dev": "next dev",
+    "prebuild": "npm run guide:gen",
     "build": "next build",
     "start": "next start",
+    "pretypecheck": "npm run guide:gen",
     "typecheck": "tsc --noEmit",
+    "pretest": "npm run guide:gen",
     "test": "vitest run --passWithNoTests",
+    "pretest:watch": "npm run guide:gen",
     "test:watch": "vitest"
   },
   "dependencies": {
