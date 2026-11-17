@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { PolicyClient } from './policy-client';
 
@@ -75,5 +75,53 @@ describe('PolicyClient', () => {
 
     expect(await screen.findByRole('button', { name: 'Açık' })).toBeTruthy();
     expect(screen.getByDisplayValue('10')).toBeTruthy();
+  });
+
+  // "Sabit tutar" showed no amount field and every route saved the amount as 0, so the coarse
+  // climb added nothing and prices never rose (user-guide review 2026-11-18; doc 03 §3).
+  it('fixed-amount step: asks for the amount in ₺ and saves it', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: { body: { current: CURRENT } },
+      '/api/settings/policy/save': { body: { ok: true } },
+    });
+    render(<PolicyClient />);
+
+    const mode = await screen.findByLabelText('Kaba Adım Türü');
+    expect(screen.queryByLabelText('Kaba Adım (₺)')).toBeNull();
+    fireEvent.change(mode, { target: { value: 'absolute' } });
+    expect(screen.queryByLabelText('Kaba Adım (%)')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Kaba Adım (₺)'), { target: { value: '2,50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    expect(await screen.findByText('Politika kaydedildi.')).toBeTruthy();
+    const call = vi.mocked(fetch).mock.calls.find((c) => String(c[0]) === '/api/settings/policy/save');
+    const sent = JSON.parse(String(call?.[1]?.body)) as Record<string, unknown>;
+    expect(sent.coarseStepMode).toBe('absolute');
+    expect(sent.coarseStepAbsolute).toBe('2,50');
+  });
+
+  it('fixed-amount step: shows the saved amount', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: { body: { current: { ...CURRENT, coarseStepMode: 'absolute', coarseStepAbsolute: '3.00' } } },
+    });
+    render(<PolicyClient />);
+
+    const amount = await screen.findByLabelText('Kaba Adım (₺)');
+    expect((amount as HTMLInputElement).value).toBe('3.00');
+  });
+
+  it('fixed-amount step: refuses to save without an amount', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: { body: { current: CURRENT } },
+      '/api/settings/policy/save': { body: { ok: true } },
+    });
+    render(<PolicyClient />);
+
+    fireEvent.change(await screen.findByLabelText('Kaba Adım Türü'), { target: { value: 'absolute' } });
+    fireEvent.change(screen.getByLabelText('Kaba Adım (₺)'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    expect(await screen.findByText('Kaba adım tutarı sıfırdan büyük olmalı.', { exact: false })).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.some((c) => String(c[0]) === '/api/settings/policy/save')).toBe(false);
   });
 });

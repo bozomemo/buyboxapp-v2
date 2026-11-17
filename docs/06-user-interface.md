@@ -612,6 +612,12 @@ fields (`coarseStepMode`, `seekStrategy`, `undercutBy`, `seekStep`, `lowStockThr
 `lowStockMarginPct`, `stockMode`, `minPhysicalStock`, `competitorPriceDelta`) had no input control
 at all and were silently re-saved with whatever value the setup wizard had last written.
 
+**Coarse step amount (2026-11-18).** The coarse step field follows the mode: **Kaba Adım (%)** in
+`percent` mode, **Kaba Adım (₺)** in `absolute` mode (doc 03 §3). The amount is parsed exactly to
+kuruş (`bigint`; dot or comma decimal), and a zero, empty or negative step is refused on the
+screen and by every route that stores or previews a policy — until this date the `absolute` mode
+had no amount field and the routes stored a hard-coded 0, so a price never climbed.
+
 **Write-only credential fields mean one thing everywhere on these pages: a blank field keeps its
 stored value.** Saving has always worked that way; so must the Test button. Added 2026-09-02,
 after a live install where it did not — the test route built its adapter from the posted form

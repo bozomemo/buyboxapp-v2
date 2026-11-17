@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { formatMoney } from '@/lib/format';
 import { DECISION_REASON_LABELS, labelOf } from '@/lib/labels';
+import { parseCoarseStep } from '@/lib/policy-coarse-step';
 import {
   Button,
   ConfirmButton,
@@ -18,6 +19,8 @@ import {
 interface Form {
   coarseStepMode: 'absolute' | 'percent';
   coarseStepPercent: string;
+  /** ₺, typed; only read in `absolute` mode. */
+  coarseStepAbsolute: string;
   refineTolerance: string;
   seekStrategy: 'direct' | 'stepped';
   undercutBy: string;
@@ -39,6 +42,7 @@ interface Form {
 const EMPTY: Form = {
   coarseStepMode: 'percent',
   coarseStepPercent: '5',
+  coarseStepAbsolute: '',
   refineTolerance: '0.50',
   seekStrategy: 'direct',
   undercutBy: '0.10',
@@ -110,7 +114,8 @@ export function PolicyClient() {
     fetch(`/api/settings/policy?marketplaceCode=${marketplaceCode}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Politika yüklenemedi (HTTP ${r.status}).`))))
       .then((data: { current: Form | null }) => {
-        setForm(data.current ?? EMPTY);
+        // Spread over the defaults so a field the server does not return stays a string.
+        setForm(data.current ? { ...EMPTY, ...data.current } : EMPTY);
         setHasCurrent(data.current !== null);
         setLoadError(null);
         setHasLoadedOnce(true);
@@ -137,6 +142,12 @@ export function PolicyClient() {
     setBusy(true);
     setSaved(false);
     setSaveError(null);
+    const coarseStep = parseCoarseStep(form.coarseStepMode, form.coarseStepPercent, form.coarseStepAbsolute);
+    if (!coarseStep.ok) {
+      setSaveError(coarseStep.error);
+      setBusy(false);
+      return;
+    }
     try {
       const res = await fetch('/api/settings/policy/save', {
         method: 'POST',
@@ -270,12 +281,22 @@ export function PolicyClient() {
                   onChange={(e) => update({ coarseStepMode: e.target.value as Form['coarseStepMode'] })}
                 />
               </Field>
-              <Field label="Kaba Adım (%)">
-                <TextInput
-                  value={form.coarseStepPercent}
-                  onChange={(e) => update({ coarseStepPercent: e.target.value })}
-                />
-              </Field>
+              {form.coarseStepMode === 'absolute' ? (
+                <Field label="Kaba Adım (₺)">
+                  <TextInput
+                    inputMode="decimal"
+                    value={form.coarseStepAbsolute}
+                    onChange={(e) => update({ coarseStepAbsolute: e.target.value })}
+                  />
+                </Field>
+              ) : (
+                <Field label="Kaba Adım (%)">
+                  <TextInput
+                    value={form.coarseStepPercent}
+                    onChange={(e) => update({ coarseStepPercent: e.target.value })}
+                  />
+                </Field>
+              )}
               <Field label="İnceltme Toleransı (₺)">
                 <TextInput
                   value={form.refineTolerance}

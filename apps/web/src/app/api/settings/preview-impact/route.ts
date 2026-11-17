@@ -24,6 +24,7 @@ import {
 import { catalogRepo, competitionRepo, listingsRepo, repricingRepo } from '@buybox/db';
 import { mapFeeSettings, mapPolicy, preloadCostDeps } from '@buybox/jobs';
 import { Money } from '@buybox/shared';
+import { parseCoarseStep } from '@/lib/policy-coarse-step';
 import { withBrand } from '@/lib/product-name';
 import { getAppDb } from '@/lib/server/db';
 import { FeesPayloadError, feesPayloadToRow } from '@/app/api/setup/fees/to-row';
@@ -102,6 +103,7 @@ async function postHandler(request: Request) {
   const policyPayload = body.policy as {
     coarseStepMode: 'absolute' | 'percent';
     coarseStepPercent: string;
+    coarseStepAbsolute?: string;
     refineTolerance: string;
     seekStrategy: 'direct' | 'stepped';
     undercutBy: string;
@@ -118,13 +120,17 @@ async function postHandler(request: Request) {
     concurrency: string;
     budgetReservePct: string;
   };
+  const coarseStep = parseCoarseStep(
+    policyPayload.coarseStepMode,
+    policyPayload.coarseStepPercent,
+    policyPayload.coarseStepAbsolute,
+  );
+  if (!coarseStep.ok) return NextResponse.json({ error: coarseStep.error }, { status: 400 });
   const policyRow = {
     marketplaceCode,
     coarseStepMode: policyPayload.coarseStepMode,
-    coarseStepAbsolute:
-      policyPayload.coarseStepMode === 'absolute' ? Money.fromMajorUnitsString('0').toKurus() : null,
-    coarseStepPercent:
-      policyPayload.coarseStepMode === 'percent' ? Number(policyPayload.coarseStepPercent) : null,
+    coarseStepAbsolute: coarseStep.absolute,
+    coarseStepPercent: coarseStep.percent,
     refineTolerance: Money.fromMajorUnitsString(policyPayload.refineTolerance || '0').toKurus(),
     seekStrategy: policyPayload.seekStrategy,
     undercutBy: Money.fromMajorUnitsString(policyPayload.undercutBy || '0.10').toKurus(),

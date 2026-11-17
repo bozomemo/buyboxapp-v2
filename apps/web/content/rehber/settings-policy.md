@@ -28,8 +28,9 @@ Otomasyonu acil durumda hemen durdurmak için [Panel](/rehber/panel) ekranındak
 
 ## Strateji
 
-- **Kaba Adım Türü**: buybox bizdeyken fiyatın hangi birimle yükseltileceği. **Yüzde** kullanın; **Sabit tutar** seçeneğinde tutar girecek bir alan yoktur ve kaydedilen adım sıfır olur, yani fiyat yükselmez.
+- **Kaba Adım Türü**: buybox bizdeyken fiyatın hangi birimle yükseltileceği. **Yüzde** seçilirse adım fiyatla birlikte büyür; **Sabit tutar** seçilirse her denemede aynı tutar eklenir. Seçime göre altındaki alan değişir.
 - **Kaba Adım (%)**: buybox bizdeyken her denemede fiyatın yüzde kaç yükseltileceği. Büyük değer daha hızlı yükselir ama buybox'ı daha sık kaybettirir.
+- **Kaba Adım (₺)**: yalnızca **Sabit tutar** seçiliyken görünür. Buybox bizdeyken her denemede fiyata eklenecek tutar. Örnek: 2,50. Tutar boşsa, sıfır ya da eksiyse veya tutar olarak okunamıyorsa politika kaydedilmez ve sayfanın altında nedeni yazar.
 - **İnceltme Toleransı (₺)**: buybox kaybedilince uygulama doğru fiyatı arar. İki fiyat arasındaki fark bu tutarın altına düşünce aramayı bitirir. Örnek: 1 TL.
 - **Arama Stratejisi**: buybox bizde değilken nasıl ineceği. **Doğrudan (önerilen)** fiyatı tek seferde buybox fiyatının hemen altına indirir. **Kademeli** küçük adımlarla iner.
 - **Buybox'ın Altına İnme Tutarı (₺)**: buybox'ı almak için buybox fiyatının ne kadar altına inileceği.

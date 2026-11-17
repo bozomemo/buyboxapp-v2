@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { configRepo, newId } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
+import { parseCoarseStep } from '@/lib/policy-coarse-step';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 
@@ -15,6 +16,7 @@ interface PolicyPayload {
   code: string;
   coarseStepMode: 'absolute' | 'percent';
   coarseStepPercent: string;
+  coarseStepAbsolute?: string;
   refineTolerance: string;
   seekStrategy: 'direct' | 'stepped';
   undercutBy: string;
@@ -37,6 +39,8 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
   const body = await readJsonBody<PolicyPayload>(request);
   if (body === null) return invalidBody();
   if (!body.code) return NextResponse.json({ error: 'code gerekli.' }, { status: 400 });
+  const coarseStep = parseCoarseStep(body.coarseStepMode, body.coarseStepPercent, body.coarseStepAbsolute);
+  if (!coarseStep.ok) return NextResponse.json({ error: coarseStep.error }, { status: 400 });
   const appDb = getAppDb();
   const nowMs = Date.now();
   const previous = await configRepo.getRepricingPolicy(appDb, body.code);
@@ -44,8 +48,8 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
   const row = {
     marketplaceCode: body.code,
     coarseStepMode: body.coarseStepMode,
-    coarseStepAbsolute: body.coarseStepMode === 'absolute' ? Money.fromMajorUnitsString('0').toKurus() : null,
-    coarseStepPercent: body.coarseStepMode === 'percent' ? Number(body.coarseStepPercent) : null,
+    coarseStepAbsolute: coarseStep.absolute,
+    coarseStepPercent: coarseStep.percent,
     refineTolerance: Money.fromMajorUnitsString(body.refineTolerance).toKurus(),
     seekStrategy: body.seekStrategy,
     undercutBy: Money.fromMajorUnitsString(body.undercutBy || '0.10').toKurus(),

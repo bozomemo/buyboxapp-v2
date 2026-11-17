@@ -24,6 +24,7 @@ async function getHandler(request: Request) {
     current: {
       coarseStepMode: policy.coarseStepMode,
       coarseStepPercent: String(policy.coarseStepPercent ?? 5),
+      coarseStepAbsolute: policy.coarseStepAbsolute === null ? '' : kurusToDecimalString(policy.coarseStepAbsolute),
       refineTolerance: kurusToDecimalString(policy.refineTolerance),
       seekStrategy: policy.seekStrategy,
       undercutBy: kurusToDecimalString(policy.undercutBy),
