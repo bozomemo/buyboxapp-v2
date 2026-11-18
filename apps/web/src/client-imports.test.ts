@@ -40,13 +40,26 @@ describe('client components import only types from server-side packages', () => 
   });
 
   /**
-   * The same rule, followed into the guide's own modules (doc 19): `/rehber`'s client imported
-   * `lib/guide/topic`, which value-imported `@buybox/shared`, and only `next build` failed
-   * (2026-11-17, a Turbopack "does not support external modules (node:fs/promises)" panic).
-   * Scoped to `lib/guide/`: `lib/format.ts` value-imports `Money` the same way and builds, so a
-   * repo-wide transitive rule would flag code that works.
+   * The same rule, followed into the modules a client file imports. `/rehber`'s client imported
+   * `lib/guide/topic`, which value-imported `@buybox/shared` (2026-11-17), and `/settings/policy`
+   * imported `lib/policy-coarse-step`, which called `Money.fromMajorUnitsString` (2026-11-18).
+   * Both passed every unit test; only `next build` failed, with a Turbopack "does not support
+   * external modules (node:fs/promises)" panic.
+   *
+   * A binding counts only when the module **uses it at runtime** (`X.`, `X(`, `new X`):
+   * `lib/format.ts` imports `Money` without `import type` but names it only in type positions,
+   * the compiler erases that import, and the page builds.
    */
-  it('holds for the guide modules a client file imports, transitively', () => {
+  it('holds for the modules a client file imports, transitively', () => {
+    /** True when a binding imported from `spec` is used as a value, not only as a type. */
+    const usesAtRuntime = (source: string, spec: string): boolean =>
+      importStatements(source)
+        .filter((s) => !/^import type /.test(s) && s.endsWith(`from '${spec}';`))
+        .flatMap((s) => (/\{([\s\S]*)\}/.exec(s)?.[1] ?? '').split(','))
+        .map((b) => b.trim())
+        .filter((b) => b !== '' && !b.startsWith('type '))
+        .map((b) => b.split(/\s+as\s+/).pop()!)
+        .some((name) => new RegExp(`(\\bnew\\s+${name}\\b|\\b${name}\\s*[.(])`).test(source));
     const valueImports = (source: string) =>
       importStatements(source)
         .filter((s) => !/^import type /.test(s))
@@ -81,8 +94,7 @@ describe('client components import only types from server-side packages', () => 
         const { file: current, chain } = queue.shift()!;
         const source = readFileSync(current, 'utf8');
         for (const spec of valueImports(source)) {
-          const inGuide = path.relative(SRC, current).replace(/\\/g, '/').startsWith('lib/guide/');
-          if (inGuide && SERVER_PACKAGES.test(`from '${spec}'`))
+          if (current !== file && SERVER_PACKAGES.test(`from '${spec}'`) && usesAtRuntime(source, spec))
             offenders.push(`${chain.join(' → ')} → ${spec}`);
           const next = resolve(current, spec);
           // Another 'use client' file is checked on its own; a server-only module is not a client import.
