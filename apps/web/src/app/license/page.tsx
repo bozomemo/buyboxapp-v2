@@ -9,7 +9,9 @@ import { LicenseClient } from './license-client';
 export const dynamic = 'force-dynamic';
 
 export default async function LicensePage() {
-  const gate = await requirePermission('view');
+  // The setup token reaches this screen before there is an administrator (doc 18 §8.1): the
+  // wizard is gated behind the licence, so without it a fresh install loops back to /bootstrap.
+  const gate = await requirePermission('view', { allowSetupAccess: true });
   if (!gate.ok) return gate.element;
   return <LicenseClient />;
 }

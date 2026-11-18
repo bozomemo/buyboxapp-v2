@@ -15,7 +15,7 @@ const AUTH_EXEMPT_PREFIXES = ['/login', '/api/auth', '/bootstrap', '/api/bootstr
  * database step of the wizard (a fresh checkout has no database to put a user in yet) and the
  * licence screen the wizard is gated behind (doc 13 §6). Nothing that touches prices.
  */
-const BOOTSTRAP_SETUP_PREFIXES = ['/setup', '/api/setup', '/license', '/api/license'];
+export const BOOTSTRAP_SETUP_PREFIXES = ['/setup', '/api/setup', '/license', '/api/license'];
 
 /** Reachable by a signed-in user who must change a temporary password first (doc 18 §3.2). */
 const PASSWORD_CHANGE_PREFIXES = ['/account/password'];
