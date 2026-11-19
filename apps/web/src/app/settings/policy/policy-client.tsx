@@ -245,14 +245,14 @@ export function PolicyClient() {
         <div>
           <p className="text-sm font-semibold">Otomasyon</p>
           <p className="text-xs text-(--color-muted)">
-            Açıkken {marketplaceLabel} için fiyatlar bu politikaya göre otomatik gönderilir.
+            Açıkken {marketplaceLabel} için fiyatlar bu politikaya göre hesaplanır; Panel'de fiyat gönderimi açıksa pazaryerine de gönderilir.
           </p>
         </div>
         {/* §3.6: turning automation ON creates risk (live price submission) and is confirmed;
             turning it OFF removes risk and is one click — never the reverse. */}
         <ConfirmButton
           requireConfirm={!form.enabled}
-          confirmMessage={`${marketplaceLabel} için otomatik fiyatlandırmayı açmak istiyorsunuz. Bu andan itibaren fiyatlar otomatik gönderilecek. Devam edilsin mi?`}
+          confirmMessage={`${marketplaceLabel} için otomatik fiyatlandırmayı açmak istiyorsunuz. Bu andan itibaren fiyatlar bu politikaya göre hesaplanacak ve Panel'de fiyat gönderimi açıksa pazaryerine gönderilecek. Devam edilsin mi?`}
           onConfirmed={() => update({ enabled: !form.enabled })}
           aria-pressed={form.enabled}
           className={`rounded px-4 py-2 text-sm font-semibold ${

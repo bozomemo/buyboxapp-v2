@@ -18,9 +18,9 @@ En üstteki **Pazaryeri** listesinden **Trendyol** veya **Hepsiburada**'yı seç
 
 ## Otomasyon
 
-**Otomasyon** kartındaki düğme **Açık** veya **Kapalı** gösterir. Açıkken o pazaryerinde fiyatlar bu politikaya göre otomatik gönderilir.
+**Otomasyon** kartındaki düğme **Açık** veya **Kapalı** gösterir. Açıkken o pazaryerinde fiyatlar bu politikaya göre hesaplanır; **Panel**'de fiyat gönderimi açıksa pazaryerine de gönderilir. Bkz. [Fiyat Gönderimi ve İlan Otomasyonu](/rehber/concepts-price-submission).
 
-- Açmak için düğmeye tıklayın; bir onay penceresi çıkar. Onaylarsanız fiyatlar bu andan itibaren otomatik gönderilir.
+- Açmak için düğmeye tıklayın; bir onay penceresi çıkar. Onaylarsanız fiyatlar bu andan itibaren hesaplanır ve fiyat gönderimi açıksa gönderilir.
 - Kapatmak tek tıklamadır; onay sorulmaz.
 - Düğme yalnızca formu değiştirir. Değişikliğin geçerli olması için sayfanın altındaki **Kaydet**'e tıklayın.
 
