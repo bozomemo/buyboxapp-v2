@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Button, ErrorState, Field, LoadingState, Section, StatusBanner, TextInput } from '@/components/ui';
+import { PermissionFieldset } from '@/lib/permissions';
 
 /** Settings > Retention (doc 15 §6, Phase 5). Consistency pass only. */
 
@@ -97,6 +98,7 @@ export function RetentionClient() {
           : 'Özelleştirilmiş pencereler kullanılıyor.'}{' '}
         Rakip gözlemleri ve tarama kayıtları süresiz saklanır ve burada listelenmez.
       </p>
+      <PermissionFieldset permission="settings.manage">
       <Section id="retention-windows" title="Saklama Pencereleri" card>
         <div className="grid grid-cols-2 gap-4">
           {LABELS.map(({ key, label }) => (
@@ -117,6 +119,7 @@ export function RetentionClient() {
         </Button>
       </div>
       {saved && <StatusBanner ok message="Saklama pencereleri kaydedildi." />}
+      </PermissionFieldset>
     </div>
   );
 }

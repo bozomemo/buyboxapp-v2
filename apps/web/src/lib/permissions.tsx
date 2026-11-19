@@ -45,3 +45,27 @@ export function canToggleStop(can: (permission: Permission) => boolean, engaged:
 }
 
 export const NO_PERMISSION_TITLE = 'Bu işlem için yetkiniz yok';
+
+/**
+ * Disables every form control inside it when the user lacks `permission` (doc 18 §7.2: the UI
+ * hides controls the user lacks permission for). A disabled `<fieldset>` is the browser's own
+ * mechanism: inputs, selects, textareas and buttons inside it cannot be used, with no change to
+ * each control. `display: contents` keeps it out of the layout. Wrap the editing part of a screen
+ * only — filters and searches stay outside, since every role may use them.
+ *
+ * Like {@link useCan}, an unknown permission set counts as allowed; the handler has the last word.
+ */
+export function PermissionFieldset({
+  permission,
+  children,
+}: {
+  permission: Permission;
+  children: React.ReactNode;
+}) {
+  const allowed = useCan()(permission);
+  return (
+    <fieldset disabled={!allowed} title={allowed ? undefined : NO_PERMISSION_TITLE} className="contents">
+      {children}
+    </fieldset>
+  );
+}

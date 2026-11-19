@@ -27,6 +27,7 @@ import { Download, Trash2 } from '@/components/icon';
 import { downloadCsv } from '@/lib/csv';
 import { formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
 import { parsePositiveRatio } from '@/lib/operator-money';
+import { PermissionFieldset } from '@/lib/permissions';
 
 /**
  * `/stock` (doc 06 §3, doc 15 §6 Phase 2.6). This screen's stated task is "Maliyetler doğru mu?"
@@ -139,6 +140,7 @@ function MultiplierCell({
   }
 
   return (
+    <PermissionFieldset permission="prices.manage">
     <div className="flex flex-col gap-0.5">
       <TextInput
         inputMode="decimal"
@@ -153,6 +155,7 @@ function MultiplierCell({
       {busy && <span className="text-[10px] text-(--color-muted)">Kaydediliyor…</span>}
       {error && <span className="text-[10px] text-(--color-danger)">{error}</span>}
     </div>
+    </PermissionFieldset>
   );
 }
 
@@ -185,6 +188,7 @@ function AutoBBCell({
   }
 
   return (
+    <PermissionFieldset permission="prices.manage">
     <div className="flex flex-col gap-0.5">
       <input
         type="checkbox"
@@ -198,6 +202,7 @@ function AutoBBCell({
       />
       {error && <span className="text-[10px] text-(--color-danger)">{error}</span>}
     </div>
+    </PermissionFieldset>
   );
 }
 
@@ -246,13 +251,16 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
 
   if (!open) {
     return (
+      <PermissionFieldset permission="prices.manage">
       <Button type="button" onClick={() => setOpen(true)}>
         Ürün Ekle
       </Button>
+      </PermissionFieldset>
     );
   }
 
   return (
+    <PermissionFieldset permission="prices.manage">
     <div className="flex flex-wrap items-end gap-2 rounded border border-(--color-border) bg-(--color-surface) p-3">
       <Field label="Stok Kodu">
         <TextInput
@@ -295,6 +303,7 @@ function AddItemForm({ onAdded }: { onAdded: () => void }) {
         </p>
       )}
     </div>
+    </PermissionFieldset>
   );
 }
 
@@ -434,6 +443,7 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
   const config = configPoll.data;
 
   return (
+    <PermissionFieldset permission="prices.manage">
     <div className="text-sm">
       <p className="mb-2 text-(--color-muted)">
         Yapılandırılmış kaynak: <strong>{config.configured ? config.sourceCode : 'yok'}</strong>
@@ -491,6 +501,7 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
         </p>
       )}
     </div>
+    </PermissionFieldset>
   );
 }
 
@@ -557,9 +568,11 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
     <div className="text-sm">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-medium">{bundles.length} paket</span>
+        <PermissionFieldset permission="prices.manage">
         <Button variant="secondary" size="sm" type="button" onClick={openNew}>
           Yeni Paket
         </Button>
+        </PermissionFieldset>
       </div>
       <ul className="mb-2 max-h-64 space-y-1 overflow-auto">
         {pagedBundles.rows.map((b) => (
@@ -582,6 +595,7 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
           <Pagination state={pagedBundles} label="paket" />
         </div>
       )}
+      <PermissionFieldset permission="prices.manage">
       {editing !== undefined && (
         <div className="space-y-2 border-t border-(--color-border) pt-2">
           {editing === '' ? (
@@ -670,6 +684,7 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
           </div>
         </div>
       )}
+      </PermissionFieldset>
     </div>
   );
 }

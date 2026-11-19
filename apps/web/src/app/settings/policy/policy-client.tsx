@@ -15,6 +15,7 @@ import {
   StatusBanner,
   TextInput,
 } from '@/components/ui';
+import { PermissionFieldset } from '@/lib/permissions';
 
 interface Form {
   coarseStepMode: 'absolute' | 'percent';
@@ -222,6 +223,7 @@ export function PolicyClient() {
         />
       </Field>
 
+      <PermissionFieldset permission="settings.manage">
       {/* §3.2 "Stale": a later marketplace switch failed but the previous form is still on
           screen — say so rather than letting it silently go stale (same pattern as
           fees-client.tsx). */}
@@ -470,6 +472,7 @@ export function PolicyClient() {
           </div>
         )}
       </div>
+      </PermissionFieldset>
     </div>
   );
 }

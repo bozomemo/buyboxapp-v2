@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, ErrorState, Field, LoadingState, Section, Select, StatusBanner, TextInput } from '@/components/ui';
 import { EXCEL_COLUMN_LABELS } from '@/lib/labels';
+import { PermissionFieldset } from '@/lib/permissions';
 
 /** Settings > Product Sources (doc 15 §6, Phase 5). Consistency pass only. */
 
@@ -117,6 +118,7 @@ export function ProductSourcesClient() {
       <p className="text-sm text-(--color-muted)">
         {configured ? 'Şu anda yapılandırılmış bir kaynak var.' : 'Henüz bir ürün kaynağı yapılandırılmadı.'}
       </p>
+      <PermissionFieldset permission="settings.manage">
       <Section id="product-source-form" title="Ürün Kaynağı" card>
         <div className="flex flex-col gap-4">
           <Field label="Ürün Kaynağı">
@@ -216,6 +218,7 @@ export function ProductSourcesClient() {
           <p className="text-sm text-(--color-muted)">Yakında.</p>
         </div>
       </Section>
+      </PermissionFieldset>
     </div>
   );
 }

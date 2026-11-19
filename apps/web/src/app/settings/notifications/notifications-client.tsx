@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, ErrorState, Field, LoadingState, Section, StatusBanner } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
+import { PermissionFieldset } from '@/lib/permissions';
 
 type ChannelCode = 'webhook' | 'email' | 'sms';
 type State = 'pending' | 'sent' | 'failed' | 'suppressed';
@@ -114,6 +115,7 @@ export function NotificationsClient() {
         bildirilmez.
       </p>
 
+      <PermissionFieldset permission="settings.manage">
       <Section id="notification-channels" title="Kanallar" card>
         <ul className="space-y-3">
           {data.channels.map((channel) => (
@@ -177,6 +179,7 @@ export function NotificationsClient() {
       </Section>
 
       {banner && <StatusBanner ok={banner.ok} message={banner.message} />}
+      </PermissionFieldset>
     </div>
   );
 }

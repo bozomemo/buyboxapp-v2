@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AppModule, EnabledModules } from '@buybox/shared';
 import { Button, ConfirmButton, ErrorState, LoadingState, Section, StatusBanner } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
+import { PermissionFieldset } from '@/lib/permissions';
 
 interface ModulesState {
   modules: EnabledModules;
@@ -99,6 +100,7 @@ export function ModulesClient({ redirectedFrom }: { redirectedFrom: AppModule | 
         kaldığı yerden devam eder.
       </p>
 
+      <PermissionFieldset permission="settings.manage">
       <Section id="modules" title="Modüller" card>
         <div className="flex flex-col gap-3">
           {MODULES.map((m) => (
@@ -158,6 +160,7 @@ export function ModulesClient({ redirectedFrom }: { redirectedFrom: AppModule | 
         )}
       </div>
       {saveError && <StatusBanner ok={false} message={`Kaydedilemedi: ${saveError}`} />}
+      </PermissionFieldset>
     </div>
   );
 }

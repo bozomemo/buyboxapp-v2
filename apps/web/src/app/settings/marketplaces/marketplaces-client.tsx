@@ -13,6 +13,7 @@ import {
   StatusBanner,
   TextInput,
 } from '@/components/ui';
+import { PermissionFieldset } from '@/lib/permissions';
 
 /**
  * Settings > Marketplaces (doc 15 §6, Phase 5). Consistency pass only — the credential merge
@@ -223,6 +224,7 @@ export function MarketplacesClient() {
         </p>
       )}
 
+      <PermissionFieldset permission="settings.manage">
       {forms.map((form) => (
         <Section
           key={form.code}
@@ -331,6 +333,7 @@ export function MarketplacesClient() {
           )}
         </Section>
       ))}
+      </PermissionFieldset>
     </div>
   );
 }

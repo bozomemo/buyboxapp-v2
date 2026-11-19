@@ -15,6 +15,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import { Trash2 } from '@/components/icon';
+import { PermissionFieldset } from '@/lib/permissions';
 
 interface Band {
   edge: string;
@@ -242,6 +243,7 @@ export function FeesClient() {
         </p>
       )}
 
+      <PermissionFieldset permission="settings.manage">
       <Section id="fees-form" title="Ücret Ayarları" card>
         <div className="max-w-[720px]">
           <p className="mb-3 text-xs text-(--color-muted)">
@@ -317,6 +319,7 @@ export function FeesClient() {
         </div>
       </Section>
 
+      </PermissionFieldset>
       <Section id="fees-history" title="Geçmiş" card>
         {history.length === 0 ? (
           <EmptyState

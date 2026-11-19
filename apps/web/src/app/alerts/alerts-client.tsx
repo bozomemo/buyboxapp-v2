@@ -19,6 +19,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
+import { PermissionFieldset } from '@/lib/permissions';
 import { formatDateTime, formatDuration, formatMoney, kurusToDecimal, parseMoneyToKurus } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, PREDICATE_LABELS, SCOPE_LABELS, SUBJECT_LABELS, THRESHOLD_LABELS } from '@/lib/labels';
 
@@ -868,6 +869,7 @@ export function AlertsClient() {
         title={`Kurallar (${data.rules.length})`}
         action={
           <div className="flex flex-wrap items-center gap-3">
+            <PermissionFieldset permission="catalogue.manage">
             <Button
               type="button"
               disabled={draft !== null}
@@ -879,6 +881,7 @@ export function AlertsClient() {
             >
               + Yeni kural
             </Button>
+            </PermissionFieldset>
             {data.rules.length > 0 && (
               <Button variant="ghost" size="sm" type="button" onClick={() => setShowRules((v) => !v)}>
                 {showRules ? 'Listeyi gizle' : 'Listeyi göster'}
@@ -931,6 +934,7 @@ export function AlertsClient() {
                 </div>
                 <div className="flex items-center gap-3 text-xs text-(--color-muted)">
                   <span>sessizlik {formatDuration(r.quietPeriodMs)}</span>
+                  <PermissionFieldset permission="catalogue.manage">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -954,6 +958,7 @@ export function AlertsClient() {
                   >
                     sil
                   </ConfirmButton>
+                  </PermissionFieldset>
                 </div>
               </div>
             ))}

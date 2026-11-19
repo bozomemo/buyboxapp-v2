@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { StockClient } from './stock-client';
+import { PermissionsProvider } from '@/lib/permissions';
 
 /**
  * Smoke test for `/stock` (doc 15 §6, Phase 2.6). Shape copied from
@@ -180,5 +181,41 @@ describe('StockClient bundle editor', () => {
     screen.getByRole('button', { name: 'Kaydet' }).click();
     expect(await screen.findByText('Pakete en az bir üye ekleyin.')).toBeTruthy();
     expect(screen.getByLabelText('Paket stok kodu')).toBeTruthy();
+  });
+});
+
+/** doc 18 §7.2: an İzleyici could edit the multiplier and open "Ürün Ekle" (2026-11-19). */
+describe('StockClient for an İzleyici', () => {
+  it('disables the editing controls and keeps search and export', async () => {
+    stubFetch({
+      '/api/auth/me': { body: { user: { permissions: ['view'] } } },
+      '/api/stock': {
+        body: {
+          marketplaces: [{ code: 'trendyol', displayName: 'Trendyol' }],
+          items: [
+            {
+              baseStockCode: 'BASE1',
+              name: 'Test Ürünü',
+              unitCost: '5000',
+              unitStock: 10,
+              sourceCode: 'manual',
+              prefs: { trendyol: { priceMultiplier: 1, autoRepriceEnabled: false } },
+              offeredStock: {},
+            },
+          ],
+        },
+      },
+      ...SIDE_ROUTES,
+    });
+    render(
+      <PermissionsProvider>
+        <StockClient />
+      </PermissionsProvider>,
+    );
+    const multiplier = await screen.findByLabelText('Test Ürünü için Trendyol fiyat çarpanı');
+    await waitFor(() => expect(multiplier.matches(':disabled')).toBe(true));
+    expect(screen.getByRole('button', { name: 'Ürün Ekle' }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Yeni Paket' }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: "Excel'e Aktar" }).matches(':disabled')).toBe(false);
   });
 });
