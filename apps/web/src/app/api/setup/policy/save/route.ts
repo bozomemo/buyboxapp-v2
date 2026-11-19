@@ -6,6 +6,7 @@ import { parseCoarseStep } from '@/lib/policy-coarse-step';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 import { toWireDecimal } from '@/lib/operator-money';
+import { refuseUnreadableAmounts } from '@/lib/server/refuse-unreadable-amounts';
 
 interface PolicyPayload {
   code: string;
@@ -68,4 +69,4 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
   return NextResponse.json({ ok: true });
 }
 
-export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });
+export const POST = withPermission('settings.manage', refuseUnreadableAmounts(postHandler), { allowSetupAccess: true });

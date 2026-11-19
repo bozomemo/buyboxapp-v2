@@ -31,6 +31,7 @@ import { FeesPayloadError, feesPayloadToRow } from '@/app/api/setup/fees/to-row'
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
 import { toWireDecimal } from '@/lib/operator-money';
+import { refuseUnreadableAmounts } from '@/lib/server/refuse-unreadable-amounts';
 
 async function loadState(appDb: ReturnType<typeof getAppDb>, listingId: string): Promise<RepricingState> {
   const row = await repricingRepo.getRepricingState(appDb, listingId);
@@ -276,4 +277,4 @@ async function postHandler(request: Request) {
   });
 }
 
-export const POST = withPermission('settings.manage', postHandler);
+export const POST = withPermission('settings.manage', refuseUnreadableAmounts(postHandler));

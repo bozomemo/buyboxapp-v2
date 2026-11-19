@@ -81,3 +81,16 @@ describe('FeesClient', () => {
     expect(screen.getAllByRole('button', { name: 'Kaldır' })[0]!.className).toContain('text-(--color-danger)');
   });
 });
+
+/** A refused save said only "Kaydedilemedi (HTTP 400)", not why (2026-11-19). */
+describe('FeesClient refused save', () => {
+  it('shows the server’s reason', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: { body: { current: CURRENT, history: [] } },
+      '/api/settings/fees/save': { status: 400, body: { error: 'Son kargo bandının üst sınırı boş olmalı.' } },
+    });
+    render(<FeesClient />);
+    (await screen.findByRole('button', { name: 'Kaydet' })).click();
+    expect(await screen.findByText('Son kargo bandının üst sınırı boş olmalı.')).toBeTruthy();
+  });
+});

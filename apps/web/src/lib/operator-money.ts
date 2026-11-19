@@ -46,12 +46,20 @@ export function isOperatorDecimal(input: unknown): boolean {
   return typeof input === 'string' && wire(bare(input)) !== null;
 }
 
-/** Throws a `RangeError` whose message can be shown to the operator as it is. */
+/** A typed amount that is not one. Its message is a Turkish sentence for the operator. */
+export class AmountError extends RangeError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AmountError';
+  }
+}
+
+/** Throws an {@link AmountError} whose message can be shown to the operator as it is. */
 export function toWireDecimal(input: unknown): string {
   const result = typeof input === 'string' ? wire(bare(input)) : null;
   if (result !== null) return result;
   const shown = typeof input === 'string' && input.trim() !== '' ? `"${input.trim()}"` : 'Boş değer';
-  throw new RangeError(`${shown} geçerli bir tutar değil. Örnek: 1.250,50`);
+  throw new AmountError(`${shown} geçerli bir tutar değil. Örnek: 1.250,50`);
 }
 
 /**

@@ -7,6 +7,7 @@ import { feesPayloadToRow } from '../to-row';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
 import { toWireDecimal } from '@/lib/operator-money';
+import { refuseUnreadableAmounts } from '@/lib/server/refuse-unreadable-amounts';
 
 async function postHandler(request: Request) {
   const body = await readJsonBody<{ fees: unknown; sampleCost: string }>(request);
@@ -32,4 +33,4 @@ async function postHandler(request: Request) {
   }
 }
 
-export const POST = withPermission('settings.manage', postHandler, { allowSetupAccess: true });
+export const POST = withPermission('settings.manage', refuseUnreadableAmounts(postHandler), { allowSetupAccess: true });

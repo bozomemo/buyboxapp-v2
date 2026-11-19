@@ -13,6 +13,7 @@ import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
 import { toWireDecimal } from '@/lib/operator-money';
+import { refuseUnreadableAmounts } from '@/lib/server/refuse-unreadable-amounts';
 
 async function postHandler(
   request: Request,
@@ -92,4 +93,4 @@ async function postHandler(
   return NextResponse.json({ ok: true, pausedUntil: settleUntil });
 }
 
-export const POST = withPermission('prices.manage', postHandler);
+export const POST = withPermission('prices.manage', refuseUnreadableAmounts(postHandler));

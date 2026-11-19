@@ -11,6 +11,7 @@ import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonObject } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
 import { toWireDecimal } from '@/lib/operator-money';
+import { refuseUnreadableAmounts } from '@/lib/server/refuse-unreadable-amounts';
 
 const BulkActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('enableAutomation'), ids: z.array(z.string()) }),
@@ -65,4 +66,4 @@ async function postHandler(request: Request) {
   return NextResponse.json({ ok: true, affected: body.ids.length });
 }
 
-export const POST = withPermission('prices.manage', postHandler);
+export const POST = withPermission('prices.manage', refuseUnreadableAmounts(postHandler));

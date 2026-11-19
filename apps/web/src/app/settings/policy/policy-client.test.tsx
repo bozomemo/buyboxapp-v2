@@ -125,3 +125,16 @@ describe('PolicyClient', () => {
     expect(vi.mocked(fetch).mock.calls.some((c) => String(c[0]) === '/api/settings/policy/save')).toBe(false);
   });
 });
+
+/** A refused save said only "Kaydedilemedi (HTTP 400)", not why (2026-11-19). */
+describe('PolicyClient refused save', () => {
+  it('shows the server’s reason', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: { body: { current: CURRENT } },
+      '/api/settings/policy/save': { status: 400, body: { error: '"abc" geçerli bir tutar değil. Örnek: 1.250,50' } },
+    });
+    render(<PolicyClient />);
+    (await screen.findByRole('button', { name: 'Kaydet' })).click();
+    expect(await screen.findByText('"abc" geçerli bir tutar değil. Örnek: 1.250,50')).toBeTruthy();
+  });
+});

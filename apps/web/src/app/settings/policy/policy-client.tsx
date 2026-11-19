@@ -168,7 +168,9 @@ export function PolicyClient() {
         body: JSON.stringify({ code: marketplaceCode, ...form }),
       });
       if (!res.ok) {
-        setSaveError(`Kaydedilemedi (HTTP ${res.status}).`);
+        // The server says why (a rule on the bands, an amount it cannot read); say it.
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setSaveError(data.error ?? `Kaydedilemedi (HTTP ${res.status}).`);
         return;
       }
       setSaved(true);
