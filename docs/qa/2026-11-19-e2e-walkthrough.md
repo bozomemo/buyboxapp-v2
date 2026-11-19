@@ -1,25 +1,4 @@
-# End-to-end walkthrough — 2026-11-19
-
-Branch `fix/e2e-walkthrough`, cut from `development` at `42a425f`. Every fix found here is a
-separate commit on this branch so any of them can be dropped.
-
-## Setup
-
-- Checkout build (`next build` + `next start`) on `http://localhost:3100`, Node 22.23.4 (the one the
-  installer ships; the machine's Node 22.3.0 segfaults in better-sqlite3).
-- Fresh SQLite database in the checkout; the installed `BuyBoxApp` service and
-  `C:\ProgramData\BuyBox` are not touched.
-- Licence: local 30-day trial issued with `scripts/issue-license.mjs`.
-
-## Ground rules held during the run
-
-- No real marketplace credential is entered. Marketplace connection tests use dummy values and are
-  expected to fail with an auth error; that failure path is what gets tested.
-- No worker runs beside `next start` (Panel: "Worker: durmuş"), and price submission stays off,
-  so no queued job reaches Trendyol or Hepsiburada and no competitor page is fetched.
-
-## Defects
-
+Open — layout, not attempted 
 | # | Screen / flow | What happened | Severity | Status |
 |---|---------------|---------------|----------|--------|
 | 1 | Checkout first run: wizard DB step | After the database step on setup-token access the wizard went on to step 2, whose save is refused with "Önce /bootstrap ekranından ilk yöneticiyi oluşturun" and no way there. Spec (doc 18 §8.1) says return to /bootstrap. | Medium (dev checkout only) | Fixed `3b160f0` |
@@ -36,6 +15,15 @@ separate commit on this branch so any of them can be dropped.
 | 12 | Denetim Bulguları → Eşikler | Same `type="number"` problem: "2,5" became 25, empty became 0. | Medium | Fixed `320e8ea` |
 | 13 | Several screens | Code names shown to the customer: `brand-reports.ts`, `competitor_observations`, `scrape_runs`, `settings_audit`, `Reprice`, `ObserveBuybox`, `ScrapeCompetitors`. | Low | Fixed `e11107c`, `320e8ea` (+ test) |
 | 14 | Top bar at ~970 px wide | The bar overflows: the theme switch is cut ("Si…") and "Sistem Çalışıyor" wraps. | Low | |
+| 15 | Stok → Paket Düzenleyici | A new bundle was saved under `Date.now()` ("1795052444341") with no field for its code, so it could never match the listing carrying "12345-k2" (doc 01 §6); that listing stays "bundle not defined" and out of automation. A refused save was dropped silently; the route stored anything. | **High** | Fixed `c16b446` |
+| 16 | Marketplace names | ~20 places showed the code "trendyol"/"hepsiburada" (brand cards, alerts, dashboard, jobs passes and rate table, headers, five table columns, a select). | Low | Fixed `03b5652`, `d6fa2c6` (+ test) |
+| 17 | İşler → Kuyruk | Queue states shown raw in English: "ready", "locked", "done", "failed". | Low | Fixed `03b5652` |
+| 18 | Rakip Geçmişi filter | Labelled "Satıcı (sellerRef)". | Low | Fixed `4a32bbc` |
+| 19 | Ayarlar → Pazaryerleri | The Ortam select always showed "Prod", even for an install saved on Test. Picking "Prod" to go live fired no change and saved nothing: the install stayed on the test host while the screen said production. | **High** | Fixed `ca0e396` |
+| 20 | Every editing screen, as İzleyici | Against doc 18 §7.2 ("the UI hides controls the user lacks permission for"), an İzleyici had the stock multiplier, Ürün Ekle, every settings form, alert rules, all brand-module actions and the jobs editors enabled; the server refused each with "Kaydedilemedi (HTTP 403)". | Medium | Fixed `6306b89`, `d6fa2c6` |
+| 21 | Rehber search | The box suggests "şifre" but the guide says "parola", so "şifre" missed the password topics. | Medium | Fixed `b0c726d` |
+| 22 | Ayarlar → Modüller | The brand module's description lists its screens but leaves out Stok, İlanlar, Alarmlar and Kâr Ayarları under Marka Denetimi. | Low | |
+| 23 | Ayarlar → Pazaryerleri | The derived seller id is labelled "Satıcı Referansı (merchantRef)", an internal name. | Low | |
 
 ## Questions for the product owner (not changed)
 
@@ -45,6 +33,17 @@ separate commit on this branch so any of them can be dropped.
   should require it or the engine's fallback should be documented.
 - **Saving marketplace credentials that failed their test.** The wizard saves them and says
   "Kimlik bilgileri şifreli olarak kaydedildi." under the red test failure. Intended?
+- **Seller-policy rules that match nobody cannot be removed.** A rule is listed only through the
+  seller it applies to, so a mistyped seller code is counted as "kural şu an kimseyi etkilemiyor"
+  forever, with no screen to delete it. Doc 06 says counting is enough; is it?
+- **Environment variable names on Bildirimler and Lisans** (`ALERTS_WEBHOOK_URL`, `SMTP_HOST`,
+  `LICENSE_TOKEN`). Left as they are: the customer passes them to whoever installed the server.
+- **Automation confirm text.** Turning a marketplace's automation on says "Bu andan itibaren
+  fiyatlar otomatik gönderilecek" even while price submission is off on Panel, where nothing is
+  sent. Worth saying "fiyat gönderimi açıksa"?
+- **"1.400" in the two modules.** The brand module reads it as 1.400,00 ₺ (Turkish grouping); the
+  seller forms refuse it as ambiguous, because they prefill a dot decimal ("11.00"). Both are
+  defensible; they differ.
 
 ## Checked and working
 
@@ -52,4 +51,28 @@ separate commit on this branch so any of them can be dropped.
   creation, redirect back to the wizard.
 - Wizard: DB test + migrate, purpose (both modules), store name, marketplace field validation,
   fees save + floor preview, policy save (automation off), product source save, ERP skip, finish.
+- Stock: add item ("120,50"), multiplier ("1,2" saved as 1.2, checked after reload), Oto BB,
+  bundle create.
+- Alerts: create rule ("400,50" shown as ₺400,50), deactivate, delete with confirmation.
+- Brand module: product add (barcode checksum warning), card link (multiplier required), profit
+  settings save, watched group + brand add, "Şimdi tara" (confirm + queued notice), seller-policy
+  rule add, cross-marketplace, comparison, findings.
+- Settings: policy "Sabit tutar" 2,50 saved and reloaded, automation on (confirm) / off, notification
+  recipients (invalid address refused), modules off (screens redirect) / on, retention, database.
+- Users: Fiyat Yöneticisi and İzleyici created; İzleyici forced to change the temporary password;
+  wrong password refused; İzleyici sees every editing control disabled after #20.
+- Account: TOTP enrolment, recovery codes, sign-in with TOTP (a wrong code refused and logged).
+- Panel: Genel Durdurma (stop one click, resume confirmed), price submission (open confirmed, stop
+  one click), per-marketplace stop/open.
+- Rehber: index (55 topics), search, topic page, all 57 links on a topic resolve, "?" link.
+- Events and sign-in activity log.
+
+## Not covered
+
+- Anything that needs a real marketplace account: import, buybox observation, repricing, price
+  submission, listing detail and manual price. No credentials were entered and no worker ran.
+- Excel uploads (the browser pane cannot pick a file).
+- The Fiyat Yöneticisi role was created but not signed in as; its controls follow the same
+  PermissionFieldset check that was verified for the İzleyici.
+- SMS and e-mail delivery (no provider configured).
 
