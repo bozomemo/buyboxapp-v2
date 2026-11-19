@@ -38,3 +38,23 @@ describe('searchTopics', () => {
     expect(searchTopics([LISTINGS, STOCK], 'zzz')).toEqual([]);
   });
 });
+
+/**
+ * The search box suggests "şifre", but the guide says "parola" throughout, so "şifre" missed
+ * the sign-in, users and account topics (2026-11-19 walkthrough). A few words the customer uses
+ * for what the guide calls something else are searched as both.
+ */
+describe('searchTopics synonyms', () => {
+  const PASSWORD = { title: 'Hesabım', headings: [], body: 'Parolanızı buradan değiştirirsiniz.' };
+  const FLOOR = { title: 'Taban Fiyat', headings: [], body: 'Altına inilmeyen fiyat.' };
+  const OTHER = { title: 'Panel', headings: [], body: 'Güne buradan başlayın.' };
+
+  it('finds "parola" topics from "şifre"', () => {
+    expect(searchTopics([OTHER, PASSWORD], 'ŞİFRE')).toEqual([PASSWORD]);
+  });
+
+  it('finds "taban fiyat" from "dip fiyat" and "minimum fiyat"', () => {
+    expect(searchTopics([OTHER, FLOOR], 'dip fiyat')).toEqual([FLOOR]);
+    expect(searchTopics([OTHER, FLOOR], 'minimum fiyat')).toEqual([FLOOR]);
+  });
+});

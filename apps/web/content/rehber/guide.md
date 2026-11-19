@@ -17,7 +17,7 @@ Her ekranın üst çubuğunda bir **?** işareti vardır (**Bu ekranın rehberi*
 
 ## Arama
 
-Ana sayfadaki **Rehberde ara…** kutusuna bir kelime yazın (ör. "taban fiyat", "şifre", "rakip"). Sonuçlar yazdıkça listelenir: başlığında geçenler önce, sonra ara başlıklarda, sonra metinde geçenler gelir. Büyük-küçük harf ve Türkçe karakterler fark etmez; "ilan" yazınca "İlanlar" da bulunur. Sonuç yoksa başka bir kelime deneyin ya da **Sık Sorulanlar** ve **Sorun Giderme** bölümlerine bakın.
+Ana sayfadaki **Rehberde ara…** kutusuna bir kelime yazın (ör. "taban fiyat", "şifre", "rakip"). Sonuçlar yazdıkça listelenir: başlığında geçenler önce, sonra ara başlıklarda, sonra metinde geçenler gelir. Büyük-küçük harf ve Türkçe karakterler fark etmez; "ilan" yazınca "İlanlar" da bulunur. Bazı kelimeler eş anlamlısıyla birlikte aranır: "şifre" yazınca "parola" geçen konular, "dip fiyat" yazınca "taban fiyat" geçen konular da bulunur. Sonuç yoksa başka bir kelime deneyin ya da **Sık Sorulanlar** ve **Sorun Giderme** bölümlerine bakın.
 
 ## Bölümler
 
