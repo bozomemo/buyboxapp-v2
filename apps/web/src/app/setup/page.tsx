@@ -12,5 +12,7 @@ export const dynamic = 'force-dynamic';
 export default async function SetupPage() {
   const gate = await requirePermission('settings.manage', { allowSetupAccess: true });
   if (!gate.ok) return gate.element;
-  return <SetupWizard />;
+  // No user means setup-token access: the wizard sends the operator back to /bootstrap once the
+  // database step is done.
+  return <SetupWizard setupAccessOnly={gate.user === null} />;
 }

@@ -230,6 +230,33 @@ describe('Step1Database', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  /**
+   * doc 18 §8.1: a checkout reaches the wizard with the setup token only, to make a database to
+   * put the first administrator in. Once the database step is done it goes back to /bootstrap;
+   * every later step needs an administrator and refused with a bare "/bootstrap" path (2026-11-19).
+   */
+  it('setup-token access: the database step returns to /bootstrap and remembers step 2', async () => {
+    stubFetch({
+      '/api/setup/database/suggest': { body: { sqlite: 'file:C:\\data\\app.db' } },
+      '/api/setup/database/test': { body: { ok: true } },
+      '/api/setup/database/migrate': { body: { ok: true, appliedCount: 3 } },
+    });
+
+    render(<SetupWizard setupAccessOnly />);
+
+    (await screen.findByRole('button', { name: 'Bağlantıyı Test Et' })).click();
+    await screen.findByText('Bağlantı başarılı.');
+    (await screen.findByRole('button', { name: 'Migrasyonları Çalıştır' })).click();
+    await screen.findByText('Şema güncel (3 migrasyon uygulandı).');
+    screen.getByRole('button', { name: 'İleri' }).click();
+
+    await waitFor(() => expect(mockNavigation.router.push).toHaveBeenCalledWith('/bootstrap'));
+    expect(JSON.parse(window.localStorage.getItem(PROGRESS_KEY)!)).toMatchObject({
+      stepIndex: 1,
+      databaseReady: true,
+    });
+  });
+
   it('populated: a successful test and migrate enables İleri', async () => {
     stubFetch({
       '/api/setup/database/suggest': { body: { sqlite: 'file:C:\\data\\app.db' } },

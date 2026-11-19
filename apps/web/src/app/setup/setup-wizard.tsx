@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { EnabledModules } from '@buybox/shared';
 import { PageHeader } from '@/components/ui';
 import {
@@ -33,7 +34,8 @@ import { Step8Review } from './steps/step8-review';
  * like the "already answered, asked again" defect this pass exists to close even though nothing
  * they had saved was actually lost (doc 15 §6, Phase 6).
  */
-export default function SetupWizard() {
+export default function SetupWizard({ setupAccessOnly = false }: { setupAccessOnly?: boolean } = {}) {
+  const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const [databaseReady, setDatabaseReady] = useState(false);
   const [enabledMarketplaces, setEnabledMarketplaces] = useState<('trendyol' | 'hepsiburada')[]>([]);
@@ -104,6 +106,14 @@ export default function SetupWizard() {
         {step === 'database' && (
           <Step1Database
             onDone={() => {
+              if (setupAccessOnly) {
+                // Reached with the setup token, not as an administrator (doc 18 §8.1): the
+                // database now exists, so go create the administrator every later step needs.
+                // Saved here rather than by the effect, which the navigation may outrun.
+                saveWizardProgress({ stepIndex: 1, databaseReady: true, enabledMarketplaces, modules });
+                router.push('/bootstrap');
+                return;
+              }
               setDatabaseReady(true);
               next();
             }}
