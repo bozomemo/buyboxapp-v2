@@ -87,6 +87,11 @@ interface FeeSettings {
 
 Band amounts are used exactly as configured — there is no VAT normalisation (§0).
 
+**The last cargo band is open-ended** (`maxPrice: null`), and only the last one (product owner,
+2026-11-19). A save that breaks this is refused. Before, a price above every bound matched no band
+and the last amount was used anyway, so a floor could rest on a cargo cost nobody stated for that
+price.
+
 ---
 
 ## 4. Unit cost `U`

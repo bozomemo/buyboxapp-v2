@@ -56,6 +56,17 @@ export function feesPayloadToRow(
     throw new FeesPayloadError(`Ücret ayarları eksik veya hatalı: ${issue?.path.join('.') || 'gövde'} — ${issue?.message ?? ''}`);
   }
   const payload = parsed.data;
+  // The last cargo band is open-ended, and only the last (product owner, 2026-11-19; doc 02 §3):
+  // a price above every bound otherwise matched no band and silently took the last amount.
+  const bounds = payload.cargoBands.map((b) => (b.maxPrice ?? '').trim());
+  if (bounds.length === 0 || bounds[bounds.length - 1] !== '') {
+    throw new FeesPayloadError(
+      'Son kargo bandının üst sınırı boş olmalı: bu sınırın üstündeki fiyatların kargosu da tanımlı olmalı.',
+    );
+  }
+  if (bounds.slice(0, -1).some((bound) => bound === '')) {
+    throw new FeesPayloadError('Üst sınırı boş olan yalnızca son kargo bandı olabilir.');
+  }
   return {
     id: newId(),
     marketplaceCode: payload.marketplaceCode || marketplaceCodeFallback,

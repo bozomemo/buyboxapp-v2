@@ -45,7 +45,7 @@ describe('fee settings (feed the floor price)', () => {
   const valid = {
     marketplaceCode: 'TY',
     defaultCommissionRate: 15,
-    cargoBands: [{ maxPrice: '150', amount: '42,50' }],
+    cargoBands: [{ maxPrice: '150', amount: '42,50' }, { maxPrice: null, amount: '30' }],
     expenditureBands: [],
   };
 
@@ -75,7 +75,7 @@ describe('fee settings (feed the floor price)', () => {
     });
     const stale = {
       ...valid,
-      cargoBands: [{ maxPrice: '150.00', amount: '42.50' }],
+      cargoBands: [{ maxPrice: '150.00', amount: '42.50' }, { maxPrice: null, amount: '30' }],
       commissionVatRate: 20,
       commissionVatDeductible: true,
       cargoVatRate: 20,

@@ -26,7 +26,7 @@ Ekranın en üstündeki **Pazaryeri** listesinden **Trendyol** veya **Hepsiburad
 
 **Kargo Bantları (üst fiyat sınırı, tutar)**: satış fiyatına göre ödediğiniz kargo tutarı. Her satır bir banttır:
 
-- **Üst sınır (boş = sınırsız)**: bu bandın geçerli olduğu en yüksek satış fiyatı. Son bandın üst sınırını boş bırakın.
+- **Üst sınır (boş = sınırsız)**: bu bandın geçerli olduğu en yüksek satış fiyatı. Son bandın üst sınırını boş bırakın; boş değilse ya da boş olan son bant değilse ayarlar kaydedilmez.
 - **Tutar**: bu fiyat aralığında ödenen kargo.
 
 Bantlar yukarıdan aşağıya denenir; satış fiyatına uyan ilk bant kullanılır. Bu yüzden bantları küçük üst sınırdan büyüğe doğru sıralayın.
