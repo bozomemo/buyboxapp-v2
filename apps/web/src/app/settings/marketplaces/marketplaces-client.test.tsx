@@ -84,3 +84,29 @@ describe('MarketplacesClient', () => {
     expect(screen.getAllByText('Etkin')).toHaveLength(2);
   });
 });
+
+/**
+ * The environment select always showed "Prod": the screen never read the stored environment, so a
+ * test-environment install looked like production, and choosing "Prod" to go live fired no change
+ * and saved nothing (2026-11-19 walkthrough).
+ */
+describe('MarketplacesClient environment', () => {
+  it('shows the stored environment', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: {
+        body: {
+          marketplaces: [
+            { code: 'trendyol', displayName: 'Trendyol', enabled: true, merchantRef: '1', updatedAt: 0, environment: 'stage' },
+            { code: 'hepsiburada', displayName: 'Hepsiburada', enabled: true, merchantRef: '2', updatedAt: 0, environment: 'sit' },
+          ],
+        },
+      },
+      ...SELLER_ON,
+    });
+
+    render(<MarketplacesClient />);
+
+    expect(await screen.findByDisplayValue('Test (stageapigw.trendyol.com)')).toBeTruthy();
+    expect(screen.getByDisplayValue('Test (SIT)')).toBeTruthy();
+  });
+});

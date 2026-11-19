@@ -29,7 +29,7 @@ Mağazanızın o pazaryerindeki satıcı kodunu gösterir. Bu alan elle girilmez
 
 Bağlantı bilgileri güvenlik nedeniyle **hiçbir zaman ekranda gösterilmez**; daha önce kaydettiyseniz bile alanlar boş görünür. Yalnızca doldurduğunuz alanlar kaydedilir; boş bıraktığınız alanlar kayıtlı değeri korur. Alanlarda **değiştirmek için doldurun** yazar.
 
-- **Ortam (Environment)**: **Prod** gerçek mağazanızdır. **Test** seçenekleri pazaryerinin deneme ortamıdır; günlük kullanımda **Prod** seçili olmalıdır.
+- **Ortam (Environment)**: **Prod** gerçek mağazanızdır. **Test** seçenekleri pazaryerinin deneme ortamıdır; günlük kullanımda **Prod** seçili olmalıdır. Alan, kayıtlı olan ortamı gösterir; ortamı değiştirmek için seçip **Kaydet**'e tıklayın.
 - Trendyol: **API Anahtarı**, **API Gizli Anahtarı**, **Satıcı Kimliği (sellerId)**, **User-Agent Eki (opsiyonel)**.
 - Hepsiburada: **Mağaza Kullanıcı Adı**, **Şifre**, **Merchant ID**.
 

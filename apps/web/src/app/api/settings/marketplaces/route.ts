@@ -13,14 +13,35 @@ async function getHandler(request: Request, _context: unknown, auth: AuthContext
   const appDb = getAppDb();
   const marketplaces = await configRepo.listMarketplaces(appDb);
   return NextResponse.json({
-    marketplaces: marketplaces.map((m) => ({
-      code: m.code,
-      displayName: m.displayName,
-      enabled: m.enabled,
-      merchantRef: m.merchantRef,
-      updatedAt: m.updatedAt,
-    })),
+    marketplaces: await Promise.all(
+      marketplaces.map(async (m) => ({
+        code: m.code,
+        displayName: m.displayName,
+        enabled: m.enabled,
+        merchantRef: m.merchantRef,
+        updatedAt: m.updatedAt,
+        environment: await storedEnvironment(m.code),
+      })),
+    ),
   });
+}
+
+/**
+ * Prod or Test, read from the credentials record — the one field of it that is not a secret.
+ * The screen showed "Prod" for every install because it was never sent (2026-11-19). Nothing
+ * else in the record leaves the store. `null` when nothing is stored (or the store cannot be
+ * read): the screen then sends no environment back, so saving an untouched form cannot create a
+ * credentials record that holds an environment and no credentials.
+ */
+async function storedEnvironment(code: string): Promise<string | null> {
+  try {
+    const raw = await getSecretStore().get(marketplaceCredentialsKey(code));
+    if (!raw) return null;
+    const environment = (JSON.parse(raw) as { environment?: unknown }).environment;
+    return typeof environment === 'string' && environment !== '' ? environment : 'production';
+  } catch {
+    return null;
+  }
 }
 
 async function postHandler(request: Request, _context: unknown, auth: AuthContext) {

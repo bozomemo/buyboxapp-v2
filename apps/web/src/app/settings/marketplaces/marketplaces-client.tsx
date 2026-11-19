@@ -27,6 +27,8 @@ interface MarketplaceRow {
   enabled: boolean;
   merchantRef: string | null;
   updatedAt: number;
+  /** Prod or Test as stored; null when no credentials are stored, absent from an older server. */
+  environment?: string | null;
 }
 
 interface Form {
@@ -120,6 +122,12 @@ export function MarketplacesClient() {
                   enabled: existing.enabled,
                   merchantRef: existing.merchantRef ?? '',
                   updatedAt: existing.updatedAt,
+                  // The stored environment, so the select shows Test when Test is stored — it
+                  // showed Prod for every install, and picking Prod to go live changed nothing
+                  // (2026-11-19). Sent back on save as it is, which rewrites the same value.
+                  credentials: existing.environment
+                    ? { ...f.credentials, environment: existing.environment }
+                    : f.credentials,
                 }
               : f;
           }),
