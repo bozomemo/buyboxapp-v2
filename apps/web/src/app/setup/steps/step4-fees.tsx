@@ -289,7 +289,7 @@ export function Step4Fees({
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-(--color-muted)">
-        Varsayılan komisyon oranı, kargo bantları ve gider bantları (doc 02 §3). Fiyat hesaplarında KDV
+        Varsayılan komisyon oranı, kargo bantları ve gider bantları. Fiyat hesaplarında KDV
         kullanılmaz; tüm tutarlar satış fiyatıyla aynı (KDV dahil) temelde girilir. Kalıcı değerler
         mağazanızın gerçek sözleşme koşullarıyla eşleşmelidir — buradaki değerler başlangıç varsayımlarıdır ve
         Ayarlar ekranından daha sonra düzeltilebilir.

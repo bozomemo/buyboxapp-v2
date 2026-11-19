@@ -245,7 +245,7 @@ export function FeesClient() {
       <Section id="fees-form" title="Ücret Ayarları" card>
         <div className="max-w-[720px]">
           <p className="mb-3 text-xs text-(--color-muted)">
-            Kaydettiğinizde yeni bir satır, şimdiki zamanla etkin olarak eklenir (doc 05 §2) — geçmiş fiyat
+            Kaydettiğinizde yeni bir satır, şimdiki zamanla etkin olarak eklenir — geçmiş fiyat
             kararları hep o anda geçerli olan değerlerle açıklanabilir kalır, eski satır asla değiştirilmez.
           </p>
           {!hasCurrent && (

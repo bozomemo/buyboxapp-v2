@@ -93,10 +93,10 @@ export function RetentionClient() {
     <div className="flex max-w-[720px] flex-col gap-4">
       <p className="text-sm text-(--color-muted)">
         {isDefault
-          ? 'Şu anda varsayılan pencereler kullanılıyor (doc 05 §10).'
+          ? 'Şu anda varsayılan pencereler kullanılıyor.'
           : 'Özelleştirilmiş pencereler kullanılıyor.'}{' '}
         <code>competitor_observations</code> ve <code>scrape_runs</code> süresiz saklanır ve burada
-        listelenmez (doc 10 §5).
+        listelenmez.
       </p>
       <Section id="retention-windows" title="Saklama Pencereleri" card>
         <div className="grid grid-cols-2 gap-4">

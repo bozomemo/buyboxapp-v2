@@ -40,7 +40,7 @@ export function Step2StoreIdentity({ onDone, onBack }: { onDone: () => void; onB
     <div className="flex flex-col gap-4">
       <p className="text-sm text-(--color-muted)">
         Mağaza görünen adı, raporlarda ve uyarılarda kullanılır. Pazaryeri bazlı satıcı/mağaza kimlikleri bir
-        sonraki adımda (Pazaryerleri) girilir — tek doğruluk kaynağı orada saklanır (doc 08 R-CFG-4).
+        sonraki adımda (Pazaryerleri) girilir.
       </p>
       <Field label="Mağaza Görünen Adı" error={fieldError}>
         <TextInput

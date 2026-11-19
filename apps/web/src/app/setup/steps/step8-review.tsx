@@ -34,8 +34,8 @@ export function Step8Review({ modules, onBack }: { modules: EnabledModules; onBa
         <p className="text-sm text-(--color-muted)">
           Veritabanı hazır, mağaza kimliği kaydedildi, pazaryeri kimlik bilgileri şifreli olarak saklandı,
           ücret ve politika ayarları girildi, ürün kaynağı yapılandırıldı. Otomasyon her pazaryerinde{' '}
-          <strong>kapalı</strong> olarak başlayacak — Panel'den bilinçli olarak açacaksınız (doc 10 §6, adım
-          8). Sistem bittiğinde ürünleri içe aktarıp gözlemlemeye başlayacak, fiyat göndermeyecektir.
+          <strong>kapalı</strong> olarak başlayacak — Panel'den bilinçli olarak açacaksınız. Kurulum bittiğinde
+          sistem ürünleri içe aktarıp gözlemlemeye başlayacak, fiyat göndermeyecektir.
         </p>
       ) : (
         <p className="text-sm text-(--color-muted)">

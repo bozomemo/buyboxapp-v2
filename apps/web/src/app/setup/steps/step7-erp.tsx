@@ -8,7 +8,7 @@ export function Step7Erp({ onSkip, onBack }: { onDone: () => void; onBack: () =>
       <div className="rounded border border-dashed border-(--color-border) p-6 text-center text-(--color-muted)">
         <p className="font-medium">ERP Bağlantısı — yakında</p>
         <p className="mt-1 text-sm">
-          ERP veritabanı ve ERP API kaynakları doc 12 Faz 9 kapsamında planlanmıştır. Şimdilik bu adımı
+          ERP sisteminize bağlantı henüz desteklenmiyor; ileride eklenecek. Şimdilik bu adımı
           atlayabilirsiniz.
         </p>
       </div>

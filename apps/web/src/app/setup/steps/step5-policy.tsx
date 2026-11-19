@@ -196,8 +196,8 @@ export function Step5Policy({
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-(--color-muted)">
-        Fiyatlandırma motoru politikası (doc 03 §3). Otomasyon bu adımda kapalı kaydedilir — kurulum bittikten
-        sonra Panel'den pazaryeri bazında bilinçli olarak açarsınız (doc 10 §6, adım 8).
+        Fiyatlandırma motoru politikası. Otomasyon bu adımda kapalı kaydedilir — kurulum bittikten
+        sonra Panel'den pazaryeri bazında bilinçli olarak açarsınız.
       </p>
       {forms.map((form) => (
         <div key={form.code} className="rounded border border-(--color-border) p-4">

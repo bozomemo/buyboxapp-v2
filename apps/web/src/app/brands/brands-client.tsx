@@ -61,7 +61,7 @@ export function BrandsClient() {
       <PageHeader
         title="Markalar"
         breadcrumb={[{ label: 'Satış' }, { label: 'Markalar' }]}
-        description="Bugün yalnızca Trendyol için doldurulur — Hepsiburada'nın listeleme servisi marka bilgisi vermiyor (api-references §2.4)."
+        description="Bugün yalnızca Trendyol için doldurulur — Hepsiburada'nın listeleme servisi marka bilgisi vermiyor."
         action={
           <Button
             variant="secondary"

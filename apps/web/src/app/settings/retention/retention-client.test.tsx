@@ -54,7 +54,7 @@ describe('RetentionClient', () => {
     render(<RetentionClient />);
 
     expect(
-      await screen.findByText('Şu anda varsayılan pencereler kullanılıyor (doc 05 §10).', { exact: false }),
+      await screen.findByText('Şu anda varsayılan pencereler kullanılıyor.', { exact: false }),
     ).toBeTruthy();
   });
 
