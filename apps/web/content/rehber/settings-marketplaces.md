@@ -21,7 +21,7 @@ Her pazaryeri ayrı bir kartta görünür. Kartın başlığında son kaydın za
 
 ## Satıcı modülü açıkken
 
-### Satıcı Referansı (merchantRef)
+### Mağaza kimliği (otomatik)
 
 Mağazanızın o pazaryerindeki satıcı kodunu gösterir. Bu alan elle girilmez: bağlantı bilgilerindeki satıcı kodundan (Trendyol'da **Satıcı Kimliği (sellerId)**, Hepsiburada'da **Merchant ID**) otomatik belirlenir ve her ilan içe aktarımında doğrulanır. Uygulama kendi teklifinizi rakiplerinkinden bu kodla ayırır. Henüz belirlenmediyse **— henüz belirlenmedi —** yazar.
 

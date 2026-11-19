@@ -23,7 +23,7 @@ const MODULES: { key: AppModule; title: string; description: string }[] = [
     key: 'brand',
     title: 'Marka ürün yöneticisi',
     description:
-      'Markanızın ürünlerini kimin, hangi fiyata sattığını izleme. İzlenen Markalar, Takip Edilen Ürünler, Marka Satıcıları, Satıcı Politikası, Denetim Bulguları, Pazaryeri Eşleşmesi ve Marka Karşılaştırması ekranları bu modüldedir.',
+      'Markanızın ürünlerini kimin, hangi fiyata sattığını izleme. Marka Denetimi altındaki Stok, İlanlar, Alarmlar ve Kâr Ayarları ile İzlenen Markalar, Takip Edilen Ürünler, Marka Satıcıları, Satıcı Politikası, Denetim Bulguları, Pazaryeri Eşleşmesi ve Marka Karşılaştırması ekranları bu modüldedir.',
   },
 ];
 

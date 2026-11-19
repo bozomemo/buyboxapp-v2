@@ -17,7 +17,7 @@ Kapalı bir modüle ait bir ekranı açmaya çalışırsanız uygulama sizi bu s
 Her modülün bir onay kutusu vardır:
 
 - **Pazaryeri satıcısı**: kendi ilanlarınız, maliyet ve komisyon hesabı, otomatik fiyatlandırma ve fiyat gönderimi. Stok, İlanlar, Markalar, Rakip Geçmişi, Rakip Satıcılar ve Alarmlar ekranları bu modüldedir. Ayarlarda **Ücretler**, **Politika** ve **Ürün Kaynakları** sekmeleri de bu modüle aittir.
-- **Marka ürün yöneticisi**: markanızın ürünlerini kimin, hangi fiyata sattığını izleme. İzlenen Markalar, Takip Edilen Ürünler, Marka Satıcıları, Satıcı Politikası, Denetim Bulguları, Pazaryeri Eşleşmesi ve Marka Karşılaştırması ekranları bu modüldedir.
+- **Marka ürün yöneticisi**: markanızın ürünlerini kimin, hangi fiyata sattığını izleme. Marka Denetimi altındaki Stok, İlanlar, Alarmlar ve Kâr Ayarları ile İzlenen Markalar, Takip Edilen Ürünler, Marka Satıcıları, Satıcı Politikası, Denetim Bulguları, Pazaryeri Eşleşmesi ve Marka Karşılaştırması ekranları bu modüldedir.
 
 İkisini birden açabilirsiniz. En az bir modül açık kalmalıdır; ikisinin de işaretini kaldırırsanız **En az bir modül açık kalmalı.** uyarısı çıkar ve kaydedemezsiniz.
 

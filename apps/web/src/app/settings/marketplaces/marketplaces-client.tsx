@@ -271,7 +271,7 @@ export function MarketplacesClient() {
                   the seller id already in the credentials — free to drift from it, and silent when
                   it did: every own-offer filter simply matched nothing and our own store was
                   reported as our biggest competitor. */}
-                <Field label="Satıcı Referansı (merchantRef)">
+                <Field label="Mağaza kimliği (otomatik)">
                   <div className="rounded border border-(--color-border) bg-(--color-surface-2) px-2 py-1.5 text-sm">
                     {form.merchantRef || '— henüz belirlenmedi —'}
                   </div>
