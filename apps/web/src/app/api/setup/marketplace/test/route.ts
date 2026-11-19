@@ -11,6 +11,7 @@ import { mergeCredentials, missingTrendyolCredentials } from '@/lib/credential-m
 import { getSecretStore } from '@/lib/server/secrets';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
+import { describeConnectionFailure, hepsiburadaFieldLabel } from '@/lib/connection-failure';
 
 /**
  * The credentials this test should actually use: what the operator just typed, over what is
@@ -63,7 +64,7 @@ async function postHandler(request: Request) {
       const result = await adapter.testConnection(credentials as unknown as Credentials);
       return NextResponse.json({
         ok: result.ok,
-        message: result.ok ? (result.detail ?? 'Bağlantı başarılı.') : result.error,
+        message: result.ok ? (result.detail ?? 'Bağlantı başarılı.') : describeConnectionFailure('trendyol', result.error),
       });
     }
 
@@ -75,7 +76,7 @@ async function postHandler(request: Request) {
     if (!parsed.success) {
       return NextResponse.json({
         ok: false,
-        message: `Eksik veya geçersiz alan: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`,
+        message: `Eksik veya geçersiz alan: ${parsed.error.issues.map((i) => hepsiburadaFieldLabel(i.path.join('.'))).join(', ')}`,
       });
     }
     const adapter = new HepsiburadaAdapter({
@@ -83,9 +84,13 @@ async function postHandler(request: Request) {
       environment: credentials.environment === 'sit' ? 'sit' : 'production',
     });
     const result = await adapter.testConnection(parsed.data as unknown as Credentials);
-    return NextResponse.json({ ok: result.ok, message: result.ok ? 'Bağlantı başarılı.' : result.error });
+    return NextResponse.json({
+      ok: result.ok,
+      message: result.ok ? 'Bağlantı başarılı.' : describeConnectionFailure('hepsiburada', result.error),
+    });
   } catch (error) {
-    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : String(error) });
+    const raw = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ ok: false, message: describeConnectionFailure(body.marketplaceCode, raw) });
   }
 }
 

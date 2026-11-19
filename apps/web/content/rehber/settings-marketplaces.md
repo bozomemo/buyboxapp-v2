@@ -58,7 +58,12 @@ Göremezsiniz. Bilgiler kaydedildikten sonra uygulama bunları geri göstermez. 
 Hayır. Yalnızca şifre alanını doldurup test edin ve kaydedin; boş alanlar kayıtlı değerlerini korur.
 
 **Bağlantı testi hata veriyor.**
-**Ortam (Environment)** seçiminin **Prod** olduğunu ve bilgilerin satıcı panelindekiyle aynı olduğunu kontrol edin. Ayrıntılı hata için [Olaylar](/rehber/events) ekranına bakın.
+Mesaj neyin yanlış olduğunu söyler:
+
+- **… bilgileri kabul etmedi (HTTP 401 / 403)**: Pazaryeri giriş bilgilerini reddetti. Mesajda sayılan alanları satıcı panelindekiyle karşılaştırın. **Ortam (Environment)** olarak Test seçiliyse bilgilerin test ortamına ait olması gerekir; gerçek mağazanız için **Prod** seçin.
+- **… istenen kayıt bulunamadı (HTTP 404)**: Satıcı Kimliği ya da Merchant ID yanlış.
+- **Çok fazla istek (HTTP 429)** ya da **… şu anda yanıt vermiyor (HTTP 5xx)**: Sorun pazaryeri tarafında; birkaç dakika sonra yeniden deneyin.
+- **… bağlanılamadı**: Sunucu pazaryerine ulaşamıyor. İnternet bağlantısını kontrol edin; sürerse kurulumu yapan kişiye başvurun.
 
 **Bir pazaryerini kapatırsam ne olur?**
 O pazaryeri için içe aktarma, gözlem ve fiyat gönderimi durur. Kayıtlı bilgiler silinmez; yeniden açtığınızda kaldığı yerden devam eder.
