@@ -57,8 +57,8 @@ describe('/api/settings/notifications', () => {
       recipients: unknown;
     };
     expect(body.channels).toEqual([
-      { code: 'webhook', ready: false, reason: expect.stringContaining('ALERTS_WEBHOOK_URL') },
-      { code: 'email', ready: false, reason: expect.stringContaining('e-posta yapılandırılmamış') },
+      { code: 'webhook', ready: false, reason: expect.stringContaining('webhook adresi ayarlanmamış') },
+      { code: 'email', ready: false, reason: expect.stringContaining('e-posta sunucusu ayarlanmamış') },
       { code: 'sms', ready: false, reason: 'SMS sağlayıcısı seçilmemiş' },
     ]);
     expect(body.recipients).toEqual({ email: [], sms: [] });
@@ -90,6 +90,6 @@ describe('/api/settings/notifications', () => {
   it('test send to an unconfigured channel is refused with the reason, not attempted', async () => {
     const response = await TEST(request('http://x/api/settings/notifications/test', json({ channel: 'email' })), routeContext());
     expect(response.status).toBe(409);
-    expect(((await response.json()) as { error: string }).error).toContain('e-posta yapılandırılmamış');
+    expect(((await response.json()) as { error: string }).error).toContain('e-posta sunucusu ayarlanmamış');
   });
 });
