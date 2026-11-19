@@ -13,7 +13,7 @@ Her başlık bir belirtiyle başlar. Altında olası nedenler, en sık rastlanan
 
 ## Hiçbir şey çalışmıyor, veriler güncellenmiyor
 
-1. **Sistem duraklatılmış.** Sağ üstteki düğmede **Genel Durdurma: Duraklatıldı** yazıyorsa tüm işler durmuştur. Yeni kurulumlar da bu durumda başlar. Düğmeye tıklayıp sistemi başlatın. Bkz. [Otomasyon ve Durdurma](/rehber/concepts-automation-and-stop).
+1. **Sistem duraklatılmış.** Sağ üstteki düğmede **Genel Durdurma: Duraklatıldı** yazıyorsa tüm işler durmuştur. Kurulum Sihirbazı bitmemiş bir kurulum da bu durumda bekler. Düğmeye tıklayıp sistemi başlatın. Bkz. [Otomasyon ve Durdurma](/rehber/concepts-automation-and-stop).
 2. **Panel'de "Worker çalışmıyor".** İşleri çalıştıran arka plan hizmeti durmuş. Kurulumu yapan kişiye başvurun; sunucudaki hizmetin yeniden başlatılması gerekir.
 3. **Panel'de "Veritabanına ulaşılamıyor".** Veritabanı bağlantısı kopmuş. **Veritabanı ayarları** bağlantısını açın; bilgiler değişmediyse kurulumu yapan kişiye başvurun.
 4. **Panel'de "Veritabanı şeması bu sürümle uyuşmuyor".** Bir güncellemeden sonra veritabanının da güncellenmesi gerekiyor. Yönetici, uyarıdaki **Göçleri uygula** bağlantısıyla bunu yapabilir.

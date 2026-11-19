@@ -13,7 +13,7 @@ Genel ilk adımları ([Kurulumdan Sonra İlk Adımlar](/rehber/start)) tamamlad�
 
 1. **Marka Denetimi → Stok** ekranında markanızın ürünlerini, satış fiyatı ve izin verilen en düşük / en yüksek fiyatla ekleyin ya da Excel'den içe aktarın. Ayrıntılar: [Marka Stok](/rehber/brand-products).
 2. Ürünleri pazaryerindeki ürün kartlarına bağlayın.
-3. Sistem henüz duraklatılmışsa sağ üstteki **Genel Durdurma: Duraklatıldı** düğmesine tıklayarak başlatın; aksi halde tarama yapılmaz.
+3. Sağ üstteki düğmede **Sistem Çalışıyor** yazdığını kontrol edin. Kurulum Sihirbazı bittiğinde sistem kendiliğinden başlar; düğmede **Genel Durdurma: Duraklatıldı** yazıyorsa tıklayarak başlatın, aksi halde tarama yapılmaz.
 4. **İzlenen Markalar** ekranında izlenecek markaları ekleyin. Ayrıntılar: [İzlenen Markalar](/rehber/watched-brands).
 5. Fiyat bandını ihlal eden ilanlar **Alarmlar** ekranında görünür. Bildirim almak istiyorsanız **Ayarlar → Bildirimler** ekranından e-posta veya SMS alıcılarını girin. Ayrıntılar: [Marka Alarmları](/rehber/brand-alerts), [Bildirimler](/rehber/settings-notifications).
 

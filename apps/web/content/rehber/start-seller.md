@@ -27,9 +27,9 @@ Ayrıntılar: [Stok](/rehber/stock), [Taban Fiyat](/rehber/concepts-floor-price)
 
 ## 3. Otomasyonu güvenle açmak
 
-Yeni kurulum güvenlik için **duraklatılmış** başlar: hiçbir iş çalışmaz ve fiyat gönderimi kapalıdır. Fiyatlar pazaryerine yalnızca **Fiyat gönderimi** açıkken gider. Önerdiğimiz sıra:
+Kurulum Sihirbazı bittiğinde sistem çalışmaya başlar, ama **fiyat gönderimi kapalı** başlar: uygulama ilanları içe aktarır ve fiyatları hesaplar, hiçbirini pazaryerine göndermez. Fiyatlar pazaryerine yalnızca **Fiyat gönderimi** açıkken gider. Önerdiğimiz sıra:
 
-1. Sağ üstteki **Genel Durdurma: Duraklatıldı** düğmesine tıklayarak sistemi başlatın. **Panel**'deki **Güvenlik Anahtarları** bölümünde fiyat gönderimini şimdilik kapalı tutun. Uygulama bu durumda ilanları içe aktarır ve fiyatları hesaplar ama göndermez.
+1. Sağ üstteki düğmede **Sistem Çalışıyor** yazdığını kontrol edin; **Genel Durdurma: Duraklatıldı** yazıyorsa tıklayarak başlatın. **Panel**'deki **Güvenlik Anahtarları** bölümünde fiyat gönderimini şimdilik kapalı tutun. Uygulama bu durumda ilanları içe aktarır ve fiyatları hesaplar ama göndermez.
 2. Birkaç saat bekleyin; **İlanlar** ekranında hesaplanan fiyatları, faz ve karar açıklamalarını inceleyin. Bir ilanın hesaplanan fiyatı size mantıksız geliyorsa önce o ürünün maliyetini ve ücret ayarlarını kontrol edin.
 3. Gerekirse belirli ilanlara en düşük / en yüksek fiyat sınırı koyun (**İlanlar** ekranındaki **Min/Max** sütunu). Bu sınırlar otomasyonun asla geçemeyeceği sınırlardır.
 4. Otomasyonu önce küçük bir ilan grubunda açın (**İlanlar** ekranında seçip **Otomasyonu Aç**).

@@ -36,7 +36,7 @@ Lisans süresi dolmuş ama ek süre içindeyseniz, üst çubuğun üstünde sar�
 
 Düğme iki durumdan birini gösterir:
 
-- **Genel Durdurma: Duraklatıldı** (gri): Hiçbir iş çalışmıyor. İçe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi durmuştur. Bu, sistemin güvenli varsayılan durumudur.
+- **Genel Durdurma: Duraklatıldı** (gri): Hiçbir iş çalışmıyor. İçe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi durmuştur. Kurulum Sihirbazı bitene kadar sistem bu durumda bekler.
 - **Sistem Çalışıyor** (yeşil): İşler normal şekilde çalışıyor.
 
 Yeşil düğmeye tıklarsanız sistem hemen duraklatılır, onay sorulmaz. Gri düğmeye tıklarsanız sistemi devam ettirmek istediğinizden emin olup olmadığınız sorulur. Onay verdiğinizde tüm işler yeniden başlar.

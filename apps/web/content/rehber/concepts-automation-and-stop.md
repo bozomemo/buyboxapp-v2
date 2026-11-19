@@ -19,7 +19,7 @@ Her ekranın sağ üstündeki düğme. Normalde **Sistem Çalışıyor** yazar.
 
 Ne zaman: Bir şeylerin ters gittiğinden şüphelendiğinizde, nedenini anlayana kadar her şeyi durdurmak için. Tek tıkla, her ekrandan.
 
-> **Yeni kurulum duraklatılmış başlar.** Güvenlik için yeni bir kurulumda hiçbir iş çalışmaz; ayarlarınızı tamamladıktan sonra **Genel Durdurma: Duraklatıldı** düğmesine tıklayıp sistemi siz başlatırsınız.
+> **Yeni kurulumda:** Kurulum Sihirbazı bitene kadar sistem duraklatılmış durur ve hiçbir iş çalışmaz. Sihirbazda **Kurulumu Bitir**'e tıkladığınızda sistem kendiliğinden çalışmaya başlar: ilanları içe aktarır ve fiyatları hesaplar. Fiyatların pazaryerine gönderilmesi ise ayrıca kapalı başlar; siz açana kadar hiçbir fiyat gönderilmez. Bkz. [Fiyat Gönderimi ve İlan Otomasyonu](/rehber/concepts-price-submission).
 
 ## Kim ne yapabilir
 

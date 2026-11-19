@@ -15,7 +15,7 @@ Ekranlara özgü sorular her ekranın kendi bölümünün sonunda da yer alır. 
 Satış modülü, Trendyol ve Hepsiburada'daki ilanlarınızın fiyatını buybox'ı kazanacak ve kâr bırakacak şekilde otomatik ayarlar. Marka modülü, bir markanın ürünlerinin pazardaki fiyatlarını izler ve belirlenen bandın dışına çıkanları bildirir. Bkz. [Kurulumdan Sonra İlk Adımlar](/rehber/start).
 
 **Yeni kurdum ama hiçbir şey olmuyor.**
-Yeni kurulum güvenlik için duraklatılmış başlar. Sağ üstteki **Genel Durdurma: Duraklatıldı** düğmesine tıklayarak sistemi başlatın. Bkz. [Otomasyon ve Durdurma](/rehber/concepts-automation-and-stop).
+Önce Kurulum Sihirbazı'nın bittiğinden emin olun: sihirbaz bitene kadar sistem duraklatılmış durur. Sihirbaz bittiyse sağ üstteki düğmeye bakın; **Genel Durdurma: Duraklatıldı** yazıyorsa biri sistemi durdurmuştur, düğmeye tıklayarak başlatın. Fiyatların pazaryerine gitmemesi ise beklenir: fiyat gönderimi yeni kurulumda kapalıdır. Bkz. [Otomasyon ve Durdurma](/rehber/concepts-automation-and-stop).
 
 **Bir şeyler ters gidiyor, her şeyi nasıl durdururum?**
 Her ekranın sağ üstündeki **Sistem Çalışıyor** düğmesine tıklayın. Tüm işler durur; pazaryerindeki fiyatlar olduğu gibi kalır.
