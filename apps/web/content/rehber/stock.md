@@ -83,9 +83,10 @@ Başlığa tıklayınca açılır. Birden fazla ürünü birlikte satan paketler
 - Üstte kaç paket olduğu yazar. Her paketin adı, kodu ve **… üye** sayısı listelenir.
 - Paketin adına tıklayınca düzenleme açılır.
 - **Yeni Paket** boş bir paket açar.
+- **Paket stok kodu** alanına paketin pazaryerindeki ilanda kullandığınız stok kodunu yazın, örneğin `12345-k2`. Kod `-k` içermelidir; uygulama paketi ilana bu kodla bağlar. Bu kod sonradan değiştirilemez; var olan bir paketi açtığınızda yalnızca gösterilir.
 - **Paket adı** alanına adı yazın.
 - Her üye için **Üye stok kodu** ve miktarı girin. **Sil** üyeyi çıkarır, **Üye Ekle** yeni satır ekler. Üye sayısında sınır yoktur.
-- **Kaydet** paketi kaydeder, **Vazgeç** değişiklikleri bırakır.
+- **Kaydet** paketi kaydeder, **Vazgeç** değişiklikleri bırakır. Kod `-k` içermiyorsa, hiç üye yoksa ya da bir miktar 1'den küçükse paket kaydedilmez ve nedeni formun altında yazar.
 
 ## Kimler değişiklik yapabilir
 

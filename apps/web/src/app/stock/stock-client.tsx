@@ -500,11 +500,16 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
   const [editing, setEditing] = useState<string | undefined>();
   const [name, setName] = useState('');
   const [members, setMembers] = useState<{ memberStockCode: string; quantity: number }[]>([]);
+  // A new bundle's stock code, typed by the operator: it must be the code the listing carries
+  // ("12345-k2", doc 01 §6). It used to be `Date.now()`, which no listing carries (2026-11-19).
+  const [newCode, setNewCode] = useState('');
+  const [saveError, setSaveError] = useState<string | undefined>();
 
   function load() {
     fetch('/api/stock/bundles')
-      .then((r) => r.json())
-      .then((d: { bundles: BundleSummary[] }) => setBundles(d.bundles));
+      .then((r) => (r.ok ? r.json() : { bundles: [] }))
+      .then((d: { bundles?: BundleSummary[] }) => setBundles(d.bundles ?? []))
+      .catch(() => setBundles([]));
   }
   useEffect(load, []);
 
@@ -518,18 +523,31 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
 
   function openNew() {
     setEditing('');
+    setNewCode('');
     setName('');
     setMembers([]);
+    setSaveError(undefined);
   }
 
   async function save() {
     if (editing === undefined) return;
-    const bundleStockCode = editing || `${Date.now()}`;
-    await fetch('/api/stock/bundles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bundleStockCode, name, members }),
-    });
+    const bundleStockCode = editing || newCode.trim();
+    setSaveError(undefined);
+    try {
+      const res = await fetch('/api/stock/bundles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bundleStockCode, name, members }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setSaveError(body.error ?? 'Paket kaydedilemedi.');
+        return;
+      }
+    } catch {
+      setSaveError('Paket kaydedilemedi. Bağlantıyı kontrol edip yeniden deneyin.');
+      return;
+    }
     setEditing(undefined);
     load();
     onChanged();
@@ -566,6 +584,17 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
       )}
       {editing !== undefined && (
         <div className="space-y-2 border-t border-(--color-border) pt-2">
+          {editing === '' ? (
+            <TextInput
+              value={newCode}
+              onChange={(e) => setNewCode(e.target.value)}
+              placeholder="Paket stok kodu (ör. 12345-k2)"
+              aria-label="Paket stok kodu"
+              className="w-full"
+            />
+          ) : (
+            <p className="text-xs text-(--color-muted)">Paket stok kodu: {editing}</p>
+          )}
           <TextInput
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -621,6 +650,11 @@ function BundleEditor({ onChanged }: { onChanged: () => void }) {
           >
             Üye Ekle
           </Button>
+          {saveError && (
+            <p role="alert" className="text-xs text-(--color-danger)">
+              {saveError}
+            </p>
+          )}
           <div className="flex gap-2">
             <Button size="sm" type="button" onClick={() => void save()}>
               Kaydet

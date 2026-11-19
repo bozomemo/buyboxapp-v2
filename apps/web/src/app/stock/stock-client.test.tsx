@@ -137,3 +137,48 @@ describe('StockClient multiplier', () => {
     expect(prefsBodies()).toEqual([]);
   });
 });
+
+/**
+ * The bundle editor saved a new bundle under `Date.now()` with no field for its code, so the
+ * bundle could never match the listing that carries "12345-k2" (doc 01 §6); a refused save was
+ * not shown (2026-11-19 walkthrough).
+ */
+describe('StockClient bundle editor', () => {
+  function bundlePosts(): unknown[] {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter((c) => String(c[0]) === '/api/stock/bundles' && (c[1] as RequestInit | undefined)?.method === 'POST')
+      .map((c) => JSON.parse(String((c[1] as RequestInit).body)));
+  }
+
+  async function openNewBundle(saveResponse: { status?: number; body: unknown }) {
+    stubFetch({
+      '/api/stock': { body: { items: [], marketplaces: [] } },
+      '/api/product-source/config': { body: { configured: false } },
+      '/api/stock/bundles': saveResponse.status ? { status: saveResponse.status, body: saveResponse.body } : { body: { bundles: [] } },
+    });
+    render(<StockClient />);
+    (await screen.findByRole('button', { name: 'Yeni Paket' })).click();
+    return screen.findByLabelText('Paket stok kodu');
+  }
+
+  it('asks for the bundle stock code and posts it', async () => {
+    const code = await openNewBundle({ body: { bundles: [] } });
+    fireEvent.change(code, { target: { value: '12345-k2' } });
+    fireEvent.change(screen.getByLabelText('Paket adı'), { target: { value: 'Paket' } });
+    screen.getByRole('button', { name: 'Üye Ekle' }).click();
+    fireEvent.change(await screen.findByLabelText('1. üye stok kodu'), { target: { value: 'TST001' } });
+    screen.getByRole('button', { name: 'Kaydet' }).click();
+    await waitFor(() =>
+      expect(bundlePosts()).toEqual([expect.objectContaining({ bundleStockCode: '12345-k2', name: 'Paket' })]),
+    );
+  });
+
+  it('shows why the server refused a save and keeps the form open', async () => {
+    const code = await openNewBundle({ status: 400, body: { ok: false, error: 'Pakete en az bir üye ekleyin.' } });
+    fireEvent.change(code, { target: { value: '12345-k2' } });
+    screen.getByRole('button', { name: 'Kaydet' }).click();
+    expect(await screen.findByText('Pakete en az bir üye ekleyin.')).toBeTruthy();
+    expect(screen.getByLabelText('Paket stok kodu')).toBeTruthy();
+  });
+});
