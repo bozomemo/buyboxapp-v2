@@ -220,3 +220,63 @@ describe('FindingsClient', () => {
     });
   });
 });
+
+/**
+ * The thresholds were `type="number"` fields read with `Number()`: in a dot-decimal browser
+ * "2,5" became 25, and an emptied field 0 (2026-11-19 walkthrough).
+ */
+describe('FindingsClient thresholds', () => {
+  const REPORT = {
+    ...CATALOGUE,
+    brand: BRAND,
+    needsBrand: false,
+    findings: [],
+    notificationsConfigured: true,
+    filters: { sinceMs: 0, untilMs: 1 },
+    context: {
+      hasAuthorisedList: true,
+      sellerCount: 0,
+      productCount: 0,
+      truncatedDeviations: false,
+      truncatedDisagreements: false,
+      disagreementTotal: 0,
+    },
+  };
+
+  function postedThresholds(): unknown[] {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter((c) => String(c[0]).startsWith('/api/brand-reports/thresholds'))
+      .map((c) => JSON.parse(String((c[1] as RequestInit).body)));
+  }
+
+  async function openThresholds() {
+    stubFetch({
+      '/api/brand-reports/findings': { body: REPORT },
+      '/api/brand-reports/thresholds': { body: { ok: true } },
+    });
+    render(<FindingsClient />);
+    (await screen.findByRole('button', { name: 'Eşikler' })).click();
+    return screen.findByLabelText('Tavsiye fiyat toleransı');
+  }
+
+  it('reads "2,5" as 2.5', async () => {
+    const input = await openThresholds();
+    fireEvent.change(input, { target: { value: '2,5' } });
+    screen.getByRole('button', { name: 'Kaydet ve yeniden hesapla' }).click();
+    await waitFor(() => expect(postedThresholds()).toEqual([expect.objectContaining({ referenceBelowPct: 2.5 })]));
+  });
+
+  it('does not send an emptied field', async () => {
+    const input = await openThresholds();
+    fireEvent.change(input, { target: { value: '' } });
+    screen.getByRole('button', { name: 'Kaydet ve yeniden hesapla' }).click();
+    expect(await screen.findByText(/Tavsiye fiyat toleransı.*sayı olmalı/)).toBeTruthy();
+    expect(postedThresholds()).toEqual([]);
+  });
+
+  it('does not name an internal table', async () => {
+    await openThresholds();
+    expect(screen.queryByText(/settings_audit/)).toBeNull();
+  });
+});

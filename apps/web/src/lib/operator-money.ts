@@ -49,3 +49,11 @@ export function parsePositiveRatio(input: unknown): number | null {
   const value = Number(text.replace(',', '.'));
   return value > 0 ? value : null;
 }
+
+/** As {@link parsePositiveRatio}, but zero is allowed — for thresholds whose floor is 0. */
+export function parseNonNegativeNumber(input: unknown): number | null {
+  if (typeof input !== 'string') return null;
+  const text = input.trim();
+  if (!RATIO.test(text)) return null;
+  return Number(text.replace(',', '.'));
+}

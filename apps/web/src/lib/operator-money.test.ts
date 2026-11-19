@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isOperatorDecimal, parsePositiveRatio, toWireDecimal } from './operator-money';
+import { isOperatorDecimal, parseNonNegativeNumber, parsePositiveRatio, toWireDecimal } from './operator-money';
 
 describe('toWireDecimal', () => {
   it.each([
@@ -62,5 +62,14 @@ describe('parsePositiveRatio', () => {
 
   it.each([[''], ['0'], ['0,0'], ['-1'], ['abc'], ['1,2,3'], ['1.234,5'], ['1,23456'], ['1e2']])('refuses %j', (input) => {
     expect(parsePositiveRatio(input)).toBeNull();
+  });
+});
+
+describe('parseNonNegativeNumber', () => {
+  it('allows zero and a comma decimal', () => {
+    expect(parseNonNegativeNumber('0')).toBe(0);
+    expect(parseNonNegativeNumber('2,5')).toBe(2.5);
+    expect(parseNonNegativeNumber('')).toBeNull();
+    expect(parseNonNegativeNumber('-1')).toBeNull();
   });
 });

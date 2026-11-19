@@ -19,6 +19,12 @@ import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { FINDING_BASIS_LABELS, FINDING_KIND_LABELS, labelOf } from '@/lib/labels';
 import { marketplaceProductUrl } from '@/lib/product-url';
+import { parseNonNegativeNumber } from '@/lib/operator-money';
+
+/** A threshold shown the Turkish way ("2,5"), as the operator will type it back. */
+function thresholdText(value: number): string {
+  return String(value).replace('.', ',');
+}
 
 /**
  * Denetim bulguları (doc 06 §12.4, Faz 6; IA reworked doc 15 §6, Phase 2.4).
@@ -541,7 +547,9 @@ export function FindingsClient() {
   const [evidence, setEvidence] = useState<EvidenceLook[] | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [showThresholds, setShowThresholds] = useState(false);
-  const [draft, setDraft] = useState<Thresholds | null>(null);
+  // Text per field, not `type="number"` read with `Number()`: a dot-decimal browser turned "2,5"
+  // into 25 and an emptied field into 0 (2026-11-19). Parsed only on save.
+  const [draft, setDraft] = useState<Record<keyof Thresholds, string> | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
@@ -554,7 +562,11 @@ export function FindingsClient() {
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Bulgular yüklenemedi.'))))
       .then((data: Report) => {
         setReport(data);
-        setDraft(data.thresholds);
+        setDraft(
+          Object.fromEntries(
+            Object.entries(data.thresholds).map(([key, value]) => [key, thresholdText(value as number)]),
+          ) as Record<keyof Thresholds, string>,
+        );
         if (!brandId && data.brand) setBrandId(data.brand.id);
       })
       .catch((e: Error) => setError(e.message))
@@ -591,13 +603,22 @@ export function FindingsClient() {
 
   const saveThresholds = useCallback(async () => {
     if (!draft) return;
+    const parsed: Partial<Thresholds> = {};
+    for (const field of THRESHOLD_FIELDS) {
+      const value = parseNonNegativeNumber(draft[field.key]);
+      if (value === null) {
+        setError(`${field.label}: sıfır ya da daha büyük bir sayı olmalı (ör. 2,5).`);
+        return;
+      }
+      parsed[field.key] = value;
+    }
     setSaving(true);
     setError(null);
     try {
       const res = await fetch('/api/brand-reports/thresholds', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(draft),
+        body: JSON.stringify(parsed),
       });
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
@@ -758,12 +779,11 @@ export function FindingsClient() {
                   <span className="mb-1 block">{field.label}</span>
                   <span className="flex items-center gap-2">
                     <TextInput
-                      type="number"
-                      min={0}
-                      step="any"
+                      inputMode="decimal"
+                      aria-label={field.label}
                       className="w-24"
                       value={draft[field.key]}
-                      onChange={(e) => setDraft({ ...draft, [field.key]: Number(e.target.value) })}
+                      onChange={(e) => setDraft({ ...draft, [field.key]: e.target.value })}
                     />
                     <span className="text-xs text-(--color-muted)">{field.unit}</span>
                   </span>
@@ -780,8 +800,7 @@ export function FindingsClient() {
               </Button>
             </div>
             <p className="text-xs text-(--color-muted)">
-              Eşik değişiklikleri kim değiştirdiyse onunla birlikte kaydedilir (<code>settings_audit</code>).
-              Bir satıcının denetim listesine girip girmeyeceğini belirleyen sayı, izsiz değişmemeli.
+              Eşik değişiklikleri kim değiştirdiyse onunla birlikte kaydedilir. Bir satıcının denetim listesine girip girmeyeceğini belirleyen sayı, izsiz değişmemeli.
             </p>
           </div>
         </Section>

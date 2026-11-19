@@ -81,7 +81,7 @@ Sayılar **tekliflerden** gelir: bir satıcının ürünü kaç kez listelediği
 | **Seyrek kategori payı** (%) | Markanın ürünlerinin en fazla bu kadarını barındıran kategori olağandışıdır |
 | **Seyrek kategori ürün sayısı** | Ve en fazla bu kadar ürün |
 
-**Kaydet ve yeniden hesapla** yeni eşikleri kaydeder ve tüm dönemi yeniden değerlendirir. **Varsayılanlara dön** değişiklikleri geri alır. Eşik değişiklikleri kimin değiştirdiğiyle birlikte kaydedilir. Eşikleri değiştirmek Yönetici ve Fiyat Yöneticisi rollerine açıktır.
+Ondalık değerleri virgülle yazın (2,5). **Kaydet ve yeniden hesapla** yeni eşikleri kaydeder ve tüm dönemi yeniden değerlendirir. **Varsayılanlara dön** değişiklikleri geri alır. Eşik değişiklikleri kimin değiştirdiğiyle birlikte kaydedilir. Eşikleri değiştirmek Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
 Hiç bulgu çıkmıyorsa _Bu dönemde ve bu eşiklerle bulgu yok._ yazar ve **Eşikleri aç** düğmesi görünür. Eşikler bir keşif aracıdır; daraltarak deneyebilirsiniz.
 
