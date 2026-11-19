@@ -9,6 +9,7 @@ import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
+import { toWireDecimal } from '@/lib/operator-money';
 
 async function getHandler() {
   const appDb = getAppDb();
@@ -44,7 +45,7 @@ async function postHandler(request: Request) {
     await stockRepo.upsertStockItem(appDb, {
       baseStockCode: body.baseStockCode,
       name: body.name,
-      unitCost: Money.fromMajorUnitsString(body.unitCost).toKurus(),
+      unitCost: Money.fromMajorUnitsString(toWireDecimal(body.unitCost)).toKurus(),
       unitStock: body.unitStock,
       sourceCode: 'manual',
       sourceRef: null,

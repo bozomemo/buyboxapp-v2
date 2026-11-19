@@ -30,6 +30,7 @@ import { getAppDb } from '@/lib/server/db';
 import { FeesPayloadError, feesPayloadToRow } from '@/app/api/setup/fees/to-row';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
+import { toWireDecimal } from '@/lib/operator-money';
 
 async function loadState(appDb: ReturnType<typeof getAppDb>, listingId: string): Promise<RepricingState> {
   const row = await repricingRepo.getRepricingState(appDb, listingId);
@@ -131,10 +132,10 @@ async function postHandler(request: Request) {
     coarseStepMode: policyPayload.coarseStepMode,
     coarseStepAbsolute: coarseStep.absolute,
     coarseStepPercent: coarseStep.percent,
-    refineTolerance: Money.fromMajorUnitsString(policyPayload.refineTolerance || '0').toKurus(),
+    refineTolerance: Money.fromMajorUnitsString(toWireDecimal(policyPayload.refineTolerance || '0')).toKurus(),
     seekStrategy: policyPayload.seekStrategy,
-    undercutBy: Money.fromMajorUnitsString(policyPayload.undercutBy || '0.10').toKurus(),
-    seekStep: Money.fromMajorUnitsString(policyPayload.seekStep || '1.00').toKurus(),
+    undercutBy: Money.fromMajorUnitsString(toWireDecimal(policyPayload.undercutBy || '0.10')).toKurus(),
+    seekStep: Money.fromMajorUnitsString(toWireDecimal(policyPayload.seekStep || '1.00')).toKurus(),
     soleSellerMarginPct: Number(policyPayload.soleSellerMarginPct),
     lowStockGuardEnabled: policyPayload.lowStockGuardEnabled,
     lowStockThreshold: Number(policyPayload.lowStockThreshold),
@@ -143,7 +144,7 @@ async function postHandler(request: Request) {
     minPhysicalStock: Number(policyPayload.minPhysicalStock),
     requirePriceConfirmation: false,
     settleDurationMs: Number(policyPayload.settleDurationMinutes) * 60_000,
-    competitorPriceDelta: Money.fromMajorUnitsString(policyPayload.competitorPriceDelta || '0').toKurus(),
+    competitorPriceDelta: Money.fromMajorUnitsString(toWireDecimal(policyPayload.competitorPriceDelta || '0')).toKurus(),
     useSellerIdentityTrigger: false,
     pollIntervalMs: Number(policyPayload.pollIntervalMinutes) * 60_000,
     concurrency: Number(policyPayload.concurrency),

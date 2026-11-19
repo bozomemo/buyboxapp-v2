@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Trash2 } from '@/components/icon';
 import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
+import { isOperatorDecimal } from '@/lib/operator-money';
 
 interface Band {
   edge: string; // maxPrice for cargo, minPrice for expenditure — decimal string, "" = unbounded
@@ -57,9 +58,9 @@ function percentError(value: string): string | undefined {
 
 function amountError(value: string, allowEmpty: boolean): string | undefined {
   if (value.trim() === '') return allowEmpty ? undefined : 'Gerekli.';
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 'Geçerli bir tutar olmalı (örn. 11.00).';
-  if (n < 0) return 'Negatif olamaz.';
+  // The same grammar the save route reads (`toWireDecimal`): "39,99" and "39.99", never "1.400".
+  if (!isOperatorDecimal(value)) return 'Geçerli bir tutar olmalı (örn. 11,00).';
+  if (value.trim().startsWith('-')) return 'Negatif olamaz.';
   return undefined;
 }
 
@@ -258,7 +259,7 @@ export function Step4Fees({
       setPreview((p) => ({
         ...p,
         [form.code]: data.ok
-          ? `100,00 ₺ maliyetli bir ürün için dip fiyat: ${data.floorPrice}`
+          ? `₺100,00 maliyetli bir ürün için dip fiyat: ${data.floorPrice}`
           : (data.error ?? 'Hesaplanamadı'),
       }));
     } finally {

@@ -11,6 +11,7 @@ import { getAppDb } from '@/lib/server/db';
 import { parseCoarseStep } from '@/lib/policy-coarse-step';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
+import { toWireDecimal } from '@/lib/operator-money';
 
 interface PolicyPayload {
   code: string;
@@ -50,10 +51,10 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
     coarseStepMode: body.coarseStepMode,
     coarseStepAbsolute: coarseStep.absolute,
     coarseStepPercent: coarseStep.percent,
-    refineTolerance: Money.fromMajorUnitsString(body.refineTolerance).toKurus(),
+    refineTolerance: Money.fromMajorUnitsString(toWireDecimal(body.refineTolerance)).toKurus(),
     seekStrategy: body.seekStrategy,
-    undercutBy: Money.fromMajorUnitsString(body.undercutBy || '0.10').toKurus(),
-    seekStep: Money.fromMajorUnitsString(body.seekStep || '1.00').toKurus(),
+    undercutBy: Money.fromMajorUnitsString(toWireDecimal(body.undercutBy || '0.10')).toKurus(),
+    seekStep: Money.fromMajorUnitsString(toWireDecimal(body.seekStep || '1.00')).toKurus(),
     soleSellerMarginPct: Number(body.soleSellerMarginPct),
     lowStockGuardEnabled: body.lowStockGuardEnabled,
     lowStockThreshold: Number(body.lowStockThreshold),
@@ -62,7 +63,7 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
     minPhysicalStock: Number(body.minPhysicalStock),
     requirePriceConfirmation: previous?.requirePriceConfirmation ?? false,
     settleDurationMs: Number(body.settleDurationMinutes) * 60_000,
-    competitorPriceDelta: Money.fromMajorUnitsString(body.competitorPriceDelta).toKurus(),
+    competitorPriceDelta: Money.fromMajorUnitsString(toWireDecimal(body.competitorPriceDelta)).toKurus(),
     useSellerIdentityTrigger: previous?.useSellerIdentityTrigger ?? false,
     pollIntervalMs: Number(body.pollIntervalMinutes) * 60_000,
     concurrency: Number(body.concurrency),

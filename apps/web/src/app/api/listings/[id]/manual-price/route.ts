@@ -12,6 +12,7 @@ import { Money } from '@buybox/shared';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
+import { toWireDecimal } from '@/lib/operator-money';
 
 async function postHandler(
   request: Request,
@@ -27,7 +28,7 @@ async function postHandler(
   const listing = await listingsRepo.getListing(appDb, id);
   if (!listing) return NextResponse.json({ ok: false, error: 'İlan bulunamadı.' }, { status: 404 });
 
-  const newPrice = Money.fromMajorUnitsString(body.newPrice).toKurus();
+  const newPrice = Money.fromMajorUnitsString(toWireDecimal(body.newPrice)).toKurus();
   if (listing.minPrice !== null && newPrice < listing.minPrice) {
     return NextResponse.json(
       { ok: false, error: 'Fiyat, ilanın belirlenen minimum fiyatının altında.' },

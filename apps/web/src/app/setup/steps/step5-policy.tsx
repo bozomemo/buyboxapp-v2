@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
+import { isOperatorDecimal } from '@/lib/operator-money';
 
 interface PolicyForm {
   code: 'trendyol' | 'hepsiburada';
@@ -81,8 +82,9 @@ function positiveIntegerError(value: string): string | undefined {
 
 function amountError(value: string): string | undefined {
   if (value.trim() === '') return 'Gerekli.';
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) return 'Geçerli, negatif olmayan bir tutar olmalı (örn. 0.50).';
+  if (!isOperatorDecimal(value) || value.trim().startsWith('-')) {
+    return 'Geçerli, negatif olmayan bir tutar olmalı (örn. 0,50).';
+  }
   return undefined;
 }
 

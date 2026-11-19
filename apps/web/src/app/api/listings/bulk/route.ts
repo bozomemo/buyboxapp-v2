@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonObject } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
+import { toWireDecimal } from '@/lib/operator-money';
 
 const BulkActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('enableAutomation'), ids: z.array(z.string()) }),
@@ -52,8 +53,8 @@ async function postHandler(request: Request) {
       appDb,
       body.ids,
       {
-        minPrice: body.minPrice ? Money.fromMajorUnitsString(body.minPrice).toKurus() : null,
-        maxPrice: body.maxPrice ? Money.fromMajorUnitsString(body.maxPrice).toKurus() : null,
+        minPrice: body.minPrice ? Money.fromMajorUnitsString(toWireDecimal(body.minPrice)).toKurus() : null,
+        maxPrice: body.maxPrice ? Money.fromMajorUnitsString(toWireDecimal(body.maxPrice)).toKurus() : null,
       },
       nowMs,
     );

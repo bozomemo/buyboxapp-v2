@@ -10,7 +10,7 @@ routes:
 
 **Ücretler** ekranında her pazaryeri için komisyon oranını, kargo tutarlarını ve diğer giderleri girersiniz. Uygulama bu değerlerle bir ürünün **taban fiyatını** hesaplar: altına inildiğinde zarar edilen fiyat. Bu nedenle değerlerin mağazanızın gerçek sözleşme koşullarıyla aynı olması önemlidir. Pazaryeriyle anlaşmanız değiştiğinde bu ekranı açın. Bkz. [Taban Fiyat](/rehber/concepts-floor-price) ve [Maliyet, Komisyon ve Kargo](/rehber/concepts-cost-and-fees).
 
-Fiyat hesaplarında KDV kullanılmaz. Maliyet, komisyon, kargo ve gider tutarlarını satış fiyatıyla aynı temelde (KDV dahil) ve faturada gördüğünüz gibi girin.
+Fiyat hesaplarında KDV kullanılmaz. Maliyet, komisyon, kargo ve gider tutarlarını satış fiyatıyla aynı temelde (KDV dahil) ve faturada gördüğünüz gibi girin. Kuruşu virgülle yazın (39,99); noktayla yazılmış tutar da (39.99) kabul edilir.
 
 ## Pazaryeri
 
@@ -41,7 +41,7 @@ Bant eklemek için **+ Bant Ekle**, silmek için satırdaki **Kaldır** düğmes
 
 ### Önizleme ve kaydetme
 
-1. **Dip Fiyat Önizle**'ye tıklayın. Uygulama formdaki (henüz kaydedilmemiş) değerlerle 100 TL maliyetli bir ürünün taban fiyatını hesaplar ve gösterir: "100,00 ₺ maliyetli bir ürün için dip fiyat: …". Sonuç makul değilse değerleri kontrol edin.
+1. **Dip Fiyat Önizle**'ye tıklayın. Uygulama formdaki (henüz kaydedilmemiş) değerlerle 100 TL maliyetli bir ürünün taban fiyatını hesaplar ve gösterir: "₺100,00 maliyetli bir ürün için dip fiyat: …". Sonuç makul değilse değerleri kontrol edin.
 2. **Kaydet**'e tıklayın. **Ücret ayarları kaydedildi.** mesajı görünür.
 
 Kaydettiğinizde eski kayıt değiştirilmez; yeni değerler o andan itibaren geçerli olan yeni bir kayıt olarak eklenir. Böylece geçmiş fiyat kararları, o anda geçerli olan ücretlerle açıklanabilir kalır.

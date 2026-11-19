@@ -2,6 +2,7 @@ import { newId } from '@buybox/db';
 import type { configRepo } from '@buybox/db';
 import { Money } from '@buybox/shared';
 import { z } from 'zod';
+import { toWireDecimal } from '@/lib/operator-money';
 
 /**
  * The form's payload, checked before a row is built (2026-09-27). It used to be cast and read
@@ -37,7 +38,7 @@ export class FeesPayloadError extends Error {
  */
 function toStoredAmount(decimal: string): string {
   try {
-    return Money.fromMajorUnitsString(decimal || '0').toJSON();
+    return Money.fromMajorUnitsString(toWireDecimal(decimal || '0')).toJSON();
   } catch {
     throw new FeesPayloadError(`Geçersiz tutar: "${decimal}". Örnek: 49,90`);
   }

@@ -166,7 +166,7 @@ export function FeesClient() {
       });
       const data = (await res.json()) as { ok: boolean; floorPrice?: string; error?: string };
       if (data.ok) {
-        setPreview(`100,00 ₺ maliyetli bir ürün için dip fiyat: ${data.floorPrice}`);
+        setPreview(`₺100,00 maliyetli bir ürün için dip fiyat: ${data.floorPrice}`);
       } else {
         setPreviewFailed(true);
         setPreview(data.error ?? 'Hesaplanamadı.');

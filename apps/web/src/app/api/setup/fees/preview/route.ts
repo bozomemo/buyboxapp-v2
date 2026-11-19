@@ -6,6 +6,7 @@ import { formatMoneyValue } from '@/lib/format';
 import { feesPayloadToRow } from '../to-row';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission } from '@/lib/server/auth/guard';
+import { toWireDecimal } from '@/lib/operator-money';
 
 async function postHandler(request: Request) {
   const body = await readJsonBody<{ fees: unknown; sampleCost: string }>(request);
@@ -14,7 +15,7 @@ async function postHandler(request: Request) {
     const row = feesPayloadToRow(body.fees, 'preview', Date.now());
     const fees = mapFeeSettings(row);
     const result = floorPrice({
-      unitCost: Money.fromMajorUnitsString(body.sampleCost),
+      unitCost: Money.fromMajorUnitsString(toWireDecimal(body.sampleCost)),
       commissionRate: row.defaultCommissionRate,
       campaign: null,
       fees,
