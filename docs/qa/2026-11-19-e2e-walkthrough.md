@@ -25,25 +25,20 @@ Open — layout, not attempted
 | 22 | Ayarlar → Modüller | The brand module's description lists its screens but leaves out Stok, İlanlar, Alarmlar and Kâr Ayarları under Marka Denetimi. | Low | |
 | 23 | Ayarlar → Pazaryerleri | The derived seller id is labelled "Satıcı Referansı (merchantRef)", an internal name. | Low | |
 
-## Questions for the product owner (not changed)
+## Product owner's decisions (2026-11-19) and what was done
 
-- **Cargo bands with no open-ended last band.** With one cargo band "≤ 150 ₺ → 39,99" the floor
-  preview for a 100 ₺ cost is 170,58 — above 150, so no band matches, and the last band's amount
-  is used anyway. Doc 02 §3 does not say whether the last band must be open-ended. Either the form
-  should require it or the engine's fallback should be documented.
-- **Saving marketplace credentials that failed their test.** The wizard saves them and says
-  "Kimlik bilgileri şifreli olarak kaydedildi." under the red test failure. Intended?
-- **Seller-policy rules that match nobody cannot be removed.** A rule is listed only through the
-  seller it applies to, so a mistyped seller code is counted as "kural şu an kimseyi etkilemiyor"
-  forever, with no screen to delete it. Doc 06 says counting is enough; is it?
-- **Environment variable names on Bildirimler and Lisans** (`ALERTS_WEBHOOK_URL`, `SMTP_HOST`,
-  `LICENSE_TOKEN`). Left as they are: the customer passes them to whoever installed the server.
-- **Automation confirm text.** Turning a marketplace's automation on says "Bu andan itibaren
-  fiyatlar otomatik gönderilecek" even while price submission is off on Panel, where nothing is
-  sent. Worth saying "fiyat gönderimi açıksa"?
-- **"1.400" in the two modules.** The brand module reads it as 1.400,00 ₺ (Turkish grouping); the
-  seller forms refuse it as ambiguous, because they prefill a dot decimal ("11.00"). Both are
-  defensible; they differ.
+| # | Question | Decision | Done |
+|---|----------|----------|------|
+| Q1 | Must the last cargo band be open-ended? | Yes | `d6e4246`: the save is refused otherwise, with a sentence; doc 02 §3 records the rule. `50d166c`: the settings screen shows the reason. |
+| Q2 | Save credentials that failed their test? | No | `0eda61f`: both save routes run the connection test when the credentials change and refuse a failure; switching a marketplace on/off never calls it. The wizard's save also stopped overwriting stored fields with blanks. |
+| Q3 | Leave dormant seller-policy rules undeletable? | No | `69c3ef1`: "Etkisiz kurallar (N)" lists them with "Kuralı sil". |
+| Q4 | Environment variable names on screen | My call: keep, but say who sets them | `bd46d52`: "webhook adresi ayarlanmamış"; "Kurulumu yapan kişi sunucu ayarlarına ekler (ALERTS_WEBHOOK_URL)". |
+| Q5 | Automation confirm text while submission is off | My call | `e49d9d9`: "hesaplanacak ve Panel'de fiyat gönderimi açıksa pazaryerine gönderilecek". |
+| Q6 | "1.400" read differently by the two modules | Every price is TL app-wide | `4ed4f47`: one reading ("1.400" = 1 400 ₺, "1.234,56", "39.99", "₺"/"TL" ignored) for every typed price; prefilled and reloaded amounts shown as "11,00", "1.500,00"; fee band labels name ₺. |
+
+Found while doing these: a successful Trendyol test said "Connected as seller …" in English
+(`0eda61f`); the settings marketplace form fell back to "Prod" after a save (`0eda61f`); an
+unreadable amount on six routes answered 500 (`50d166c`).
 
 ## Checked and working
 
