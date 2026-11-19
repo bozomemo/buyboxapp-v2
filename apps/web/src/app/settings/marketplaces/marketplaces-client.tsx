@@ -194,7 +194,21 @@ export function MarketplacesClient() {
           credentials: form.credentials,
         }),
       });
-      update(form.code, { saved: res.ok, credentials: {} });
+      if (res.ok) {
+        // Typed secrets are cleared; the environment stays, so the select keeps showing what is
+        // now stored instead of falling back to "Prod".
+        const environment = form.credentials.environment;
+        update(form.code, {
+          saved: true,
+          testResult: undefined,
+          credentials: environment ? { environment } : {},
+        });
+      } else {
+        // A refused save says why — a failed connection test, since 2026-11-19 — and keeps what
+        // was typed so it can be corrected.
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        update(form.code, { saved: false, testResult: { ok: false, message: data.error ?? 'Kaydedilemedi.' } });
+      }
     } finally {
       setBusy(undefined);
     }

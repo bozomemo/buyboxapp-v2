@@ -187,7 +187,14 @@ export function Step3Marketplaces({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      update(form.code, { saved: res.ok });
+      if (res.ok) {
+        // A stale red test result under the green "kaydedildi" read as a contradiction.
+        update(form.code, { saved: true, testResult: undefined });
+      } else {
+        // Refused — since 2026-11-19 a save runs the connection test and refuses a failure.
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        update(form.code, { saved: false, testResult: { ok: false, message: data.error ?? 'Kaydedilemedi.' } });
+      }
     } finally {
       setBusyCode(undefined);
     }

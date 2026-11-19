@@ -44,7 +44,7 @@ En az birini seçin. Seçiminizi sonradan [Modüller](/rehber/settings-modules) 
 
 ### 4. Pazaryerleri
 
-**Satıcı modülü seçiliyse**: her pazaryeri için **Etkin** kutusunu ayarlayın. Etkin bıraktığınız her pazaryeri için **Ortam (Environment)** seçin, bağlantı bilgilerini girin, **Bağlantıyı Test Et** ile doğrulayın ve **Kaydet**'e tıklayın. **Kimlik bilgileri şifreli olarak kaydedildi.** mesajı görünür. Bilgiler kaydedildikten sonra bir daha gösterilmez. Daha önce kaydettiyseniz bunu belirten bir not görünür; alanları boş bırakıp devam edebilirsiniz. Devre dışı bıraktığınız bir pazaryeri sonraki adımlarda atlanır ve ona fiyat gönderilmez. Alanların anlamı için bkz. [Pazaryerleri](/rehber/settings-marketplaces).
+**Satıcı modülü seçiliyse**: her pazaryeri için **Etkin** kutusunu ayarlayın. Etkin bıraktığınız her pazaryeri için **Ortam (Environment)** seçin, bağlantı bilgilerini girin, **Bağlantıyı Test Et** ile doğrulayın ve **Kaydet**'e tıklayın. **Kimlik bilgileri şifreli olarak kaydedildi.** mesajı görünür. Bağlantı testi başarısız olan bilgiler kaydedilmez. Bilgiler kaydedildikten sonra bir daha gösterilmez. Daha önce kaydettiyseniz bunu belirten bir not görünür; alanları boş bırakıp devam edebilirsiniz. Devre dışı bıraktığınız bir pazaryeri sonraki adımlarda atlanır ve ona fiyat gönderilmez. Alanların anlamı için bkz. [Pazaryerleri](/rehber/settings-marketplaces).
 
 **Yalnızca marka modülü seçiliyse**: izlemek istediğiniz pazaryerlerini işaretleyin. En az birini seçin.
 

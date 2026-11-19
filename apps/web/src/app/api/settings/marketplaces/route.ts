@@ -6,6 +6,8 @@ import { getAppDb } from '@/lib/server/db';
 import { getSecretStore } from '@/lib/server/secrets';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { withPermission, type AuthContext } from '@/lib/server/auth/guard';
+import { mergeCredentials } from '@/lib/credential-merge';
+import { credentialsChanged, storedCredentials, testMarketplaceConnection } from '@/lib/server/marketplace-connection';
 
 const TITLES: Record<string, string> = { trendyol: 'Trendyol', hepsiburada: 'Hepsiburada' };
 
@@ -51,6 +53,18 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
     credentials?: Record<string, string>;
   }>(request);
   if (body === null) return invalidBody();
+
+  // Credentials that fail their test are not saved (product owner, 2026-11-19) — and nothing
+  // else in the request is either. Only a change is tested: switching a marketplace off must
+  // never depend on the marketplace answering.
+  const stored = await storedCredentials(body.code);
+  const merged = mergeCredentials(stored, body.credentials);
+  const changed = credentialsChanged(stored, merged);
+  if (changed) {
+    const verdict = await testMarketplaceConnection(body.code, merged);
+    if (!verdict.ok) return NextResponse.json({ ok: false, error: verdict.message }, { status: 400 });
+  }
+
   const appDb = getAppDb();
   const nowMs = Date.now();
   const previous = await configRepo.getMarketplace(appDb, body.code);
@@ -84,13 +98,8 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
   // whatever is already stored: an empty field (e.g. leaving password blank while only
   // switching environment) must keep its existing value, not blank it — a blind overwrite of
   // the whole blob would silently destroy credentials nobody meant to touch.
-  const changedEntries = Object.entries(body.credentials ?? {}).filter(([, v]) => v);
-  if (changedEntries.length > 0) {
-    const secretStore = getSecretStore();
-    const existingRaw = await secretStore.get(marketplaceCredentialsKey(body.code));
-    const existing = existingRaw ? (JSON.parse(existingRaw) as Record<string, string>) : {};
-    const merged = { ...existing, ...Object.fromEntries(changedEntries) };
-    await secretStore.set(marketplaceCredentialsKey(body.code), JSON.stringify(merged));
+  if (changed) {
+    await getSecretStore().set(marketplaceCredentialsKey(body.code), JSON.stringify(merged));
   }
 
   return NextResponse.json({ ok: true });

@@ -110,3 +110,26 @@ describe('MarketplacesClient environment', () => {
     expect(screen.getByDisplayValue('Test (SIT)')).toBeTruthy();
   });
 });
+
+/** A refused save says why and keeps the environment shown (2026-11-19). */
+describe('MarketplacesClient save', () => {
+  it('shows why the server refused a save', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: {
+        body: {
+          marketplaces: [{ code: 'trendyol', displayName: 'Trendyol', enabled: true, merchantRef: '1', updatedAt: 0, environment: 'stage' }],
+        },
+      },
+      ...SELLER_ON,
+    });
+    render(<MarketplacesClient />);
+    await screen.findByDisplayValue('Test (stageapigw.trendyol.com)');
+    stubFetch({
+      [PRIMARY_ROUTE]: { status: 400, body: { ok: false, error: 'Trendyol bilgileri kabul etmedi (HTTP 401).' } },
+      ...SELLER_ON,
+    });
+    screen.getAllByRole('button', { name: 'Kaydet' })[0]!.click();
+    expect(await screen.findByText('Trendyol bilgileri kabul etmedi (HTTP 401).')).toBeTruthy();
+    expect(screen.getByDisplayValue('Test (stageapigw.trendyol.com)')).toBeTruthy();
+  });
+});
