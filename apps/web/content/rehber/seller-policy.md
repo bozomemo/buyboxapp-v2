@@ -74,6 +74,10 @@ Tablo sütunları:
 
 Kural ekleme, içe aktarma ve durum değiştirme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
+## Etkisiz kurallar
+
+Bir kural hiçbir satıcıya uymuyorsa (satıcı bu dönemde görülmediyse ya da vergi numarası hiçbir mağazayla eşleşmiyorsa) sayılar satırında **… kural şu an kimseyi etkilemiyor** yazar ve altında **Etkisiz kurallar** bölümü çıkar. Bölümü açınca her kuralın durumu, satıcı kodu ya da vergi numarası, marka mı grup kuralı mı olduğu ve notu görünür. Yanlış yazılmış bir kuralı **Kuralı sil** ile silebilirsiniz; uygulama onay ister. Silmek Yönetici ve Fiyat Yöneticisi rollerine açıktır.
+
 ## Sık sorulanlar
 
 **Yeni görünen her satıcı yetkisiz mi sayılır?**

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pagination, STICKY_HEAD, TableFrame, usePagedRows } from '@/components/table';
 import {
   Button,
+  buttonClass,
+  ConfirmButton,
   Chip,
   EmptyState,
   ErrorState,
@@ -160,6 +162,17 @@ export function PolicyClient() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Deletes a rule by id — the dormant-rules list's only action (2026-11-19). */
+  async function deleteRule(id: string) {
+    setBusy(true);
+    try {
+      await fetch(`/api/seller-policies?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } finally {
+      setBusy(false);
+    }
+    load();
   }
 
   /** Sets (or clears) one seller's verdict straight from the row an operator is looking at. */
@@ -534,6 +547,51 @@ export function PolicyClient() {
                   Excel&apos;e Aktar
                 </Button>
               </div>
+
+              {/* A rule that matches nobody — a mistyped seller code, a tax number no storefront
+                  carries — used to be only counted above, with no way to see or remove it
+                  (product owner, 2026-11-19). */}
+              {dormantCount > 0 && (
+                <details className="rounded-xl border border-(--color-border) bg-(--color-surface) p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Etkisiz kurallar ({formatNumber(dormantCount)})
+                  </summary>
+                  <p className="mt-2 text-xs text-(--color-muted)">
+                    Bu kurallar şu an hiçbir satıcıya uymuyor: satıcı bu dönemde görülmedi ya da vergi numarası
+                    hiçbir mağazayla eşleşmiyor. Yanlış yazılmış bir kuralı buradan silebilirsiniz.
+                  </p>
+                  <ul className="mt-2 space-y-2">
+                    {(report.policies ?? [])
+                      .filter((p) => p.dormant)
+                      .map((p) => (
+                        <li key={p.id} className="flex flex-wrap items-center gap-2">
+                          <VerdictChip verdict={p.status} />
+                          <span>
+                            {p.taxNumber
+                              ? `vergi no ${p.taxNumber}`
+                              : `${labelOf(MARKETPLACE_LABELS, p.marketplaceCode ?? '')} · satıcı kodu ${p.sellerRef ?? ''}`}
+                          </span>
+                          <span className="text-xs text-(--color-muted)">
+                            {p.watchedBrandId ? 'marka kuralı' : 'grup kuralı'}
+                          </span>
+                          {p.note && <span className="text-xs text-(--color-muted)">{p.note}</span>}
+                          <PermissionFieldset permission="catalogue.manage">
+                            <ConfirmButton
+                              requireConfirm
+                              confirmTone="danger"
+                              confirmMessage="Bu kural silinsin mi? Silinen kural geri getirilemez; gerekirse yeniden eklenir."
+                              onConfirmed={() => void deleteRule(p.id)}
+                              disabled={busy}
+                              className={`${buttonClass('ghost-danger', 'sm')} ml-auto`}
+                            >
+                              Kuralı sil
+                            </ConfirmButton>
+                          </PermissionFieldset>
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              )}
 
               {report.sellers.length === 0 && !loading && (
                 <EmptyState

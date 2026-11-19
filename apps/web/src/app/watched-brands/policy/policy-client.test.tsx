@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { PolicyClient } from './policy-client';
 
@@ -107,5 +107,55 @@ describe('PolicyClient', () => {
       expect(screen.getByRole('region', { name: 'Satıcılar' })).toBeTruthy();
       expect(screen.getByRole('textbox', { name: 'Satıcı kodu' })).toBeTruthy();
     });
+  });
+});
+
+/**
+ * A rule that matches nobody — a mistyped seller code, a tax number no storefront carries — was
+ * only counted ("1 kural şu an kimseyi etkilemiyor"), with no way to see or delete it
+ * (product owner, 2026-11-19: it should not stay that way).
+ */
+describe('PolicyClient dormant rules', () => {
+  const DORMANT = {
+    id: 'rule-1',
+    watchedBrandGroupId: 'g1',
+    watchedBrandId: 'b1',
+    marketplaceCode: 'trendyol',
+    sellerRef: '123456',
+    taxNumber: null,
+    status: 'blocked',
+    note: 'yanlış yazılmış olabilir',
+    createdAt: 0,
+    updatedAt: 0,
+    dormant: true,
+  };
+  const BODY = {
+    filters: { sinceMs: 0, untilMs: 1, watchedBrandId: 'b1' },
+    groups: [{ id: 'g1', name: 'Mars' }],
+    brands: [{ id: 'b1', groupId: 'g1', label: 'Whiskas', marketplaceCode: 'trendyol' }],
+    policies: [DORMANT],
+    sellers: [],
+  };
+
+  it('lists a dormant rule with what it names', async () => {
+    stubFetch({ [ROUTE]: { body: BODY } });
+    render(<PolicyClient />);
+    expect(await screen.findByText(/Etkisiz kurallar \(1\)/)).toBeTruthy();
+    expect(screen.getByText(/Trendyol · satıcı kodu 123456/)).toBeTruthy();
+    expect(screen.getByText('yanlış yazılmış olabilir')).toBeTruthy();
+  });
+
+  it('deletes it after confirmation', async () => {
+    stubFetch({ [ROUTE]: { body: BODY } });
+    render(<PolicyClient />);
+    (await screen.findByRole('button', { name: 'Kuralı sil' })).click();
+    (await screen.findByRole('button', { name: 'Onayla' })).click();
+    await waitFor(() =>
+      expect(
+        vi.mocked(fetch).mock.calls.some(
+          (c) => String(c[0]) === '/api/seller-policies?id=rule-1' && (c[1] as RequestInit)?.method === 'DELETE',
+        ),
+      ).toBe(true),
+    );
   });
 });
