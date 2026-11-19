@@ -21,7 +21,7 @@ Filtreyi değiştirdiğiniz anda rapor yenilenir; yenilenirken **Güncelleniyor�
 - **Başlangıç** ve **Bitiş**: Raporun tarih aralığı. Varsayılan son 30 gündür.
 - **Pazaryeri**: **Tümü**, **Trendyol** veya **Hepsiburada**.
 - **Stok Kodu**: Yalnızca bu temel stok koduna bağlı ilanları gösterir.
-- **Satıcı (sellerRef)**: Bir rakip satıcının pazaryerindeki kimlik numarasını yazın. Bu numarayı [Rakip Satıcılar](/rehber/competitor-sellers) ekranında bulabilirsiniz. Bir satıcı seçtiğinizde **Satıcı Profili** bölümü çıkar.
+- **Satıcı kodu**: Bir rakip satıcının pazaryerindeki kimlik numarasını yazın. Bu numarayı [Rakip Satıcılar](/rehber/competitor-sellers) ekranında bulabilirsiniz. Bir satıcı seçtiğinizde **Satıcı Profili** bölümü çıkar.
 - **İlan (fiyat zaman çizelgesi için)**: **Ürün adı ara…** alanına yazın ve çıkan listeden bir ilan seçin. Tek bir ilan seçtiğinizde **Fiyat Zaman Çizelgesi** görünür ve **Buybox Payı** süreye göre hesaplanır. **İlan Filtresini Kaldır** seçimi kaldırır.
 
 Seçilen aralıkta 20.000'den fazla gözlem varsa **Gözlem sayısı 20.000 sınırını aştı — sonuçlar kesildi. Tarih aralığını daraltın.** uyarısı çıkar. Bu durumda tarih aralığını kısaltın.
@@ -74,7 +74,7 @@ Buybox'ın hangi satıcıda ne kadar olduğunu gösterir. İki şekilde hesaplan
 
 ## Satıcı Profili
 
-Yalnızca **Satıcı (sellerRef)** filtresi doluysa ve o satıcıya ait gözlem varsa görünür. Başlıkta satıcının adı yazar.
+Yalnızca **Satıcı kodu** filtresi doluysa ve o satıcıya ait gözlem varsa görünür. Başlıkta satıcının adı yazar.
 
 - **Görüldüğü Ürün**: Satıcının sizin ürünlerinizden kaçında görüldüğü.
 - **Ortalama Sıra**: Satıcının ortalama sırası.

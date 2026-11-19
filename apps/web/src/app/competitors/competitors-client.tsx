@@ -219,7 +219,7 @@ export function CompetitorsClient() {
           <TextInput value={baseStockCode} onChange={(e) => setBaseStockCode(e.target.value)} className="w-32" />
         </label>
         <label className="flex flex-col gap-1 text-xs">
-          Satıcı (sellerRef)
+          Satıcı kodu
           <TextInput value={sellerRef} onChange={(e) => setSellerRef(e.target.value)} className="w-32" />
         </label>
         <label className="relative flex flex-col gap-1 text-xs">
