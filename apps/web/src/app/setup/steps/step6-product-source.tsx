@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Button, Field, Select, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
+import { EXCEL_COLUMN_LABELS } from '@/lib/labels';
 
 type SourceCode = 'manual' | 'excel' | 'marketplaceListing';
 
@@ -161,7 +162,7 @@ export function Step6ProductSource({ onDone, onBack }: { onDone: () => void; onB
           )}
           <div className="grid grid-cols-2 gap-3">
             {MAPPING_FIELDS.map((field) => (
-              <Field key={field} label={`${field} sütun başlığı`} error={mappingError(field)}>
+              <Field key={field} label={EXCEL_COLUMN_LABELS[field]} error={mappingError(field)}>
                 <TextInput
                   value={mapping[field]}
                   onChange={(e) => setMapping((m) => ({ ...m, [field]: e.target.value }))}

@@ -304,3 +304,14 @@ export const UPDATE_CHECK_LABELS: Record<string, string> = {
   'network-error': 'Sunucuya ulaşılamadı',
   disabled: 'Kontrol kapalı',
 };
+
+/**
+ * The Excel product source's column fields (Ayarlar → Ürün Kaynakları, wizard step 7). They were
+ * labelled with the internal keys, "baseStockCode sütun başlığı" (2026-11-19 walkthrough).
+ */
+export const EXCEL_COLUMN_LABELS: Record<'baseStockCode' | 'name' | 'unitCost' | 'unitStock', string> = {
+  baseStockCode: 'Stok kodu sütunu',
+  name: 'Ürün adı sütunu',
+  unitCost: 'Birim maliyet sütunu',
+  unitStock: 'Stok miktarı sütunu',
+};

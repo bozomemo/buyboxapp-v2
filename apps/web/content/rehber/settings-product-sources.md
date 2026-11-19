@@ -25,10 +25,10 @@ Sayfanın üstünde **Şu anda yapılandırılmış bir kaynak var.** veya **Hen
 1. **Excel** seçeneğini seçin.
 2. Dosya seçme alanından **.xlsx** dosyanızı seçin.
 3. Dört sütun başlığı alanını dosyanızdaki başlıklarla aynı yazın:
-   - **baseStockCode sütun başlığı**: stok kodunun bulunduğu sütun (varsayılan: KODU).
-   - **name sütun başlığı**: ürün adının bulunduğu sütun (varsayılan: ADI).
-   - **unitCost sütun başlığı**: birim maliyetin bulunduğu sütun (varsayılan: Standart_Maliyet).
-   - **unitStock sütun başlığı**: stok miktarının bulunduğu sütun (varsayılan: TOPLAM MIKTAR).
+   - **Stok kodu sütunu**: stok kodunun bulunduğu sütun (varsayılan: KODU).
+   - **Ürün adı sütunu**: ürün adının bulunduğu sütun (varsayılan: ADI).
+   - **Birim maliyet sütunu**: birim maliyetin bulunduğu sütun (varsayılan: Standart_Maliyet).
+   - **Stok miktarı sütunu**: stok miktarının bulunduğu sütun (varsayılan: TOPLAM MIKTAR).
 4. **İlk 20 Satırı Önizle**'ye tıklayın. Dosyanın ilk 20 satırı **Stok Kodu**, **Ad**, **Birim Fiyat** ve **Stok** sütunlarıyla gösterilir. **Birim Fiyat** sütununda maliyetler görünür; doğru sütunun okunduğunu buradan kontrol edin.
 5. Önizleme doğruysa **Kaydet**'e tıklayın. **Ürün kaynağı yapılandırması kaydedildi.** mesajı görünür.
 

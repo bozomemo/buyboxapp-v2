@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, ErrorState, Field, LoadingState, Section, Select, StatusBanner, TextInput } from '@/components/ui';
+import { EXCEL_COLUMN_LABELS } from '@/lib/labels';
 
 /** Settings > Product Sources (doc 15 §6, Phase 5). Consistency pass only. */
 
@@ -145,7 +146,7 @@ export function ProductSourcesClient() {
               />
               <div className="grid grid-cols-2 gap-3">
                 {(['baseStockCode', 'name', 'unitCost', 'unitStock'] as const).map((field) => (
-                  <Field key={field} label={`${field} sütun başlığı`}>
+                  <Field key={field} label={EXCEL_COLUMN_LABELS[field]}>
                     <TextInput
                       value={mapping[field]}
                       onChange={(e) => setMapping((m) => ({ ...m, [field]: e.target.value }))}

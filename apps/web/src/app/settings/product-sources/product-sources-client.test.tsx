@@ -50,3 +50,18 @@ describe('ProductSourcesClient', () => {
     expect(await screen.findByDisplayValue('Excel')).toBeTruthy();
   });
 });
+
+describe('ProductSourcesClient Excel columns', () => {
+  /** The column fields were labelled with the internal keys, "baseStockCode sütun başlığı" (2026-11-19). */
+  it('labels each column field in Turkish', async () => {
+    stubFetch({ [PRIMARY_ROUTE]: { body: { configured: true, sourceCode: 'excel' } } });
+
+    render(<ProductSourcesClient />);
+
+    expect(await screen.findByText('Stok kodu sütunu')).toBeTruthy();
+    expect(screen.getByText('Ürün adı sütunu')).toBeTruthy();
+    expect(screen.getByText('Birim maliyet sütunu')).toBeTruthy();
+    expect(screen.getByText('Stok miktarı sütunu')).toBeTruthy();
+    expect(screen.queryByText(/baseStockCode|unitCost|unitStock/)).toBeNull();
+  });
+});
