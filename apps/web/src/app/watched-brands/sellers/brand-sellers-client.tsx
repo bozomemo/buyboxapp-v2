@@ -413,8 +413,8 @@ export function BrandSellersClient() {
               {report.sellers.length === 0 && !loading && (
                 <div className="rounded-xl border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-muted)">
                   Bu dönemde hiç teklif kaydı yok. Marka taraması ürünleri bulur ama fiyatları getirmez —
-                  satıcı ve fiyat verisi için ürün başına derin tarama (<code>ScrapeCompetitors</code>)
-                  çalışmalıdır.{' '}
+                  satıcı ve fiyat verisi için ürün başına derin tarama (İşler ekranında{' '}
+                  <strong>Rakip Verisi Toplama</strong>) çalışmalıdır.{' '}
                   <Link className="underline" href="/jobs">
                     İşler
                   </Link>{' '}
@@ -579,8 +579,7 @@ export function BrandSellersClient() {
                 &ldquo;İlk görülme&rdquo; bir <em>gözlem</em> tarihidir, satışa başlama tarihi değil: satıcı
                 ondan önce de orada olabilir, taramalar arasındaki boşlukta fark edilmemiş olabilir. Bu yüzden
                 ≥ ile gösterilir. &ldquo;Piyasa sapması&rdquo; satıcının bulunduğu her listelemedeki{' '}
-                <em>ortalama</em> fiyata göre farkıdır; medyana göre değil — nedeni{' '}
-                <code>brand-reports.ts</code> içinde yazılı.
+                <em>ortalama</em> fiyata göre farkıdır; medyana göre değil.
               </p>
             </div>
           </Section>

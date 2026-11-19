@@ -53,7 +53,7 @@ describe('BrandSellersClient', () => {
 
     const { container } = render(<BrandSellersClient />);
 
-    // The sentence is interrupted mid-run by an inline `<code>` element (`ScrapeCompetitors`), so
+    // The sentence is interrupted mid-run by an inline element (the job's name), so
     // no single node's own text equals it exactly — assert on the rendered text as a whole rather
     // than one element's `textContent`.
     await screen.findByRole('table');

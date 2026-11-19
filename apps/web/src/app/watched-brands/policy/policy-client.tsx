@@ -606,8 +606,7 @@ export function PolicyClient() {
 
               <p className="text-xs text-(--color-muted)">
                 Bu ekran <strong>raporlamadır</strong>. Bir satıcının yasaklı olması, fiyatlandırmayı hiçbir
-                şekilde etkilemez — <code>Reprice</code> ve <code>ObserveBuybox</code> yalnızca kendi
-                ilanlarımızı okur. Politika, ne yapılacağına karar veren kişiye bakacağı yeri gösterir.
+                şekilde etkilemez — fiyatlandırma işleri yalnızca kendi ilanlarımızı okur. Politika, ne yapılacağına karar veren kişiye bakacağı yeri gösterir.
               </p>
             </div>
           </Section>

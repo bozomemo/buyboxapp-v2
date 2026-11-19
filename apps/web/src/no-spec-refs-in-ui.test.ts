@@ -42,3 +42,24 @@ describe('screens do not cite the specification', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * The same reader, the same rule for the code's own names: a source file ("brand-reports.ts"),
+ * a table ("competitor_observations") or a job's class name ("ScrapeCompetitors") shown in a
+ * `<code>` tells the customer nothing (2026-11-19 walkthrough). The labels the customer meets
+ * elsewhere — the form's own "sellerId", an Excel column header, the LICENSE_TOKEN setting the
+ * installer writes — are not internal names and pass.
+ */
+const INTERNAL_NAME = /^(?:[\w-]+\.(?:ts|tsx|js|json)|[a-z]+(?:_[a-z]+)+|[A-Z][a-z]+(?:[A-Z][a-z]+)+)$/;
+
+describe('screens do not show the code’s own names', () => {
+  it('holds for every <code> in a component', () => {
+    const offenders = sources(SRC).flatMap((file) =>
+      [...stripComments(readFileSync(file, 'utf8')).matchAll(/<code>([^<{]+)<\/code>/g)]
+        .map((m) => m[1]!.trim())
+        .filter((name) => INTERNAL_NAME.test(name))
+        .map((name) => `${path.relative(SRC, file)}: ${name}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+});

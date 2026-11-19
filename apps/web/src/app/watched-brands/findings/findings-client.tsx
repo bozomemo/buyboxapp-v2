@@ -1008,8 +1008,7 @@ export function FindingsClient() {
           <p className="text-xs text-(--color-muted)">
             Sayılar <strong>tekliflerden</strong> gelir: bir satıcının ürünü kaç kez <em>listelediğini</em>{' '}
             gösterir, kaç adet sattığını değil. “Piyasa farkı” satıcının bulunduğu her listelemedeki{' '}
-            <em>ortalama</em> fiyata göredir; medyana göre değil — nedeni <code>brand-reports.ts</code> içinde
-            yazılı. Kanıt penceresi ham gözlem satırlarının kendisidir, özeti değil.
+            <em>ortalama</em> fiyata göredir; medyana göre değil. Kanıt penceresi ham gözlem satırlarının kendisidir, özeti değil.
           </p>
         </>
       )}

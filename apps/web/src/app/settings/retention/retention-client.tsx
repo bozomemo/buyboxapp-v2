@@ -95,8 +95,7 @@ export function RetentionClient() {
         {isDefault
           ? 'Şu anda varsayılan pencereler kullanılıyor.'
           : 'Özelleştirilmiş pencereler kullanılıyor.'}{' '}
-        <code>competitor_observations</code> ve <code>scrape_runs</code> süresiz saklanır ve burada
-        listelenmez.
+        Rakip gözlemleri ve tarama kayıtları süresiz saklanır ve burada listelenmez.
       </p>
       <Section id="retention-windows" title="Saklama Pencereleri" card>
         <div className="grid grid-cols-2 gap-4">
