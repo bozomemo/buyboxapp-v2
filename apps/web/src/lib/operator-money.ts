@@ -33,3 +33,19 @@ export function toWireDecimal(input: unknown): string {
   const shown = typeof input === 'string' ? `"${input.trim()}"` : 'Boş değer';
   throw new RangeError(`${shown} geçerli bir tutar değil. Örnek: 120,50`);
 }
+
+const RATIO = /^\d+(?:[.,]\d{1,4})?$/;
+
+/**
+ * A positive factor as an operator types it ("1,2" or "1.2") → the number, or `null` when it is
+ * not one. For the stock screen's price multiplier, which was a `type="number"` field: in a
+ * browser whose locale reads a dot decimal, "1,2" became 12, and an emptied field became 0.
+ * Not money (doc 02: rates and multipliers are `number`), so no grouping separators.
+ */
+export function parsePositiveRatio(input: unknown): number | null {
+  if (typeof input !== 'string') return null;
+  const text = input.trim();
+  if (!RATIO.test(text)) return null;
+  const value = Number(text.replace(',', '.'));
+  return value > 0 ? value : null;
+}

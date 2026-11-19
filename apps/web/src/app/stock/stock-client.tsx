@@ -26,6 +26,7 @@ import {
 import { Download, Trash2 } from '@/components/icon';
 import { downloadCsv } from '@/lib/csv';
 import { formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
+import { parsePositiveRatio } from '@/lib/operator-money';
 
 /**
  * `/stock` (doc 06 §3, doc 15 §6 Phase 2.6). This screen's stated task is "Maliyetler doğru mu?"
@@ -109,11 +110,22 @@ function MultiplierCell({
   onChanged: () => void;
 }) {
   const pref = item.prefs[marketplace.code];
-  const [multiplier, setMultiplier] = useState(pref?.priceMultiplier ?? 1);
+  // Text, not `type="number"`: a number field in a dot-decimal browser read "1,2" as 12 and an
+  // emptied field as 0 (2026-11-19). Shown the Turkish way, read by `parsePositiveRatio`.
+  const [text, setText] = useState(String(pref?.priceMultiplier ?? 1).replace('.', ','));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
   async function save() {
+    const multiplier = parsePositiveRatio(text);
+    if (multiplier === null) {
+      setError('Çarpan 1,2 gibi sıfırdan büyük bir sayı olmalı.');
+      return;
+    }
+    if (multiplier === (pref?.priceMultiplier ?? 1)) {
+      setError(undefined);
+      return;
+    }
     setBusy(true);
     setError(undefined);
     try {
@@ -129,12 +141,12 @@ function MultiplierCell({
   return (
     <div className="flex flex-col gap-0.5">
       <TextInput
-        type="number"
-        step="0.01"
-        value={multiplier}
+        inputMode="decimal"
+        value={text}
         disabled={busy}
         aria-label={`${item.name} için ${marketplace.displayName} fiyat çarpanı`}
-        onChange={(e) => setMultiplier(Number(e.target.value))}
+        aria-invalid={error !== undefined}
+        onChange={(e) => setText(e.target.value)}
         onBlur={() => void save()}
         className="w-20 disabled:opacity-50"
       />

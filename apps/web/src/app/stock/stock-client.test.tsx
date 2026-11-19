@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { StockClient } from './stock-client';
 
@@ -81,5 +81,59 @@ describe('StockClient', () => {
     render(<StockClient />);
 
     expect(await screen.findByText('Test Ürünü')).toBeTruthy();
+  });
+});
+
+/**
+ * The multiplier was a `type="number"` field: in a browser whose locale reads a dot decimal,
+ * typing "1,2" — what the guide tells the operator to type — saved 12, a cost twelve times too
+ * high; an emptied field saved 0 (2026-11-19 walkthrough).
+ */
+describe('StockClient multiplier', () => {
+  const ROW = {
+    '/api/stock': {
+      body: {
+        marketplaces: [{ code: 'trendyol', displayName: 'Trendyol' }],
+        items: [
+          {
+            baseStockCode: 'BASE1',
+            name: 'Test Ürünü',
+            unitCost: '5000',
+            unitStock: 10,
+            sourceCode: 'manual',
+            prefs: { trendyol: { priceMultiplier: 1, autoRepriceEnabled: false } },
+            offeredStock: {},
+          },
+        ],
+      },
+    },
+    '/api/stock/prefs': { body: { ok: true } },
+    ...SIDE_ROUTES,
+  };
+
+  function prefsBodies(): unknown[] {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter((c) => String(c[0]).startsWith('/api/stock/prefs'))
+      .map((c) => JSON.parse(String((c[1] as RequestInit).body)));
+  }
+
+  it('reads "1,2" as 1.2', async () => {
+    stubFetch(ROW);
+    render(<StockClient />);
+    const input = await screen.findByLabelText('Test Ürünü için Trendyol fiyat çarpanı');
+    fireEvent.change(input, { target: { value: '1,2' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(prefsBodies()).toEqual([expect.objectContaining({ priceMultiplier: 1.2 })]));
+  });
+
+  it.each([[''], ['0'], ['-1'], ['abc'], ['1,2,3']])('does not save %j and says why', async (typed) => {
+    stubFetch(ROW);
+    render(<StockClient />);
+    const input = await screen.findByLabelText('Test Ürünü için Trendyol fiyat çarpanı');
+    fireEvent.change(input, { target: { value: typed } });
+    fireEvent.blur(input);
+    expect(await screen.findByText(/sıfırdan büyük bir sayı/)).toBeTruthy();
+    expect(prefsBodies()).toEqual([]);
   });
 });

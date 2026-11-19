@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isOperatorDecimal, toWireDecimal } from './operator-money';
+import { isOperatorDecimal, parsePositiveRatio, toWireDecimal } from './operator-money';
 
 describe('toWireDecimal', () => {
   it.each([
@@ -46,5 +46,21 @@ describe('isOperatorDecimal', () => {
     expect(isOperatorDecimal('39.99')).toBe(true);
     expect(isOperatorDecimal('1.400')).toBe(false);
     expect(isOperatorDecimal('')).toBe(false);
+  });
+});
+
+describe('parsePositiveRatio', () => {
+  it.each([
+    ['1,2', 1.2],
+    ['1.2', 1.2],
+    ['1', 1],
+    [' 0,85 ', 0.85],
+    ['1,2345', 1.2345],
+  ])('%s → %s', (input, value) => {
+    expect(parsePositiveRatio(input)).toBe(value);
+  });
+
+  it.each([[''], ['0'], ['0,0'], ['-1'], ['abc'], ['1,2,3'], ['1.234,5'], ['1,23456'], ['1e2']])('refuses %j', (input) => {
+    expect(parsePositiveRatio(input)).toBeNull();
   });
 });

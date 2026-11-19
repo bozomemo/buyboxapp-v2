@@ -17,6 +17,15 @@ async function postHandler(request: Request, _context: unknown, auth: AuthContex
     autoRepriceEnabled?: boolean;
   }>(request);
   if (body === null) return invalidBody();
+  // The multiplier scales the cost every floor price is built on (doc 02 §4). It used to be
+  // stored as sent, so an emptied field (0) or a NaN reached the pricing path (2026-11-19).
+  const multiplier: unknown = body.priceMultiplier;
+  if (multiplier !== undefined && !(typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0)) {
+    return NextResponse.json({ ok: false, error: 'Çarpan sıfırdan büyük bir sayı olmalı.' }, { status: 400 });
+  }
+  if (body.autoRepriceEnabled !== undefined && typeof body.autoRepriceEnabled !== 'boolean') {
+    return NextResponse.json({ ok: false, error: 'Oto BB açık ya da kapalı olmalı.' }, { status: 400 });
+  }
   const appDb = getAppDb();
   const nowMs = Date.now();
   await stockRepo.ensureStockMarketplacePrefs(appDb, {

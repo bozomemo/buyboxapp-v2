@@ -42,7 +42,7 @@ Hiçbir satır eşleşmezse **Bu filtrelerle eşleşen stok kalemi yok.** yazar 
 - **Ürün İsmi**
 - **Birim Fiyat**: Ürünün birim maliyeti. Maliyet bilinmiyorsa kırmızı **Maliyet yok** etiketi görünür.
 - **Stok Miktarı**: Fiziksel stok. Pazaryerlerindeki toplam satış stoğu bundan fazlaysa sarı **Aşırı listelenmiş** etiketi görünür.
-- **… Çarpan** (her pazaryeri için ayrı, örneğin **Trendyol Çarpan**): O pazaryerinde maliyetin hangi katsayıyla çarpılacağı. Varsayılan 1'dir. Örneğin maliyeti 1.000 TL olan bir ürünün çarpanını 1,2 yaparsanız sistem o pazaryerinde maliyeti 1.200 TL kabul eder. Değeri yazıp kutudan çıktığınızda kaydedilir; kaydedilirken **Kaydediliyor…** yazar.
+- **… Çarpan** (her pazaryeri için ayrı, örneğin **Trendyol Çarpan**): O pazaryerinde maliyetin hangi katsayıyla çarpılacağı. Varsayılan 1'dir. Örneğin maliyeti 1.000 TL olan bir ürünün çarpanını 1,2 yaparsanız sistem o pazaryerinde maliyeti 1.200 TL kabul eder. Değeri yazıp kutudan çıktığınızda kaydedilir; kaydedilirken **Kaydediliyor…** yazar. Değer sıfırdan büyük bir sayı değilse kaydedilmez ve kutunun altında **Çarpan 1,2 gibi sıfırdan büyük bir sayı olmalı.** yazar.
 - **… Oto BB** (her pazaryeri için ayrı): Bu ürünün o pazaryerinde otomatik fiyatlanıp fiyatlanmayacağı. Kutuyu işaretlediğiniz anda kaydedilir. Kayıt başarısız olursa kutu eski haline döner ve **Kaydedilemedi.** yazar.
 - **… Satış Stok** (varsayılan olarak gizli): O pazaryerinde satışa açtığınız adet. Fiziksel stok varken bu pazaryerinde satışta değilse yeşil **Fırsat** etiketi görünür.
 - **Kaynak** (varsayılan olarak gizli): Ürünün hangi kaynaktan geldiği.
