@@ -19,7 +19,7 @@ import { Button, EmptyState, ErrorState, LoadingState, Section, Select, TextInpu
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '@/lib/format';
 import { CIRCUIT_LABELS, JOB_LABELS, JOB_RUN_STATE_LABELS, labelOf, MARKETPLACE_LABELS, QUEUE_STATE_LABELS } from '@/lib/labels';
-import { NO_PERMISSION_TITLE, useCan } from '@/lib/permissions';
+import { NO_PERMISSION_TITLE, PermissionFieldset, useCan } from '@/lib/permissions';
 
 /**
  * How often the Jobs screen re-reads the overview.
@@ -873,6 +873,7 @@ export function JobsClient() {
             Sıklık değişiklikleri worker yeniden başlatılınca etkili olur, kaydedilir kaydedilmez değil.
           </p>
           {/* The label carries "(N bekleyen)" whenever the tone is raised, so the state has its word. */}
+          <PermissionFieldset permission="settings.manage">
           <Button
             variant={pendingRestartCount > 0 ? 'primary' : 'secondary'}
             size="sm"
@@ -886,6 +887,7 @@ export function JobsClient() {
                 ? `Worker'ı Yeniden Başlat (${pendingRestartCount} bekleyen)`
                 : "Worker'ı Yeniden Başlat"}
           </Button>
+          </PermissionFieldset>
           {/* Running jobs are drained, not killed (`Scheduler.shutdown`), so this is a warning
               about how long the click takes — not about losing work. */}
           {runningCount > 0 && busy !== 'worker-restart' && (
@@ -944,6 +946,7 @@ export function JobsClient() {
                         <span className="text-(--color-muted)">{formatCadence(job.cadenceMs)}</span>
                       ) : (
                         <div className="flex items-center gap-1.5">
+                          <PermissionFieldset permission="settings.manage">
                           <TextInput
                             type="number"
                             min={10}
@@ -975,6 +978,7 @@ export function JobsClient() {
                               Varsayılana dön
                             </Button>
                           )}
+                          </PermissionFieldset>
                           {cadenceSaved === job.jobName && (
                             <span className="text-xs text-(--color-success)">Kaydedildi</span>
                           )}
@@ -1027,6 +1031,7 @@ export function JobsClient() {
                     </td>
                     <td className="px-3 py-2">
                       {/* kit-exempt: status chip is the toggle — "Etkin" / "Devre dışı" is the state and the control */}
+                      <PermissionFieldset permission="jobs.operate">
                       <button
                         type="button"
                         disabled={busy === job.jobName}
@@ -1039,6 +1044,7 @@ export function JobsClient() {
                       >
                         {job.enabled ? 'Etkin' : 'Devre dışı'}
                       </button>
+                      </PermissionFieldset>
                       {job.moduleDisabled && (
                         <Link
                           href="/settings/modules"
@@ -1142,6 +1148,7 @@ export function JobsClient() {
                   )}
                 </div>
                 {c.state !== 'closed' && (
+                  <PermissionFieldset permission="jobs.operate">
                   <Button
                     variant="secondary"
                     size="sm"
@@ -1151,6 +1158,7 @@ export function JobsClient() {
                   >
                     Sıfırla
                   </Button>
+                  </PermissionFieldset>
                 )}
               </li>
             ))}
@@ -1208,6 +1216,7 @@ export function JobsClient() {
             olur.
           </p>
           <TableFrame maxHeight="50vh">
+            <PermissionFieldset permission="settings.manage">
             <table className="w-full text-sm">
               <thead className={`${STICKY_HEAD} text-left text-xs uppercase text-(--color-muted)`}>
                 <tr>
@@ -1312,6 +1321,7 @@ export function JobsClient() {
                 ))}
               </tbody>
             </table>
+            </PermissionFieldset>
           </TableFrame>
         </div>
       </details>

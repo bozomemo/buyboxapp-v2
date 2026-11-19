@@ -39,6 +39,7 @@ import { marketSnapshot } from '@/lib/market-stats';
 import { marketplaceProductUrl } from '@/lib/product-url';
 import { discoveryLabel, isBrandNameOnly } from '@/lib/tracked-product-discovery';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
+import { PermissionFieldset } from '@/lib/permissions';
 
 interface Observation {
   status: 'ok' | 'parseFailed' | 'fetchFailed';
@@ -642,6 +643,7 @@ export function TrackedProductsClient() {
       case 'favourite':
         return (
           // kit-exempt: favourite star toggle, a pressed icon state the kit has no control for
+          <PermissionFieldset permission="catalogue.manage">
           <button
             type="button"
             aria-label={p.isFavourite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
@@ -658,6 +660,7 @@ export function TrackedProductsClient() {
           >
             {p.isFavourite ? '★' : '☆'}
           </button>
+          </PermissionFieldset>
         );
       case 'brandProduct':
         return p.brandProduct ? (
@@ -816,6 +819,7 @@ export function TrackedProductsClient() {
         action={
           <div className="flex items-center gap-2">
             {/* The add-by-link form, moved out of the page body into the header (spec §5 item 1). */}
+            <PermissionFieldset permission="catalogue.manage">
             <PopoverButton label="+ Link ile ekle" align="right" panelClassName="w-[28rem]">
               <div className="flex flex-col gap-2">
                 <Field label="Ürün linki">
@@ -846,6 +850,7 @@ export function TrackedProductsClient() {
                 )}
               </div>
             </PopoverButton>
+            </PermissionFieldset>
             <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
             <a
               href={`/api/tracked-products?${(() => {
@@ -1275,6 +1280,7 @@ export function TrackedProductsClient() {
                     </td>
                   ))}
                   <td className="px-2 py-1 text-right whitespace-nowrap">
+                    <PermissionFieldset permission="catalogue.manage">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1322,6 +1328,7 @@ export function TrackedProductsClient() {
                     >
                       Kaldır
                     </ConfirmButton>
+                    </PermissionFieldset>
                   </td>
                 </tr>
               ))}

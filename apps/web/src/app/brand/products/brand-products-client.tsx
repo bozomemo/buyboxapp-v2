@@ -32,6 +32,8 @@ import { DEFAULT_PAGE_SIZE, Pagination, STICKY_HEAD, TableFrame } from '@/compon
 import { formatDesi } from '@/lib/desi';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import { ImportPanel } from './import-panel';
+import { PermissionFieldset } from '@/lib/permissions';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 interface BrandProduct {
   id: string;
@@ -246,6 +248,7 @@ export function BrandProductsClient() {
             Yalnızca kartı olmayanlar
           </label>
           <div className="ml-auto">
+            <PermissionFieldset permission="catalogue.manage">
             <Button
               type="button"
               onClick={() => {
@@ -256,9 +259,11 @@ export function BrandProductsClient() {
             >
               {formOpen && form.id === null ? 'Vazgeç' : 'Yeni Ürün'}
             </Button>
+            </PermissionFieldset>
           </div>
         </div>
 
+        <PermissionFieldset permission="catalogue.manage">
         {formOpen && (
           <div className="mb-4 rounded-xl border border-(--color-border) bg-(--color-bg) p-4">
             <div className="flex flex-wrap items-end gap-3">
@@ -339,6 +344,7 @@ export function BrandProductsClient() {
             </p>
           </div>
         )}
+        </PermissionFieldset>
 
         {loadError ? (
           <ErrorState message={loadError} onRetry={load} />
@@ -412,7 +418,7 @@ export function BrandProductsClient() {
                           <>
                             {formatNumber(row.cardCount)}
                             <span className="ml-1 text-xs text-(--color-muted)">
-                              {row.marketplaceCodes.join(', ')}
+                              {row.marketplaceCodes.map((code) => labelOf(MARKETPLACE_LABELS, code)).join(', ')}
                             </span>
                           </>
                         )}
@@ -420,6 +426,7 @@ export function BrandProductsClient() {
                       <td className="p-2 text-xs">{SOURCE_LABEL[row.source] ?? row.source}</td>
                       <td className="p-2 text-xs">{formatDateTime(row.updatedAt)}</td>
                       <td className="p-2">
+                        <PermissionFieldset permission="catalogue.manage">
                         <div className="flex justify-end gap-2">
                           <Button
                             variant="secondary"
@@ -439,6 +446,7 @@ export function BrandProductsClient() {
                             Sil
                           </ConfirmButton>
                         </div>
+                        </PermissionFieldset>
                       </td>
                     </tr>
                   ))}

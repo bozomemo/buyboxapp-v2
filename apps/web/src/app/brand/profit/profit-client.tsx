@@ -25,6 +25,7 @@ import {
 import { formatDesi } from '@/lib/desi';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { fileToBase64 } from '../products/import-panel';
+import { PermissionFieldset } from '@/lib/permissions';
 
 interface BandForm {
   maxDesi: string;
@@ -191,6 +192,7 @@ export function ProfitSettingsClient() {
   if (!loaded) return <LoadingState message="Kâr ayarları yükleniyor…" skeletonRows={3} />;
 
   return (
+    <PermissionFieldset permission="catalogue.manage">
     <div className="space-y-4">
       <PageHeader
         title="Kâr Ayarları"
@@ -409,5 +411,6 @@ export function ProfitSettingsClient() {
         </div>
       </Section>
     </div>
+    </PermissionFieldset>
   );
 }

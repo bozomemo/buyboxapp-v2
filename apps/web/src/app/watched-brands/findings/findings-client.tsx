@@ -20,6 +20,7 @@ import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/
 import { FINDING_BASIS_LABELS, FINDING_KIND_LABELS, labelOf } from '@/lib/labels';
 import { marketplaceProductUrl } from '@/lib/product-url';
 import { parseNonNegativeNumber } from '@/lib/operator-money';
+import { PermissionFieldset } from '@/lib/permissions';
 
 /** A threshold shown the Turkish way ("2,5"), as the operator will type it back. */
 function thresholdText(value: number): string {
@@ -773,6 +774,7 @@ export function FindingsClient() {
           <div className="space-y-3">
             {/* Her bulgu bir eşikten çıkar ve hiçbiri koda gömülü değil: burada değiştirilen
                 sayı tüm geçmişi yeniden yanıtlar, yalnızca bundan sonrasını değil. */}
+            <PermissionFieldset permission="catalogue.manage">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {THRESHOLD_FIELDS.map((field) => (
                 <label key={field.key} className="text-sm">
@@ -799,6 +801,7 @@ export function FindingsClient() {
                 Varsayılanlara dön
               </Button>
             </div>
+            </PermissionFieldset>
             <p className="text-xs text-(--color-muted)">
               Eşik değişiklikleri kim değiştirdiyse onunla birlikte kaydedilir. Bir satıcının denetim listesine girip girmeyeceğini belirleyen sayı, izsiz değişmemeli.
             </p>

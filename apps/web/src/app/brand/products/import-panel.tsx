@@ -17,6 +17,7 @@ import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatNumber } from '@/lib/format';
 import { IMPORT_COLUMN_LABELS, IMPORT_WARNING_LABELS, importErrorMessage } from '@/lib/labels';
+import { PermissionFieldset } from '@/lib/permissions';
 
 interface RowProblem {
   line: number;
@@ -139,6 +140,7 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
   }
 
   return (
+    <PermissionFieldset permission="catalogue.manage">
     <Section
       id="brand-import"
       title="Excel'den yükle"
@@ -287,5 +289,6 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
         </div>
       )}
     </Section>
+    </PermissionFieldset>
   );
 }

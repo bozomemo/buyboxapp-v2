@@ -22,6 +22,7 @@ import {
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
+import { PermissionFieldset } from '@/lib/permissions';
 
 type Verdict = 'authorised' | 'blocked' | 'undefined';
 
@@ -373,6 +374,7 @@ export function PolicyClient() {
           </label>
 
           <div className="grid gap-4 md:grid-cols-2">
+            <PermissionFieldset permission="catalogue.manage">
             {/* Elle giriş */}
             <Section id="manual-add-heading" title="Elle ekle" card>
               <div className="max-w-[720px] space-y-2 text-sm">
@@ -486,6 +488,7 @@ export function PolicyClient() {
                 />
               </div>
             </Section>
+            </PermissionFieldset>
           </div>
 
           <Section id="sellers-heading" title="Satıcılar">
@@ -581,6 +584,7 @@ export function PolicyClient() {
                           )}
                         </td>
                         <td className="px-2 py-1">
+                          <PermissionFieldset permission="catalogue.manage">
                           <div className="flex gap-1">
                             {(['authorised', 'blocked', 'undefined'] as const).map((v) => (
                               <Button
@@ -595,6 +599,7 @@ export function PolicyClient() {
                               </Button>
                             ))}
                           </div>
+                          </PermissionFieldset>
                         </td>
                       </tr>
                     ))}

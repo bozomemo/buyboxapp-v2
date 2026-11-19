@@ -31,6 +31,7 @@ import { useConfirm } from '@/components/confirm-dialog';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
+import { PermissionFieldset } from '@/lib/permissions';
 
 interface WatchedBrand {
   id: string;
@@ -330,6 +331,7 @@ export function WatchedBrandsClient() {
             {brand.brandRef && <span>marka id: {brand.brandRef}</span>}
             {brand.searchTerm && <span>arama: {brand.searchTerm}</span>}
             {brand.suggestedBrandRef && (
+              <PermissionFieldset permission="catalogue.manage">
               <Button
                 variant="ghost"
                 size="sm"
@@ -341,11 +343,13 @@ export function WatchedBrandsClient() {
               >
                 + marka id {brand.suggestedBrandRef.ref} ekle
               </Button>
+              </PermissionFieldset>
             )}
           </div>
         );
       case 'type':
         return (
+          <PermissionFieldset permission="catalogue.manage">
           <ConfirmButton
             requireConfirm={brand.isOwnBrand}
             confirmMessage={`${brand.label} rakip marka olarak işaretlenecek — bundan sonra denetim bulgusu üretilmeyecek. Emin misiniz?`}
@@ -359,6 +363,7 @@ export function WatchedBrandsClient() {
           >
             <Chip tone={brand.isOwnBrand ? 'ok' : 'neutral'}>{brand.isOwnBrand ? 'bizim' : 'rakip'}</Chip>
           </ConfirmButton>
+          </PermissionFieldset>
         );
       case 'products':
         return (
@@ -413,6 +418,7 @@ export function WatchedBrandsClient() {
       case 'status':
         return (
           // kit-exempt: the status chip itself is the toggle — a word-carrying state, not a button label
+          <PermissionFieldset permission="catalogue.manage">
           <button
             type="button"
             disabled={busy}
@@ -422,6 +428,7 @@ export function WatchedBrandsClient() {
           >
             <Chip tone={brand.isActive ? 'ok' : 'neutral'}>{brand.isActive ? 'aktif' : 'duraklatıldı'}</Chip>
           </button>
+          </PermissionFieldset>
         );
       default:
         return null;
@@ -490,6 +497,7 @@ export function WatchedBrandsClient() {
         </Button>
       </div>
 
+      <PermissionFieldset permission="catalogue.manage">
       {showAddForms && (
         <Section id="watched-brands-add" title="Marka veya grup ekle" card>
           <div className="space-y-2">
@@ -579,6 +587,7 @@ export function WatchedBrandsClient() {
           </div>
         </Section>
       )}
+      </PermissionFieldset>
 
       {error && <StatusBanner ok={false} message={error} />}
 
@@ -619,6 +628,7 @@ export function WatchedBrandsClient() {
           id={`watched-brand-group-${group.id}`}
           title={group.name}
           action={
+            <PermissionFieldset permission="catalogue.manage">
             <ConfirmButton
               requireConfirm
               confirmTone="danger"
@@ -629,6 +639,7 @@ export function WatchedBrandsClient() {
             >
               Grubu sil
             </ConfirmButton>
+            </PermissionFieldset>
           }
         >
           <TableFrame>
@@ -659,6 +670,7 @@ export function WatchedBrandsClient() {
                     <td className="px-2 py-1 text-right whitespace-nowrap">
                       {/* §3.6: onay, geri alınamadığı için değil — pazaryerine binlerce istek
                           gönderdiği için. Mesaj kaç ürünün okunacağını adıyla söyler. */}
+                      <PermissionFieldset permission="catalogue.manage">
                       <ConfirmButton
                         requireConfirm
                         confirmMessage={`${brand.label}: önce katalog taranacak, ardından bulunan her ürünün satıcıları tek tek okunacak.
@@ -695,6 +707,7 @@ Başlatılsın mı?`}
                       >
                         Kaldır
                       </ConfirmButton>
+                      </PermissionFieldset>
                     </td>
                   </tr>
                 ))}

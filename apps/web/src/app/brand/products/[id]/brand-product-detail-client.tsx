@@ -34,6 +34,7 @@ import {
 import { formatDesi } from '@/lib/desi';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
+import { PermissionFieldset } from '@/lib/permissions';
 
 interface Product {
   id: string;
@@ -187,6 +188,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
   if (loading || !product) return <LoadingState message="Ürün yükleniyor…" skeletonRows={4} />;
 
   return (
+    <PermissionFieldset permission="catalogue.manage">
     <div className="space-y-4">
       <PageHeader
         title={product.name}
@@ -397,6 +399,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
         )}
       </Section>
     </div>
+    </PermissionFieldset>
   );
 }
 
