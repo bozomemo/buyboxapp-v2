@@ -33,6 +33,7 @@ import {
 } from '@/components/ui';
 import { formatDesi } from '@/lib/desi';
 import { formatMoney, formatNumber } from '@/lib/format';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 interface Product {
   id: string;
@@ -253,7 +254,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
               <tbody>
                 {cards.map((card) => (
                   <tr key={card.id} className="border-t border-(--color-border)">
-                    <td className="p-2">{card.marketplaceCode}</td>
+                    <td className="p-2">{labelOf(MARKETPLACE_LABELS, card.marketplaceCode)}</td>
                     <td className="p-2">
                       <a className="underline" href={card.productUrl} target="_blank" rel="noreferrer">
                         {card.label}
@@ -319,7 +320,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Ürün linki" hint="Trendyol veya Hepsiburada ürün sayfası">
             <TextInput
-              value={pickedCard ? `${pickedCard.marketplaceCode} · ${pickedCard.label}` : link}
+              value={pickedCard ? `${labelOf(MARKETPLACE_LABELS, pickedCard.marketplaceCode)} · ${pickedCard.label}` : link}
               onChange={(e) => {
                 setPickedCard(null);
                 setLink(e.target.value);
@@ -372,7 +373,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
                 key={suggestion.id}
                 className="flex flex-wrap items-center gap-3 rounded-lg border border-(--color-border) bg-(--color-surface) p-3"
               >
-                <span className="text-xs text-(--color-muted)">{suggestion.marketplaceCode}</span>
+                <span className="text-xs text-(--color-muted)">{labelOf(MARKETPLACE_LABELS, suggestion.marketplaceCode)}</span>
                 <a className="underline" href={suggestion.productUrl} target="_blank" rel="noreferrer">
                   {suggestion.label}
                 </a>

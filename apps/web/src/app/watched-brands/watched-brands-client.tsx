@@ -30,6 +30,7 @@ import {
 import { useConfirm } from '@/components/confirm-dialog';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatNumber } from '@/lib/format';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 interface WatchedBrand {
   id: string;
@@ -322,7 +323,7 @@ export function WatchedBrandsClient() {
           </Link>
         );
       case 'marketplace':
-        return brand.marketplaceCode;
+        return labelOf(MARKETPLACE_LABELS, brand.marketplaceCode);
       case 'selectors':
         return (
           <div className="flex flex-col gap-0.5 text-xs">
@@ -532,8 +533,8 @@ export function WatchedBrandsClient() {
                     value={brandMarketplace}
                     onChange={(e) => setBrandMarketplace(e.target.value)}
                     options={[
-                      { value: 'trendyol', label: 'trendyol' },
-                      { value: 'hepsiburada', label: 'hepsiburada' },
+                      { value: 'trendyol', label: 'Trendyol' },
+                      { value: 'hepsiburada', label: 'Hepsiburada' },
                     ]}
                     className="w-32"
                   />

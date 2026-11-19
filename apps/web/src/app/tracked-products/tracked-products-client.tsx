@@ -38,6 +38,7 @@ import { formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { marketSnapshot } from '@/lib/market-stats';
 import { marketplaceProductUrl } from '@/lib/product-url';
 import { discoveryLabel, isBrandNameOnly } from '@/lib/tracked-product-discovery';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 interface Observation {
   status: 'ok' | 'parseFailed' | 'fetchFailed';
@@ -710,7 +711,7 @@ export function TrackedProductsClient() {
       case 'category':
         return p.categoryName ?? '—';
       case 'marketplace':
-        return p.marketplaceCode;
+        return labelOf(MARKETPLACE_LABELS, p.marketplaceCode);
       case 'productRef':
         return <span className="font-mono text-xs">{p.productRef}</span>;
       case 'rating':

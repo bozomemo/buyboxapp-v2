@@ -7,6 +7,7 @@ import { Ago, Button, ErrorState, LoadingState, PageHeader, SegmentedFilter, Tex
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { CoverageBadge, type Coverage } from './coverage-badge';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 interface ListingOption {
   id: string;
@@ -248,7 +249,7 @@ export function CompetitorsClient() {
                       setListingOptions([]);
                     }}
                   >
-                    {o.productName} ({o.marketplaceCode})
+                    {o.productName} ({labelOf(MARKETPLACE_LABELS, o.marketplaceCode)})
                   </button>
                 </li>
               ))}

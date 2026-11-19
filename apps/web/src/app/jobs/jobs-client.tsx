@@ -18,7 +18,7 @@ import { Download } from '@/components/icon';
 import { Button, EmptyState, ErrorState, LoadingState, Section, Select, TextInput } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '@/lib/format';
-import { CIRCUIT_LABELS, JOB_LABELS, JOB_RUN_STATE_LABELS, labelOf } from '@/lib/labels';
+import { CIRCUIT_LABELS, JOB_LABELS, JOB_RUN_STATE_LABELS, labelOf, MARKETPLACE_LABELS, QUEUE_STATE_LABELS } from '@/lib/labels';
 import { NO_PERMISSION_TITLE, useCan } from '@/lib/permissions';
 
 /**
@@ -858,7 +858,7 @@ export function JobsClient() {
           <div className="space-y-3">
             {scrapeRates.map((rate) => (
               <div key={rate.marketplaceCode} className="space-y-2">
-                <p className="text-xs font-medium text-(--color-muted)">{rate.marketplaceCode}</p>
+                <p className="text-xs font-medium text-(--color-muted)">{labelOf(MARKETPLACE_LABELS, rate.marketplaceCode)}</p>
                 <SweepPassCard marketplaceCode={rate.marketplaceCode} scope="all" label="Tarama turu" />
                 <SweepPassCard marketplaceCode={rate.marketplaceCode} scope="listed" label="İlanlar turu" />
               </div>
@@ -1131,7 +1131,7 @@ export function JobsClient() {
             {overview.circuitBreakers.map((c) => (
               <li key={c.marketplaceCode} className="flex items-center justify-between px-3 py-2">
                 <div>
-                  <span className="font-medium">{c.marketplaceCode}</span> —{' '}
+                  <span className="font-medium">{labelOf(MARKETPLACE_LABELS, c.marketplaceCode)}</span> —{' '}
                   <span className={c.state === 'closed' ? 'text-(--color-muted)' : 'text-(--color-danger)'}>
                     {labelOf(CIRCUIT_LABELS, c.state)}
                   </span>
@@ -1168,7 +1168,7 @@ export function JobsClient() {
           {['ready', 'locked', 'done', 'failed'].map((state) => (
             <div key={state} className="rounded-lg border border-(--color-border) bg-(--color-bg) px-4 py-2 text-center">
               <div className="text-xl font-bold">{formatNumber(overview.queueDepth[state] ?? 0)}</div>
-              <div className="text-xs text-(--color-muted)">{state}</div>
+              <div className="text-xs text-(--color-muted)">{labelOf(QUEUE_STATE_LABELS, state)}</div>
             </div>
           ))}
         </div>
@@ -1222,13 +1222,13 @@ export function JobsClient() {
               <tbody className="divide-y divide-(--color-border)">
                 {scrapeRates.map((rate) => (
                   <tr key={rate.marketplaceCode}>
-                    <td className="px-3 py-2 font-medium">{rate.marketplaceCode}</td>
+                    <td className="px-3 py-2 font-medium">{labelOf(MARKETPLACE_LABELS, rate.marketplaceCode)}</td>
                     <td className="px-3 py-2">
                       <TextInput
                         type="number"
                         min={1}
                         className="w-20"
-                        aria-label={`${rate.marketplaceCode} istek/dakika`}
+                        aria-label={`${labelOf(MARKETPLACE_LABELS, rate.marketplaceCode)} istek/dakika`}
                         value={scrapeRateDraft[rate.marketplaceCode]?.requestsPerMinute ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({
@@ -1249,7 +1249,7 @@ export function JobsClient() {
                         type="number"
                         min={1}
                         className="w-20"
-                        aria-label={`${rate.marketplaceCode} patlama`}
+                        aria-label={`${labelOf(MARKETPLACE_LABELS, rate.marketplaceCode)} patlama`}
                         value={scrapeRateDraft[rate.marketplaceCode]?.burst ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({
@@ -1273,7 +1273,7 @@ export function JobsClient() {
                         min={2}
                         max={120}
                         className="w-20"
-                        aria-label={`${rate.marketplaceCode} zaman aşımı (sn)`}
+                        aria-label={`${labelOf(MARKETPLACE_LABELS, rate.marketplaceCode)} zaman aşımı (sn)`}
                         value={scrapeRateDraft[rate.marketplaceCode]?.timeoutSeconds ?? ''}
                         onChange={(e) =>
                           setScrapeRateDraft((prev) => ({

@@ -18,6 +18,7 @@ import { Button, ErrorState, LoadingState, PageHeader, SegmentedFilter } from '@
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
 import { CoverageBadge } from '../coverage-badge';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 interface Coverage {
   ok: number;
@@ -116,7 +117,7 @@ function renderSellerCell(id: ColumnId, s: Seller): React.ReactNode {
         </>
       );
     case 'marketplace':
-      return s.marketplaceCode;
+      return labelOf(MARKETPLACE_LABELS, s.marketplaceCode);
     case 'listingCount':
       return formatNumber(s.listingCount);
     case 'observationCount':

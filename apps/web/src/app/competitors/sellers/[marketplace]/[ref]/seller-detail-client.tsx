@@ -31,6 +31,7 @@ import {
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
 import { CoverageBadge, type Coverage } from '../../../coverage-badge';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 interface SellerListing {
   listingId: string;
@@ -396,7 +397,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
         }
         description={
           <>
-          {detail.seller.marketplaceCode} · {detail.seller.sellerRef}
+          {labelOf(MARKETPLACE_LABELS, detail.seller.marketplaceCode)} · {detail.seller.sellerRef}
           {detail.group && (
             <>
               {' '}
@@ -642,7 +643,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
               onChange={(e) => setWatchedBrandId(e.target.value)}
               options={[
                 { value: '', label: 'Tüm izlenen markalar' },
-                ...detail.watchedBrands.map((b) => ({ value: b.id, label: `${b.label} (${b.marketplaceCode})` })),
+                ...detail.watchedBrands.map((b) => ({ value: b.id, label: `${b.label} (${labelOf(MARKETPLACE_LABELS, b.marketplaceCode)})` })),
               ]}
             />
           </label>

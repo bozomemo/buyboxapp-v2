@@ -39,6 +39,7 @@ import {
 } from '@/components/ui';
 import { formatDateTime, formatDuration, formatMoney, formatNumber } from '@/lib/format';
 import { marketplaceProductUrl } from '@/lib/product-url';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 type BandStatus = 'inBand' | 'belowMin' | 'aboveMax' | 'unknown';
 
@@ -355,7 +356,7 @@ export function BrandListingsClient() {
                             </a>
                           ) : null;
                         })()}
-                        <span className="ml-2 text-xs text-(--color-muted)">{row.marketplaceCode}</span>
+                        <span className="ml-2 text-xs text-(--color-muted)">{labelOf(MARKETPLACE_LABELS, row.marketplaceCode)}</span>
                         {!row.isActive && (
                           <span className="ml-2 text-xs text-(--color-muted)">· duraklatıldı</span>
                         )}

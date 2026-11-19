@@ -74,7 +74,7 @@ Hiç sorun olmadıysa **Hiç tetiklenmedi.** yazar. Sorunu giderdiyseniz (ör. p
 
 ## Kuyruk Derinliği ve Alınan İşler
 
-Sıradaki işlerin sayısını dört kutuda gösterir: **ready** (sırada bekleyen), **locked** (şu an çalışan), **done** (tamamlanan), **failed** (başarısız). Altında şu an çalışan işlerin listesi, kaçıncı denemede oldukları ve kilidin ne zaman biteceği yazar. Bu bölüm genellikle sorun ararken kullanılır.
+Sıradaki işlerin sayısını dört kutuda gösterir: **Sırada** (çalışmayı bekleyen), **Alındı** (şu an çalışan), **Bitti** (tamamlanan), **Başarısız**. Altında şu an çalışan işlerin listesi, kaçıncı denemede oldukları ve kilidin ne zaman biteceği yazar. Bu bölüm genellikle sorun ararken kullanılır.
 
 ## Tarama Hızı (Rakip Verisi Toplama) — gelişmiş ayar
 

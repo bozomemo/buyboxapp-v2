@@ -18,11 +18,7 @@ import {
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
-import {
-  DECISION_REASON_LABELS as REASON_LABELS,
-  PHASE_LABELS,
-  SUBMISSION_STATE_LABELS as STATE_LABELS,
-} from '@/lib/labels';
+import { DECISION_REASON_LABELS as REASON_LABELS, labelOf, MARKETPLACE_LABELS, PHASE_LABELS, SUBMISSION_STATE_LABELS as STATE_LABELS } from '@/lib/labels';
 import { useCan } from '@/lib/permissions';
 
 interface Detail {
@@ -281,7 +277,7 @@ export function ListingDetailClient({ id }: { id: string }) {
       <PageHeader
         title={listing.productName}
         breadcrumb={[{ label: 'Satış' }, { label: 'İlanlar', href: '/listings' }, { label: listing.productName }]}
-        description={`${listing.marketplaceCode} · ${listing.marketplaceListingId} · ${listing.sellerStockCode}`}
+        description={`${labelOf(MARKETPLACE_LABELS, listing.marketplaceCode)} · ${listing.marketplaceListingId} · ${listing.sellerStockCode}`}
         action={
           <Link href="/listings" className={buttonClass('secondary', 'sm')}>
             ← İlanlara dön

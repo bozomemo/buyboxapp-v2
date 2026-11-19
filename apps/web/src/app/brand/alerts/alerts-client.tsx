@@ -24,6 +24,7 @@ import { Ago, Button, EmptyState, ErrorState, LoadingState, PageHeader, Section 
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatMoney, kurusToDecimal } from '@/lib/format';
 import { marketplaceProductUrl } from '@/lib/product-url';
+import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 type Kind = 'belowMin' | 'aboveMax';
 type Resolution = 'inBand' | 'buyboxChanged' | 'noOffers' | 'thresholdRemoved' | 'unlinked';
@@ -107,7 +108,7 @@ function cardLink(v: Violation) {
           ↗
         </a>
       )}
-      <span className="ml-2 text-xs text-(--color-muted)">{v.marketplaceCode}</span>
+      <span className="ml-2 text-xs text-(--color-muted)">{labelOf(MARKETPLACE_LABELS, v.marketplaceCode)}</span>
       {v.unitMultiplier !== 1 && <span className="ml-2 text-xs text-(--color-muted)">×{v.unitMultiplier}</span>}
     </>
   );

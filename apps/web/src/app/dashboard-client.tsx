@@ -21,13 +21,7 @@ import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { publishDashboardFreshness } from '@/lib/dashboard-feed';
 import { formatDateTime, formatMoney, formatNumber, formatTime } from '@/lib/format';
-import {
-  DECISION_REASON_LABELS,
-  labelOf,
-  PHASE_DESCRIPTIONS,
-  PHASE_LABELS,
-  SUBMISSION_STATE_LABELS,
-} from '@/lib/labels';
+import { DECISION_REASON_LABELS, labelOf, MARKETPLACE_LABELS, PHASE_DESCRIPTIONS, PHASE_LABELS, SUBMISSION_STATE_LABELS } from '@/lib/labels';
 import { NO_PERMISSION_TITLE, canToggleStop, useCan } from '@/lib/permissions';
 
 /**
@@ -848,7 +842,7 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }) {
                   <Link className="text-(--color-accent) hover:underline" href={`/listings/${d.listingId}`}>
                     {d.productName}
                   </Link>
-                  <div className="text-xs text-(--color-muted)">{d.marketplaceCode}</div>
+                  <div className="text-xs text-(--color-muted)">{labelOf(MARKETPLACE_LABELS, d.marketplaceCode)}</div>
                 </td>
                 <td className="tabular-figures px-3 py-2 whitespace-nowrap">
                   {formatMoney(oldPrice)} {direction} {formatMoney(newPrice)}
@@ -1033,7 +1027,7 @@ function BrandAuditSection({ audit }: { audit: BrandAudit }) {
                       >
                         {brand.label}
                       </Link>
-                      <span className="ml-2 text-xs text-(--color-muted)">{brand.marketplaceCode}</span>
+                      <span className="ml-2 text-xs text-(--color-muted)">{labelOf(MARKETPLACE_LABELS, brand.marketplaceCode)}</span>
                     </td>
                     <td className="tabular-figures px-2 py-1">{formatNumber(brand.productCount)}</td>
                     {/* Not colour alone: the count carries the word too, so the warning survives

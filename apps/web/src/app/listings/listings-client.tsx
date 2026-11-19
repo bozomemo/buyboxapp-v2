@@ -32,7 +32,7 @@ import {
 import { X } from '@/components/icon';
 import { formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
 import { NO_PERMISSION_TITLE, useCan } from '@/lib/permissions';
-import { labelOf, PHASE_LABELS } from '@/lib/labels';
+import { labelOf, MARKETPLACE_LABELS, PHASE_LABELS } from '@/lib/labels';
 
 interface Row {
   id: string;
@@ -406,7 +406,7 @@ async function postBulk(action: string, ids: string[]): Promise<void> {
 function renderCell(id: ColumnId, row: Row, onChanged: () => void): React.ReactNode {
   switch (id) {
     case 'marketplace':
-      return row.marketplaceCode;
+      return labelOf(MARKETPLACE_LABELS, row.marketplaceCode);
     case 'productName':
       return (
         <Link href={`/listings/${row.id}`} className="text-(--color-accent) hover:underline">

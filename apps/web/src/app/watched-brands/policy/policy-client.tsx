@@ -21,7 +21,7 @@ import {
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
-import { POLICY_VERDICT_LABELS } from '@/lib/labels';
+import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
 
 type Verdict = 'authorised' | 'blocked' | 'undefined';
 
@@ -560,7 +560,7 @@ export function PolicyClient() {
                         <td className="px-2 py-1">
                           {s.sellerName || s.sellerRef}
                           <div className="font-mono text-xs text-(--color-muted)">
-                            {s.marketplaceCode} · {s.sellerRef}
+                            {labelOf(MARKETPLACE_LABELS, s.marketplaceCode)} · {s.sellerRef}
                           </div>
                           {s.note && <div className="text-xs text-(--color-muted)">{s.note}</div>}
                         </td>

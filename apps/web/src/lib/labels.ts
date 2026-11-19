@@ -127,6 +127,14 @@ export const CIRCUIT_LABELS: Record<string, string> = {
  * history table both printed this raw (R-UI-11), which the plan's baseline recorded as a known
  * issue ("raw run `state`").
  */
+/** The job queue's states, as the İşler screen's queue depth shows them (they were shown raw). */
+export const QUEUE_STATE_LABELS: Record<string, string> = {
+  ready: 'Sırada',
+  locked: 'Alındı',
+  done: 'Bitti',
+  failed: 'Başarısız',
+};
+
 export const JOB_RUN_STATE_LABELS: Record<string, string> = {
   running: 'Çalışıyor',
   success: 'Başarılı',

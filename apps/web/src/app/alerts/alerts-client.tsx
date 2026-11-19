@@ -20,7 +20,7 @@ import {
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatDuration, formatMoney, kurusToDecimal, parseMoneyToKurus } from '@/lib/format';
-import { labelOf, PREDICATE_LABELS, SCOPE_LABELS, SUBJECT_LABELS, THRESHOLD_LABELS } from '@/lib/labels';
+import { labelOf, MARKETPLACE_LABELS, PREDICATE_LABELS, SCOPE_LABELS, SUBJECT_LABELS, THRESHOLD_LABELS } from '@/lib/labels';
 
 interface AlertSeller {
   sellerRef: string | null;
@@ -237,7 +237,7 @@ function ListingPicker({ onPick }: { onPick: (listing: { id: string; productName
                   setResults([]);
                 }}
               >
-                {r.productName} <span className="text-xs text-(--color-muted)">({r.marketplaceCode})</span>
+                {r.productName} <span className="text-xs text-(--color-muted)">({labelOf(MARKETPLACE_LABELS, r.marketplaceCode)})</span>
               </button>
             </li>
           ))}
@@ -403,7 +403,7 @@ function RuleEditor({
                   { value: '', label: '— satıcı seçin —' },
                   ...sellersForScope.map((s) => ({
                     value: s.sellerRef,
-                    label: `${s.sellerName || s.sellerRef} (${s.marketplaceCode})`,
+                    label: `${s.sellerName || s.sellerRef} (${labelOf(MARKETPLACE_LABELS, s.marketplaceCode)})`,
                   })),
                 ]}
               />
@@ -785,7 +785,7 @@ export function AlertsClient() {
                       {a.productName}
                     </Link>
                     <div className="text-xs text-(--color-muted)">
-                      {a.marketplaceCode} · bizim fiyatımız{' '}
+                      {labelOf(MARKETPLACE_LABELS, a.marketplaceCode)} · bizim fiyatımız{' '}
                       {a.ourPrice ? formatMoney(BigInt(a.ourPrice)) : '—'}
                       {a.thresholdApplied && <> · eşik {formatMoney(BigInt(a.thresholdApplied))}</>}
                     </div>

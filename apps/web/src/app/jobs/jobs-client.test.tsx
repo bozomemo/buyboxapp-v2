@@ -119,6 +119,10 @@ describe('JobsClient', () => {
     expect((await screen.findAllByText('İlan İçe Aktarma')).length).toBeGreaterThan(0);
     // The raw `job_runs.state` ('failed') must not reach the screen — only its Turkish label.
     expect(screen.getAllByText('Başarısız').length).toBeGreaterThan(0);
+    // The queue depth showed its raw states, 'ready', 'locked', 'done', 'failed' (2026-11-19).
+    for (const raw of ['ready', 'locked', 'done', 'failed']) expect(screen.queryByText(raw)).toBeNull();
+    expect(screen.getByText('Sırada')).toBeTruthy();
+    expect(screen.getByText('Alındı')).toBeTruthy();
   });
 
   // doc 17 §1.3: a brand-only install's catalogue opened on nine price jobs it never runs.
@@ -236,9 +240,9 @@ describe('JobsClient', () => {
     });
     render(<JobsClient />);
     // Behind a closed <details>, so by label rather than by role.
-    expect(await screen.findByLabelText('trendyol istek/dakika')).toBeTruthy();
-    expect(screen.getByLabelText('trendyol patlama')).toBeTruthy();
-    expect(screen.getByLabelText('trendyol zaman aşımı (sn)')).toBeTruthy();
+    expect(await screen.findByLabelText('Trendyol istek/dakika')).toBeTruthy();
+    expect(screen.getByLabelText('Trendyol patlama')).toBeTruthy();
+    expect(screen.getByLabelText('Trendyol zaman aşımı (sn)')).toBeTruthy();
   });
 
   it('run now stays disabled while queued', async () => {

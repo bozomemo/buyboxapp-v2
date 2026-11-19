@@ -8,7 +8,7 @@ import { Download } from '@/components/icon';
 import { Ago, Button, buttonClass, Chip, EmptyState, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
-import { STATUS_LABELS } from '@/lib/labels';
+import { labelOf, MARKETPLACE_LABELS, STATUS_LABELS } from '@/lib/labels';
 import { lookAnnotations } from '@/lib/price-chart-series';
 import { marketplaceProductUrl } from '@/lib/product-url';
 
@@ -191,7 +191,7 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
         ]}
         description={
           <>
-              {product.marketplaceCode} · {product.productRef}
+              {labelOf(MARKETPLACE_LABELS, product.marketplaceCode)} · {product.productRef}
               {pageUrl && (
                 <>
                   {' · '}

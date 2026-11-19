@@ -27,7 +27,7 @@ import {
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
-import { POLICY_VERDICT_LABELS } from '@/lib/labels';
+import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
 import { SellerIdentityPanel } from './seller-identity-panel';
 
 interface Seller {
@@ -178,7 +178,7 @@ function renderSellerCell(
       }
       return <Chip tone={VERDICT_TONE[s.verdict]}>{POLICY_VERDICT_LABELS[s.verdict]}</Chip>;
     case 'marketplace':
-      return s.marketplaceCode;
+      return labelOf(MARKETPLACE_LABELS, s.marketplaceCode);
     case 'productCount':
       return <span className="tabular-nums">{formatNumber(s.productCount)}</span>;
     case 'observationCount':

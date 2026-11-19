@@ -63,3 +63,24 @@ describe('screens do not show the code’s own names', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * A marketplace is "Trendyol" on screen, never its code "trendyol" (2026-11-19 walkthrough: the
+ * brand product cards, the jobs screen's passes and rate table, the alert rows). A JSX child that
+ * renders a `…marketplaceCode` as it is fails here; `labelOf(MARKETPLACE_LABELS, …)` passes.
+ */
+describe('screens name a marketplace, not its code', () => {
+  it('holds for every JSX child and table cell in a component', () => {
+    const offenders = sources(SRC).flatMap((file) =>
+      stripComments(readFileSync(file, 'utf8'))
+        .split('\n')
+        .flatMap((line, i) =>
+          // A JSX child, or a table cell renderer returning the code as the cell.
+          /(?<![=/$\-\w])\{[\w.?]*[mM]arketplace(?:Code)?\}/.test(line) || /return [\w.]+\.marketplaceCode;/.test(line)
+            ? [`${path.relative(SRC, file)}:${i + 1}: ${line.trim()}`]
+            : [],
+        ),
+    );
+    expect(offenders).toEqual([]);
+  });
+});
