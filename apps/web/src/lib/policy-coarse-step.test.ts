@@ -16,6 +16,9 @@ describe('parseCoarseStep', () => {
     ['a percentage', { mode: 'percent', percent: '5' }, { absolute: null, percent: 5 }],
     ['a fractional percentage', { mode: 'percent', percent: '1.5' }, { absolute: null, percent: 1.5 }],
     ['a percentage ignoring a stale amount', { mode: 'percent', percent: '5', absolute: 'kırk' }, { absolute: null, percent: 5 }],
+    // One TL reading app-wide (product owner, 2026-11-19): Turkish grouping.
+    ['a thousands-grouped amount', { mode: 'absolute', absolute: '1.400' }, { absolute: 140000n, percent: null }],
+    ['an amount with a TL sign', { mode: 'absolute', absolute: '2,50 ₺' }, { absolute: 250n, percent: null }],
     ['an amount ignoring a stale percentage', { mode: 'absolute', absolute: '1.00', percent: '' }, { absolute: 100n, percent: null }],
   ];
   it.each(accepted)('accepts %s', (_name, input, expected) => {
@@ -29,8 +32,7 @@ describe('parseCoarseStep', () => {
     ['a missing fixed amount', { mode: 'absolute' }],
     ['a negative fixed amount', { mode: 'absolute', absolute: '-1.00' }],
     ['a fixed amount that is not money', { mode: 'absolute', absolute: 'kırk' }],
-    ['a fixed amount finer than a kuruş', { mode: 'absolute', absolute: '1.005' }],
-    ['a thousands-grouped amount read ambiguously', { mode: 'absolute', absolute: '1.400' }],
+    ['a fixed amount finer than a kuruş', { mode: 'absolute', absolute: '1,005' }],
     ['a percentage of zero', { mode: 'percent', percent: '0' }],
     ['an empty percentage', { mode: 'percent', percent: '' }],
     ['a percentage that is not a number', { mode: 'percent', percent: 'beş' }],

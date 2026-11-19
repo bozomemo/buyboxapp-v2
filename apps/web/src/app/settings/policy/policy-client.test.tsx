@@ -107,7 +107,7 @@ describe('PolicyClient', () => {
     render(<PolicyClient />);
 
     const amount = await screen.findByLabelText('Kaba Adım (₺)');
-    expect((amount as HTMLInputElement).value).toBe('3.00');
+    expect((amount as HTMLInputElement).value).toBe('3,00');
   });
 
   it('fixed-amount step: refuses to save without an amount', async () => {

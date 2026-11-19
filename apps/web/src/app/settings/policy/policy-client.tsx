@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatMoney } from '@/lib/format';
+import { showMoneyFields } from '@/lib/operator-money';
 import { DECISION_REASON_LABELS, labelOf } from '@/lib/labels';
 import { parseCoarseStep } from '@/lib/policy-coarse-step';
 import {
@@ -44,10 +45,10 @@ const EMPTY: Form = {
   coarseStepMode: 'percent',
   coarseStepPercent: '5',
   coarseStepAbsolute: '',
-  refineTolerance: '0.50',
+  refineTolerance: '0,50',
   seekStrategy: 'direct',
-  undercutBy: '0.10',
-  seekStep: '1.00',
+  undercutBy: '0,10',
+  seekStep: '1,00',
   soleSellerMarginPct: '10',
   lowStockGuardEnabled: false,
   lowStockThreshold: '3',
@@ -55,7 +56,7 @@ const EMPTY: Form = {
   stockMode: 'ignoreStock',
   minPhysicalStock: '0',
   settleDurationMinutes: '1',
-  competitorPriceDelta: '0.10',
+  competitorPriceDelta: '0,10',
   pollIntervalMinutes: '5',
   concurrency: '1',
   budgetReservePct: '20',
@@ -116,7 +117,18 @@ export function PolicyClient() {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Politika yüklenemedi (HTTP ${r.status}).`))))
       .then((data: { current: Form | null }) => {
         // Spread over the defaults so a field the server does not return stays a string.
-        setForm(data.current ? { ...EMPTY, ...data.current } : EMPTY);
+        // Money fields shown in TL like every price on screen; the server sends wire decimals.
+        setForm(
+          data.current
+            ? showMoneyFields({ ...EMPTY, ...data.current }, [
+                'refineTolerance',
+                'undercutBy',
+                'seekStep',
+                'competitorPriceDelta',
+                'coarseStepAbsolute',
+              ])
+            : EMPTY,
+        );
         setHasCurrent(data.current !== null);
         setLoadError(null);
         setHasLoadedOnce(true);

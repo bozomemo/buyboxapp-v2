@@ -10,7 +10,7 @@ routes:
 
 **Ücretler** ekranında her pazaryeri için komisyon oranını, kargo tutarlarını ve diğer giderleri girersiniz. Uygulama bu değerlerle bir ürünün **taban fiyatını** hesaplar: altına inildiğinde zarar edilen fiyat. Bu nedenle değerlerin mağazanızın gerçek sözleşme koşullarıyla aynı olması önemlidir. Pazaryeriyle anlaşmanız değiştiğinde bu ekranı açın. Bkz. [Taban Fiyat](/rehber/concepts-floor-price) ve [Maliyet, Komisyon ve Kargo](/rehber/concepts-cost-and-fees).
 
-Fiyat hesaplarında KDV kullanılmaz. Maliyet, komisyon, kargo ve gider tutarlarını satış fiyatıyla aynı temelde (KDV dahil) ve faturada gördüğünüz gibi girin. Kuruşu virgülle yazın (39,99); noktayla yazılmış tutar da (39.99) kabul edilir.
+Fiyat hesaplarında KDV kullanılmaz. Maliyet, komisyon, kargo ve gider tutarlarını satış fiyatıyla aynı temelde (KDV dahil) ve faturada gördüğünüz gibi girin. Tutarları uygulamanın her yerinde olduğu gibi yazın: kuruş için virgül (39,99), binlik ayraç için nokta (1.400 = bin dört yüz TL). "₺" ya da "TL" yazmanız gerekmez, yazarsanız da sorun olmaz.
 
 ## Pazaryeri
 
@@ -24,7 +24,7 @@ Ekranın en üstündeki **Pazaryeri** listesinden **Trendyol** veya **Hepsiburad
 
 ### Kargo
 
-**Kargo Bantları (üst fiyat sınırı, tutar)**: satış fiyatına göre ödediğiniz kargo tutarı. Her satır bir banttır:
+**Kargo Bantları (üst fiyat sınırı ₺, tutar ₺)**: satış fiyatına göre ödediğiniz kargo tutarı. Her satır bir banttır:
 
 - **Üst sınır (boş = sınırsız)**: bu bandın geçerli olduğu en yüksek satış fiyatı. Son bandın üst sınırını boş bırakın; boş değilse ya da boş olan son bant değilse ayarlar kaydedilmez.
 - **Tutar**: bu fiyat aralığında ödenen kargo.
@@ -35,7 +35,7 @@ Bantlar yukarıdan aşağıya denenir; satış fiyatına uyan ilk bant kullanıl
 
 ### Gider Payı
 
-**Gider Bantları (alt fiyat sınırı, tutar)**: pazaryerinin kargo dışındaki sabit kesintileri (hizmet bedeli gibi). Her satırda **Alt sınır** ve **Tutar** vardır. Bantlar yukarıdan aşağıya denenir; alt sınırı satış fiyatına eşit ya da ondan küçük olan ilk bant kullanılır. Bu yüzden bantları büyük alt sınırdan küçüğe doğru sıralayın ve en alta alt sınırı 0 olan bir bant koyun.
+**Gider Bantları (alt fiyat sınırı ₺, tutar ₺)**: pazaryerinin kargo dışındaki sabit kesintileri (hizmet bedeli gibi). Her satırda **Alt sınır** ve **Tutar** vardır. Bantlar yukarıdan aşağıya denenir; alt sınırı satış fiyatına eşit ya da ondan küçük olan ilk bant kullanılır. Bu yüzden bantları büyük alt sınırdan küçüğe doğru sıralayın ve en alta alt sınırı 0 olan bir bant koyun.
 
 Bant eklemek için **+ Bant Ekle**, silmek için satırdaki **Kaldır** düğmesini kullanın.
 

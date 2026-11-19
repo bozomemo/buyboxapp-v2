@@ -18,7 +18,7 @@ Başlığın sağında **Ürün Ekle** düğmesi vardır. Tıklayınca şu alanl
 
 - **Stok Kodu**: Ürünün temel stok kodu.
 - **Ürün İsmi**
-- **Birim Fiyat (₺, KDV dahil)**: Ürünün bir adedinin size maliyeti. Tutarı KDV dahil, olduğu gibi yazın; sistem başka bir vergi hesabı yapmaz. Kuruşu virgülle yazın, örneğin 120,50.
+- **Birim Fiyat (₺, KDV dahil)**: Ürünün bir adedinin size maliyeti. Tutarı KDV dahil, olduğu gibi yazın; sistem başka bir vergi hesabı yapmaz. Kuruşu virgülle, binlikleri noktayla yazın: 120,50 ya da 1.250,00.
 - **Stok Miktarı**: Elinizdeki fiziksel adet.
 
 **Kaydet** ile ürünü ekleyin, **Vazgeç** ile formu kapatın. Kayıt olmazsa formun altında sebebi yazar.

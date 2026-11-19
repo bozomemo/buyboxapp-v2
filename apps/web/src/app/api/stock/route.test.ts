@@ -57,13 +57,15 @@ describe('POST /api/stock', () => {
     ['120,50', 12050n],
     ['120.50', 12050n],
     ['1.234,56', 123456n],
+    // One TL reading app-wide (product owner, 2026-11-19).
+    ['1.400', 140000n],
   ])('stores %s as %s kuruş', async (typed, kurus) => {
     expect((await add(typed)).status).toBe(200);
     expect((await stockRepo.getStockItem(appDb, 'TST001'))?.unitCost).toBe(kurus);
   });
 
-  it('refuses an ambiguous amount with a sentence the operator can act on', async () => {
-    const { status, body } = await add('1.400');
+  it('refuses an amount finer than a kuruş with a sentence the operator can act on', async () => {
+    const { status, body } = await add('400,505');
     expect(status).toBe(400);
     expect(body.error).toMatch(/geçerli bir tutar değil/);
     expect(body.error).not.toMatch(/Money:/);

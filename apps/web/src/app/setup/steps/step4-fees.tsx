@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Trash2 } from '@/components/icon';
 import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
-import { isOperatorDecimal } from '@/lib/operator-money';
+import { isOperatorDecimal, showBands } from '@/lib/operator-money';
 
 interface Band {
   edge: string; // maxPrice for cargo, minPrice for expenditure — decimal string, "" = unbounded
@@ -27,7 +27,7 @@ function initialForm(code: 'trendyol' | 'hepsiburada', title: string): FeeForm {
     code,
     title,
     defaultCommissionRate: '15',
-    cargoBands: [{ edge: '', amount: '11.00' }],
+    cargoBands: [{ edge: '', amount: '11,00' }],
     expenditureBands: [{ edge: '0', amount: '0' }],
   };
 }
@@ -194,7 +194,16 @@ export function Step4Fees({
       setForms((prev) =>
         prev.map((f) => {
           const hit = results.find((r) => r?.code === f.code);
-          return hit ? { ...f, ...hit.current, savedByServer: true } : f;
+          // Shown in TL like every price on screen; the server sends wire decimals ("11.00").
+          return hit
+            ? {
+                ...f,
+                ...hit.current,
+                cargoBands: showBands(hit.current.cargoBands),
+                expenditureBands: showBands(hit.current.expenditureBands),
+                savedByServer: true,
+              }
+            : f;
         }),
       );
     })();
@@ -323,7 +332,7 @@ export function Step4Fees({
 
           <div className="mt-4 grid grid-cols-2 gap-4">
             <BandEditor
-              label="Kargo Bantları (üst fiyat sınırı, tutar)"
+              label="Kargo Bantları (üst fiyat sınırı ₺, tutar ₺)"
               edgeLabel="Üst sınır (boş = sınırsız)"
               bands={form.cargoBands}
               edgeAllowEmpty
@@ -333,7 +342,7 @@ export function Step4Fees({
               onChange={(bands) => update(form.code, { cargoBands: bands })}
             />
             <BandEditor
-              label="Gider Bantları (alt fiyat sınırı, tutar)"
+              label="Gider Bantları (alt fiyat sınırı ₺, tutar ₺)"
               edgeLabel="Alt sınır"
               bands={form.expenditureBands}
               edgeAllowEmpty={false}

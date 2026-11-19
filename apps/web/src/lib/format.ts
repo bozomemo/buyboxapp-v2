@@ -3,6 +3,7 @@
  * kuruş everywhere upstream of this file; nothing here mutates or rounds a stored value.
  */
 import { Money } from '@buybox/shared';
+import { isOperatorDecimal, toWireDecimal } from './operator-money';
 
 const CURRENCY_FORMATTER = new Intl.NumberFormat('tr-TR', {
   style: 'currency',
@@ -100,20 +101,17 @@ export function kurusToDecimal(kurus: bigint | string | null | undefined): strin
 /**
  * Operator-typed Turkish lira → `bigint` kuruş, or `null` when the text is not a price.
  *
- * The inverse of {@link formatMoney} and the only place a typed price becomes money. It never
- * goes through a float, and it is deliberately **strict**: comma is the decimal separator and a
- * dot is only accepted as a thousands group ("1.400,50"). "400.50" is rejected rather than read
- * as four hundred thousand — a threshold silently off by 1000× would look like a working rule
- * and never fire.
+ * The inverse of {@link formatMoney}. It reads exactly what every money field reads
+ * (`toWireDecimal`, product owner 2026-11-19: one TL reading app-wide) — "1.400" is 1 400 ₺,
+ * "400,50" and "400.50" are 400,50 ₺ — and never goes through a float. Negative amounts are
+ * not prices here.
  */
 export function parseMoneyToKurus(input: string): bigint | null {
-  const raw = input.trim().replace(/\s/g, '');
-  if (raw === '') return null;
-  const match = /^(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?$/.exec(raw);
-  if (!match) return null;
-  const whole = match[1]!.replace(/\./g, '');
-  const fraction = (match[2] ?? '').padEnd(2, '0');
-  return BigInt(whole) * 100n + BigInt(fraction);
+  if (!isOperatorDecimal(input)) return null;
+  const wire = toWireDecimal(input);
+  if (wire.startsWith('-')) return null;
+  const [whole = '0', fraction = ''] = wire.split('.');
+  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
 }
 
 export function formatDate(epochMs: number | null | undefined): string {

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { isOperatorDecimal, parseNonNegativeNumber, parsePositiveRatio, toWireDecimal } from './operator-money';
+import {
+  isOperatorDecimal,
+  parseNonNegativeNumber,
+  parsePositiveRatio,
+  showBands,
+  showMoneyFields,
+  toOperatorDecimal,
+  toWireDecimal,
+} from './operator-money';
 
 describe('toWireDecimal', () => {
   it.each([
@@ -14,6 +22,13 @@ describe('toWireDecimal', () => {
     ['0', '0'],
     ['-2,50', '-2.50'],
     ['-2.50', '-2.50'],
+    // Turkish grouping, as everywhere a price is shown (product owner, 2026-11-19).
+    ['1.400', '1400'],
+    ['12.345.678', '12345678'],
+    ['1.400,00', '1400.00'],
+    ['120,50 ₺', '120.50'],
+    ['₺120,50', '120.50'],
+    ['120 TL', '120'],
   ])('%s → %s', (input, wire) => {
     expect(toWireDecimal(input)).toBe(wire);
   });
@@ -22,13 +37,14 @@ describe('toWireDecimal', () => {
     [''],
     ['   '],
     ['abc'],
-    ['1.400'], // thousands or decimal? refused rather than guessed
     ['1,234,56'],
     ['12,345'],
     ['1.23.4'],
     ['1e3'],
     ['120,'],
-    ['₺120'],
+    ['1.40.0'],
+    ['400,505'],
+    ['1,400.50'],
     ['12.34,5'],
   ])('refuses %s with a Turkish sentence', (input) => {
     expect(() => toWireDecimal(input)).toThrow(/geçerli bir tutar değil/);
@@ -44,7 +60,8 @@ describe('isOperatorDecimal', () => {
   it('matches what toWireDecimal accepts', () => {
     expect(isOperatorDecimal('39,99')).toBe(true);
     expect(isOperatorDecimal('39.99')).toBe(true);
-    expect(isOperatorDecimal('1.400')).toBe(false);
+    expect(isOperatorDecimal('1.400')).toBe(true);
+    expect(isOperatorDecimal('400,505')).toBe(false);
     expect(isOperatorDecimal('')).toBe(false);
   });
 });
@@ -71,5 +88,39 @@ describe('parseNonNegativeNumber', () => {
     expect(parseNonNegativeNumber('2,5')).toBe(2.5);
     expect(parseNonNegativeNumber('')).toBeNull();
     expect(parseNonNegativeNumber('-1')).toBeNull();
+  });
+});
+
+describe('toOperatorDecimal', () => {
+  it.each([
+    ['11.00', '11,00'],
+    ['0.5', '0,50'],
+    ['1500', '1.500,00'],
+    ['1234567.8', '1.234.567,80'],
+    ['-2.5', '-2,50'],
+  ])('%s → %s', (wire, shown) => {
+    expect(toOperatorDecimal(wire)).toBe(shown);
+  });
+
+  it('round-trips through toWireDecimal', () => {
+    expect(toWireDecimal(toOperatorDecimal('1234567.89'))).toBe('1234567.89');
+  });
+
+  it('leaves text that is not a wire decimal as it is', () => {
+    expect(toOperatorDecimal('')).toBe('');
+    expect(toOperatorDecimal('abc')).toBe('abc');
+  });
+});
+
+describe('showMoneyFields / showBands', () => {
+  it('shows the named fields the Turkish way and leaves the rest', () => {
+    expect(showMoneyFields({ a: '0.50', b: '5', c: '1500.00' }, ['a', 'c'])).toEqual({ a: '0,50', b: '5', c: '1.500,00' });
+  });
+
+  it('shows band edges and amounts, an empty edge staying empty', () => {
+    expect(showBands([{ edge: '', amount: '11.00' }, { edge: '150.00', amount: '39.99' }])).toEqual([
+      { edge: '', amount: '11,00' },
+      { edge: '150,00', amount: '39,99' },
+    ]);
   });
 });

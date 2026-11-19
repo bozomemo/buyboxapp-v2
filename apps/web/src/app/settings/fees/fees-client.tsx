@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Pagination, usePagedRows } from '@/components/table';
 import { formatDate } from '@/lib/format';
+import { showBands } from '@/lib/operator-money';
 import {
   Button,
   EmptyState,
@@ -31,7 +32,7 @@ interface Form {
 
 const EMPTY: Form = {
   defaultCommissionRate: '15',
-  cargoBands: [{ edge: '', amount: '11.00' }],
+  cargoBands: [{ edge: '', amount: '11,00' }],
   expenditureBands: [{ edge: '0', amount: '0' }],
 };
 
@@ -129,7 +130,16 @@ export function FeesClient() {
         r.ok ? r.json() : Promise.reject(new Error(`Ücret ayarları yüklenemedi (HTTP ${r.status}).`)),
       )
       .then((data: { current: Form | null; history: typeof history }) => {
-        setForm(data.current ?? EMPTY);
+        // Shown in TL like every price on screen; the server sends wire decimals ("11.00").
+        setForm(
+          data.current
+            ? {
+                ...data.current,
+                cargoBands: showBands(data.current.cargoBands),
+                expenditureBands: showBands(data.current.expenditureBands),
+              }
+            : EMPTY,
+        );
         setHasCurrent(data.current !== null);
         setHistory(data.history);
         setLoadError(null);
@@ -281,7 +291,7 @@ export function FeesClient() {
                 Kargo
               </h3>
               <BandEditor
-                label="Kargo Bantları (üst fiyat sınırı, tutar)"
+                label="Kargo Bantları (üst fiyat sınırı ₺, tutar ₺)"
                 edgeLabel="Üst sınır (boş = sınırsız)"
                 bands={form.cargoBands}
                 onChange={(bands) => update({ cargoBands: bands })}
@@ -293,7 +303,7 @@ export function FeesClient() {
                 Gider Payı
               </h3>
               <BandEditor
-                label="Gider Bantları (alt fiyat sınırı, tutar)"
+                label="Gider Bantları (alt fiyat sınırı ₺, tutar ₺)"
                 edgeLabel="Alt sınır"
                 bands={form.expenditureBands}
                 onChange={(bands) => update({ expenditureBands: bands })}

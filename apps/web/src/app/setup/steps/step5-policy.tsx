@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Field, StatusBanner, StepFooter, StepStopNotice, TextInput } from '@/components/ui';
-import { isOperatorDecimal } from '@/lib/operator-money';
+import { isOperatorDecimal, showMoneyFields } from '@/lib/operator-money';
 
 interface PolicyForm {
   code: 'trendyol' | 'hepsiburada';
@@ -35,10 +35,10 @@ function initialForm(code: 'trendyol' | 'hepsiburada', title: string): PolicyFor
     title,
     coarseStepMode: 'percent',
     coarseStepPercent: '5',
-    refineTolerance: '0.50',
+    refineTolerance: '0,50',
     seekStrategy: 'direct',
-    undercutBy: '0.10',
-    seekStep: '1.00',
+    undercutBy: '0,10',
+    seekStep: '1,00',
     soleSellerMarginPct: '10',
     lowStockGuardEnabled: false,
     lowStockThreshold: '3',
@@ -46,7 +46,7 @@ function initialForm(code: 'trendyol' | 'hepsiburada', title: string): PolicyFor
     stockMode: 'ignoreStock',
     minPhysicalStock: '0',
     settleDurationMinutes: '1',
-    competitorPriceDelta: '0.10',
+    competitorPriceDelta: '0,10',
     pollIntervalMinutes: '5',
     concurrency: '1',
     budgetReservePct: '20',
@@ -146,7 +146,12 @@ export function Step5Policy({
           const hit = results.find((r) => r?.code === f.code);
           if (!hit?.current) return f;
           const { enabled: _enabled, ...rest } = hit.current;
-          return { ...f, ...rest, savedByServer: true };
+          // Money fields shown in TL; the server sends wire decimals ("0.50").
+          return {
+            ...f,
+            ...showMoneyFields(rest, ['refineTolerance', 'undercutBy', 'seekStep', 'competitorPriceDelta']),
+            savedByServer: true,
+          };
         }),
       );
     })();

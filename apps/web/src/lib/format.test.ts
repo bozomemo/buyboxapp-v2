@@ -16,6 +16,12 @@ describe('parseMoneyToKurus', () => {
     ['  1.400,50  ', 140_050n],
     ['1.234.567,89', 123_456_789n],
     ['1400,50', 140_050n],
+    // One reading app-wide (product owner, 2026-11-19): Turkish grouping, a dot decimal the way
+    // the server sends amounts, a currency word ignored.
+    ['1.400', 140_000n],
+    ['400.50', 40_050n],
+    ['400 TL', 40_000n],
+    ['₺400,50', 40_050n],
     // Beyond Number.MAX_SAFE_INTEGER kuruş: the point of parsing into `bigint` by hand.
     ['999999999999999999', 99_999_999_999_999_999_900n],
   ];
@@ -28,13 +34,8 @@ describe('parseMoneyToKurus', () => {
     '',
     '   ',
     'abc',
-    '400 TL',
     '-400',
     '400,505',
-    // Rejected on purpose rather than read as a thousands group: an operator meaning ₺400,50
-    // must not silently get a ₺400.500 threshold that then never fires.
-    '400.50',
-    '1.40',
     '1.4000',
     '4,0,0',
     '.400',
