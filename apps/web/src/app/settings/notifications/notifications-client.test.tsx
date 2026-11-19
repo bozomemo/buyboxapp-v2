@@ -10,7 +10,7 @@ afterEach(() => cleanup());
 const DATA = {
   channels: [
     { code: 'webhook', ready: true, reason: null },
-    { code: 'email', ready: false, reason: 'e-posta yapılandırılmamış (SMTP_HOST, SMTP_FROM)' },
+    { code: 'email', ready: false, reason: 'e-posta sunucusu ayarlanmamış' },
     { code: 'sms', ready: false, reason: 'SMS sağlayıcısı seçilmemiş' },
   ],
   recipients: { email: ['a@x.com'], sms: [] },
@@ -34,7 +34,7 @@ describe('NotificationsClient', () => {
     stubFetch({ '/api/settings/notifications': { body: DATA } });
     render(<NotificationsClient />);
     expect(await screen.findByText(/· hazır/)).toBeTruthy();
-    expect(screen.getByText(/e-posta yapılandırılmamış/)).toBeTruthy();
+    expect(screen.getByText(/e-posta sunucusu ayarlanmamış/)).toBeTruthy();
     expect(screen.getByText('3 bekliyor')).toBeTruthy();
     expect(screen.getByDisplayValue('a@x.com')).toBeTruthy();
   });

@@ -147,8 +147,8 @@ export function LicenseClient() {
 
       {data.managedByEnvironment && (
         <p className="rounded border border-(--color-border) px-4 py-3 text-sm">
-          Bu kurulumun lisansı şu anda <code>LICENSE_TOKEN</code> ortam değişkeninden geliyor. Aşağıya yeni
-          bir anahtar kaydederseniz, anahtar veritabanına taşınır ve ortam değişkeni kaldırılır.
+          Bu kurulumun lisansı şu anda sunucu ayarlarından (LICENSE_TOKEN) geliyor. Aşağıya yeni bir
+          anahtar kaydederseniz, anahtar uygulamaya taşınır ve sunucu ayarındaki kaldırılır.
         </p>
       )}
 

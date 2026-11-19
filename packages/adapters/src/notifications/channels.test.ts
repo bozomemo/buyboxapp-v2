@@ -81,7 +81,7 @@ describe('EmailChannel', () => {
   const settings = { host: 'smtp.x', port: 587, user: 'u', password: 'hunter2', from: 'alarm@x' };
 
   it.each([
-    { name: 'no SMTP settings', channel: new EmailChannel(null, ['a@x']), reason: 'e-posta yapılandırılmamış' },
+    { name: 'no SMTP settings', channel: new EmailChannel(null, ['a@x']), reason: 'e-posta sunucusu ayarlanmamış' },
     { name: 'no recipients', channel: new EmailChannel(settings, []), reason: 'e-posta alıcısı' },
   ])('not ready: $name', ({ channel, reason }) => {
     expect(channel.readiness()).toEqual({ ready: false, reason: expect.stringContaining(reason) });

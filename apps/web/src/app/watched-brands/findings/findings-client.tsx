@@ -843,9 +843,8 @@ export function FindingsClient() {
                   {report.notificationsConfigured === false && (
                     <p>
                       Yeni bulgular için <strong>bildirim yapılandırılmamış</strong> — bulgular hesaplanıyor
-                      ve saklanıyor, ama kimseye iletilmiyor. Bir webhook adresi
-                      <code className="mx-1">FINDINGS_WEBHOOK_URL</code>
-                      ortam değişkeninden okunur (adres bir anahtar sayıldığı için veritabanında tutulmaz).
+                      ve saklanıyor, ama kimseye iletilmiyor. Bildirim için bir webhook adresini kurulumu yapan kişi
+                      sunucu ayarlarına ekler (FINDINGS_WEBHOOK_URL).
                     </p>
                   )}
                   {!report.context?.hasAuthorisedList && (

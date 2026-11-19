@@ -24,8 +24,8 @@ interface Data {
 
 const CHANNEL_LABELS: Record<ChannelCode, string> = { webhook: 'Webhook', email: 'E-posta', sms: 'SMS' };
 const CHANNEL_HELP: Record<ChannelCode, string> = {
-  webhook: 'Slack/Teams türü bir adres. Sunucu ortamında ALERTS_WEBHOOK_URL ile ayarlanır.',
-  email: 'SMTP sunucusu ortamda (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM) ayarlanır; alıcılar aşağıda.',
+  webhook: 'Slack/Teams türü bir adres. Kurulumu yapan kişi sunucu ayarlarına ekler (ALERTS_WEBHOOK_URL).',
+  email: 'E-posta sunucusunun bilgilerini kurulumu yapan kişi sunucu ayarlarına ekler (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM). Alıcıları aşağıya yazın.',
   sms: 'Tek satırlık özet gönderilir. SMS sağlayıcısı seçildiğinde etkinleşir; numaralar aşağıda.',
 };
 const STATE_LABELS: Record<State, string> = {

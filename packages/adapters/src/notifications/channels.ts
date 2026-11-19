@@ -32,7 +32,7 @@ export class WebhookChannel implements NotificationChannel {
   ) {}
 
   readiness(): ChannelReadiness {
-    return this.url ? { ready: true } : { ready: false, reason: 'webhook yapılandırılmamış (ALERTS_WEBHOOK_URL)' };
+    return this.url ? { ready: true } : { ready: false, reason: 'webhook adresi ayarlanmamış' };
   }
 
   async send(message: NotificationMessage) {
@@ -118,7 +118,7 @@ export class EmailChannel implements NotificationChannel {
   ) {}
 
   readiness(): ChannelReadiness {
-    if (!this.settings) return { ready: false, reason: 'e-posta yapılandırılmamış (SMTP_HOST, SMTP_FROM)' };
+    if (!this.settings) return { ready: false, reason: 'e-posta sunucusu ayarlanmamış' };
     if (this.recipients.length === 0) return { ready: false, reason: 'e-posta alıcısı tanımlanmamış' };
     return { ready: true };
   }
