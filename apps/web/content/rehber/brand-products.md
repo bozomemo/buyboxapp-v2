@@ -125,6 +125,12 @@ Listede bir ürün adına tıklayınca ürünün kendi sayfası açılır. **Sto
 
 **Birim PSF**, **Min**, **Üst sınır**, **Bağlı kart**, **Birim fiyat (satıcıya)** ve **Desi**. Birim fiyat ya da desi girilmemişse altında _Girilmemiş — kâr tahmini yapılamaz_ yazar.
 
+### Bant piyasadan uzak olabilir
+
+Son 30 günde bağlı kartlarda kaydedilen bütün satıcı fiyatları üst sınırın üstünde ya da Min'in altındaysa özet kutularının altında sarı **Bant piyasadan uzak olabilir** notu çıkar. Notta kaç fiyata bakıldığı ve birim başına ortanca fiyat yazar. Fiyatlar çarpanlı kartlarda da kartın kendi sınırıyla karşılaştırılır.
+
+Bu not bir uyarıdır: bandınız piyasayı anlatmıyor olabilir ya da piyasa topluca bandın dışına çıkmış olabilir. Hangisi olduğuna siz karar verirsiniz; alarmlar değişmez. En az 10 fiyat kaydı olmadan not çıkmaz.
+
 ### Bağlı kartlar
 
 Her satır bu ürüne bağlı bir karttır:
@@ -174,4 +180,4 @@ Hayır. Kartlar **Takip Edilen Ürünler** listesinde kalır; yalnızca ürünle
 **Yeni Ürün düğmesini göremiyorum.**
 Ürün ekleme ve düzenleme Yönetici ve Fiyat Yöneticisi rollerine açıktır. Bkz. [Roller](/rehber/concepts-roles).
 
-<!-- kaynak: doc 17 §2–§3, §5.3, §8.1; apps/web/src/app/brand/products/brand-products-client.tsx, import-panel.tsx, [id]/brand-product-detail-client.tsx; apps/web/src/lib/labels.ts (IMPORT_*); api/brand-products/** permissions -->
+<!-- kaynak: doc 17 §2–§3, §5.3, §8.1; brand roadmap §6.12; apps/web/src/app/brand/products/brand-products-client.tsx, import-panel.tsx, [id]/brand-product-detail-client.tsx, [id]/band-realism-note.tsx; apps/web/src/lib/labels.ts (IMPORT_*); api/brand-products/** permissions -->

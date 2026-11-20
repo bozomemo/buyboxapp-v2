@@ -75,6 +75,8 @@ export type {
 export { resolveSellerPolicy } from './brand/seller-policy.js';
 export type { AvailabilityInput, AvailabilityIssue, AvailabilityOffer } from './brand/availability.js';
 export { classifyAvailability, LOW_STOCK_THRESHOLD } from './brand/availability.js';
+export type { BandRealism, BandRealismKind, RealismObservation } from './brand/band-realism.js';
+export { assessBandRealism, BAND_REALISM_MIN_LOOKS } from './brand/band-realism.js';
 
 export type {
   AuditFinding,

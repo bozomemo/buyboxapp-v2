@@ -34,6 +34,7 @@ import {
 import { formatDesi } from '@/lib/desi';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
+import { BandRealismNote, type BandRealismView } from './band-realism-note';
 import { PermissionFieldset } from '@/lib/permissions';
 
 interface Product {
@@ -93,6 +94,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [realism, setRealism] = useState<BandRealismView | undefined>(undefined);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -108,12 +110,18 @@ export function BrandProductDetailClient({ id }: { id: string }) {
     fetch(`/api/brand-products/${id}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? 'Ürün okunamadı.');
-        return r.json() as Promise<{ product: Product; cards: Card[]; suggestions: Suggestion[] }>;
+        return r.json() as Promise<{
+          product: Product;
+          cards: Card[];
+          suggestions: Suggestion[];
+          realism?: BandRealismView;
+        }>;
       })
       .then((d) => {
         setProduct(d.product);
         setCards(d.cards);
         setSuggestions(d.suggestions);
+        setRealism(d.realism);
         setLoadError(null);
       })
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
@@ -228,6 +236,8 @@ export function BrandProductDetailClient({ id }: { id: string }) {
           delta={product.desi === null ? 'Girilmemiş — kâr tahmini yapılamaz' : undefined}
         />
       </div>
+
+      <BandRealismNote realism={realism} />
 
       {notice && <StatusBanner ok={notice.ok} message={notice.message} />}
 

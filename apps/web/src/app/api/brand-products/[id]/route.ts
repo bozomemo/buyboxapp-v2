@@ -6,8 +6,8 @@
  * before it can render anything useful.
  */
 import { NextResponse } from 'next/server';
-import { scaleToCard } from '@buybox/core';
-import { brandProductsRepo } from '@buybox/db';
+import { assessBandRealism, scaleToCard, type RealismObservation } from '@buybox/core';
+import { brandProductsRepo, trackedProductsRepo } from '@buybox/db';
 import { parseBrandProductBody, type BrandProductBody } from '../route';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
@@ -20,6 +20,9 @@ function formatKurus(kurus: bigint): string {
   return `${whole}.${fraction}`;
 }
 
+/** How far back the band-realism note looks (brand roadmap §6.12). */
+const REALISM_WINDOW_MS = 30 * 86_400_000;
+
 async function getHandler(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const appDb = getAppDb();
@@ -31,8 +34,29 @@ async function getHandler(_request: Request, { params }: { params: Promise<{ id:
     brandProductsRepo.barcodeSuggestions(appDb, id),
   ]);
 
+  // Every seller's stored look on every linked card in the window, at the price the band judges.
+  const sinceMs = Date.now() - REALISM_WINDOW_MS;
+  const realismLooks: RealismObservation[] = (
+    await Promise.all(
+      cards.map(async (card) =>
+        (await trackedProductsRepo.trackedProductObservationsSince(appDb, card.trackedProductId, sinceMs)).flatMap((o) => {
+          const price = o.finalPrice ?? o.price;
+          return o.status === 'ok' && price !== null && price > 0n ? [{ price, unitMultiplier: card.unitMultiplier }] : [];
+        }),
+      ),
+    )
+  ).flat();
+  const realism = assessBandRealism(product, realismLooks);
+
   const upperBound = product.maxPrice ?? product.referencePrice;
   return NextResponse.json({
+    /** Brand roadmap §6.12: is the band anywhere near the market over the last 30 days? */
+    realism: {
+      kind: realism.kind,
+      looks: realism.looks,
+      medianUnitPrice: realism.medianUnitPrice?.toString() ?? null,
+      windowDays: REALISM_WINDOW_MS / 86_400_000,
+    },
     product: {
       id: product.id,
       name: product.name,
