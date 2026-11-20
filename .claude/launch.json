@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "C:/Program Files/BuyBox/node/node.exe",
+      "runtimeArgs": ["../../node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", "3100"],
+      "env": { "HOSTNAME": "127.0.0.1" },
+      "cwd": "apps/web",
+      "port": 3100
+    }
+  ]
+}
