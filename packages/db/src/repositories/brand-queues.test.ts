@@ -146,6 +146,15 @@ for (const dialect of ALL_DIALECTS) {
       expect((await brandQueuesRepo.queryUnmatchedCards(db.appDb, { limit: 50, offset: 0, newSinceMs: 0 })).total).toBe(3);
     });
 
+    it('suggests a brand product by barcode', async () => {
+      db = await createTestDb(dialect);
+      await seed(db.appDb);
+      await brandProductsRepo.updateBrandProduct(db.appDb, 'bp1', { barcode: '8690000000017' }, NOW);
+      const found = await brandQueuesRepo.brandProductsByBarcodes(db.appDb, ['8690000000017', 'nope']);
+      expect(found.get('8690000000017')).toEqual([{ id: 'bp1', name: 'Ton 85g' }]);
+      expect(found.has('nope')).toBe(false);
+    });
+
     it('pages the queue', async () => {
       db = await createTestDb(dialect);
       await seed(db.appDb);

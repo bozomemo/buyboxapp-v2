@@ -368,3 +368,42 @@ export async function setQueueDismissed(appDb: AppDatabase, ids: readonly string
     });
   }
 }
+
+/**
+ * Brand products carrying these barcodes — the queue's "bu sizin X ürününüz olabilir". A
+ * suggestion only: a barcode says two pages describe one article, not how many units a pack holds,
+ * so linking still asks for the multiplier (doc 17 §2.4).
+ */
+export async function brandProductsByBarcodes(
+  appDb: AppDatabase,
+  barcodes: readonly string[],
+): Promise<Map<string, { id: string; name: string }[]>> {
+  const result = new Map<string, { id: string; name: string }[]>();
+  const unique = [...new Set(barcodes)];
+  for (let start = 0; start < unique.length; start += ID_CHUNK) {
+    const chunk = unique.slice(start, start + ID_CHUNK);
+    if (chunk.length === 0) continue;
+    const rows = (await withDialect(appDb, {
+    sqlite: (db) =>
+      db
+        .select({ id: sqliteSchema.brandProducts.id, name: sqliteSchema.brandProducts.name, barcode: sqliteSchema.brandProducts.barcode })
+        .from(sqliteSchema.brandProducts)
+        .where(inArray(sqliteSchema.brandProducts.barcode, chunk)),
+    postgres: (db) =>
+      db
+        .select({ id: postgresSchema.brandProducts.id, name: postgresSchema.brandProducts.name, barcode: postgresSchema.brandProducts.barcode })
+        .from(postgresSchema.brandProducts)
+        .where(inArray(postgresSchema.brandProducts.barcode, chunk)),
+    mysql: (db) =>
+      db
+        .select({ id: mysqlSchema.brandProducts.id, name: mysqlSchema.brandProducts.name, barcode: mysqlSchema.brandProducts.barcode })
+        .from(mysqlSchema.brandProducts)
+        .where(inArray(mysqlSchema.brandProducts.barcode, chunk)),
+    })) as { id: string; name: string; barcode: string | null }[];
+    for (const row of rows) {
+      if (row.barcode === null) continue;
+      result.set(row.barcode, [...(result.get(row.barcode) ?? []), { id: row.id, name: row.name }]);
+    }
+  }
+  return result;
+}
