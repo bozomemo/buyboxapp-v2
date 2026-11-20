@@ -28,6 +28,7 @@ import {
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
+import { PolicyQuickDecision } from './policy-quick-decision';
 import { SellerIdentityPanel } from './seller-identity-panel';
 
 interface Seller {
@@ -86,6 +87,9 @@ const NO_SELLERS: never[] = [];
  */
 const DEVIATION_ALERT_PCT = -15;
 
+/** A seller first seen this recently is marked _yeni_ beside its undecided verdict. */
+const NEW_SELLER_MS = 7 * 86_400_000;
+
 /** Same vocabulary as `/watched-brands/policy` (`lib/labels.ts` `POLICY_VERDICT_LABELS`) — one word, one meaning, everywhere a verdict is shown. */
 const VERDICT_TONE: Record<'authorised' | 'blocked' | 'undefined', Tone> = {
   authorised: 'ok',
@@ -141,6 +145,7 @@ function renderSellerCell(
   onResolveIdentity: (s: Seller) => void,
   sinceMs: number,
   watchedBrandId: string | null,
+  onPolicyChanged: () => void,
 ): React.ReactNode {
   switch (id) {
     case 'sellerName':
@@ -173,6 +178,20 @@ function renderSellerCell(
             title="Politika markaya özeldir — kapsamdan bir marka seçin"
           >
             marka seçin
+          </span>
+        );
+      }
+      // Brand roadmap §6.12: an undecided seller is decided here in one click, for this brand.
+      if (s.verdict === 'undefined' && watchedBrandId !== null) {
+        return (
+          <span className="whitespace-nowrap">
+            <Chip tone={VERDICT_TONE.undefined}>{POLICY_VERDICT_LABELS.undefined}</Chip>
+            {Date.now() - s.firstSeenAt < NEW_SELLER_MS && (
+              <span className="ml-1 text-xs text-(--color-warning)" title="Bu satıcı son 7 günde ilk kez görüldü">
+                yeni
+              </span>
+            )}
+            <PolicyQuickDecision seller={s} watchedBrandId={watchedBrandId} onDecided={onPolicyChanged} />
           </span>
         );
       }
@@ -564,6 +583,7 @@ export function BrandSellersClient() {
                               setIdentitySeller,
                               sinceMs,
                               scope.startsWith('brand:') ? scope.slice('brand:'.length) : null,
+                              load,
                             )}
                           </td>
                         ))}

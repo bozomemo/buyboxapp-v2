@@ -37,7 +37,7 @@ Buybox payı **kayıtlı bakışlar** üzerinden hesaplanır, süre üzerinden d
 - **Politika**: seçili markada satıcının durumu:
   - **Yetkili** (yeşil): yetkili satıcı listenizde.
   - **Yasaklı** (kırmızı): yasaklı olarak işaretlenmiş.
-  - **Tanımsız** (gri): hakkında henüz kural yok. Satıcıların çoğu bu durumdadır; "yetkisiz" anlamına gelmez.
+  - **Tanımsız** (gri): hakkında henüz kural yok. Satıcıların çoğu bu durumdadır; "yetkisiz" anlamına gelmez. Yanındaki **Yetkili** ve **Yasaklı** düğmeleri seçili marka için bu satıcıya tek tıkla kural yazar. Satıcı son 7 günde ilk kez görüldüyse **yeni** yazar.
   - **marka seçin**: kapsamda tek bir marka seçili değil.
 - **Pazaryeri** (gizli).
 - **Ürün**: satıcının görüldüğü ürün sayısı.
@@ -79,9 +79,9 @@ Marka kataloğu taraması ürünleri bulur ama satıcı ve fiyat getirmez. [İzl
 Yetkili ve yasaklı kararları markaya özeldir. **Kapsam**'tan tek bir marka seçin.
 
 **Bir satıcıyı yasaklı ya da yetkili olarak nasıl işaretlerim?**
-[Satıcı Politikası](/rehber/seller-policy) ekranından.
+**Kapsam**'tan tek bir marka seçin; **Tanımsız** satıcının yanındaki **Yetkili** ya da **Yasaklı** düğmesine basın. Kural bu marka ve bu mağaza için yazılır. Not eklemek, vergi numarasıyla kural yazmak ya da kuralı bütün gruba uygulamak için [Satıcı Politikası](/rehber/seller-policy) ekranını kullanın. Düğmeler Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
 **Piyasanın altında satan her satıcı kural ihlali mi yapıyor?**
 Hayır. Piyasa sapması yalnızca bakılacak yeri gösterir. İhlal olup olmadığı satıcının yetkili olup olmadığına ve sizin kurallarınıza bağlıdır; bkz. [Denetim Bulguları](/rehber/findings).
 
-<!-- kaynak: doc 06 §12.4; apps/web/src/app/watched-brands/sellers/brand-sellers-client.tsx, seller-identity-panel.tsx; lib/labels.ts (POLICY_VERDICT_LABELS); api/brand-reports/sellers, api/competitors/sellers/identity permissions -->
+<!-- kaynak: doc 06 §12.4; brand roadmap §6.12; apps/web/src/app/watched-brands/sellers/brand-sellers-client.tsx, policy-quick-decision.tsx, seller-identity-panel.tsx; lib/labels.ts (POLICY_VERDICT_LABELS); api/brand-reports/sellers, api/competitors/sellers/identity permissions -->
