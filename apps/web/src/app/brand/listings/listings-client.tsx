@@ -188,6 +188,8 @@ export function BrandListingsClient() {
   const breaches = (rows ?? []).filter(
     (row) => row.bandStatus === 'belowMin' || row.bandStatus === 'aboveMax',
   );
+  // Brand roadmap §6.7: the buybox holder selling under its own estimated cost.
+  const atLoss = (rows ?? []).filter((row) => row.profit != null && BigInt(row.profit.profit) < 0n);
 
   return (
     <div className="space-y-4">
@@ -261,6 +263,12 @@ export function BrandListingsClient() {
                 Bu sayfada <strong>{formatNumber(breaches.length)}</strong> kart bandın dışında.
               </span>
             )}{' '}
+            {atLoss.length > 0 && (
+              <span className="text-(--color-danger)">
+                <strong>{formatNumber(atLoss.length)}</strong> kartta buybox satıcısı tahmini maliyetinin altında
+                satıyor.{' '}
+              </span>
+            )}
             <span className="text-(--color-muted)">
               Bir kartın son bakışı eskiyse durum o eski bakışa aittir — tarama turunu İşler ekranından
               görebilirsiniz.
@@ -429,6 +437,14 @@ export function BrandListingsClient() {
                             <span className="ml-1 text-xs text-(--color-muted)">
                               %{row.profit.profitPct.toFixed(1).replace('.', ',')}
                             </span>
+                            {BigInt(row.profit.profit) < 0n && (
+                              <span
+                                className="ml-1 rounded bg-(--color-danger-bg) px-1 text-xs text-(--color-danger)"
+                                title="Buybox satıcısı tahmini maliyetinin altında satıyor. Olası nedenler: malı başka bir kaynaktan buluyor (gri piyasa), stok eritiyor ya da tahmin girdileri (birim fiyat, desi, tarife) yanlış."
+                              >
+                                zararına
+                              </span>
+                            )}
                           </td>
                           <td className="p-2 text-right tabular-nums">{money(row.profit.breakEvenPrice)}</td>
                         </>

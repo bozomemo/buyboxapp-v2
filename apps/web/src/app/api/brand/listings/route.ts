@@ -309,6 +309,7 @@ async function getHandler(request: Request) {
       'Tahmini Kâr',
       'Kâr %',
       '0 Kâr Fiyatı',
+      'Zararına',
     ];
     const lines = [headers.map(csvEscape).join(',')];
     for (const row of listings) {
@@ -333,6 +334,8 @@ async function getHandler(request: Request) {
           csvMoney(row.profit ? BigInt(row.profit.profit) : null),
           row.profit ? row.profit.profitPct.toFixed(1).replace('.', ',') : '',
           csvMoney(row.profit?.breakEvenPrice ? BigInt(row.profit.breakEvenPrice) : null),
+          // Brand roadmap §6.7: the buybox holder selling under its estimated cost.
+          row.profit === null ? '' : BigInt(row.profit.profit) < 0n ? 'Evet' : 'Hayır',
         ]
           .map(csvEscape)
           .join(','),

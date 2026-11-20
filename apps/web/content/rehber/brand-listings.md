@@ -21,7 +21,7 @@ Bu kartlara yaklaşık yarım saatte bir bakılır ve buybox fiyatı fiyat aral�
 - **Pazaryeri**: **Hepsi**, **Trendyol** ya da **Hepsiburada**.
 - **Excel'e aktar**: o anki filtreyle listeyi dosya olarak indirir.
 
-Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışında olduğunu söyler. Bu sayı yalnızca ekrandaki sayfa içindir; tüm açık ihlaller için [Marka Alarmları](/rehber/brand-alerts) ekranına bakın.
+Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışında olduğunu söyler. Bu sayı yalnızca ekrandaki sayfa içindir; tüm açık ihlaller için [Marka Alarmları](/rehber/brand-alerts) ekranına bakın. Buybox satıcısı tahmini maliyetinin altında satıyorsa aynı satırda kaç kartta böyle olduğu da yazar.
 
 ## Sütunlar
 
@@ -40,7 +40,7 @@ Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışın
   - **Bilinmiyor**: karta henüz bakılmadı ya da son bakış başarısız oldu. Okunamayan sayfa ihlal sayılmaz.
 - **Açık ihlal**: açık bir fiyat ihlali varsa ne zamandır sürdüğü. Tıklayınca **Alarmlar** ekranı açılır.
 - **Komisyon**: buybox fiyatının, komisyon tarifesinde düştüğü kademenin oranı.
-- **Tahmini kâr**: buybox satıcısının bu satıştan tahmini kârı ve fiyata oranı. Eksi ise kırmızı yazılır. Üzerine gelince ayrıntı görünür: komisyon, kargo, operasyon, sabit satış bedeli ve birim fiyat.
+- **Tahmini kâr**: buybox satıcısının bu satıştan tahmini kârı ve fiyata oranı. Eksi ise kırmızı yazılır ve yanında **zararına** etiketi çıkar. Üzerine gelince ayrıntı görünür: komisyon, kargo, operasyon, sabit satış bedeli ve birim fiyat.
 - **0 kâr fiyatı**: satıcının zarar etmediği en düşük fiyat.
 - **Satıcı**: karttaki satıcı sayısı.
 - **Son bakış**: karta en son bakılan zaman. **hiç** ise henüz bakılmadı.
@@ -56,6 +56,8 @@ Bu tahmin yalnızca raporlama içindir; hiçbir fiyatı ya da alarmı etkilemez.
 Raf fiyatı, buybox satıcısının kupon öncesi fiyatıdır. Tüm tutarlar olduğu gibi kullanılır.
 
 Örnek: raf fiyatı 1.000 TL, komisyon %15 (150 TL), kargo 60 TL, operasyon 20 TL, sabit satış bedeli 13 TL ve birim fiyatınız 600 TL ise tahmini kâr 157 TL'dir.
+
+**Zararına** etiketi, satıcının distribütörden aldığı fiyatın altında sattığı anlamına gelir. Üç olasılık vardır: satıcı malı başka bir kaynaktan buluyordur (gri piyasa), stok eritiyordur ya da tahmin girdileri (birim fiyat, desi, komisyon tarifesi) yanlıştır. Üçü de bakmaya değer. Excel dosyasındaki **Zararına** sütunu **Evet** ya da **Hayır** yazar; tahmin yapılamayan kartta boştur.
 
 Komisyon kademeli olduğu için fiyat biraz artınca kâr düşebilir: fiyat bir üst kademeye geçince oran da artar.
 
@@ -91,4 +93,4 @@ Birim buybox yuvarlanmış bir gösterimdir. Sistem karşılaştırmayı kuruşu
 **Tahmini kâr hücresinde "tarife yok" yazıyor.**
 Komisyon tarifesini [Kâr Ayarları](/rehber/brand-profit) ekranından yükleyin ve ürünün barkodunun Stok'ta yazılı olduğunu kontrol edin.
 
-<!-- kaynak: doc 17 §4.1, §5.1, §8; apps/web/src/app/brand/listings/listings-client.tsx; api/tracked-products/favourite permission -->
+<!-- kaynak: doc 17 §4.1, §5.1, §8; brand roadmap §6.7; apps/web/src/app/brand/listings/listings-client.tsx; api/tracked-products/favourite permission -->

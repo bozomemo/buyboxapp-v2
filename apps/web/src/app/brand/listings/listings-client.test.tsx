@@ -166,4 +166,26 @@ describe('BrandListingsClient', () => {
     expect(screen.getByText('%20,3')).toBeTruthy();
     expect(screen.getByText('tarife yok')).toBeTruthy();
   });
+
+  /** Brand roadmap §6.7: a buybox holder selling under the estimated cost. */
+  it('flags a buybox holder selling at a loss and counts it above the grid', async () => {
+    const loss = {
+      commissionRate: 16.5,
+      commission: '82500',
+      cargo: '10000',
+      operation: '5000',
+      fixedSaleFee: '1250',
+      cost: '300000',
+      profit: '-2500',
+      profitPct: -0.8,
+      breakEvenPrice: '325361',
+    };
+    stubFetch({
+      '/api/brand/listings': { body: { listings: [listing({ profit: loss, profitMissing: null })], total: 1 } },
+    });
+    render(<BrandListingsClient />);
+    expect(await screen.findByText('zararına')).toBeTruthy();
+    expect(screen.getByText(/kartta buybox satıcısı tahmini maliyetinin altında satıyor/)).toBeTruthy();
+  });
 });
+
