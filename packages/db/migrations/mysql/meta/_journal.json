@@ -211,6 +211,13 @@
       "when": 1794940295764,
       "tag": "0029_drop_tracked_reference_price",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1795156377843,
+      "tag": "0030_brand_wave1",
+      "breakpoints": true
     }
   ]
 }

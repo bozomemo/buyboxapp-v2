@@ -41,7 +41,7 @@ describe('planBandReconcile', () => {
       openRows: [],
       look: offers(79_99n),
       expected: {
-        open: [{ kind: 'belowMin', ...ALI, thresholdApplied: 80_00n, observedPrice: 79_99n, priceSource: 'price' }],
+        open: [{ kind: 'belowMin', ...ALI, thresholdApplied: 80_00n, observedPrice: 79_99n, priceSource: 'price', basis: 'shelf' }],
         confirm: [],
         resolve: [],
       },
@@ -51,7 +51,7 @@ describe('planBandReconcile', () => {
       openRows: [],
       look: offers(100_01n),
       expected: {
-        open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 100_00n, observedPrice: 100_01n, priceSource: 'price' }],
+        open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 100_00n, observedPrice: 100_01n, priceSource: 'price', basis: 'shelf' }],
         confirm: [],
         resolve: [],
       },
@@ -61,7 +61,7 @@ describe('planBandReconcile', () => {
       openRows: [],
       look: offers(239_99n, ALI, PSF_100, 3),
       expected: {
-        open: [{ kind: 'belowMin', ...ALI, thresholdApplied: 240_00n, observedPrice: 239_99n, priceSource: 'price' }],
+        open: [{ kind: 'belowMin', ...ALI, thresholdApplied: 240_00n, observedPrice: 239_99n, priceSource: 'price', basis: 'shelf' }],
         confirm: [],
         resolve: [],
       },
@@ -72,7 +72,7 @@ describe('planBandReconcile', () => {
       look: offers(70_00n),
       expected: {
         open: [],
-        confirm: [{ id: 'belowMin-1', observedPrice: 70_00n, priceSource: 'price' }],
+        confirm: [{ id: 'belowMin-1', observedPrice: 70_00n, priceSource: 'price', basis: 'shelf' }],
         resolve: [],
       },
     },
@@ -81,7 +81,7 @@ describe('planBandReconcile', () => {
       openRows: [open('belowMin')],
       look: offers(70_00n, VELI),
       expected: {
-        open: [{ kind: 'belowMin', ...VELI, thresholdApplied: 80_00n, observedPrice: 70_00n, priceSource: 'price' }],
+        open: [{ kind: 'belowMin', ...VELI, thresholdApplied: 80_00n, observedPrice: 70_00n, priceSource: 'price', basis: 'shelf' }],
         confirm: [],
         resolve: [{ id: 'belowMin-1', resolution: 'buyboxChanged' }],
       },
@@ -109,7 +109,7 @@ describe('planBandReconcile', () => {
       openRows: [open('belowMin')],
       look: offers(120_00n, ALI, NO_MIN),
       expected: {
-        open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 100_00n, observedPrice: 120_00n, priceSource: 'price' }],
+        open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 100_00n, observedPrice: 120_00n, priceSource: 'price', basis: 'shelf' }],
         confirm: [],
         resolve: [{ id: 'belowMin-1', resolution: 'thresholdRemoved' }],
       },
@@ -119,7 +119,7 @@ describe('planBandReconcile', () => {
       openRows: [open('belowMin')],
       look: offers(130_00n),
       expected: {
-        open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 100_00n, observedPrice: 130_00n, priceSource: 'price' }],
+        open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 100_00n, observedPrice: 130_00n, priceSource: 'price', basis: 'shelf' }],
         confirm: [],
         resolve: [{ id: 'belowMin-1', resolution: 'inBand' }],
       },
@@ -151,14 +151,14 @@ describe('planBandReconcile', () => {
     expect(planBandReconcile(openRows, look)).toEqual(expected);
   });
 
-  it('finalPrice is judged and recorded as the source', () => {
+  it('finalPrice is judged and recorded as the source, with the coupon as the basis', () => {
     const look: BandLook = {
       kind: 'offers',
       buyboxSeller: ALI,
       evaluation: evaluateBand(PSF_100, 1, { price: 90_00n, finalPrice: 75_00n }),
     };
     expect(planBandReconcile([], look).open).toEqual([
-      { kind: 'belowMin', ...ALI, thresholdApplied: 80_00n, observedPrice: 75_00n, priceSource: 'finalPrice' },
+      { kind: 'belowMin', ...ALI, thresholdApplied: 80_00n, observedPrice: 75_00n, priceSource: 'finalPrice', basis: 'coupon' },
     ]);
   });
 });

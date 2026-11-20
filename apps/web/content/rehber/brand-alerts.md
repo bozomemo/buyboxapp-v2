@@ -17,7 +17,7 @@ Her başarılı bakışta, bağlı kartın buybox satıcısının fiyatı ürün
 - **Min altında**: fiyat, Min × çarpandan düşük. Ürüne Min girilmemişse bu kontrol yapılmaz.
 - **Max üstünde**: fiyat, üst sınır × çarpandan yüksek. Max girilmemişse üst sınır PSF'dir.
 
-Fiyat olarak kupon sonrası fiyat kullanılır; kart kupon vermiyorsa liste fiyatı kullanılır.
+Fiyat olarak kupon sonrası fiyat kullanılır; kart kupon vermiyorsa liste fiyatı kullanılır. Raf (liste) fiyatı aralıktaysa ve yalnız kupon sonrası fiyat Min altına düşüyorsa ihlal **yalnız kupon** diye işaretlenir. Bu çoğu zaman pazaryerinin kendi kampanyasıdır ve bayiyle konuşmanız farklıdır.
 
 İhlal bir **durumdur**, tek seferlik bir olay değildir:
 
@@ -36,12 +36,14 @@ Bu kutu görünürken alarm olmaması "sorun yok" anlamına gelmez; "bakmadık" 
 
 ## Açık ihlaller
 
-İhlaller ürüne göre gruplanır. Grup başlığında ürün adı (tıklayınca ürün sayfası açılır) ve ihlal sayısı yazar. **Excel'e Aktar** açık ihlalleri dosya olarak indirir.
+İhlaller ürüne göre gruplanır. Grup başlığında ürün adı (tıklayınca ürün sayfası açılır) ve ihlal sayısı yazar. **Excel'e Aktar** açık ihlalleri dosya olarak indirir; dosyadaki **Neden** sütunu **Raf fiyatı** ya da **Yalnız kupon** yazar.
+
+Yalnız kuponla oluşan bir ihlal varsa tablonun üstünde **Tümü**, **Raf fiyatı** ve **Yalnız kupon** düğmeleri çıkar. Düğmeye basınca tablo yalnız o türü gösterir.
 
 - **Kart**: kart adı, **↗** ile pazaryerindeki sayfa, pazaryeri ve çarpan 1 değilse **×3** gibi çarpan.
 - **İhlal**: **Min altında** (kırmızı) ya da **Max üstünde** (turuncu).
 - **Buybox satıcı**: aralık dışında satan satıcı.
-- **Fiyat**: son görülen fiyat. **kuponlu** kupon sonrası fiyat demektir.
+- **Fiyat**: son görülen fiyat. **kuponlu**: kupon sonrası fiyat, raf fiyatı da aralık dışında. **yalnız kupon**: raf fiyatı aralıkta, yalnız kupon sonrası fiyat dışında.
 - **Sınır**: kartın sınırı, yani birim sınır × çarpan. İhlal açıldığında geçerli olan sınırdır.
 - **Fark**: fiyatın sınırdan yüzde kaç uzak olduğu, örneğin **−%12,5**. En büyük farklar en acil olanlardır.
 - **Süre**: ihlalin ne zamandır sürdüğü. Üzerine gelince başlangıç tarihi görünür.
@@ -53,6 +55,20 @@ Bu kutu görünürken alarm olmaması "sorun yok" anlamına gelmez; "bakmadık" 
   - **sessiz**: aynı satıcı aynı kartta kısa süre önce de ihlal yaptığı için tekrar bildirilmedi.
 
 Bildirim kanallarını ve alıcıları [Bildirim Ayarları](/rehber/settings-notifications) ekranında kurarsınız.
+
+## Bulunurluk
+
+**Bulunurluk** bölümü ürünlerinize bağlı kartlarda rafın durumunu gösterir. Fiyattan bağımsızdır ve her kartın son başarılı bakışına dayanır:
+
+| Uyarı | Anlamı |
+|---|---|
+| **Rafta yok** | Son başarılı bakışta kartı satan kimse yok. Ayrıntıda en son ne zaman satıcı görüldüğü yazar. |
+| **Yalnız yetkisiz satıcıda** | Kartta satıcı var ama hiçbiri yetkili listenizde değil. Yalnız markanız için en az bir **Yetkili** kural tanımlıysa gösterilir ([Satıcı Politikası](/rehber/seller-policy)). |
+| **Stok azalıyor** | Buybox'taki satıcının pazaryerinde gösterdiği stok 3 adedin altında. |
+
+Satırlar uyarı türüne, sonra değerlendirme sayısına göre sıralanır: çok satan kart önce gelir. Hiç başarıyla okunmamış kart için uyarı çıkmaz; "bakmadık" "satan yok" demek değildir.
+
+Stok, pazaryerinin ekranda gösterdiği sayıdır. Bazı satıcılar sabit bir sayı gösterir; bu yüzden uyarıyı bir işaret olarak okuyun.
 
 ## Kapananlar
 
@@ -82,7 +98,10 @@ Hayır. Bu ekran yalnızca buybox'ı tutan satıcıya bakar. Ucuza satan diğer 
 **Bildirim sütununda "bekliyor" yazıyor ve hiç değişmiyor.**
 O kanal kurulmamış olabilir; üzerine gelince nedeni görünür. Kanalı [Bildirim Ayarları](/rehber/settings-notifications) ekranında kurduğunuzda bekleyenler toplu gönderilir.
 
+**"Yalnız kupon" ihlali de bildirilir mi?**
+Evet. Bildirim metninde "yalnız kuponla; raf fiyatı bantta" yazar.
+
 **Max'ı yükselttim ama ihlal hâlâ açık.**
 Yeni sınır kartın bir sonraki başarılı bakışında uygulanır. İlanlar turu yaklaşık yarım saatte bir döner.
 
-<!-- kaynak: doc 17 §5, §6; apps/web/src/app/brand/alerts/alerts-client.tsx; api/brand/alerts permission -->
+<!-- kaynak: doc 17 §5, §6; brand roadmap §6.7, §6.8; apps/web/src/app/brand/alerts/alerts-client.tsx; api/brand/alerts permission -->

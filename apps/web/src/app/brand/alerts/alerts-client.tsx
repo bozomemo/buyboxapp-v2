@@ -49,8 +49,14 @@ interface Violation {
   unitMultiplier: number;
   observedPrice: string;
   priceSource: 'finalPrice' | 'price';
+  /** Shelf price or only the coupon (brand roadmap §6.7). Absent from an older server: shelf. */
+  basis?: 'shelf' | 'coupon';
   /** Absent from a server older than 11.7. */
-  notifications?: { channel: 'webhook' | 'email' | 'sms'; state: 'pending' | 'sent' | 'failed' | 'suppressed'; reason: string | null }[];
+  notifications?: {
+    channel: 'webhook' | 'email' | 'sms';
+    state: 'pending' | 'sent' | 'failed' | 'suppressed';
+    reason: string | null;
+  }[];
 }
 
 interface Staleness {
@@ -60,7 +66,29 @@ interface Staleness {
   stale: boolean;
 }
 
+type AvailabilityIssue = 'noSellers' | 'onlyUnauthorised' | 'lowStock';
+
+interface AvailabilityRow {
+  trackedProductId: string;
+  cardLabel: string;
+  cardUrl: string;
+  marketplaceCode: string;
+  brandProductId: string;
+  brandProductName: string;
+  unitMultiplier: number;
+  issue: AvailabilityIssue;
+  ratingCount: number | null;
+  lastScrapedAt: number | null;
+  lastSellerSeenAt: number | null;
+  buyboxSeller: string | null;
+  offeredStock: number | null;
+  sellerCount: number;
+}
+
 interface Data {
+  /** Shelf and stock warnings (brand roadmap §6.8). Absent from an older server. */
+  availability?: AvailabilityRow[];
+  lowStockThreshold?: number;
   open: Violation[];
   resolved: Violation[];
   resolvedWindowMs: number;
@@ -92,7 +120,7 @@ function gapPct(v: Violation): string {
   return `${sign}%${abs / 100n},${String((abs % 100n) / 10n)}`;
 }
 
-function cardLink(v: Violation) {
+function cardLink(v: Pick<Violation, 'cardLabel' | 'cardUrl' | 'marketplaceCode' | 'unitMultiplier'>) {
   const url = marketplaceProductUrl(v.marketplaceCode, v.cardUrl);
   return (
     <>
@@ -108,10 +136,44 @@ function cardLink(v: Violation) {
           ↗
         </a>
       )}
-      <span className="ml-2 text-xs text-(--color-muted)">{labelOf(MARKETPLACE_LABELS, v.marketplaceCode)}</span>
-      {v.unitMultiplier !== 1 && <span className="ml-2 text-xs text-(--color-muted)">×{v.unitMultiplier}</span>}
+      <span className="ml-2 text-xs text-(--color-muted)">
+        {labelOf(MARKETPLACE_LABELS, v.marketplaceCode)}
+      </span>
+      {v.unitMultiplier !== 1 && (
+        <span className="ml-2 text-xs text-(--color-muted)">×{v.unitMultiplier}</span>
+      )}
     </>
   );
+}
+
+type BasisFilter = 'all' | 'shelf' | 'coupon';
+
+const ISSUE_LABELS: Record<AvailabilityIssue, string> = {
+  noSellers: 'Rafta yok',
+  onlyUnauthorised: 'Yalnız yetkisiz satıcıda',
+  lowStock: 'Stok azalıyor',
+};
+const ISSUE_CLASS: Record<AvailabilityIssue, string> = {
+  noSellers: 'text-(--color-danger) font-medium',
+  onlyUnauthorised: 'text-(--color-danger) font-medium',
+  lowStock: 'text-(--color-warning) font-medium',
+};
+
+/** What the warning rests on, in the manager's words. */
+function issueDetail(row: AvailabilityRow) {
+  if (row.issue === 'noSellers') {
+    return row.lastSellerSeenAt === null ? (
+      'Son başarılı bakışta satan yok.'
+    ) : (
+      <>
+        Son başarılı bakışta satan yok; en son satıcı <Ago at={row.lastSellerSeenAt} /> görüldü.
+      </>
+    );
+  }
+  if (row.issue === 'onlyUnauthorised') {
+    return `${row.sellerCount} satıcı var, hiçbiri yetkili listenizde değil.`;
+  }
+  return `Buybox'taki ${row.buyboxSeller || 'satıcı'} pazaryerinde ${row.offeredStock ?? '?'} adet gösteriyor.`;
 }
 
 const CHANNEL_SHORT = { webhook: 'webhook', email: 'e-posta', sms: 'SMS' } as const;
@@ -127,7 +189,13 @@ function notifiedCell(v: Violation) {
   return (
     <span className="text-xs">
       {rows.map((d, i) => (
-        <span key={d.channel} title={d.reason ?? undefined} className={d.state === 'failed' ? 'text-(--color-danger)' : d.state === 'sent' ? '' : 'text-(--color-muted)'}>
+        <span
+          key={d.channel}
+          title={d.reason ?? undefined}
+          className={
+            d.state === 'failed' ? 'text-(--color-danger)' : d.state === 'sent' ? '' : 'text-(--color-muted)'
+          }
+        >
           {i > 0 && ' · '}
           {CHANNEL_SHORT[d.channel]} {DELIVERY_SHORT[d.state]}
         </span>
@@ -140,10 +208,22 @@ function priceCell(v: Violation) {
   return (
     <>
       {formatMoney(BigInt(v.observedPrice))}
-      {v.priceSource === 'finalPrice' && (
-        <span className="ml-1 text-xs text-(--color-muted)" title="Kupon sonrası fiyat">
-          kuponlu
+      {v.basis === 'coupon' ? (
+        <span
+          className="ml-1 rounded bg-(--color-bg) px-1 text-xs text-(--color-muted)"
+          title="Raf fiyatı bantta; yalnız kupon sonrası fiyat bandın dışında. Çoğu zaman pazaryerinin kendi kampanyasıdır."
+        >
+          yalnız kupon
         </span>
+      ) : (
+        v.priceSource === 'finalPrice' && (
+          <span
+            className="ml-1 text-xs text-(--color-muted)"
+            title="Kupon sonrası fiyat; raf fiyatı da bandın dışında"
+          >
+            kuponlu
+          </span>
+        )
       )}
     </>
   );
@@ -153,9 +233,10 @@ function exportRows(rows: Violation[]) {
   return rows.map((v) => ({
     'Stok Ürünü': v.brandProductName,
     Kart: v.cardLabel,
-    Pazaryeri: v.marketplaceCode,
+    Pazaryeri: labelOf(MARKETPLACE_LABELS, v.marketplaceCode),
     Çarpan: v.unitMultiplier,
     İhlal: KIND_LABELS[v.kind],
+    Neden: v.basis === 'coupon' ? 'Yalnız kupon' : 'Raf fiyatı',
     Satıcı: v.sellerName,
     'Satıcı Kodu': v.sellerRef ?? '',
     Fiyat: kurusToDecimal(v.observedPrice),
@@ -173,6 +254,7 @@ function exportRows(rows: Violation[]) {
 export function BrandAlertsClient() {
   const [data, setData] = useState<Data | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [basisFilter, setBasisFilter] = useState<BasisFilter>('all');
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -182,7 +264,9 @@ export function BrandAlertsClient() {
         if (body.error) setLoadError(body.error);
         else setData(body);
       })
-      .catch((error: unknown) => setLoadError(error instanceof Error ? error.message : 'Alarmlar okunamadı.'));
+      .catch((error: unknown) =>
+        setLoadError(error instanceof Error ? error.message : 'Alarmlar okunamadı.'),
+      );
   }, []);
 
   useEffect(load, [load]);
@@ -207,7 +291,12 @@ export function BrandAlertsClient() {
 
   // Grouped by product: the API already orders open rows by product name, then oldest first.
   const groups: { productId: string; productName: string; rows: Violation[] }[] = [];
-  for (const v of data.open) {
+  const couponCount = data.open.filter((v) => v.basis === 'coupon').length;
+  const shownOpen = data.open.filter(
+    (v) => basisFilter === 'all' || (basisFilter === 'coupon') === (v.basis === 'coupon'),
+  );
+  const availability = data.availability ?? [];
+  for (const v of shownOpen) {
     const last = groups[groups.length - 1];
     if (last && last.productId === v.brandProductId) last.rows.push(v);
     else groups.push({ productId: v.brandProductId, productName: v.brandProductName, rows: [v] });
@@ -220,8 +309,8 @@ export function BrandAlertsClient() {
         breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Alarmlar' }]}
         description={
           <>
-            Ürünlerinize bağlı kartlarda <strong>buybox&apos;taki satıcı</strong> bandınızın dışında
-            satıyorsa burada görünür. Raporlamadır: hiçbir fiyatı değiştirmez.
+            Ürünlerinize bağlı kartlarda <strong>buybox&apos;taki satıcı</strong> bandınızın dışında satıyorsa
+            burada görünür. Raporlamadır: hiçbir fiyatı değiştirmez.
           </>
         }
       />
@@ -247,8 +336,11 @@ export function BrandAlertsClient() {
           </ul>
           <p className="mt-2 text-sm text-(--color-danger)">
             Aşağıda alarm görünmemesi &ldquo;sorun yok&rdquo; anlamına gelmez; &ldquo;bakmadık&rdquo; anlamına
-            gelir. <Link className="underline" href="/jobs">İşler</Link> ekranından İlan Taraması işinin
-            açık ve çalışır olduğunu kontrol edin.
+            gelir.{' '}
+            <Link className="underline" href="/jobs">
+              İşler
+            </Link>{' '}
+            ekranından İlan Taraması işinin açık ve çalışır olduğunu kontrol edin.
           </p>
         </div>
       )}
@@ -282,52 +374,137 @@ export function BrandAlertsClient() {
             }
           />
         ) : (
+          <>
+            {couponCount > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="İhlalin nedeni">
+                {(
+                  [
+                    ['all', `Tümü (${data.open.length})`],
+                    ['shelf', `Raf fiyatı (${data.open.length - couponCount})`],
+                    ['coupon', `Yalnız kupon (${couponCount})`],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={basisFilter === value ? 'primary' : 'secondary'}
+                    aria-pressed={basisFilter === value}
+                    onClick={() => setBasisFilter(value)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <TableFrame>
+              <table className="w-full text-sm">
+                <thead className={STICKY_HEAD}>
+                  <tr className="text-left">
+                    <th className="p-2">Kart</th>
+                    <th className="p-2">İhlal</th>
+                    <th className="p-2">Buybox satıcı</th>
+                    <th className="p-2 text-right">Fiyat</th>
+                    <th className="p-2 text-right" title="Kartın sınırı: birim sınır × çarpan">
+                      Sınır
+                    </th>
+                    <th className="p-2 text-right">Fark</th>
+                    <th className="p-2">Süre</th>
+                    <th className="p-2">Son görülme</th>
+                    <th className="p-2">Bildirim</th>
+                  </tr>
+                </thead>
+                {groups.map((group) => (
+                  <tbody key={group.productId}>
+                    <tr className="border-t border-(--color-border) bg-(--color-bg)">
+                      <td colSpan={9} className="p-2 font-medium">
+                        <Link className="underline" href={`/brand/products/${group.productId}`}>
+                          {group.productName}
+                        </Link>
+                        <span className="ml-2 text-xs text-(--color-muted)">{group.rows.length} ihlal</span>
+                      </td>
+                    </tr>
+                    {group.rows.map((v) => (
+                      <tr key={v.id} className="border-t border-(--color-border)">
+                        <td className="p-2">{cardLink(v)}</td>
+                        <td className={`p-2 ${KIND_CLASS[v.kind]}`}>{KIND_LABELS[v.kind]}</td>
+                        <td className="p-2">{v.sellerName || '—'}</td>
+                        <td className="p-2 text-right tabular-nums">{priceCell(v)}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {formatMoney(BigInt(v.thresholdApplied))}
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${KIND_CLASS[v.kind]}`}>{gapPct(v)}</td>
+                        <td
+                          className="p-2 tabular-nums"
+                          title={`${formatDateTime(v.firstSeenAt)} tarihinden beri`}
+                        >
+                          {formatDuration(nowMs - v.firstSeenAt)}
+                        </td>
+                        <td className="p-2 text-xs text-(--color-muted)">
+                          <Ago at={v.lastSeenAt} />
+                        </td>
+                        <td className="p-2">{notifiedCell(v)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                ))}
+              </table>
+            </TableFrame>
+          </>
+        )}
+      </Section>
+
+      <Section id="brand-availability" title={`Bulunurluk (${availability.length})`}>
+        <p className="mb-3 text-sm text-(--color-muted)">
+          Bağlı kartlarınızda raf boşaldığında, yalnız yetkisiz satıcılar kaldığında ya da buybox&apos;taki
+          satıcının stoğu {data.lowStockThreshold ?? 3} adedin altına indiğinde burada görünür. Stok,
+          pazaryerinin gösterdiği sayıdır; satıcının gerçek stoğu olmayabilir.
+        </p>
+        {availability.length === 0 ? (
+          <EmptyState
+            message="Bulunurluk uyarısı yok."
+            reason={
+              stale.length > 0
+                ? 'Yukarıdaki uyarıya göre veri güncel değil — bu "sorun yok" anlamına gelmez.'
+                : 'Başarıyla okunan bağlı kartların hepsinde satıcı ve yeterli stok görünüyor.'
+            }
+          />
+        ) : (
           <TableFrame>
             <table className="w-full text-sm">
               <thead className={STICKY_HEAD}>
                 <tr className="text-left">
+                  <th className="p-2">Stok ürünü</th>
                   <th className="p-2">Kart</th>
-                  <th className="p-2">İhlal</th>
-                  <th className="p-2">Buybox satıcı</th>
-                  <th className="p-2 text-right">Fiyat</th>
-                  <th className="p-2 text-right" title="Kartın sınırı: birim sınır × çarpan">
-                    Sınır
+                  <th className="p-2">Uyarı</th>
+                  <th className="p-2">Ayrıntı</th>
+                  <th className="p-2 text-right" title="Değerlendirme sayısı: çok satan kart önce">
+                    Değerlendirme
                   </th>
-                  <th className="p-2 text-right">Fark</th>
-                  <th className="p-2">Süre</th>
-                  <th className="p-2">Son görülme</th>
-                  <th className="p-2">Bildirim</th>
+                  <th className="p-2">Son bakış</th>
                 </tr>
               </thead>
-              {groups.map((group) => (
-                <tbody key={group.productId}>
-                  <tr className="border-t border-(--color-border) bg-(--color-bg)">
-                    <td colSpan={9} className="p-2 font-medium">
-                      <Link className="underline" href={`/brand/products/${group.productId}`}>
-                        {group.productName}
+              <tbody>
+                {availability.map((row) => (
+                  <tr
+                    key={`${row.trackedProductId}-${row.issue}`}
+                    className="border-t border-(--color-border)"
+                  >
+                    <td className="p-2">
+                      <Link className="underline" href={`/brand/products/${row.brandProductId}`}>
+                        {row.brandProductName}
                       </Link>
-                      <span className="ml-2 text-xs text-(--color-muted)">{group.rows.length} ihlal</span>
+                    </td>
+                    <td className="p-2">{cardLink(row)}</td>
+                    <td className={`p-2 ${ISSUE_CLASS[row.issue]}`}>{ISSUE_LABELS[row.issue]}</td>
+                    <td className="p-2 text-xs">{issueDetail(row)}</td>
+                    <td className="p-2 text-right tabular-nums">{row.ratingCount ?? '—'}</td>
+                    <td className="p-2 text-xs text-(--color-muted)">
+                      <Ago at={row.lastScrapedAt} />
                     </td>
                   </tr>
-                  {group.rows.map((v) => (
-                    <tr key={v.id} className="border-t border-(--color-border)">
-                      <td className="p-2">{cardLink(v)}</td>
-                      <td className={`p-2 ${KIND_CLASS[v.kind]}`}>{KIND_LABELS[v.kind]}</td>
-                      <td className="p-2">{v.sellerName || '—'}</td>
-                      <td className="p-2 text-right tabular-nums">{priceCell(v)}</td>
-                      <td className="p-2 text-right tabular-nums">{formatMoney(BigInt(v.thresholdApplied))}</td>
-                      <td className={`p-2 text-right tabular-nums ${KIND_CLASS[v.kind]}`}>{gapPct(v)}</td>
-                      <td className="p-2 tabular-nums" title={`${formatDateTime(v.firstSeenAt)} tarihinden beri`}>
-                        {formatDuration(nowMs - v.firstSeenAt)}
-                      </td>
-                      <td className="p-2 text-xs text-(--color-muted)">
-                        <Ago at={v.lastSeenAt} />
-                      </td>
-                      <td className="p-2">{notifiedCell(v)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              ))}
+                ))}
+              </tbody>
             </table>
           </TableFrame>
         )}

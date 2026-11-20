@@ -12,7 +12,7 @@
  * of one kind, the planner judges every row and the next look closes the extra — it never stays
  * open for ever.
  */
-import { sameSeller, type BandReconcilePlan, type BandResolution, type BandViolationKind, type OpenBandViolation } from '@buybox/core';
+import { sameSeller, type BandBasis, type BandReconcilePlan, type BandResolution, type BandViolationKind, type OpenBandViolation } from '@buybox/core';
 import { and, asc, count, desc, eq, getTableColumns, gte, inArray, lte } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import { newId } from '../id.js';
@@ -39,6 +39,8 @@ export interface BandViolationRow {
   readonly unitMultiplier: number;
   readonly observedPrice: bigint;
   readonly priceSource: 'finalPrice' | 'price';
+  /** Shelf price or only the coupon (brand roadmap §6.7), as of the latest look. */
+  readonly basis: BandBasis;
   /** JSON: the opening look's offers. */
   readonly snapshot: string;
 }
@@ -102,8 +104,8 @@ export async function applyBandPlan(appDb: AppDatabase, input: ApplyBandPlanInpu
     await resolveIds(appDb, ids, resolution, nowMs);
   }
 
-  for (const { id, observedPrice, priceSource } of plan.confirm) {
-    const set = { lastSeenAt: nowMs, observedPrice, priceSource };
+  for (const { id, observedPrice, priceSource, basis } of plan.confirm) {
+    const set = { lastSeenAt: nowMs, observedPrice, priceSource, basis };
     await runDialect(appDb, {
       sqlite: (db) => db.update(sqliteSchema.bandViolations).set(set).where(eq(sqliteSchema.bandViolations.id, id)),
       postgres: (db) =>
@@ -128,6 +130,7 @@ export async function applyBandPlan(appDb: AppDatabase, input: ApplyBandPlanInpu
     unitMultiplier: input.unitMultiplier,
     observedPrice: o.observedPrice,
     priceSource: o.priceSource,
+    basis: o.basis,
     snapshot: input.snapshot,
   }));
   if (opened.length > 0) {

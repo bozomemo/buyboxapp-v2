@@ -55,9 +55,10 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-async function seedLinkedCard(): Promise<void> {
+async function seedLinkedCard(card: Partial<trackedProductsRepo.TrackedProductRow> = {}): Promise<void> {
   const now = Date.now();
   await trackedProductsRepo.addTrackedProduct(appDb, {
+    ...card,
     id: 'card-1',
     marketplaceCode: 'trendyol',
     productRef: '111',
@@ -65,6 +66,7 @@ async function seedLinkedCard(): Promise<void> {
     label: 'Ton 85g',
     isActive: true,
     addedAt: now,
+    ...card,
   });
   await brandProductsRepo.insertBrandProduct(appDb, {
     id: 'bp-1',
@@ -95,6 +97,7 @@ interface AlertsResponse {
   open: { brandProductName: string; cardLabel: string; kind: string; thresholdApplied: string; observedPrice: string }[];
   resolved: { resolution: string }[];
   staleness: { marketplaceCode: string; lastOkAt: number | null; stale: boolean }[];
+  availability: { trackedProductId: string; brandProductName: string; issue: string; offeredStock: number | null; buyboxSeller: string | null }[];
 }
 
 async function alerts(): Promise<AlertsResponse> {
@@ -128,8 +131,8 @@ describe('GET /api/brand/alerts', () => {
       nowMs: now - 60_000,
       plan: {
         open: [
-          { kind: 'belowMin', sellerRef: '9', sellerName: 'Ucuzcu', thresholdApplied: 160_00n, observedPrice: 150_00n, priceSource: 'price' },
-          { kind: 'aboveMax', sellerRef: '9', sellerName: 'Ucuzcu', thresholdApplied: 200_00n, observedPrice: 250_00n, priceSource: 'price' },
+          { kind: 'belowMin', sellerRef: '9', sellerName: 'Ucuzcu', thresholdApplied: 160_00n, observedPrice: 150_00n, priceSource: 'price', basis: 'shelf' },
+          { kind: 'aboveMax', sellerRef: '9', sellerName: 'Ucuzcu', thresholdApplied: 200_00n, observedPrice: 250_00n, priceSource: 'price', basis: 'shelf' },
         ],
         confirm: [],
         resolve: [],
@@ -155,5 +158,30 @@ describe('GET /api/brand/alerts', () => {
       }),
     ]);
     expect(body.resolved).toEqual([expect.objectContaining({ resolution: 'inBand' })]);
+  });
+
+  /** Brand roadmap §6.8: shelf and stock warnings beside the price violations. */
+  it('a linked card nobody sells is "rafta yok"; one never read says nothing', async () => {
+    await seedLinkedCard({ hasSellers: false, lastScrapedAt: Date.now() });
+    expect((await alerts()).availability).toEqual([
+      expect.objectContaining({ trackedProductId: 'card-1', brandProductName: 'Ton Balıklı 85g', issue: 'noSellers' }),
+    ]);
+  });
+
+  it('never read: no availability row', async () => {
+    await seedLinkedCard();
+    expect((await alerts()).availability).toEqual([]);
+  });
+
+  it('the buybox holder showing under 3 units is "stok azalıyor"', async () => {
+    const now = Date.now();
+    await seedLinkedCard({ hasSellers: true, lastScrapedAt: now });
+    await trackedProductsRepo.insertTrackedProductObservations(appDb, [
+      { id: 'o1', trackedProductId: 'card-1', observedAt: now, status: 'ok', rank: 1, sellerName: 'Az Stoklu', sellerRef: '7', price: 150_00n, finalPrice: null, offeredStock: 2 },
+      { id: 'o2', trackedProductId: 'card-1', observedAt: now, status: 'ok', rank: 2, sellerName: 'Bol', sellerRef: '8', price: 160_00n, finalPrice: null, offeredStock: 90 },
+    ]);
+    expect((await alerts()).availability).toEqual([
+      expect.objectContaining({ issue: 'lowStock', offeredStock: 2, buyboxSeller: 'Az Stoklu' }),
+    ]);
   });
 });

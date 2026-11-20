@@ -794,6 +794,12 @@ export const trackedProducts = sqliteTable(
      */
     isFavourite: bool('is_favourite').notNull().default(false),
     favouritedAt: timestampMs('favourited_at'),
+    /**
+     * Operator-set: "bizim değil / önemsiz" on the brand module's unmatched-card queue (brand
+     * roadmap §6.9). A card set aside here leaves the queue and stays out of it; linking or
+     * clearing the field brings nothing back by itself. `null`: never set aside.
+     */
+    queueDismissedAt: timestampMs('queue_dismissed_at'),
   },
   (t) => [
     uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
@@ -1446,6 +1452,12 @@ export const bandViolations = sqliteTable(
     unitMultiplier: integer('unit_multiplier').notNull(),
     observedPrice: money('observed_price').notNull(),
     priceSource: text('price_source').notNull(), // 'finalPrice' | 'price'
+    /**
+     * `shelf` | `coupon` (brand roadmap §6.7): whether the listed price breached or only the price
+     * after the marketplace's coupon. Refreshed on every confirm. Rows from before the column read
+     * `shelf`, the conservative reading.
+     */
+    basis: text('basis').notNull().default('shelf'),
     snapshot: json('snapshot').notNull(),
   },
   (t) => [

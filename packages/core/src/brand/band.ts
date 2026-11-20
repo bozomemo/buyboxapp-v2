@@ -96,6 +96,14 @@ export type BandStatus = 'inBand' | BandViolationKind | 'unknown';
 /** Which field the judged price came from — stored on a violation and shown beside it (§5.1). */
 export type BandPriceSource = 'finalPrice' | 'price';
 
+/**
+ * Whether a breach is the shelf price's or only the coupon's (brand roadmap §6.7). `coupon`: the
+ * listed `price` is inside the band and only the `finalPrice` after the marketplace's coupon falls
+ * under the min. A dealer who set the shelf price right and a marketplace campaign that cut it are
+ * a different conversation from a dealer who cut the shelf price.
+ */
+export type BandBasis = 'shelf' | 'coupon';
+
 /** The buybox offer as the normaliser returns it: the rank-1 offer, prices in kuruş. */
 export interface BuyboxPrice {
   readonly price: bigint | null;
@@ -114,6 +122,11 @@ export interface BandEvaluation {
   /** The price judged, in the card's own terms. `null` when the status is `unknown`. */
   readonly observedPrice: bigint | null;
   readonly priceSource: BandPriceSource | null;
+  /**
+   * `coupon` when only the coupon price breaches; `shelf` for every other breach; `null` when
+   * nothing is breached. A coupon only lowers a price, so an `aboveMax` is always `shelf`.
+   */
+  readonly basis: BandBasis | null;
   /**
    * The card-scaled bound the price was measured against — `threshold_applied` on a violation
    * (§5.3), so a violation opened under an old band still reads correctly after an edit.
@@ -159,18 +172,31 @@ export function evaluateBand(
   // A non-positive price is a bad read, not a giveaway. Judging it would open a `belowMin`
   // violation — and, from 11.6, fire a notification — on a parse glitch.
   if (observed === null || observed <= 0n) {
-    return { status: 'unknown', violations: [], observedPrice: null, priceSource: null, band };
+    return { status: 'unknown', violations: [], observedPrice: null, priceSource: null, basis: null, band };
   }
 
   const violations: BandViolationKind[] = [];
   if (band.lower !== null && observed < band.lower) violations.push('belowMin');
   if (observed > band.upper) violations.push('aboveMax');
 
+  // The shelf price at or above the min (the boundary is inside the band) makes a `belowMin` the
+  // coupon's alone.
+  const shelf = buybox!.price;
+  const couponOnly =
+    source === 'finalPrice' &&
+    violations.length === 1 &&
+    violations[0] === 'belowMin' &&
+    shelf !== null &&
+    band.lower !== null &&
+    shelf >= band.lower;
+  const basis: BandBasis | null = violations.length === 0 ? null : couponOnly ? 'coupon' : 'shelf';
+
   return {
     status: violations[0] ?? 'inBand',
     violations,
     observedPrice: observed,
     priceSource: source,
+    basis,
     band,
   };
 }

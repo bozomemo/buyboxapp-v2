@@ -20,6 +20,7 @@ function violation(i: number, overrides: Partial<bandViolationsRepo.BandViolatio
     unitMultiplier: 1,
     observedPrice: 150_00n,
     priceSource: 'price',
+    basis: 'shelf',
     snapshot: '[]',
     brandProductName: 'Ton 85g',
     cardLabel: 'Kart',
@@ -50,6 +51,13 @@ describe('formatBandViolationMessage', () => {
     expect(message.text).toContain('• Ton 85g — Kart ×3 (trendyol): max üstünde, Ucuzcu 150,00 ₺ (kuponlu), sınır 160,00 ₺');
     expect(message.items).toEqual([expect.objectContaining({ id: 'v1', price: '15000', threshold: '16000' })]);
     expect(message.omitted).toBe(0);
+  });
+
+  /** Brand roadmap §6.7: a breach the coupon alone made is told as such. */
+  it('says when only the coupon price is outside the band', () => {
+    const message = formatBandViolationMessage([violation(1, { priceSource: 'finalPrice', basis: 'coupon' })]);
+    expect(message.text).toContain('Ucuzcu 150,00 ₺ (yalnız kuponla; raf fiyatı bantta), sınır 160,00 ₺');
+    expect(message.items).toEqual([expect.objectContaining({ basis: 'coupon' })]);
   });
 
   it('caps the list at 10 and counts the rest', () => {

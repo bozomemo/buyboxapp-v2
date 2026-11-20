@@ -8,11 +8,13 @@
  *
  * Amounts cross as decimal kuruş strings, like every other route.
  */
+import { LOW_STOCK_THRESHOLD } from '@buybox/core';
 import { bandViolationsRepo, notificationDeliveriesRepo } from '@buybox/db';
 import { BAND_STALE_AFTER_MS } from '@buybox/jobs';
 import { NextResponse } from 'next/server';
 import { withPermission } from '@/lib/server/auth/guard';
 import { bandStaleness } from '@/lib/server/band-staleness';
+import { brandAvailability } from '@/lib/server/brand-availability';
 import { getAppDb } from '@/lib/server/db';
 
 /** How far back the "recently resolved" list reaches. */
@@ -48,13 +50,15 @@ function toWire(
     unitMultiplier: row.unitMultiplier,
     observedPrice: row.observedPrice.toString(),
     priceSource: row.priceSource,
+    /** Shelf price or only the coupon (brand roadmap §6.7). */
+    basis: row.basis,
   };
 }
 
 async function getHandler() {
   const appDb = getAppDb();
   const nowMs = Date.now();
-  const [open, resolved, staleness] = await Promise.all([
+  const [open, resolved, staleness, availability] = await Promise.all([
     bandViolationsRepo.queryBandViolations(appDb, { state: 'open' }),
     bandViolationsRepo.queryBandViolations(appDb, {
       state: 'resolved',
@@ -62,6 +66,7 @@ async function getHandler() {
       limit: 200,
     }),
     bandStaleness(appDb, nowMs),
+    brandAvailability(appDb),
   ]);
   const deliveries = await notificationDeliveriesRepo.deliveriesForSubjects(
     appDb,
@@ -74,6 +79,9 @@ async function getHandler() {
     resolvedWindowMs: RESOLVED_WINDOW_MS,
     staleness,
     staleAfterMs: BAND_STALE_AFTER_MS,
+    /** Shelf and stock warnings on linked cards (brand roadmap §6.8). */
+    availability,
+    lowStockThreshold: LOW_STOCK_THRESHOLD,
   });
 }
 

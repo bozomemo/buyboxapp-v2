@@ -9,7 +9,7 @@
  * The judge is `evaluateBand` and nothing else — the same function the İlanlar status column
  * calls — so a row's colour on the screen and a violation in the database can never disagree.
  */
-import type { BandEvaluation, BandPriceSource, BandViolationKind } from './band.js';
+import type { BandBasis, BandEvaluation, BandPriceSource, BandViolationKind } from './band.js';
 
 /** Why a violation ended (doc 17 §5.3). `unlinked` is applied by the repository at unlink. */
 export type BandResolution = 'inBand' | 'buyboxChanged' | 'noOffers' | 'thresholdRemoved' | 'unlinked';
@@ -44,12 +44,14 @@ export interface BandViolationToOpen extends BandSeller {
   readonly thresholdApplied: bigint;
   readonly observedPrice: bigint;
   readonly priceSource: BandPriceSource;
+  /** Shelf price or only the coupon (brand roadmap §6.7) — refreshed on every confirm. */
+  readonly basis: BandBasis;
 }
 
 export interface BandReconcilePlan {
   readonly open: readonly BandViolationToOpen[];
   /** Still breached by the same seller: refresh `last_seen_at` and the observed price only. */
-  readonly confirm: readonly { id: string; observedPrice: bigint; priceSource: BandPriceSource }[];
+  readonly confirm: readonly { id: string; observedPrice: bigint; priceSource: BandPriceSource; basis: BandBasis }[];
   readonly resolve: readonly { id: string; resolution: BandResolution }[];
 }
 
@@ -101,9 +103,11 @@ export function planBandReconcile(
   }
   const observedPrice = evaluation.observedPrice;
   const priceSource = evaluation.priceSource;
+  // Every breach has a basis; `shelf` stands in only for the type, never for a real breach.
+  const basis: BandBasis = evaluation.basis ?? 'shelf';
 
   const open: BandViolationToOpen[] = [];
-  const confirm: { id: string; observedPrice: bigint; priceSource: BandPriceSource }[] = [];
+  const confirm: { id: string; observedPrice: bigint; priceSource: BandPriceSource; basis: BandBasis }[] = [];
   const resolve: { id: string; resolution: BandResolution }[] = [];
 
   for (const kind of KINDS) {
@@ -116,7 +120,7 @@ export function planBandReconcile(
         resolve.push({ id: row.id, resolution: 'thresholdRemoved' });
       } else if (sameSeller(row, buyboxSeller)) {
         if (breached && !stillOpen) {
-          confirm.push({ id: row.id, observedPrice, priceSource });
+          confirm.push({ id: row.id, observedPrice, priceSource, basis });
           stillOpen = true;
         } else {
           resolve.push({ id: row.id, resolution: breached ? 'buyboxChanged' : 'inBand' });
@@ -128,7 +132,7 @@ export function planBandReconcile(
 
     if (breached && !stillOpen) {
       const thresholdApplied = kind === 'belowMin' ? evaluation.band.lower! : evaluation.band.upper;
-      open.push({ kind, ...buyboxSeller, thresholdApplied, observedPrice, priceSource });
+      open.push({ kind, ...buyboxSeller, thresholdApplied, observedPrice, priceSource, basis });
     }
   }
 

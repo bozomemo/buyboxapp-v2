@@ -17,6 +17,7 @@
  */
 import { NextResponse } from 'next/server';
 import { resolveSellerPolicy, type SellerPolicyRule } from '@buybox/core';
+import { toSellerPolicyRules } from '@/lib/server/seller-policy-rules';
 import { brandReportsRepo, competitorSellersRepo, sellerPoliciesRepo, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { withPermission } from '@/lib/server/auth/guard';
@@ -93,27 +94,7 @@ async function getHandler(request: Request) {
     buyboxShare.rows.map((r) => [`${r.marketplaceCode}::${r.sellerRef ?? ''}`, r]),
   );
 
-  /** Stored rows shaped for the pure resolver; a hand-edited row with no identity is dropped. */
-  const rules: SellerPolicyRule[] = policyRows.flatMap((row) => {
-    const identity =
-      row.sellerRef !== null && row.marketplaceCode !== null
-        ? ({ kind: 'sellerRef', marketplaceCode: row.marketplaceCode, sellerRef: row.sellerRef } as const)
-        : row.taxNumber !== null
-          ? ({ kind: 'taxNumber', taxNumber: row.taxNumber } as const)
-          : null;
-    return identity === null
-      ? []
-      : [
-          {
-            id: row.id,
-            watchedBrandGroupId: row.watchedBrandGroupId,
-            watchedBrandId: row.watchedBrandId,
-            identity,
-            status: row.status,
-            note: row.note,
-          },
-        ];
-  });
+  const rules: SellerPolicyRule[] = toSellerPolicyRules(policyRows);
 
   const known = new Map(knownSellers.map((s) => [`${s.marketplaceCode}::${s.sellerRef}`, s]));
   const sellerGroupsById = new Map(sellerGroups.map((g) => [g.id, g]));

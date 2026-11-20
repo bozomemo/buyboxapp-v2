@@ -266,6 +266,28 @@ describe('evaluateBand (doc 17 §5.1)', () => {
     expect(result).toMatchObject({ status: 'inBand', observedPrice: 95_00n, priceSource: 'price' });
   });
 
+  /**
+   * Brand roadmap §6.7: "the shelf price is below the min" and "the shelf price is fine, a coupon
+   * took it under" are different conversations with a dealer — the second is often the
+   * marketplace's own campaign.
+   */
+  it.each([
+    { name: 'coupon only: shelf in band, coupon price under min', offer: { price: 95_00n, finalPrice: 79_99n }, basis: 'coupon' },
+    { name: 'shelf too: both under min', offer: { price: 79_00n, finalPrice: 75_00n }, basis: 'shelf' },
+    { name: 'no coupon field: the shelf price judged', offer: { price: 79_00n, finalPrice: null }, basis: 'shelf' },
+    { name: 'shelf exactly at min is not under it', offer: { price: 80_00n, finalPrice: 79_00n }, basis: 'coupon' },
+    { name: 'above max: a coupon only lowers, so the shelf is above too', offer: { price: 130_00n, finalPrice: 120_00n }, basis: 'shelf' },
+    { name: 'in band: no basis', offer: { price: 95_00n, finalPrice: 90_00n }, basis: null },
+  ] as const)('basis — $name', ({ offer, basis }) => {
+    expect(evaluateBand(prices({ minPrice: 80_00n }), 1, offer).basis).toBe(basis);
+  });
+
+  it('judges the basis against the card-scaled min', () => {
+    // ×3: min 240,00. Shelf 250,00 is in band, the coupon's 230,00 is not.
+    const result = evaluateBand(prices({ minPrice: 80_00n }), 3, { price: 250_00n, finalPrice: 230_00n });
+    expect(result).toMatchObject({ status: 'belowMin', basis: 'coupon' });
+  });
+
   /** §5.3's `threshold_applied`: the bound a violation was measured against, card-scaled. */
   it('reports the card-scaled band it measured against', () => {
     const result = evaluateBand(prices({ referencePrice: 49_90n, minPrice: 39_90n }), 3, buybox(150_00n));

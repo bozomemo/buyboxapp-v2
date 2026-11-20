@@ -73,6 +73,8 @@ export type {
   SellerPolicyVerdict,
 } from './brand/seller-policy.js';
 export { resolveSellerPolicy } from './brand/seller-policy.js';
+export type { AvailabilityInput, AvailabilityIssue, AvailabilityOffer } from './brand/availability.js';
+export { classifyAvailability, LOW_STOCK_THRESHOLD } from './brand/availability.js';
 
 export type {
   AuditFinding,
@@ -93,6 +95,7 @@ export type {
   BandPriceSource,
   BandStatus,
   BandViolationKind,
+  BandBasis,
   BrandPriceCheck,
   BrandPriceError,
   BrandPriceWarning,

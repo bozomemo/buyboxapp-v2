@@ -30,7 +30,9 @@ export function formatBandViolationMessage(
 
   const lines = [`${headline} — buybox'taki satıcı bandın dışında`, ''];
   for (const v of shown) {
-    const coupon = v.priceSource === 'finalPrice' ? ' (kuponlu)' : '';
+    // Brand roadmap §6.7: a breach the coupon alone made is a different talk with the dealer.
+    const coupon =
+      v.basis === 'coupon' ? ' (yalnız kuponla; raf fiyatı bantta)' : v.priceSource === 'finalPrice' ? ' (kuponlu)' : '';
     const pack = v.unitMultiplier === 1 ? '' : ` ×${v.unitMultiplier}`;
     lines.push(
       `• ${v.brandProductName} — ${v.cardLabel}${pack} (${v.marketplaceCode}): ${KIND_TEXT[v.kind]}, ` +
@@ -56,6 +58,7 @@ export function formatBandViolationMessage(
       // Kuruş as a decimal string, as money crosses every wire in this system.
       price: v.observedPrice.toString(),
       priceSource: v.priceSource,
+      basis: v.basis,
       threshold: v.thresholdApplied.toString(),
       unitMultiplier: v.unitMultiplier,
       firstSeenAt: v.firstSeenAt,

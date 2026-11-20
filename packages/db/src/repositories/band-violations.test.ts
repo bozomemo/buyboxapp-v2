@@ -83,12 +83,13 @@ for (const dialect of ALL_DIALECTS) {
         snapshot: '[]',
         nowMs: NOW,
         plan: {
-          open: [{ kind: 'belowMin', ...ALI, thresholdApplied: 240_00n, observedPrice: 239_99n, priceSource: 'price' }],
+          open: [{ kind: 'belowMin', ...ALI, thresholdApplied: 240_00n, observedPrice: 239_99n, priceSource: 'price', basis: 'shelf' }],
           confirm: [],
           resolve: [],
         },
       });
       expect(opened).toHaveLength(1);
+      expect((await bandViolationsRepo.queryBandViolations(db.appDb, { state: 'open' }))[0]?.basis).toBe('shelf');
       expect(await bandViolationsRepo.countOpenBandViolations(db.appDb)).toBe(1);
 
       const open = await bandViolationsRepo.openViolationsForCard(db.appDb, trackedId);
@@ -102,7 +103,7 @@ for (const dialect of ALL_DIALECTS) {
         nowMs: NOW + 1000,
         plan: {
           open: [],
-          confirm: [{ id: opened[0]!.id, observedPrice: 200_00n, priceSource: 'finalPrice' }],
+          confirm: [{ id: opened[0]!.id, observedPrice: 200_00n, priceSource: 'finalPrice', basis: 'coupon' }],
           resolve: [],
         },
       });
@@ -114,6 +115,7 @@ for (const dialect of ALL_DIALECTS) {
         thresholdApplied: 240_00n,
         observedPrice: 200_00n,
         priceSource: 'finalPrice',
+        basis: 'coupon',
         firstSeenAt: NOW,
         lastSeenAt: NOW + 1000,
         unitMultiplier: 3,
@@ -153,7 +155,7 @@ for (const dialect of ALL_DIALECTS) {
         snapshot: '[]',
         nowMs: NOW,
         plan: {
-          open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 300_00n, observedPrice: 310_00n, priceSource: 'price' }],
+          open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 300_00n, observedPrice: 310_00n, priceSource: 'price', basis: 'shelf' }],
           confirm: [],
           resolve: [],
         },
@@ -176,7 +178,7 @@ for (const dialect of ALL_DIALECTS) {
         snapshot: '[]',
         nowMs: NOW,
         plan: {
-          open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 300_00n, observedPrice: 310_00n, priceSource: 'price' }],
+          open: [{ kind: 'aboveMax', ...ALI, thresholdApplied: 300_00n, observedPrice: 310_00n, priceSource: 'price', basis: 'shelf' }],
           confirm: [],
           resolve: [],
         },
@@ -199,7 +201,7 @@ for (const dialect of ALL_DIALECTS) {
           snapshot: '[]',
           nowMs,
           plan: {
-            open: [{ kind, ...ALI, thresholdApplied: 240_00n, observedPrice: 239_99n, priceSource: 'price' }],
+            open: [{ kind, ...ALI, thresholdApplied: 240_00n, observedPrice: 239_99n, priceSource: 'price', basis: 'shelf' }],
             confirm: [],
             resolve: [],
           },

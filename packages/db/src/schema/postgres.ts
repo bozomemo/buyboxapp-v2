@@ -624,6 +624,8 @@ export const trackedProducts = pgTable(
     /** See the doc comment on `isFavourite` in `schema/sqlite.ts`. */
     isFavourite: bool('is_favourite').notNull().default(false),
     favouritedAt: timestampMs('favourited_at'),
+    /** See the doc comment on `queueDismissedAt` in `schema/sqlite.ts`. */
+    queueDismissedAt: timestampMs('queue_dismissed_at'),
   },
   (t) => [
     uniqueIndex('tracked_products_marketplace_ref').on(t.marketplaceCode, t.productRef),
@@ -1116,6 +1118,7 @@ export const bandViolations = pgTable(
     unitMultiplier: integer('unit_multiplier').notNull(),
     observedPrice: money('observed_price').notNull(),
     priceSource: text('price_source').notNull(),
+    basis: text('basis').notNull().default('shelf'),
     snapshot: json('snapshot').notNull(),
   },
   (t) => [
