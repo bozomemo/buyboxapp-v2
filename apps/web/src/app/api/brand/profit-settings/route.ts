@@ -1,6 +1,6 @@
 /**
  * Kâr Ayarları (marka) — the fixed per-sale fee and the desi table the reseller profit estimate
- * reads (doc 17 §8.1). Amounts cross as kuruş strings both ways, like every other route.
+ * reads (doc 17 §8.1), and the default commission for products with no usable tariff. Amounts cross as kuruş strings both ways, like every other route.
  */
 import { NextResponse } from 'next/server';
 import { getAppDb } from '@/lib/server/db';
@@ -29,6 +29,7 @@ async function getHandler() {
               cargo: band.cargo.toString(),
               operation: band.operation.toString(),
             })),
+            defaultCommissionRate: settings.defaultCommissionRate ?? null,
           },
     defaultFixedSaleFee: DEFAULT_FIXED_SALE_FEE_KURUS.toString(),
   });

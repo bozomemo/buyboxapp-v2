@@ -114,6 +114,56 @@ describe('estimateSellerProfit (doc 17 §8)', () => {
   ] as const)('says %s rather than guessing', (missing, overrides) => {
     expect(estimateSellerProfit(input(overrides))).toEqual({ ok: false, missing });
   });
+
+  it('marks a tariff rate as coming from the tariff', () => {
+    const result = estimateSellerProfit(input({ settings: { ...SETTINGS, defaultCommissionRate: 15 } }));
+    expect(result.ok && result.estimate.commissionSource).toBe('tariff');
+    expect(result.ok && result.estimate.commissionRate).toBe(16.5);
+  });
+});
+
+describe('estimateSellerProfit — the default commission (product owner, 2026-11-23)', () => {
+  const withDefault = (rate: number) => ({ ...SETTINGS, defaultCommissionRate: rate });
+
+  // Fixed costs at desi 7 are 3,162.50 ₺ (above). At 15 %: commission 750.00, profit 1,087.50,
+  // break-even 3,162.50 / 0.85 = 3,720.588… → 3,720.59 rounded up.
+  it.each([
+    ['no tariff', { tiers: null }],
+    ['an empty tariff', { tiers: [] }],
+    ['a price outside the tariff', { tiers: [{ minPrice: 100000n, maxPrice: 200000n, rate: 10 }] }],
+  ] as const)('%s -> the default rate, flat at every price', (_case, overrides) => {
+    const result = estimateSellerProfit(input({ ...overrides, settings: withDefault(15) }));
+    expect(result).toMatchObject({
+      ok: true,
+      estimate: {
+        commissionSource: 'default',
+        commissionRate: 15,
+        commission: 75000n,
+        profit: 108750n,
+        breakEvenPrice: 372059n,
+      },
+    });
+  });
+
+  it('a 0 % default is a rate, not a missing one', () => {
+    const result = estimateSellerProfit(input({ tiers: null, settings: withDefault(0) }));
+    expect(result).toMatchObject({ ok: true, estimate: { commission: 0n, profit: 183750n } });
+  });
+
+  it.each([
+    ['no default', undefined],
+    ['a null default', null],
+  ] as const)('%s keeps saying noTariff', (_case, rate) => {
+    const result = estimateSellerProfit(
+      input({ tiers: null, settings: { ...SETTINGS, defaultCommissionRate: rate } }),
+    );
+    expect(result).toEqual({ ok: false, missing: 'noTariff' });
+  });
+
+  it('does not lift the pack-card refusal: the unit cost still does not match the card', () => {
+    const result = estimateSellerProfit(input({ unitMultiplier: 3, tiers: null, settings: withDefault(15) }));
+    expect(result).toEqual({ ok: false, missing: 'packCard' });
+  });
 });
 
 describe('breakEvenPrice — solved per tier, lowest that lies inside its own tier', () => {

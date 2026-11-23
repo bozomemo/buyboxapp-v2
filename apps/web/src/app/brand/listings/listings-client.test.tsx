@@ -167,6 +167,37 @@ describe('BrandListingsClient', () => {
     expect(screen.getByText('tarife yok')).toBeTruthy();
   });
 
+  /** Product owner, 2026-11-23: a rate from Kâr Ayarları' default is marked as such. */
+  it('marks a commission taken from the default rate', async () => {
+    stubFetch({
+      '/api/brand/listings': {
+        body: {
+          listings: [
+            listing({
+              profit: {
+                commissionRate: 15,
+                commissionSource: 'default',
+                commission: '75000',
+                cargo: '10000',
+                operation: '5000',
+                fixedSaleFee: '1250',
+                cost: '300000',
+                profit: '108750',
+                profitPct: 21.75,
+                breakEvenPrice: '372059',
+              },
+              profitMissing: null,
+            }),
+          ],
+          total: 1,
+        },
+      },
+    });
+    render(<BrandListingsClient />);
+    expect(await screen.findByText('%15')).toBeTruthy();
+    expect(screen.getByText('varsayılan')).toBeTruthy();
+  });
+
   /** Brand roadmap §6.7: a buybox holder selling under the estimated cost. */
   it('flags a buybox holder selling at a loss and counts it above the grid', async () => {
     const loss = {

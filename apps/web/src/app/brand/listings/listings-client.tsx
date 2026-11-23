@@ -67,6 +67,8 @@ interface Listing {
   openViolation?: { kind: 'belowMin' | 'aboveMax'; since: number } | null;
   profit: {
     commissionRate: number;
+    /** Absent from a server older than 0.2.10: read as `tariff`. */
+    commissionSource?: 'tariff' | 'default';
     commission: string;
     cargo: string;
     operation: string;
@@ -315,7 +317,7 @@ export function BrandListingsClient() {
                     </th>
                     <th
                       className="p-2 text-right"
-                      title="Komisyon tarifesine göre, buybox fiyatının düştüğü kademe"
+                      title="Komisyon tarifesine göre, buybox fiyatının düştüğü kademe; tarifesi olmayan üründe Kâr Ayarları’ndaki varsayılan komisyon"
                     >
                       Komisyon
                     </th>
@@ -428,6 +430,14 @@ export function BrandListingsClient() {
                         <>
                           <td className="p-2 text-right tabular-nums">
                             %{String(row.profit.commissionRate).replace('.', ',')}
+                            {row.profit.commissionSource === 'default' && (
+                              <span
+                                className="ml-1 text-xs text-(--color-muted)"
+                                title="Bu ürün için geçerli bir komisyon tarifesi yok; Kâr Ayarları’ndaki varsayılan komisyon kullanıldı."
+                              >
+                                varsayılan
+                              </span>
+                            )}
                           </td>
                           <td
                             className={`p-2 text-right tabular-nums ${BigInt(row.profit.profit) < 0n ? 'text-(--color-danger) font-medium' : ''}`}

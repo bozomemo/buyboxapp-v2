@@ -17,6 +17,7 @@ Kaydetme ve tarife yükleme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 Ayarlar henüz hiç kaydedilmediyse kartın üstünde _Henüz kaydedilmedi — kaydedilene kadar İlanlar'da kâr tahmini gösterilmez._ uyarısı çıkar. Bu durumda İlanlar'da **ayar yok** yazar. Sistem varsayılan bir tablo kullanmaz.
 
 - **Sabit satış bedeli (₺, her satış için)**: pazaryerinin her satıştan aldığı sabit bedel.
+- **Varsayılan komisyon (%)**: geçerli bir komisyon tarifesi olmayan ürünlerde kullanılacak oran (ör. 15 ya da 15,5). İsteğe bağlıdır. Ayrıntılar aşağıda, [Varsayılan komisyon](/rehber/brand-profit#varsayilan-komisyon) bölümünde.
 - **Desi tablosu**: her satır bir desi aralığıdır.
   - **Desi üst sınırı**: bu satırın geçerli olduğu en yüksek desi. Satırlar artan sırada olmalıdır. Son satırın üst sınırını boş bırakırsanız "bundan büyük her desi" anlamına gelir.
   - **Kargo (₺)**: satıcının o koli için ödediği kargo bedeli.
@@ -34,6 +35,23 @@ Tutarları ekranda yazdığı gibi, KDV dahil girin. Değişiklikleri **Kaydet**
 | (boş) | 140 | 40 |
 
 Desisi 4 olan bir ürün ikinci satıra düşer: kargo 85 TL, operasyon 25 TL. Ürünün desisi hiçbir satıra düşmüyorsa İlanlar'da **desi bandı yok** yazar.
+
+## Varsayılan komisyon
+
+Komisyon tarifesi yüklemediyseniz ya da bazı ürünler tarifeyle eşleşmiyorsa, **Varsayılan komisyon (%)** alanına bir oran yazıp **Kaydet**'e tıklayın. Bu oran şu ürünlerde, fiyat ne olursa olsun aynen kullanılır:
+
+- Hiç tarife yüklenmemişse bütün ürünlerde.
+- Tarife dönemi geçerli değilse: süresi dolmuş ya da henüz başlamamış.
+- Barkodu Stok'ta yazılı olmayan ya da dosyadaki barkodla eşleşmeyen ürünlerde.
+- Buybox fiyatı tarifenin hiçbir kademesine düşmüyorsa.
+
+Bir ürünün bugün geçerli bir tarifesi varsa her zaman tarife kullanılır; varsayılan oran onun yerine geçmez. [İlanlar](/rehber/brand-listings) ekranında varsayılan oranla hesaplanan satırlarda komisyonun yanında **varsayılan** yazar.
+
+Örnek: varsayılan komisyon %15, tarife yüklenmemiş. Raf fiyatı 1.000 TL olan üründe komisyon 150 TL alınır.
+
+- Değer 0 ile 100 arasında olmalı ve en çok iki ondalık içerebilir. Ondalık için virgül kullanın (15,5). "1.5" gibi noktalı yazım kabul edilmez.
+- Alanı boş bırakırsanız varsayılan kullanılmaz; tarifesi olmayan ürünlerde eskisi gibi **tarife yok** yazar.
+- Paket kartlarında (çarpanı 1 olmayan) varsayılan oran da kullanılmaz; kâr yine hesaplanmaz.
 
 ## Komisyon tarifesi
 
@@ -71,7 +89,10 @@ Hiç tarife yüklenmediyse İlanlar'da **tarife yok** yazar.
 Bu ekranda sabit bedel ve desi tablosu hiç kaydedilmemiş. Değerleri girip **Kaydet**'e tıklayın.
 
 **Tarifeyi yükledim ama bazı ürünlerde hâlâ "tarife yok" yazıyor.**
-O ürünün barkodu Stok ekranında yazılı olmayabilir ya da dosyadaki barkodla aynı olmayabilir. Tarife döneminin **geçerli** olduğunu da kontrol edin.
+O ürünün barkodu Stok ekranında yazılı olmayabilir ya da dosyadaki barkodla aynı olmayabilir. Tarife döneminin **geçerli** olduğunu da kontrol edin. Bu ürünlerde de kâr görmek istiyorsanız **Varsayılan komisyon (%)** alanını doldurun.
+
+**Varsayılan komisyon girdim; tarifesi olan ürünler de bu oranla mı hesaplanıyor?**
+Hayır. Geçerli tarifesi olan üründe her zaman tarifedeki oran kullanılır.
 
 **Komisyon tarifesi her satıcı için gerçekten aynı mı?**
 Sistem öyle kabul eder. Bir satıcının tarifeye katılıp katılmadığı bilinemez; bu yüzden sonuç bir tahmindir.

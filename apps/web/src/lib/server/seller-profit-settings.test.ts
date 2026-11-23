@@ -20,7 +20,37 @@ describe('parseSellerProfitSettings (doc 17 §8.1)', () => {
         { maxDesi: 10, cargo: '125000', operation: '0' },
         { maxDesi: null, cargo: '15000', operation: '4000' },
       ],
+      defaultCommissionRate: null,
     });
+  });
+
+  // Product owner, 2026-11-23: a rate used for every product without a usable tariff.
+  it.each([
+    ['', null],
+    [undefined, null],
+    ['15', 15],
+    ['15,5', 15.5],
+    ['%12,75', 12.75],
+    ['0', 0],
+    ['100', 100],
+  ])('reads a default commission of %j as %s', (raw, rate) => {
+    const result = parseSellerProfitSettings({
+      fixedSaleFee: '12,50',
+      desiBands: [{ maxDesi: '', cargo: '1', operation: '1' }],
+      defaultCommissionRate: raw,
+    });
+    expect(typeof result === 'string' ? result : result.defaultCommissionRate).toBe(rate);
+  });
+
+  // `1.5` is refused rather than read: in a Turkish form the dot is a thousands separator, so
+  // reading it as 1,5 or as 15 would each be a guess.
+  it.each(['onbeş', '100,01', '-1', '12,345', '1.5'])('refuses a default commission of %j', (raw) => {
+    const result = parseSellerProfitSettings({
+      fixedSaleFee: '12,50',
+      desiBands: [{ maxDesi: '', cargo: '1', operation: '1' }],
+      defaultCommissionRate: raw,
+    });
+    expect(result).toMatch(/Varsayılan komisyon/);
   });
 
   it.each([

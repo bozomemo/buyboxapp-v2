@@ -42,6 +42,13 @@ export interface SellerProfitSettings {
   readonly fixedSaleFee: bigint;
   /** Ordered; the first band whose `maxDesi` is null or ≥ the parcel's desi wins. */
   readonly desiBands: readonly DesiBand[];
+  /**
+   * Percent applied, flat at every price, to a product with no usable tariff — none loaded, none
+   * current, no barcode match, or a price in a gap of its tariff. Entered by the operator on Kâr
+   * Ayarları (product owner, 2026-11-23); `null`/absent = no default, and the estimate says
+   * `noTariff` / `priceOutsideTariff` as before. Never a value the system invents.
+   */
+  readonly defaultCommissionRate?: number | null;
 }
 
 export interface SellerProfitInput {
@@ -70,6 +77,8 @@ export type SellerProfitMissing =
 
 export interface SellerProfitEstimate {
   readonly commissionRate: number;
+  /** Whether `commissionRate` is the product's tariff or the operator's default. */
+  readonly commissionSource: 'tariff' | 'default';
   readonly commission: bigint;
   readonly cargo: bigint;
   readonly operation: bigint;
@@ -133,12 +142,32 @@ export function estimateSellerProfit(input: SellerProfitInput): SellerProfitResu
   if (input.unitPrice === null) return { ok: false, missing: 'noUnitPrice' };
   if (input.desi === null) return { ok: false, missing: 'noDesi' };
   if (input.unitMultiplier !== 1) return { ok: false, missing: 'packCard' };
-  if (!input.tiers || input.tiers.length === 0) return { ok: false, missing: 'noTariff' };
+
+  const fallback = settings.defaultCommissionRate ?? null;
+  const defaultTiers: readonly CommissionTier[] | null =
+    fallback === null ? null : [{ minPrice: null, maxPrice: null, rate: fallback }];
+
+  let tiers: readonly CommissionTier[];
+  let commissionSource: SellerProfitEstimate['commissionSource'] = 'tariff';
+  if (input.tiers && input.tiers.length > 0) {
+    tiers = input.tiers;
+  } else if (defaultTiers) {
+    tiers = defaultTiers;
+    commissionSource = 'default';
+  } else {
+    return { ok: false, missing: 'noTariff' };
+  }
 
   const band = desiBandFor(input.desi * input.unitMultiplier, settings.desiBands);
   if (!band) return { ok: false, missing: 'noDesiBand' };
 
-  const tier = tierAt(input.price, input.tiers);
+  let tier = tierAt(input.price, tiers);
+  if (!tier && defaultTiers) {
+    // The tariff has no band for this price: it states no commission here, so the default does.
+    tiers = defaultTiers;
+    tier = defaultTiers[0];
+    commissionSource = 'default';
+  }
   if (!tier) return { ok: false, missing: 'priceOutsideTariff' };
 
   const cost = input.unitPrice * BigInt(input.unitMultiplier);
@@ -152,6 +181,7 @@ export function estimateSellerProfit(input: SellerProfitInput): SellerProfitResu
     ok: true,
     estimate: {
       commissionRate: tier.rate,
+      commissionSource,
       commission: Fraction.toMoneyRoundHalfUp(commission).toKurus(),
       cargo: band.cargo,
       operation: band.operation,
@@ -159,7 +189,7 @@ export function estimateSellerProfit(input: SellerProfitInput): SellerProfitResu
       cost,
       profit,
       profitPct: input.price === 0n ? 0 : (Number(profit) / Number(input.price)) * 100,
-      breakEvenPrice: breakEvenPrice(fixedCosts, input.tiers),
+      breakEvenPrice: breakEvenPrice(fixedCosts, tiers),
     },
   };
 }

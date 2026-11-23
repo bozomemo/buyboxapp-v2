@@ -320,7 +320,7 @@ describe('GET /api/brand/listings — reseller profit estimate (doc 17 §8)', ()
   ];
   const DAY = 86_400_000;
 
-  async function saveSettings(): Promise<void> {
+  async function saveSettings(defaultCommissionRate: number | null = null): Promise<void> {
     await saveSellerProfitSettings(
       appDb,
       {
@@ -329,6 +329,7 @@ describe('GET /api/brand/listings — reseller profit estimate (doc 17 §8)', ()
           { maxDesi: 5, cargo: '8000', operation: '3000' },
           { maxDesi: null, cargo: '10000', operation: '5000' },
         ],
+        defaultCommissionRate,
       },
       'test',
       NOW,
@@ -449,6 +450,36 @@ describe('GET /api/brand/listings — reseller profit estimate (doc 17 §8)', ()
     expect(text).toContain('Tahmini Kâr');
     expect(text).toContain('"1012,50"');
     expect(text).toContain('"3253,61"');
+    expect(text).toContain('"Komisyon Kaynağı"');
+    expect(text).toContain('"Tarife"');
+  });
+
+  // Product owner, 2026-11-23: a product with no usable tariff takes Kâr Ayarları' default rate.
+  it('estimates a product with no tariff at the default commission, and says so', async () => {
+    await saveSettings(15);
+    await acanaCard('untariffed');
+    await look('untariffed', [{ rank: 1, seller: 'Bayi', price: 5000_00n }]);
+
+    const [row] = (await listings()).listings;
+
+    // 5.000 − 750 (15 %) − 100 − 50 − 12,50 − 3.000 = 1.087,50
+    expect(row).toMatchObject({
+      profitMissing: null,
+      profit: { commissionRate: 15, commissionSource: 'default', profit: '108750' },
+    });
+    const text = await (await GET(authedRequest('http://localhost/api/brand/listings?format=csv'), routeContext())).text();
+    expect(text).toContain('"Varsayılan"');
+  });
+
+  it('keeps the tariff where one is in force, default or not', async () => {
+    await saveSettings(15);
+    await loadTariff('64992714512');
+    await acanaCard('tariffed');
+    await look('tariffed', [{ rank: 1, seller: 'Bayi', price: 5000_00n }]);
+
+    const [row] = (await listings()).listings;
+
+    expect(row!.profit).toMatchObject({ commissionRate: 16.5, commissionSource: 'tariff' });
   });
 });
 

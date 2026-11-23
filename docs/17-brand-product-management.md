@@ -567,6 +567,15 @@ confident, wrong profit. The cell says which: _ayar yok_, _birim fiyat yok_, _de
 bandı yok_, _tarife yok_, _tarife dışı_, _paket kartı_, _buybox yok_. An unlinked favourite has no
 product and shows _—_.
 
+**One exception, the default commission (product owner, 2026-11-23).** The operator may enter a
+_Varsayılan komisyon (%)_ on Kâr Ayarları. When it is set, a product with no usable tariff — none
+loaded, none current, no barcode match, or a price in a gap of its tariff — is estimated at that
+rate, flat at every price (a single open tier, so the break-even is `fixed / (1 − rate)`). The cell
+marks the rate _varsayılan_ and the export's _Komisyon Kaynağı_ column says _Varsayılan_ or
+_Tarife_. A tariff in force always wins. This is not the system inventing a value: the rate is one
+the operator typed, and an empty field keeps _tarife yok_ / _tarife dışı_. It does **not** lift
+_paket kartı_: that refusal is about the unit cost not matching the card, not about the rate.
+
 **Packs (v1):** a tariff is stated per single product, so a card with multiplier ≠ 1 is _paket
 kartı_ and not estimated. The core model already scales unit price and desi by the multiplier
 (`unitPrice × m`, `desi × m`), which is the product owner's rule for packs; a per-pack desi and a
@@ -583,6 +592,9 @@ pack's own tariff are **deferred**.
   upper bound → cargo ₺, operation ₺_, rising, only the last row may leave its bound empty
   ("everything above"). Stored as the `app_settings` key `brand.sellerProfit` (audited). An install
   that never saved them shows _ayar yok_ rather than using a default table.
+- The same row holds the optional `defaultCommissionRate` (percent, 0–100, at most two decimals,
+  decimal comma in the form; `null` = none) — §8's one exception. A row saved before 2026-11-23
+  has no such field and reads as `null`. No migration.
 
 ### 8.2 The commission tariff workbook
 

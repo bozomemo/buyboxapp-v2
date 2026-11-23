@@ -37,6 +37,7 @@ interface SettingsResponse {
   settings: {
     fixedSaleFee: string;
     desiBands: { maxDesi: number | null; cargo: string; operation: string }[];
+    defaultCommissionRate: number | null;
   } | null;
   defaultFixedSaleFee: string;
 }
@@ -74,6 +75,7 @@ export function ProfitSettingsClient() {
   const [saved, setSaved] = useState(false);
   const [fee, setFee] = useState('');
   const [bands, setBands] = useState<BandForm[]>([]);
+  const [defaultRate, setDefaultRate] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -102,6 +104,8 @@ export function ProfitSettingsClient() {
       .then((data: SettingsResponse) => {
         setSaved(data.settings !== null);
         setFee(toInput(data.settings?.fixedSaleFee ?? data.defaultFixedSaleFee));
+        const rate = data.settings?.defaultCommissionRate ?? null;
+        setDefaultRate(rate === null ? '' : String(rate).replace('.', ','));
         setBands(
           data.settings
             ? data.settings.desiBands.map((band) => ({
@@ -126,7 +130,7 @@ export function ProfitSettingsClient() {
       const res = await fetch('/api/brand/profit-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fixedSaleFee: fee, desiBands: bands }),
+        body: JSON.stringify({ fixedSaleFee: fee, desiBands: bands, defaultCommissionRate: defaultRate }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok) {
@@ -213,6 +217,17 @@ export function ProfitSettingsClient() {
             hint="Trendyol'un her satıştan aldığı sabit bedel"
           >
             <TextInput value={fee} onChange={(e) => setFee(e.target.value)} className="w-32" />
+          </Field>
+          <Field
+            label="Varsayılan komisyon (%)"
+            hint="Geçerli komisyon tarifesi olmayan ürünlerde kullanılır. Boş bırakılırsa o ürünlerde kâr tahmini gösterilmez."
+          >
+            <TextInput
+              value={defaultRate}
+              placeholder="ör. 15 ya da 15,5"
+              onChange={(e) => setDefaultRate(e.target.value)}
+              className="w-32"
+            />
           </Field>
 
           <div>
