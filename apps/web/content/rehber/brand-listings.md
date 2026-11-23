@@ -39,7 +39,7 @@ Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışın
   - **Max üstünde** (turuncu): buybox fiyatı üst sınırın üstünde.
   - **Bilinmiyor**: karta henüz bakılmadı ya da son bakış başarısız oldu. Okunamayan sayfa ihlal sayılmaz.
 - **Açık ihlal**: açık bir fiyat ihlali varsa ne zamandır sürdüğü. Tıklayınca **Alarmlar** ekranı açılır.
-- **Komisyon**: buybox fiyatının, komisyon tarifesinde düştüğü kademenin oranı.
+- **Komisyon**: buybox fiyatının, komisyon tarifesinde düştüğü kademenin oranı. Ürünün geçerli tarifesi yoksa [Kâr Ayarları](/rehber/brand-profit)'ndaki varsayılan komisyon kullanılır ve oranın yanında **varsayılan** yazar. Excel dosyasındaki **Komisyon Kaynağı** sütunu **Tarife** ya da **Varsayılan** yazar.
 - **Tahmini kâr**: buybox satıcısının bu satıştan tahmini kârı ve fiyata oranı. Eksi ise kırmızı yazılır ve yanında **zararına** etiketi çıkar. Üzerine gelince ayrıntı görünür: komisyon, kargo, operasyon, sabit satış bedeli ve birim fiyat.
 - **0 kâr fiyatı**: satıcının zarar etmediği en düşük fiyat.
 - **Satıcı**: karttaki satıcı sayısı.
@@ -69,8 +69,8 @@ Bir girdi eksikse hücrede kâr yerine nedeni yazar; üzerine gelince ne yapman�
 | **birim fiyat yok** | Stok ürününe birim fiyat girilmemiş |
 | **desi yok** | Stok ürününe desi girilmemiş |
 | **desi bandı yok** | Ürünün desisi, desi tablosunun hiçbir satırına düşmüyor |
-| **tarife yok** | Ürünün barkoduyla eşleşen, bugün geçerli bir komisyon tarifesi yüklenmemiş |
-| **tarife dışı** | Buybox fiyatı tarifenin hiçbir kademesine düşmüyor |
+| **tarife yok** | Ürünün barkoduyla eşleşen, bugün geçerli bir komisyon tarifesi yüklenmemiş ve varsayılan komisyon girilmemiş |
+| **tarife dışı** | Buybox fiyatı tarifenin hiçbir kademesine düşmüyor ve varsayılan komisyon girilmemiş |
 | **paket kartı** | Çarpanı 1 olmayan kartlarda kâr şimdilik hesaplanmıyor |
 | **buybox yok** | Kartta okunmuş bir buybox fiyatı yok |
 
@@ -91,6 +91,6 @@ Evet, yıldızlayın. Kart burada görünür ama ürününüze bağlı olmadığ
 Birim buybox yuvarlanmış bir gösterimdir. Sistem karşılaştırmayı kuruşu kuruşuna, eşiği çarpanla çarparak yapar; birkaç kuruşluk fark aralık dışına çıkarabilir.
 
 **Tahmini kâr hücresinde "tarife yok" yazıyor.**
-Komisyon tarifesini [Kâr Ayarları](/rehber/brand-profit) ekranından yükleyin ve ürünün barkodunun Stok'ta yazılı olduğunu kontrol edin.
+Komisyon tarifesini [Kâr Ayarları](/rehber/brand-profit) ekranından yükleyin ve ürünün barkodunun Stok'ta yazılı olduğunu kontrol edin. Tarife yüklemeden tahmin görmek için Kâr Ayarları'ndaki **Varsayılan komisyon (%)** alanını doldurabilirsiniz.
 
 <!-- kaynak: doc 17 §4.1, §5.1, §8; brand roadmap §6.7; apps/web/src/app/brand/listings/listings-client.tsx; api/tracked-products/favourite permission -->

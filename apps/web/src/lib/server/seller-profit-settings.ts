@@ -24,6 +24,8 @@ interface StoredSettings {
     readonly cargo: string;
     readonly operation: string;
   }[];
+  /** Percent; `null` or absent (a row saved before 2026-11-23) = no default. */
+  readonly defaultCommissionRate?: number | null;
 }
 
 export async function readSellerProfitSettings(appDb: AppDatabase): Promise<SellerProfitSettings | null> {
@@ -38,6 +40,7 @@ export async function readSellerProfitSettings(appDb: AppDatabase): Promise<Sell
         cargo: BigInt(band.cargo),
         operation: BigInt(band.operation),
       })),
+      defaultCommissionRate: stored.defaultCommissionRate ?? null,
     };
   } catch {
     // A row this version cannot read is reported as "no settings", never as zeros.
@@ -52,12 +55,26 @@ export interface SellerProfitSettingsBody {
     readonly cargo?: string;
     readonly operation?: string;
   }[];
+  readonly defaultCommissionRate?: string;
 }
 
 function amount(raw: string | undefined): bigint | null {
   const text = (raw ?? '').trim();
   if (text === '') return null;
   return parseTurkishDecimal(text);
+}
+
+/**
+ * `15`, `15,5`, `%12,75` → the percent; `null` for an empty field; `'invalid'` otherwise.
+ * At most two decimals, a decimal **comma** only (a dot is a thousands separator in a Turkish form,
+ * so `1.5` is refused rather than guessed), and 0–100.
+ */
+function parseRate(raw: string | undefined): number | null | 'invalid' {
+  const text = (raw ?? '').trim().replace(/^%\s*/, '').replace(/\s*%$/, '');
+  if (text === '') return null;
+  if (!/^\d{1,3}(,\d{1,2})?$/.test(text)) return 'invalid';
+  const rate = Number(text.replace(',', '.'));
+  return rate <= 100 ? rate : 'invalid';
 }
 
 /**
@@ -93,7 +110,11 @@ export function parseSellerProfitSettings(body: SellerProfitSettingsBody): Store
     if (operation === null) return `${line}. satır: operasyon maliyeti okunamadı (ör. 25,00).`;
     stored.push({ maxDesi, cargo: cargo.toString(), operation: operation.toString() });
   }
-  return { fixedSaleFee: fee.toString(), desiBands: stored };
+  const defaultCommissionRate = parseRate(body.defaultCommissionRate);
+  if (defaultCommissionRate === 'invalid') {
+    return 'Varsayılan komisyon okunamadı: 0 ile 100 arasında, en çok iki ondalıklı bir yüzde girin (ör. 15 ya da 15,5) ya da boş bırakın.';
+  }
+  return { fixedSaleFee: fee.toString(), desiBands: stored, defaultCommissionRate };
 }
 
 export async function saveSellerProfitSettings(

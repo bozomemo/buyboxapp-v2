@@ -108,6 +108,8 @@ interface ListingRow {
    */
   profit: {
     commissionRate: number;
+    /** `default` = Kâr Ayarları' default rate, used because no tariff applies (2026-11-23). */
+    commissionSource: 'tariff' | 'default';
     commission: string;
     cargo: string;
     operation: string;
@@ -234,6 +236,7 @@ async function getHandler(request: Request) {
           const e = result.estimate;
           profit = {
             commissionRate: e.commissionRate,
+            commissionSource: e.commissionSource,
             commission: e.commission.toString(),
             cargo: e.cargo.toString(),
             operation: e.operation.toString(),
@@ -306,6 +309,7 @@ async function getHandler(request: Request) {
       'Satıcı Sayısı',
       'Son Bakış',
       'Komisyon %',
+      'Komisyon Kaynağı',
       'Tahmini Kâr',
       'Kâr %',
       '0 Kâr Fiyatı',
@@ -331,6 +335,7 @@ async function getHandler(request: Request) {
           row.sellerCount,
           row.lastScrapedAt === null ? '' : new Date(row.lastScrapedAt).toISOString(),
           row.profit ? String(row.profit.commissionRate).replace('.', ',') : '',
+          row.profit ? (row.profit.commissionSource === 'default' ? 'Varsayılan' : 'Tarife') : '',
           csvMoney(row.profit ? BigInt(row.profit.profit) : null),
           row.profit ? row.profit.profitPct.toFixed(1).replace('.', ',') : '',
           csvMoney(row.profit?.breakEvenPrice ? BigInt(row.profit.breakEvenPrice) : null),
