@@ -1163,6 +1163,60 @@ export async function primaryCardsOfProducts(
   return primaries;
 }
 
+/** A product's primary card on one marketplace, with the link stored for it. */
+export interface PrimaryCardLink {
+  readonly brandProductId: string;
+  readonly marketplaceCode: string;
+  /** As stored: absolute when pasted, a bare path when a catalogue sweep found the card. */
+  readonly productUrl: string;
+}
+
+/**
+ * Every primary card of the named products, with its stored link — what the Stok export writes
+ * into the import template's link columns, so an unchanged file matches each product to itself.
+ */
+export async function primaryCardLinks(
+  appDb: AppDatabase,
+  brandProductIds: readonly string[],
+): Promise<PrimaryCardLink[]> {
+  const out: PrimaryCardLink[] = [];
+  for (let start = 0; start < brandProductIds.length; start += LOOKUP_CHUNK) {
+    const chunk = brandProductIds.slice(start, start + LOOKUP_CHUNK);
+    if (chunk.length === 0) continue;
+    const rows = (await withDialect(appDb, {
+      sqlite: (db) => {
+        const c = sqliteSchema.brandProductCards;
+        const t = sqliteSchema.trackedProducts;
+        return db
+          .select({ brandProductId: c.brandProductId, marketplaceCode: c.marketplaceCode, productUrl: t.productUrl })
+          .from(c)
+          .innerJoin(t, eq(t.id, c.trackedProductId))
+          .where(and(inArray(c.brandProductId, chunk), eq(c.isPrimary, true)));
+      },
+      postgres: (db) => {
+        const c = postgresSchema.brandProductCards;
+        const t = postgresSchema.trackedProducts;
+        return db
+          .select({ brandProductId: c.brandProductId, marketplaceCode: c.marketplaceCode, productUrl: t.productUrl })
+          .from(c)
+          .innerJoin(t, eq(t.id, c.trackedProductId))
+          .where(and(inArray(c.brandProductId, chunk), eq(c.isPrimary, true)));
+      },
+      mysql: (db) => {
+        const c = mysqlSchema.brandProductCards;
+        const t = mysqlSchema.trackedProducts;
+        return db
+          .select({ brandProductId: c.brandProductId, marketplaceCode: c.marketplaceCode, productUrl: t.productUrl })
+          .from(c)
+          .innerJoin(t, eq(t.id, c.trackedProductId))
+          .where(and(inArray(c.brandProductId, chunk), eq(c.isPrimary, true)));
+      },
+    })) as PrimaryCardLink[];
+    out.push(...rows);
+  }
+  return out;
+}
+
 /**
  * One write the import will make. The list is built outside the transaction and applied inside
  * it, so the transaction holds nothing but inserts and updates — the same shape on all three

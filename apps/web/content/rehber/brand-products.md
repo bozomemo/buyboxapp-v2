@@ -35,6 +35,16 @@ Alarmın nasıl çalıştığı için bkz. [Marka Alarmları](/rehber/brand-aler
 
 Dosyayı önizlemeden sonra değiştirirseniz önizleme silinir; yeni dosya için yeniden **Önizle**'ye tıklayın.
 
+### Mevcut ürünleri toplu düzenleme
+
+**Mevcut ürünleri indir**, kayıtlı bütün ürünleri şablonla aynı sütunlarla, değerleri dolu olarak indirir. Herkese açıktır. Örneğin bütün ürünlere **Birim Fiyat** ve **Desi** eklemek için:
+
+1. **Mevcut ürünleri indir**'e tıklayın.
+2. Dosyada yalnızca değiştirmek istediğiniz hücreleri doldurun ya da düzeltin. Diğer hücrelere dokunmayın.
+3. Dosyayı yukarıdaki adımlarla **Önizle**'yip içe aktarın. Özet satırında yeni ürün sayısı 0 olmalıdır.
+
+Her satır, linkindeki birincil kart üzerinden kendi ürününü bulur; bu yüzden link sütunlarını değiştirmeyin. Dosyadaki diğer değerler kayıtlı olanlarla aynı olduğu için boş bıraktığınız alanlar silinmez; ancak bir hücreyi siz boşaltırsanız o değer silinir.
+
 ### Sütunlar
 
 | Sütun | Zorunlu mu | Anlamı |

@@ -38,6 +38,13 @@ describe('BrandProductsClient', () => {
     expect(await screen.findByText('Ürünler yükleniyor…')).toBeTruthy();
   });
 
+  it('offers the whole catalogue as a file to fill in and upload back', async () => {
+    stubFetch({ [ROUTE]: { body: { products: [PRODUCT], total: 1 } } });
+    render(<BrandProductsClient />);
+    const link = await screen.findByRole('link', { name: 'Mevcut ürünleri indir' });
+    expect(link.getAttribute('href')).toBe('/api/brand-products/export');
+  });
+
   it('error: shows a retry button', async () => {
     stubFetch({ [ROUTE]: { reject: new Error('network down') } });
     render(<BrandProductsClient />);

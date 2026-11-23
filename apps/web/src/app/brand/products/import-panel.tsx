@@ -146,9 +146,15 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
       title="Excel'den yükle"
       card
       action={
-        <a className={buttonClass('secondary', 'sm')} href="/api/brand-products/import" download>
-          Şablon indir
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <a className={buttonClass('secondary', 'sm')} href="/api/brand-products/import" download>
+            Şablon indir
+          </a>
+          {/* Every product, filled in — edit and upload back (e.g. to add Birim Fiyat and Desi). */}
+          <a className={buttonClass('secondary', 'sm')} href="/api/brand-products/export" download>
+            Mevcut ürünleri indir
+          </a>
+        </div>
       }
     >
       <div className="flex flex-wrap items-end gap-3">
