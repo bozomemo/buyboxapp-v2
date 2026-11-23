@@ -30,6 +30,13 @@ import { withPermission } from '@/lib/server/auth/guard';
 
 const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
+/** A finding's top-level `bigint` fields as strings; everything else unchanged. */
+function moneyAsStrings<T extends object>(finding: T): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(finding).map(([key, value]) => [key, typeof value === 'bigint' ? value.toString() : value]),
+  );
+}
+
 async function getHandler(request: Request) {
   const params = new URL(request.url).searchParams;
   const appDb = getAppDb();
@@ -98,7 +105,9 @@ async function getHandler(request: Request) {
     brand: { id: brand.id, label: brand.label, marketplaceCode: brand.marketplaceCode },
     filters: { sinceMs, untilMs },
     findings: findings.map((finding) => ({
-      ...finding,
+      // Money as a kuruş string: the reference-price finding carries `bigint`s, and
+      // `NextResponse.json` throws on one — taking the whole list down (production, 2026-11-23).
+      ...moneyAsStrings(finding),
       // `openedAt`, not `firstSeenAt`: the `newSeller` finding already carries a `firstSeenAt`
       // meaning "when the seller was first observed", and two different dates under one name on
       // the same object is exactly the confusion a screen renders wrongly without failing.
