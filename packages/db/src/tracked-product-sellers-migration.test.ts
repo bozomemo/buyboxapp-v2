@@ -72,6 +72,22 @@ async function readSellers(appDb: AppDatabase): Promise<Record<string, unknown>[
   }));
 }
 
+/**
+ * Raw SQL naming only the columns `tracked_products` had at 0025. The repository insert goes
+ * through today's Drizzle schema, which names every later column too (0030's
+ * `queue_dismissed_at`) and so fails against a database stopped before them.
+ */
+async function insertProductAsOf0025(appDb: AppDatabase, id: string): Promise<void> {
+  const insert = (active: boolean | number) => sql`insert into tracked_products
+    (id, marketplace_code, product_ref, product_url, label, is_active, added_at)
+    values (${id}, 'TY', '1', '/p-1', 'Ürün 1', ${active}, ${T0})`;
+  await withDialect<unknown>(appDb, {
+    sqlite: (db) => db.run(insert(1)),
+    postgres: (db) => db.execute(insert(true)),
+    mysql: (db) => db.execute(insert(1)),
+  });
+}
+
 for (const dialect of ALL_DIALECTS) {
   describe(`migration 0026: tracked_product_sellers backfill (${dialect})`, () => {
     let db: TestDb | undefined;
@@ -95,15 +111,7 @@ for (const dialect of ALL_DIALECTS) {
         updatedAt: T0,
       });
       const p = newId();
-      await trackedProductsRepo.addTrackedProduct(db.appDb, {
-        id: p,
-        marketplaceCode: 'TY',
-        productRef: '1',
-        productUrl: '/p-1',
-        label: 'Ürün 1',
-        isActive: true,
-        addedAt: T0,
-      });
+      await insertProductAsOf0025(db.appDb, p);
       await trackedProductsRepo.insertTrackedProductObservations(db.appDb, [
         observation(p, T0, 'ok', 'S1'),
         observation(p, T0 + 5 * DAY, 'ok', 'S1'),
