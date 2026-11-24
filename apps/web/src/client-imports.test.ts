@@ -14,6 +14,13 @@ import { describe, expect, it } from 'vitest';
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_PACKAGES = /from '@buybox\/(shared|db|jobs|adapters|core|worker)'/;
 
+/**
+ * Both tests read every source file under `src/`. That takes ~1 s alone, but the release build
+ * runs the suites while the machine is busy and twice went past vitest's 5 s default (v0.2.11,
+ * 2026-11-24). A slow disk is not a failure of this rule.
+ */
+const SCAN_TIMEOUT_MS = 60_000;
+
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
     const full = path.join(dir, entry);
@@ -37,7 +44,7 @@ describe('client components import only types from server-side packages', () => 
         .map((statement) => `${path.relative(SRC, file)}: ${statement.replace(/\s+/g, ' ')}`);
     });
     expect(offenders).toEqual([]);
-  });
+  }, SCAN_TIMEOUT_MS);
 
   /**
    * The same rule, followed into the modules a client file imports. `/rehber`'s client imported
@@ -107,5 +114,5 @@ describe('client components import only types from server-side packages', () => 
       }
     }
     expect(offenders).toEqual([]);
-  });
+  }, SCAN_TIMEOUT_MS);
 });
