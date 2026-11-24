@@ -999,8 +999,8 @@ export async function barcodeSuggestions(
 export async function existingCardsForRefs(
   appDb: AppDatabase,
   refs: readonly { marketplace: string; contentId: string }[],
-): Promise<Map<string, { brandProductId: string; brandProductName: string; isPrimary: boolean }>> {
-  const result = new Map<string, { brandProductId: string; brandProductName: string; isPrimary: boolean }>();
+): Promise<Map<string, { cardId: string; brandProductId: string; brandProductName: string; isPrimary: boolean }>> {
+  const result = new Map<string, { cardId: string; brandProductId: string; brandProductName: string; isPrimary: boolean }>();
   const byMarketplace = new Map<string, string[]>();
   for (const ref of refs) {
     byMarketplace.set(ref.marketplace, [...(byMarketplace.get(ref.marketplace) ?? []), ref.contentId]);
@@ -1018,6 +1018,7 @@ export async function existingCardsForRefs(
           return db
             .select({
               productRef: t.productRef,
+              cardId: c.id,
               brandProductId: p.id,
               brandProductName: p.name,
               isPrimary: c.isPrimary,
@@ -1034,6 +1035,7 @@ export async function existingCardsForRefs(
           return db
             .select({
               productRef: t.productRef,
+              cardId: c.id,
               brandProductId: p.id,
               brandProductName: p.name,
               isPrimary: c.isPrimary,
@@ -1050,6 +1052,7 @@ export async function existingCardsForRefs(
           return db
             .select({
               productRef: t.productRef,
+              cardId: c.id,
               brandProductId: p.id,
               brandProductName: p.name,
               isPrimary: c.isPrimary,
@@ -1059,9 +1062,10 @@ export async function existingCardsForRefs(
             .innerJoin(p, eq(p.id, c.brandProductId))
             .where(and(eq(t.marketplaceCode, marketplace), inArray(t.productRef, chunk)));
         },
-      })) as { productRef: string; brandProductId: string; brandProductName: string; isPrimary: boolean }[];
+      })) as { productRef: string; cardId: string; brandProductId: string; brandProductName: string; isPrimary: boolean }[];
       for (const row of rows) {
         result.set(`${marketplace}::${row.productRef}`, {
+          cardId: row.cardId,
           brandProductId: row.brandProductId,
           brandProductName: row.brandProductName,
           isPrimary: row.isPrimary,
@@ -1095,14 +1099,22 @@ export async function listBrandProductBarcodes(appDb: AppDatabase): Promise<stri
   return rows.map((row) => row.barcode);
 }
 
-export async function listBrandProductNames(appDb: AppDatabase): Promise<string[]> {
-  const rows = (await withDialect(appDb, {
-    sqlite: (db) => db.select({ name: sqliteSchema.brandProducts.name }).from(sqliteSchema.brandProducts),
-    postgres: (db) =>
-      db.select({ name: postgresSchema.brandProducts.name }).from(postgresSchema.brandProducts),
-    mysql: (db) => db.select({ name: mysqlSchema.brandProducts.name }).from(mysqlSchema.brandProducts),
-  })) as { name: string }[];
-  return rows.map((row) => row.name);
+/** Every product's id and name: the import's duplicate-name warning needs to know whose name it is. */
+export async function listBrandProductNames(appDb: AppDatabase): Promise<{ id: string; name: string }[]> {
+  return (await withDialect(appDb, {
+    sqlite: (db) => {
+      const p = sqliteSchema.brandProducts;
+      return db.select({ id: p.id, name: p.name }).from(p);
+    },
+    postgres: (db) => {
+      const p = postgresSchema.brandProducts;
+      return db.select({ id: p.id, name: p.name }).from(p);
+    },
+    mysql: (db) => {
+      const p = mysqlSchema.brandProducts;
+      return db.select({ id: p.id, name: p.name }).from(p);
+    },
+  })) as { id: string; name: string }[];
 }
 
 /** Tracked products for the refs an import names, so a card that exists is reused, never duplicated. */
@@ -1163,23 +1175,26 @@ export async function primaryCardsOfProducts(
   return primaries;
 }
 
-/** A product's primary card on one marketplace, with the link stored for it. */
-export interface PrimaryCardLink {
+/** A product's card on one marketplace, with the link stored for it. */
+export interface CardLink {
   readonly brandProductId: string;
   readonly marketplaceCode: string;
+  readonly isPrimary: boolean;
+  readonly unitMultiplier: number;
   /** As stored: absolute when pasted, a bare path when a catalogue sweep found the card. */
   readonly productUrl: string;
 }
 
 /**
- * Every primary card of the named products, with its stored link — what the Stok export writes
- * into the import template's link columns, so an unchanged file matches each product to itself.
+ * Every card of the named products, with its stored link. The Stok export picks each product's
+ * re-import key from these (`reimportKeyCards` in core) and writes it into the link columns, so an
+ * unchanged file matches each product to itself.
  */
-export async function primaryCardLinks(
+export async function cardLinksOfProducts(
   appDb: AppDatabase,
   brandProductIds: readonly string[],
-): Promise<PrimaryCardLink[]> {
-  const out: PrimaryCardLink[] = [];
+): Promise<CardLink[]> {
+  const out: CardLink[] = [];
   for (let start = 0; start < brandProductIds.length; start += LOOKUP_CHUNK) {
     const chunk = brandProductIds.slice(start, start + LOOKUP_CHUNK);
     if (chunk.length === 0) continue;
@@ -1188,30 +1203,48 @@ export async function primaryCardLinks(
         const c = sqliteSchema.brandProductCards;
         const t = sqliteSchema.trackedProducts;
         return db
-          .select({ brandProductId: c.brandProductId, marketplaceCode: c.marketplaceCode, productUrl: t.productUrl })
+          .select({
+            brandProductId: c.brandProductId,
+            marketplaceCode: c.marketplaceCode,
+            isPrimary: c.isPrimary,
+            unitMultiplier: c.unitMultiplier,
+            productUrl: t.productUrl,
+          })
           .from(c)
           .innerJoin(t, eq(t.id, c.trackedProductId))
-          .where(and(inArray(c.brandProductId, chunk), eq(c.isPrimary, true)));
+          .where(inArray(c.brandProductId, chunk));
       },
       postgres: (db) => {
         const c = postgresSchema.brandProductCards;
         const t = postgresSchema.trackedProducts;
         return db
-          .select({ brandProductId: c.brandProductId, marketplaceCode: c.marketplaceCode, productUrl: t.productUrl })
+          .select({
+            brandProductId: c.brandProductId,
+            marketplaceCode: c.marketplaceCode,
+            isPrimary: c.isPrimary,
+            unitMultiplier: c.unitMultiplier,
+            productUrl: t.productUrl,
+          })
           .from(c)
           .innerJoin(t, eq(t.id, c.trackedProductId))
-          .where(and(inArray(c.brandProductId, chunk), eq(c.isPrimary, true)));
+          .where(inArray(c.brandProductId, chunk));
       },
       mysql: (db) => {
         const c = mysqlSchema.brandProductCards;
         const t = mysqlSchema.trackedProducts;
         return db
-          .select({ brandProductId: c.brandProductId, marketplaceCode: c.marketplaceCode, productUrl: t.productUrl })
+          .select({
+            brandProductId: c.brandProductId,
+            marketplaceCode: c.marketplaceCode,
+            isPrimary: c.isPrimary,
+            unitMultiplier: c.unitMultiplier,
+            productUrl: t.productUrl,
+          })
           .from(c)
           .innerJoin(t, eq(t.id, c.trackedProductId))
-          .where(and(inArray(c.brandProductId, chunk), eq(c.isPrimary, true)));
+          .where(inArray(c.brandProductId, chunk));
       },
-    })) as PrimaryCardLink[];
+    })) as CardLink[];
     out.push(...rows);
   }
   return out;

@@ -138,11 +138,12 @@ export type {
   ImportRowInput,
   ImportRowPlan,
   ImportWarningCode,
+  KeyCandidateCard,
   LinkCell,
   PlannedFields,
   PlannedLink,
 } from './brand/import-plan.js';
-export { cardKey, foldName, planBrandProductImport } from './brand/import-plan.js';
+export { cardKey, foldName, planBrandProductImport, reimportKeyCards } from './brand/import-plan.js';
 export { classifyBarcode, isValidGtin } from './brand/barcode.js';
 
 export type {

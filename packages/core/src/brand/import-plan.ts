@@ -66,12 +66,22 @@ export interface ExistingCard {
   readonly brandProductName: string;
   /** Only a **primary** card matches a row to its product (doc 17 §3.3). */
   readonly isPrimary: boolean;
+  /**
+   * A non-primary card that is its product's re-import key all the same (`reimportKeyCards`):
+   * the product has no primary on that marketplace and this is its only ×1 card there. It matches
+   * only its own product, so nothing is re-pointed; it is not promoted to primary either.
+   */
+  readonly standsInForPrimary?: boolean;
 }
 
 export interface ImportContext {
   readonly existingCards: ReadonlyMap<string, ExistingCard>;
-  /** Product names already in the catalogue, folded, for the duplicate-name warning. */
-  readonly existingNames?: ReadonlySet<string>;
+  /**
+   * Product names already in the catalogue, folded → the ids of the products that carry them, for
+   * the duplicate-name warning. The ids are what keep an updated product's own name from counting
+   * as somebody else's.
+   */
+  readonly existingNames?: ReadonlyMap<string, readonly string[]>;
   /**
    * Marketplaces this install has. A link to one it does not is refused **per row**, so a file
    * that names Hepsiburada on a few rows still imports its Trendyol ones — and, more importantly,
@@ -79,6 +89,43 @@ export interface ImportContext {
    * is the one thing a preview must never do. Omitted means "do not check".
    */
   readonly configuredMarketplaces?: ReadonlySet<string>;
+}
+
+/** The minimum `reimportKeyCards` needs to know about a linked card. */
+export interface KeyCandidateCard {
+  readonly brandProductId: string;
+  readonly marketplaceCode: string;
+  readonly isPrimary: boolean;
+  readonly unitMultiplier: number;
+}
+
+/**
+ * The card each (product, marketplace) is re-imported by — what _Mevcut ürünleri indir_ writes in
+ * the link column and what the import matches that row on (doc 17 §3.3).
+ *
+ * The primary, where there is one. A product with none there — its card was linked by hand, and a
+ * hand link is not primary — would otherwise have no key, and its exported row could not be
+ * uploaded back (2026-11-24). Then its **only ×1** card stands in. Two ×1 cards, or only pack
+ * cards, leave it without a key: picking one would be a guess, and a pack card is never the row's
+ * product at ×1.
+ */
+export function reimportKeyCards<T extends KeyCandidateCard>(cards: readonly T[]): T[] {
+  const groups = new Map<string, T[]>();
+  for (const card of cards) {
+    const key = `${card.brandProductId}::${card.marketplaceCode}`;
+    groups.set(key, [...(groups.get(key) ?? []), card]);
+  }
+  const keys: T[] = [];
+  for (const group of groups.values()) {
+    const primary = group.find((card) => card.isPrimary);
+    if (primary) {
+      keys.push(primary);
+      continue;
+    }
+    const single = group.filter((card) => card.unitMultiplier === 1);
+    if (single.length === 1) keys.push(single[0]!);
+  }
+  return keys;
 }
 
 export function cardKey(marketplace: ImportMarketplace, contentId: string): string {
@@ -325,7 +372,7 @@ function planRow(
   for (const link of links) {
     const existing = context.existingCards.get(cardKey(link.marketplace, link.contentId));
     if (!existing) continue;
-    if (!existing.isPrimary) {
+    if (!existing.isPrimary && !existing.standsInForPrimary) {
       errors.push({
         code: 'linkIsSecondaryCard',
         column: link.marketplace === 'trendyol' ? 'trendyolLink' : 'hepsiburadaLink',
@@ -367,7 +414,9 @@ function planRow(
 
   const folded = foldName(name);
   const duplicateInFile = (nameCounts.get(folded) ?? 0) > 1;
-  if (folded !== '' && (duplicateInFile || context.existingNames?.has(folded))) {
+  const self = [...matches.keys()][0];
+  const usedElsewhere = (context.existingNames?.get(folded) ?? []).some((owner) => owner !== self);
+  if (folded !== '' && (duplicateInFile || usedElsewhere)) {
     warnings.push('duplicateName');
   }
 
@@ -392,7 +441,11 @@ function planRow(
   // unchanged file must not churn the links it matched on.
   const newLinks = links.filter((link) => {
     const existing = context.existingCards.get(cardKey(link.marketplace, link.contentId));
-    return !(existing && existing.brandProductId === matched.brandProductId && existing.isPrimary);
+    return !(
+      existing &&
+      existing.brandProductId === matched.brandProductId &&
+      (existing.isPrimary || existing.standsInForPrimary)
+    );
   });
   return {
     kind: 'update',

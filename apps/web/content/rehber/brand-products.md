@@ -43,7 +43,7 @@ Dosyayı önizlemeden sonra değiştirirseniz önizleme silinir; yeni dosya içi
 2. Dosyada yalnızca değiştirmek istediğiniz hücreleri doldurun ya da düzeltin. Diğer hücrelere dokunmayın.
 3. Dosyayı yukarıdaki adımlarla **Önizle**'yip içe aktarın. Özet satırında yeni ürün sayısı 0 olmalıdır.
 
-Her satır, linkindeki birincil kart üzerinden kendi ürününü bulur; bu yüzden link sütunlarını değiştirmeyin. Dosyadaki diğer değerler kayıtlı olanlarla aynı olduğu için boş bıraktığınız alanlar silinmez; ancak bir hücreyi siz boşaltırsanız o değer silinir.
+Her satır, linkindeki kart üzerinden kendi ürününü bulur; bu yüzden link sütunlarını değiştirmeyin. Link sütununa ürünün o pazaryerindeki birincil kartı yazılır. Birincil kartı yoksa, örneğin kartı ürün ekranından elle bağladıysanız, ürünün çarpanı 1 olan tek kartı yazılır. Bir pazaryerinde çarpanı 1 olan birden çok kart varsa ve hiçbiri birincil değilse o sütun boş kalır. Ürün ekranından bu kartlardan birini birincil yapın. Dosyadaki diğer değerler kayıtlı olanlarla aynı olduğu için boş bıraktığınız alanlar silinmez; ancak bir hücreyi siz boşaltırsanız o değer silinir.
 
 ### Sütunlar
 
@@ -74,7 +74,7 @@ Başlık satırı dosyanın ilk dolu satırı olmalıdır. Başlıklarda büyük
 
 Özet satırında **Toplam**, **Yeni ürün**, **Güncellenecek**, **Bağlanacak kart** (yanında kaç tanesinin yeni takip edileceği) ve **Alınmayacak satır** sayıları görünür.
 
-- **İçeri alınacak ama dikkat edilmesi gereken … satır**: bu satırlar alınır, ama kontrol etmeniz iyi olur. Örneğin _PSF, min fiyatın altında._, _Bu adı taşıyan başka bir ürün daha var._ ya da _Barkod geçerli bir EAN/GTIN değil; pazaryeri kartlarıyla eşleşmez._
+- **İçeri alınacak ama dikkat edilmesi gereken … satır**: bu satırlar alınır, ama kontrol etmeniz iyi olur. Örneğin _PSF, min fiyatın altında._, _Bu adı taşıyan başka bir ürün daha var._ (yalnızca gerçekten başka bir ürün aynı adı taşıyorsa; güncellenen ürünün kendi adı sayılmaz) ya da _Barkod geçerli bir EAN/GTIN değil; pazaryeri kartlarıyla eşleşmez._
 - **… satır içeri alınmayacak**: tabloda **Satır**, **Sütun** ve **Sorun** yazar. **Hatalı satırları indir** bu satırları sorunlarıyla birlikte bir dosya olarak verir; düzeltip yalnızca onları yeniden yükleyebilirsiniz.
 
 Sık görülen hatalar:

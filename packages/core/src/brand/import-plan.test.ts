@@ -6,6 +6,7 @@ import {
   cardKey,
   foldName,
   planBrandProductImport,
+  reimportKeyCards,
   type AmountCell,
   type ExistingCard,
   type ImportContext,
@@ -35,11 +36,17 @@ function row(overrides: Partial<ImportRowInput> = {}): ImportRowInput {
   };
 }
 
-function context(cards: Record<string, ExistingCard> = {}, names: string[] = []): ImportContext {
-  return {
-    existingCards: new Map(Object.entries(cards)),
-    existingNames: new Set(names.map(foldName)),
-  };
+/** `names`: an existing product's name, or `[name, productId]` when the owner matters. */
+function context(
+  cards: Record<string, ExistingCard> = {},
+  names: (string | readonly [string, string])[] = [],
+): ImportContext {
+  const owners = new Map<string, string[]>();
+  names.forEach((entry, index) => {
+    const [name, id] = typeof entry === 'string' ? [entry, `existing-${index}`] : entry;
+    owners.set(foldName(name), [...(owners.get(foldName(name)) ?? []), id]);
+  });
+  return { existingCards: new Map(Object.entries(cards)), existingNames: owners };
 }
 
 const primaryOf = (id: string, name: string): ExistingCard => ({
@@ -52,6 +59,27 @@ function codes(plan: ReturnType<typeof planBrandProductImport>, index = 0): stri
   const planned = plan.rows[index]!;
   return planned.kind === 'error' ? planned.errors.map((e) => e.code) : [];
 }
+
+describe('reimportKeyCards — the card a product is re-imported by, per marketplace', () => {
+  const card = (id: string, product: string, marketplace: string, isPrimary: boolean, unitMultiplier: number) => ({
+    id,
+    brandProductId: product,
+    marketplaceCode: marketplace,
+    isPrimary,
+    unitMultiplier,
+  });
+
+  it.each([
+    ['the primary, even beside a x1 extra card', [card('a', 'p', 'trendyol', true, 1), card('b', 'p', 'trendyol', false, 1)], ['a']],
+    ['a pack primary is still the primary', [card('a', 'p', 'trendyol', true, 6)], ['a']],
+    ['no primary: the only x1 card stands in', [card('a', 'p', 'trendyol', false, 1), card('b', 'p', 'trendyol', false, 3)], ['a']],
+    ['no primary, two x1 cards: none (which one would be a guess)', [card('a', 'p', 'trendyol', false, 1), card('b', 'p', 'trendyol', false, 1)], []],
+    ['no primary, only a pack card: none', [card('a', 'p', 'trendyol', false, 3)], []],
+    ['each marketplace and product on its own', [card('a', 'p', 'trendyol', false, 1), card('b', 'p', 'hepsiburada', true, 1), card('c', 'q', 'trendyol', false, 1)], ['a', 'b', 'c']],
+  ] as const)('%s', (_case, cards, keys) => {
+    expect(reimportKeyCards(cards).map((c) => c.id).sort()).toEqual([...keys]);
+  });
+});
 
 describe('planBrandProductImport — matching (§3.3)', () => {
   it('creates a product when neither link is any product’s primary', () => {
@@ -120,6 +148,26 @@ describe('planBrandProductImport — matching (§3.3)', () => {
       column: 'trendyolLink',
       otherProductName: 'Başka Ürün',
     });
+  });
+
+  /**
+   * 2026-11-24: a card linked by hand is not primary, so a product whose only card it is had no
+   * re-import key, and _Mevcut ürünleri indir_ → upload refused its row. Such a card stands in
+   * for the primary (`reimportKeyCards`) and matches its **own** product — nothing is re-pointed.
+   */
+  it('updates the product whose stand-in card the row names, without promoting it', () => {
+    const plan = planBrandProductImport(
+      [row({ name: 'Elle Bağlı' })],
+      context({
+        [cardKey('trendyol', '750104')]: {
+          brandProductId: 'p1',
+          brandProductName: 'Elle Bağlı',
+          isPrimary: false,
+          standsInForPrimary: true,
+        },
+      }),
+    );
+    expect(plan.rows[0]).toMatchObject({ kind: 'update', brandProductId: 'p1', links: [] });
   });
 
   it('refuses both rows when one link appears twice in the file', () => {
@@ -210,6 +258,27 @@ describe('planBrandProductImport — the row’s own cells (§3.4, §3.5)', () =
       context({}, ['Ton Balıklı 85g']),
     );
     expect(inCatalogue.rows[0]).toMatchObject({ kind: 'new', warnings: ['duplicateName'] });
+  });
+
+  // 2026-11-24: every row of an exported catalogue was flagged, because the product's own name
+  // was counted as "another product".
+  it('does not count an updated product’s own name as another product’s', () => {
+    const plan = planBrandProductImport(
+      [row()],
+      context({ [cardKey('trendyol', '750104')]: primaryOf('p1', 'Ton Balıklı 85g') }, [['Ton Balıklı 85g', 'p1']]),
+    );
+    expect(plan.rows[0]).toMatchObject({ kind: 'update', warnings: [] });
+  });
+
+  it('still flags an update whose name another product also uses', () => {
+    const plan = planBrandProductImport(
+      [row()],
+      context({ [cardKey('trendyol', '750104')]: primaryOf('p1', 'Ton Balıklı 85g') }, [
+        ['Ton Balıklı 85g', 'p1'],
+        ['Ton Balıklı 85g', 'p2'],
+      ]),
+    );
+    expect(plan.rows[0]).toMatchObject({ kind: 'update', warnings: ['duplicateName'] });
   });
 
   it('collects every problem on a row rather than stopping at the first', () => {

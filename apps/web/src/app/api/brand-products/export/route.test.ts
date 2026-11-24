@@ -149,6 +149,78 @@ describe('GET /api/brand-products/export', () => {
     expect((await exportCsv()).text).toContain('Ton Balıklı 85g;49,90;;;https://www.trendyol.com/m/u-p-222;');
   });
 
+  /**
+   * 2026-11-24, found by uploading the export back: a card linked by hand is not primary, so a
+   * product whose only card it was had empty link columns, and its row came back refused with
+   * "En az bir link gerekli". Its only ×1 card stands in for the primary, both ways.
+   */
+  describe('a product whose card was linked by hand, not as primary', () => {
+    async function relinkAsManual(name: string, unitMultiplier = 1): Promise<void> {
+      const product = (await brandProductsRepo.queryBrandProducts(appDb, { limit: 50, offset: 0 })).rows.find(
+        (r) => r.name === name,
+      )!;
+      const [card] = await brandProductsRepo.listBrandProductCardDetails(appDb, product.id);
+      await brandProductsRepo.unlinkCard(appDb, card!.id, 0);
+      await brandProductsRepo.linkCard(appDb, {
+        id: `manual-${name}`,
+        brandProductId: product.id,
+        trackedProductId: card!.trackedProductId,
+        unitMultiplier,
+        isPrimary: false,
+        linkSource: 'manual',
+        linkedAt: 0,
+      });
+    }
+
+    it('exports its only x1 card as the link', async () => {
+      await seed();
+      await relinkAsManual('Ton Balıklı 85g');
+      expect((await exportCsv()).text).toContain('Ton Balıklı 85g;49,90;;;https://www.trendyol.com/m/u-p-222;');
+    });
+
+    it('uploaded back with a unit price, updates that product and nothing else', async () => {
+      await seed();
+      await relinkAsManual('Ton Balıklı 85g');
+      const edited = (await exportCsv()).text.replace(
+        'Ton Balıklı 85g;49,90;;;https://www.trendyol.com/m/u-p-222;;;;',
+        'Ton Balıklı 85g;49,90;;;https://www.trendyol.com/m/u-p-222;;;32,50;0,5',
+      );
+
+      const { summary } = await importCsv(edited, true);
+
+      expect(summary).toMatchObject({ newProducts: 0, updatedProducts: 2, errorRows: 0, cardsToCreate: 0 });
+      const rows = (await brandProductsRepo.queryBrandProducts(appDb, { limit: 50, offset: 0 })).rows;
+      expect(rows).toHaveLength(2);
+      expect(rows.find((r) => r.name === 'Ton Balıklı 85g')).toMatchObject({ unitPrice: 32_50n, desi: 0.5, cardCount: 1 });
+    });
+
+    it('a pack card alone is not the product at x1: no link is written for it', async () => {
+      await seed();
+      await relinkAsManual('Ton Balıklı 85g', 6);
+      expect((await exportCsv()).text).toContain('Ton Balıklı 85g;49,90;;;;;;;');
+    });
+  });
+
+  it('uploaded back unchanged, no row is told its name belongs to another product', async () => {
+    await seed();
+    const response = await importPost(
+      withCookie(
+        new Request('http://localhost/api/brand-products/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileBase64: Buffer.from((await exportCsv()).text, 'utf8').toString('base64'),
+            fileName: 'liste.csv',
+            confirm: false,
+          }),
+        }),
+        cookie,
+      ),
+      routeContext(),
+    );
+    expect(JSON.stringify(await response.json())).not.toContain('duplicateName');
+  });
+
   it('no products: the header row alone', async () => {
     const { text } = await exportCsv();
     expect(text.replace(/^\uFEFF/, '').trim()).toBe(
