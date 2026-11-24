@@ -27,6 +27,7 @@ import type { JobContext, JobProgress } from '../job.js';
 import { buildSellerIdentitySourceRegistry } from '../seller-identity-source-registry.js';
 import { createSqliteTestDb, NOW, seedMarketplace, type TestDb } from '../test-helpers.js';
 import { RESOLVE_SELLER_IDENTITY_JOB, resolveSellerIdentity } from './resolve-seller-identity.js';
+import { resolveSellerIdentities } from './resolve-seller-identities.js';
 
 const SELLER_REF = '736424';
 const DAY = 24 * 60 * 60 * 1000;
@@ -376,6 +377,107 @@ describe('ResolveSellerIdentity', () => {
       const events = await eventsRepo.listRecentEvents(db.appDb, 50);
       const resolved = events.find((e) => e.code === 'SellerIdentityResolved');
       expect(resolved?.message).toContain('vergi numarası');
+    });
+  });
+  /**
+   * _Seçilenlerin kimliğini çöz_ (2026-11-25, product owner): several sellers in one run, one
+   * after another, through the same source and so at the same rate as the single button.
+   */
+  describe('several sellers in one run (ResolveSellerIdentities)', () => {
+    /** Answers per seller, so the order sellers are taken in does not matter to the fake. */
+    function sourceBySeller(
+      outcomes: Record<string, SellerIdentitySnapshot | SellerIdentityError>,
+    ): ISellerIdentitySource & { readonly calls: string[] } {
+      const calls: string[] = [];
+      return {
+        code: 'trendyol',
+        calls,
+        async resolveSellerIdentity(_ref, sellerRef) {
+          calls.push(sellerRef);
+          const outcome = outcomes[sellerRef];
+          if (outcome === undefined || outcome instanceof SellerIdentityError) {
+            throw outcome ?? new SellerIdentityError('no outcome', 'fetchFailed');
+          }
+          return outcome;
+        },
+      };
+    }
+
+    it('resolves each seller in turn and stores every answer', async () => {
+      const first = await seedSeller('111');
+      const second = await seedSeller('222');
+      await seedSighting('p1', '111');
+      await seedSighting('p2', '222');
+      const source = sourceBySeller({ '111': snapshotFor('111'), '222': snapshotFor('222') });
+
+      const result = await resolveSellerIdentities(ctxFor(source, { sellerRefs: ['111', '222'] }));
+
+      expect(result).toMatchObject({ itemsTotal: 2, itemsOk: 2, itemsFailed: 0 });
+      expect(source.calls).toEqual(['111', '222']);
+      expect(await sellerIdentitiesRepo.getSellerIdentity(db.appDb, first)).toBeDefined();
+      expect(await sellerIdentitiesRepo.getSellerIdentity(db.appDb, second)).toBeDefined();
+    });
+
+    it('one seller that cannot be resolved does not stop the rest', async () => {
+      await seedSeller('111');
+      const second = await seedSeller('222');
+      await seedSighting('p1', '111');
+      await seedSighting('p2', '222');
+      const source = sourceBySeller({
+        '111': new SellerIdentityError('gone', 'identityMismatch'),
+        '222': snapshotFor('222'),
+      });
+
+      const result = await resolveSellerIdentities(ctxFor(source, { sellerRefs: ['111', '222'] }));
+
+      expect(result).toMatchObject({ itemsTotal: 2, itemsOk: 1, itemsFailed: 1 });
+      expect(await sellerIdentitiesRepo.getSellerIdentity(db.appDb, second)).toBeDefined();
+    });
+
+    it('skips a seller resolved since the run was queued: no page is requested for it', async () => {
+      // The single button may have been pressed for one of them while the run waited its turn.
+      const first = await seedSeller('111');
+      await seedSeller('222');
+      await seedSighting('p1', '111');
+      await seedSighting('p2', '222');
+      await sellerIdentitiesRepo.upsertSellerIdentity(db.appDb, {
+        id: newId(),
+        competitorSellerId: first,
+        officialName: 'Zaten Çözülmüş Ltd.',
+        taxNumber: null,
+        taxOffice: null,
+        registeredEmailAddress: null,
+        address: null,
+        cityName: null,
+        countryName: null,
+        listings: [],
+        sourceUrl: 'https://www.trendyol.com/x',
+        parserVersion: '1.0.0',
+        resolvedAt: NOW,
+      });
+      const source = sourceBySeller({ '222': snapshotFor('222') });
+
+      const result = await resolveSellerIdentities(ctxFor(source, { sellerRefs: ['111', '222'] }));
+
+      expect(source.calls).toEqual(['222']);
+      expect(result).toMatchObject({ itemsTotal: 2, itemsOk: 2, itemsFailed: 0 });
+      expect((await sellerIdentitiesRepo.getSellerIdentity(db.appDb, first))?.officialName).toBe(
+        'Zaten Çözülmüş Ltd.',
+      );
+    });
+
+    it('reports progress per seller, by name', async () => {
+      await seedSeller('111');
+      await seedSeller('222');
+      await seedSighting('p1', '111');
+      await seedSighting('p2', '222');
+      const source = sourceBySeller({ '111': snapshotFor('111'), '222': snapshotFor('222') });
+      const ctx = ctxFor(source, { sellerRefs: ['111', '222'] });
+
+      await resolveSellerIdentities(ctx);
+
+      expect(ctx.progress).toContainEqual({ done: 1, total: 2, currentItem: 'Satıcı 222' });
+      expect(ctx.progress.at(-1)).toEqual({ done: 2, total: 2, currentItem: null });
     });
   });
 });

@@ -466,6 +466,7 @@ winner field to put an ordering into, and nothing on this path writes an observa
 | One resolution at a time | same — an internal promise chain, *not* the token bucket: a burst of two would allow two simultaneous browser page loads |
 | No response cache | same — the stored `competitor_seller_identities` row is the cache, and it carries a visible date; a person pressing "resolve" again wants a fresh answer |
 | At most four candidate products per resolution | `ResolveSellerIdentity` (`IDENTITY_MAX_CANDIDATES`) — walking the catalogue would turn one button press into a crawl |
+| A ticked selection is the single button repeated, not a faster one | `ResolveSellerIdentities` (2026-11-25, product owner): one run per marketplace, sellers in sequence through `resolveOneSeller` and the same source instance, so the 6 req/min bucket and the one-at-a-time chain bound it unchanged. At most `IDENTITY_BULK_MAX_SELLERS` (200) sellers; already-resolved sellers are skipped. The 6 req/min itself is a design choice recorded 2026-08-29, not a measured Trendyol threshold |
 | Identity mismatch is a hard failure | `SellerIdentityError` kind `identityMismatch`; nothing is stored |
 | Same browser transport and 403 retry as §1.6 | shares `playwright-fetch.ts` |
 

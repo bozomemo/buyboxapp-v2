@@ -110,8 +110,10 @@ import {
   readEnabledModules,
   RESOLVE_PRODUCT_BARCODES_JOB,
   RESOLVE_SELLER_IDENTITY_JOB,
+  RESOLVE_SELLER_IDENTITIES_JOB,
   resolveProductBarcodes,
   resolveSellerIdentity,
+  resolveSellerIdentities,
   SWEEP_BRAND_CATALOGUE_JOB,
   SWEEP_LISTED_PRODUCTS_JOB,
   SWEEP_TRACKED_PRODUCTS_JOB,
@@ -757,6 +759,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
   // On demand only — no cadence, and deliberately not in `JOB_CATALOG`: a resolution names
   // one firm, so it is enqueued from that seller's own row and nowhere else.
   scheduler.register({ jobName: RESOLVE_SELLER_IDENTITY_JOB, handler: resolveSellerIdentity });
+  // A ticked selection of the above, walked in one run through the same source and so at the same
+  // six-per-minute rate (2026-11-25). Enqueued only from `/api/competitors/sellers/identity/bulk`.
+  scheduler.register({ jobName: RESOLVE_SELLER_IDENTITIES_JOB, handler: resolveSellerIdentities });
   // Likewise on demand only: a rescan names the rows an operator ticked, so it is enqueued from
   // `/api/tracked-products/rescan` and has no runnable empty payload to put in the catalogue.
   scheduler.register({ jobName: RESCAN_TRACKED_PRODUCTS_JOB, handler: rescanTrackedProducts });

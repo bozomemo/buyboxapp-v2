@@ -27,6 +27,7 @@ import { RESCAN_TRACKED_PRODUCTS_JOB } from './pipeline/rescan-tracked-products.
 import { RESET_BUDGET_JOB } from './pipeline/reset-budget.js';
 import { RESOLVE_PRODUCT_BARCODES_JOB } from './pipeline/resolve-product-barcodes.js';
 import { RESOLVE_SELLER_IDENTITY_JOB } from './pipeline/resolve-seller-identity.js';
+import { RESOLVE_SELLER_IDENTITIES_JOB } from './pipeline/resolve-seller-identities.js';
 import { SCRAPE_BRAND_SELLERS_JOB } from './pipeline/scrape-brand-sellers.js';
 import { SCRAPE_COMPETITORS_JOB } from './pipeline/scrape-competitors.js';
 import { SUBMIT_PRICE_CHANGES_JOB } from './pipeline/submit-price-changes.js';
@@ -62,6 +63,7 @@ export const JOB_MODULES: Readonly<Record<string, JobModule>> = {
   [SCRAPE_BRAND_SELLERS_JOB]: 'brand',
   [RESOLVE_PRODUCT_BARCODES_JOB]: 'brand',
   [RESOLVE_SELLER_IDENTITY_JOB]: 'brand',
+  [RESOLVE_SELLER_IDENTITIES_JOB]: 'brand',
   [EVALUATE_BRAND_FINDINGS_JOB]: 'brand',
   [PRUNE_HISTORY_JOB]: 'core',
   // Both modules (doc 17 §1.2): it only ever sends what another job already stored.

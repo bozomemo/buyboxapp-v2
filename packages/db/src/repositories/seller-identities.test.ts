@@ -170,5 +170,26 @@ for (const dialect of ALL_DIALECTS) {
       expect(row?.listings).toEqual([]);
       expect(row?.taxNumber).toBe('1234567890');
     }, 30_000);
+
+    it('lists every stored identity beside its storefront, for the Excel export', async () => {
+      db = await createTestDb(dialect);
+      const first = await seedSeller(db.appDb, '736424');
+      await seedSeller(db.appDb, '999'); // never resolved: not in the export
+      await sellerIdentitiesRepo.upsertSellerIdentity(db.appDb, identity(first, { cityName: 'İstanbul' }));
+
+      const rows = await sellerIdentitiesRepo.listSellerIdentitiesWithSellers(db.appDb);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        marketplaceCode: MARKETPLACE,
+        sellerRef: '736424',
+        sellerName: 'Satıcı 736424',
+        officialName: 'Cansu Beauty Kozmetik A.Ş.',
+        taxNumber: '1234567890',
+        registeredEmailAddress: 'kep@example.invalid',
+        cityName: 'İstanbul',
+        resolvedAt: NOW,
+      });
+    }, 30_000);
   });
 }

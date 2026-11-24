@@ -300,3 +300,99 @@ export async function countSellerIdentities(appDb: AppDatabase): Promise<number>
   })) as { n: number | string }[];
   return Number(rows[0]?.n ?? 0);
 }
+
+/** A stored identity with the storefront it belongs to — one row of the identity export. */
+export interface SellerIdentityExportRow {
+  readonly marketplaceCode: string;
+  readonly sellerRef: string;
+  readonly sellerName: string;
+  readonly officialName: string | null;
+  readonly taxNumber: string | null;
+  readonly taxOffice: string | null;
+  readonly registeredEmailAddress: string | null;
+  readonly address: string | null;
+  readonly cityName: string | null;
+  readonly countryName: string | null;
+  readonly sourceUrl: string;
+  readonly resolvedAt: number;
+}
+
+/**
+ * Every stored identity beside its storefront, for _Kimlikleri Excel'e aktar_ (2026-11-25).
+ *
+ * Reads only what resolutions already stored: an export sends nothing to a marketplace, so a
+ * seller never resolved is simply absent rather than looked up.
+ */
+export async function listSellerIdentitiesWithSellers(
+  appDb: AppDatabase,
+): Promise<SellerIdentityExportRow[]> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => {
+      const s = sqliteSchema.competitorSellers;
+      const i = sqliteSchema.competitorSellerIdentities;
+      return db
+        .select({
+          marketplaceCode: s.marketplaceCode,
+          sellerRef: s.sellerRef,
+          sellerName: s.sellerName,
+          officialName: i.officialName,
+          taxNumber: i.taxNumber,
+          taxOffice: i.taxOffice,
+          registeredEmailAddress: i.registeredEmailAddress,
+          address: i.address,
+          cityName: i.cityName,
+          countryName: i.countryName,
+          sourceUrl: i.sourceUrl,
+          resolvedAt: i.resolvedAt,
+        })
+        .from(i)
+        .innerJoin(s, eq(s.id, i.competitorSellerId))
+        .orderBy(s.sellerName);
+    },
+    postgres: (db) => {
+      const s = postgresSchema.competitorSellers;
+      const i = postgresSchema.competitorSellerIdentities;
+      return db
+        .select({
+          marketplaceCode: s.marketplaceCode,
+          sellerRef: s.sellerRef,
+          sellerName: s.sellerName,
+          officialName: i.officialName,
+          taxNumber: i.taxNumber,
+          taxOffice: i.taxOffice,
+          registeredEmailAddress: i.registeredEmailAddress,
+          address: i.address,
+          cityName: i.cityName,
+          countryName: i.countryName,
+          sourceUrl: i.sourceUrl,
+          resolvedAt: i.resolvedAt,
+        })
+        .from(i)
+        .innerJoin(s, eq(s.id, i.competitorSellerId))
+        .orderBy(s.sellerName);
+    },
+    mysql: (db) => {
+      const s = mysqlSchema.competitorSellers;
+      const i = mysqlSchema.competitorSellerIdentities;
+      return db
+        .select({
+          marketplaceCode: s.marketplaceCode,
+          sellerRef: s.sellerRef,
+          sellerName: s.sellerName,
+          officialName: i.officialName,
+          taxNumber: i.taxNumber,
+          taxOffice: i.taxOffice,
+          registeredEmailAddress: i.registeredEmailAddress,
+          address: i.address,
+          cityName: i.cityName,
+          countryName: i.countryName,
+          sourceUrl: i.sourceUrl,
+          resolvedAt: i.resolvedAt,
+        })
+        .from(i)
+        .innerJoin(s, eq(s.id, i.competitorSellerId))
+        .orderBy(s.sellerName);
+    },
+  })) as { resolvedAt: number | string }[];
+  return rows.map((row) => ({ ...row, resolvedAt: Number(row.resolvedAt) }) as SellerIdentityExportRow);
+}

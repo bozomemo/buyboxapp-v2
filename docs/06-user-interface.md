@@ -1433,10 +1433,24 @@ behind that storefront: registered title (`unvan`), tax number, tax office, KEP 
 and the barcodes and stock of the listing it was read through. These are the fields a compliance
 officer needs to write a notice, and the reason the module has them at all.
 
-**One seller at a time, by a button — never in bulk.** Each resolution is a real page request to
-the marketplace, made as that merchant, at six per minute with concurrency of one. The number of
-sellers worth identifying is the number a person intends to write to; a "resolve all" would turn
-a compliance action into a crawl and is deliberately not offered.
+**A ticked selection, at the single button's rate — never "all"** (changed by the product owner
+on 2026-11-25; until then one seller at a time, by a button only). Each resolution is a real page
+request to the marketplace, made as that merchant, at six per minute with concurrency of one. The
+six per minute was a design choice, not a measured threshold, and it is kept: a compliance officer
+preparing notices for a list of storefronts was left pressing the button dozens of times, so the
+screen now has a checkbox per row (the header box ticks the current page) and **Seçilenlerin
+kimliğini çöz**, which queues one `ResolveSellerIdentities` run per marketplace naming the ticked
+sellers. The run walks them one after another through `resolveOneSeller`, the code the single
+button runs, against the same source and so the same limiter — a hundred sellers cost a hundred
+presses' worth of pages, no more per minute. Sellers already resolved and unregistered refs are
+left out and counted back; a selection above `IDENTITY_BULK_MAX_SELLERS` (200) is refused whole;
+a second selection while one is queued or running is a 409. There is still no "resolve all": the
+sellers resolved are the ones a person ticked.
+
+**Kimlikleri Excel'e aktar** downloads every stored identity — storefront, registered title, tax
+number, tax office, KEP address, address, city, country, the date read and the page it was read
+from — through the same `downloadCsv` as every table export. It reads only what is stored and
+sends nothing to a marketplace.
 
 **The request is the opposite of the scraper's, and that is the point.** `ScrapeCompetitors`
 strips `merchantId` from every URL because a merchant-scoped page reports that merchant as the

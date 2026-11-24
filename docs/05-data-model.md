@@ -632,7 +632,7 @@ tax-number rule simply does not match it, and the policy screen reports such rul
 
 The firm behind a storefront as the marketplace states it: registered title, tax number, tax
 office, KEP address, address, and the barcodes and stock of the listing the resolution was read
-through. Written only by `ResolveSellerIdentity`, on demand, one seller at a time
+through. Written only by `ResolveSellerIdentity` and `ResolveSellerIdentities` (a ticked selection, 2026-11-25), on demand, one seller at a time
 (api-references §1.6a).
 
 **Its own table rather than six more nullable columns on `competitor_sellers`,** and the reason
