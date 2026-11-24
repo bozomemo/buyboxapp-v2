@@ -68,7 +68,22 @@ Satıcı kaydınızdaki vergi numarası pazaryerinin bildirdiğinden farklıysa 
 
 İki dakika içinde sonuç gelmezse _Çözüm tamamlanmadı_ mesajı çıkar; [İşler](/rehber/jobs) ekranından son çalıştırmalara bakın.
 
-Kimliği çözme ve unutma Yönetici ve Fiyat Yöneticisi rollerine açıktır.
+### Birden çok satıcının kimliği
+
+Her satırın başında bir onay kutusu vardır; başlıktaki kutu o sayfadaki bütün satıcıları seçer. Satıcı seçince tablonun üstünde **… satıcı seçildi** yazar ve şu düğmeler görünür:
+
+- **Seçilenlerin kimliğini çöz**: seçilen satıcıların kimliğini arka planda, sırayla çözer. Satıcılar tek tek **Kimliği çöz**'e basılmış gibi okunur: dakikada en fazla 6 sayfa, aynı anda tek satıcı. 100 satıcı yaklaşık yarım saat ile iki saat sürer. Ekrandan ayrılabilirsiniz; ilerlemesi [İşler](/rehber/jobs) ekranında **Seçili Satıcıların Kimliği (raporlama)** adıyla görünür.
+- **Seçimi temizle**: seçimi kaldırır.
+
+Kimliği zaten çözülmüş satıcılar yeniden okunmaz; mesajda kaç tanesinin atlandığı yazar. Birini yenilemek isterseniz o satıcının panelinde **Yeniden çöz**'e basın. Tek seferde en fazla 200 satıcı seçebilirsiniz. Önceki seçim kuyrukta ya da çalışırken yeni bir seçim kabul edilmez. Kimliği çözülemeyen bir satıcı diğerlerini durdurmaz; nedeni [Olaylar](/rehber/events) ekranına yazılır.
+
+Pazaryerine giden her istek gerçek bir sayfa okumasıdır. Yalnızca gerçekten ihtiyaç duyduğunuz satıcıları seçin.
+
+### Kimlikleri Excel'e aktarma
+
+**Kimlikleri Excel'e aktar**, şimdiye kadar çözülmüş bütün satıcı kimliklerini indirir: satıcı, satıcı kodu, pazaryeri, **Ticari Unvan**, **Vergi / TC No**, **Vergi Dairesi**, **KEP Adresi**, adres, şehir, ülke, okunma tarihi ve okunduğu sayfa. Bu düğme pazaryerine istek göndermez; kimliği hiç çözülmemiş satıcılar dosyada yer almaz. Dosyaya ekranda seçili dönem, marka ya da pazaryeri uygulanmaz. Henüz hiç kimlik çözülmediyse dosya inmez; **Henüz kimliği çözülmüş satıcı yok.** mesajı çıkar.
+
+Kimliği çözme (tek tek ya da seçerek) ve unutma Yönetici ve Fiyat Yöneticisi rollerine açıktır. **Kimlikleri Excel'e aktar** her role açıktır.
 
 ## Sık sorulanlar
 
@@ -84,4 +99,10 @@ Yetkili ve yasaklı kararları markaya özeldir. **Kapsam**'tan tek bir marka se
 **Piyasanın altında satan her satıcı kural ihlali mi yapıyor?**
 Hayır. Piyasa sapması yalnızca bakılacak yeri gösterir. İhlal olup olmadığı satıcının yetkili olup olmadığına ve sizin kurallarınıza bağlıdır; bkz. [Denetim Bulguları](/rehber/findings).
 
-<!-- kaynak: doc 06 §12.4; brand roadmap §6.12; apps/web/src/app/watched-brands/sellers/brand-sellers-client.tsx, policy-quick-decision.tsx, seller-identity-panel.tsx; lib/labels.ts (POLICY_VERDICT_LABELS); api/brand-reports/sellers, api/competitors/sellers/identity permissions -->
+**Bütün satıcıların kimliğini tek tuşla çözebilir miyim?**
+Hayır. Kimlik yalnızca seçtiğiniz satıcılar için çözülür; her satıcı pazaryerine gerçek bir istek demektir. Başlıktaki kutuyla bir sayfadaki satıcıları seçip **Seçilenlerin kimliğini çöz**'e basabilirsiniz.
+
+**Kimlik dosyasında bazı satıcılar yok.**
+Dosya yalnızca kimliği çözülmüş satıcıları içerir. Eksik satıcıları seçip **Seçilenlerin kimliğini çöz**'e basın; iş bitince dosyayı yeniden indirin.
+
+<!-- kaynak: doc 06 §12.4; brand roadmap §6.12; apps/web/src/app/watched-brands/sellers/brand-sellers-client.tsx, policy-quick-decision.tsx, seller-identity-panel.tsx; lib/labels.ts (POLICY_VERDICT_LABELS); api/brand-reports/sellers, api/competitors/sellers/identity (+ bulk, export) permissions; packages/jobs resolve-seller-identities.ts -->

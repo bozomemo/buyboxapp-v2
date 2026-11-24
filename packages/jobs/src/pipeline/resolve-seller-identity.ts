@@ -150,6 +150,29 @@ export async function resolveSellerIdentity(ctx: JobContext): Promise<JobResult>
     return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
   }
 
+  const ok = await resolveOneSeller(ctx, source, marketplaceCode, payload.sellerRef, payload, (done, total, item) =>
+    ctx.reportProgress({ done, total, currentItem: item }),
+  );
+  return { itemsTotal: 1, itemsOk: ok ? 1 : 0, itemsFailed: ok ? 0 : 1 };
+}
+
+/**
+ * Resolves one storefront and stores the answer — the whole of a single resolution, shared by
+ * `ResolveSellerIdentity` (one button) and `ResolveSellerIdentities` (a selection, 2026-11-25),
+ * so a seller resolved in bulk is resolved exactly as one resolved by hand.
+ *
+ * `true` when an identity was stored. Every failure is recorded as an event and answered
+ * `false`; nothing here throws for a seller that cannot be resolved.
+ */
+export async function resolveOneSeller(
+  ctx: JobContext,
+  source: ISellerIdentitySource,
+  marketplaceCode: MarketplaceCode,
+  sellerRef: string,
+  limits: { readonly lookbackDays: number; readonly maxCandidates: number },
+  onCandidate?: (done: number, total: number, currentItem: string | null) => void,
+): Promise<boolean> {
+  const payload = { sellerRef, ...limits };
   const seller = await competitorSellersRepo.getCompetitorSeller(
     ctx.appDb,
     marketplaceCode,
@@ -163,7 +186,7 @@ export async function resolveSellerIdentity(ctx: JobContext): Promise<JobResult>
       'SellerIdentityNoSeller',
       `Satıcı ${payload.sellerRef} kayıtlı değil — kimlik çözümlenmedi`,
     );
-    return { itemsTotal: 1, itemsOk: 0, itemsFailed: 1 };
+    return false;
   }
 
   const nowMs = ctx.clock.nowMs();
@@ -181,17 +204,17 @@ export async function resolveSellerIdentity(ctx: JobContext): Promise<JobResult>
       'SellerIdentityNoProduct',
       `${seller.sellerName} son ${payload.lookbackDays} günde hiçbir takip edilen üründe görülmedi — kimlik çözümlenemedi`,
     );
-    return { itemsTotal: 1, itemsOk: 0, itemsFailed: 1 };
+    return false;
   }
 
-  ctx.reportProgress({ done: 0, total: candidates.length, currentItem: seller.sellerName });
+  onCandidate?.(0, candidates.length, seller.sellerName);
   const { snapshot, lastError, attempts } = await resolveThroughCandidates(
     source,
     payload.sellerRef,
     candidates,
-    (index) => ctx.reportProgress({ done: index, total: candidates.length, currentItem: seller.sellerName }),
+    (index) => onCandidate?.(index, candidates.length, seller.sellerName),
   );
-  ctx.reportProgress({ done: attempts, total: candidates.length, currentItem: null });
+  onCandidate?.(attempts, candidates.length, null);
 
   if (!snapshot) {
     await noteEvent(
@@ -201,7 +224,7 @@ export async function resolveSellerIdentity(ctx: JobContext): Promise<JobResult>
       'SellerIdentityUnresolved',
       `${seller.sellerName} kimliği ${attempts} üründe denendi, çözümlenemedi: ${lastError ?? 'bilinmeyen sebep'}`,
     );
-    return { itemsTotal: 1, itemsOk: 0, itemsFailed: 1 };
+    return false;
   }
 
   const { identity, diagnostics } = snapshot;
@@ -238,7 +261,7 @@ export async function resolveSellerIdentity(ctx: JobContext): Promise<JobResult>
       : `${seller.sellerName} kimliği çözümlendi`,
   );
 
-  return { itemsTotal: 1, itemsOk: 1, itemsFailed: 0 };
+  return true;
 }
 
 export const RESOLVE_SELLER_IDENTITY_DEFINITION = {

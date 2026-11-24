@@ -228,6 +228,7 @@ export const JOB_LABELS: Record<string, string> = {
   EvaluateBrandFindings: 'Denetim Bulguları (raporlama)',
   DeliverNotifications: 'Bildirim Gönderimi',
   ResolveSellerIdentity: 'Satıcı Kimliği Çözümleme (raporlama)',
+  ResolveSellerIdentities: 'Seçili Satıcıların Kimliği (raporlama)',
 };
 
 /**

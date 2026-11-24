@@ -142,10 +142,18 @@ export {
   IDENTITY_MAX_CANDIDATES,
   RESOLVE_SELLER_IDENTITY_JOB,
   ResolveSellerIdentityPayloadSchema,
+  resolveOneSeller,
   resolveSellerIdentity,
   resolveThroughCandidates,
   type ResolveSellerIdentityPayload,
 } from './pipeline/resolve-seller-identity.js';
+export {
+  IDENTITY_BULK_MAX_SELLERS,
+  RESOLVE_SELLER_IDENTITIES_JOB,
+  ResolveSellerIdentitiesPayloadSchema,
+  resolveSellerIdentities,
+  type ResolveSellerIdentitiesPayload,
+} from './pipeline/resolve-seller-identities.js';
 export {
   BARCODE_BATCH_SIZE,
   BARCODE_MAX_CONSECUTIVE_FAILURES,

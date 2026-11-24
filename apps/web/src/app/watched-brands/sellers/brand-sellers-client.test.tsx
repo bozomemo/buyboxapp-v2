@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as csvModule from '@/lib/csv';
 import { lastRequestParam, stubFetch } from '@/test-utils';
 import { BrandSellersClient } from './brand-sellers-client';
 
@@ -147,6 +148,155 @@ describe('BrandSellersClient', () => {
       } finally {
         spy.mockRestore();
       }
+    });
+  });
+  /**
+   * _Seçilenlerin kimliğini çöz_ and _Kimlikleri Excel'e aktar_ (2026-11-25, product owner).
+   */
+  describe('identities in bulk', () => {
+    const seller = (sellerRef: string, sellerName: string) => ({
+      marketplaceCode: 'trendyol',
+      sellerRef,
+      sellerName,
+      groupId: null,
+      groupName: null,
+      operatorNote: null,
+      productCount: 1,
+      observationCount: 1,
+      buyboxCount: 0,
+      cheapestCount: 0,
+      buyboxRate: 0,
+      buyboxSharePct: 0,
+      cheapestRate: 0,
+      avgDeviationPct: null,
+      verdict: null,
+      minPrice: null,
+      maxPrice: null,
+      firstSeenAt: 0,
+      lastSeenAt: 0,
+    });
+    const REPORT = {
+      filters: { sinceMs: 0, untilMs: 1, marketplaceCode: null, watchedBrandId: null, groupId: null },
+      groups: [],
+      brands: [],
+      sellers: [seller('111', 'Birinci'), seller('222', 'İkinci')],
+      unidentifiedCount: 0,
+      buybox: { totalLooks: 0, unidentifiedLooks: 0 },
+    };
+
+    function postedBody(path: string): unknown {
+      const call = vi
+        .mocked(fetch)
+        .mock.calls.find((c) => String(c[0]).startsWith(path) && (c[1] as RequestInit | undefined)?.method === 'POST');
+      return call ? JSON.parse(String((call[1] as RequestInit).body)) : undefined;
+    }
+
+    it('ticked sellers are sent to the bulk route, and the screen says how many were queued', async () => {
+      stubFetch({
+        [ROUTE]: { body: REPORT },
+        '/api/competitors/sellers/identity/bulk': {
+          body: { ok: true, jobIds: ['j1'], queued: 1, alreadyResolved: 1, missing: 0 },
+        },
+      });
+      render(<BrandSellersClient />);
+
+      fireEvent.click(await screen.findByRole('checkbox', { name: 'Birinci seç' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'İkinci seç' }));
+      expect(screen.getByText('2 satıcı seçildi')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Seçilenlerin kimliğini çöz' }));
+
+      expect(await screen.findByText(/1 satıcının kimliği kuyruğa alındı/)).toBeTruthy();
+      expect(screen.getByText(/1 satıcının kimliği zaten çözülmüştü/)).toBeTruthy();
+      expect(postedBody('/api/competitors/sellers/identity/bulk')).toEqual({
+        sellers: [
+          { marketplaceCode: 'trendyol', sellerRef: '111' },
+          { marketplaceCode: 'trendyol', sellerRef: '222' },
+        ],
+      });
+    });
+
+    it('the header box ticks every seller on this page', async () => {
+      stubFetch({ [ROUTE]: { body: REPORT } });
+      render(<BrandSellersClient />);
+
+      fireEvent.click(await screen.findByRole('checkbox', { name: 'Bu sayfadaki satıcıları seç' }));
+
+      expect(screen.getByText('2 satıcı seçildi')).toBeTruthy();
+    });
+
+    it('a refused selection shows the route’s own message', async () => {
+      stubFetch({
+        [ROUTE]: { body: REPORT },
+        '/api/competitors/sellers/identity/bulk': {
+          status: 409,
+          body: { error: 'Seçili satıcılar için bir kimlik çözümü zaten kuyrukta veya çalışıyor.' },
+        },
+      });
+      render(<BrandSellersClient />);
+
+      fireEvent.click(await screen.findByRole('checkbox', { name: 'Birinci seç' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Seçilenlerin kimliğini çöz' }));
+
+      expect(await screen.findByText(/zaten kuyrukta veya çalışıyor/)).toBeTruthy();
+    });
+
+    it('no identity resolved yet: says so instead of downloading an empty file', async () => {
+      const csv = vi.spyOn(csvModule, 'downloadCsv').mockImplementation(() => undefined);
+      stubFetch({
+        [ROUTE]: { body: REPORT },
+        '/api/competitors/sellers/identity/export': { body: { identities: [] } },
+      });
+      render(<BrandSellersClient />);
+
+      fireEvent.click(await screen.findByRole('button', { name: "Kimlikleri Excel'e aktar" }));
+
+      expect(await screen.findByText(/Henüz kimliği çözülmüş satıcı yok/)).toBeTruthy();
+      expect(csv).not.toHaveBeenCalled();
+      csv.mockRestore();
+    });
+
+    it('exports the stored identities as a CSV with Turkish headers', async () => {
+      const csv = vi.spyOn(csvModule, 'downloadCsv').mockImplementation(() => undefined);
+      stubFetch({
+        [ROUTE]: { body: REPORT },
+        '/api/competitors/sellers/identity/export': {
+          body: {
+            identities: [
+              {
+                marketplaceCode: 'trendyol',
+                sellerRef: '111',
+                sellerName: 'Birinci',
+                officialName: 'Birinci Ticaret Ltd. Şti.',
+                taxNumber: '1234567890',
+                taxOffice: 'Kadıköy',
+                registeredEmailAddress: 'birinci@hs01.kep.tr',
+                address: 'Moda Cd. 1',
+                cityName: 'İstanbul',
+                countryName: 'Türkiye',
+                sourceUrl: 'https://www.trendyol.com/x',
+                resolvedAt: 0,
+              },
+            ],
+          },
+        },
+      });
+      render(<BrandSellersClient />);
+
+      fireEvent.click(await screen.findByRole('button', { name: "Kimlikleri Excel'e aktar" }));
+
+      await waitFor(() => expect(csv).toHaveBeenCalled());
+      const [filename, rows] = csv.mock.calls[0]!;
+      expect(filename).toBe('satici-kimlikleri.csv');
+      expect(rows[0]).toMatchObject({
+        Satıcı: 'Birinci',
+        'Satıcı Kodu': '111',
+        'Ticari Unvan': 'Birinci Ticaret Ltd. Şti.',
+        'Vergi / TC No': '1234567890',
+        'Vergi Dairesi': 'Kadıköy',
+        'KEP Adresi': 'birinci@hs01.kep.tr',
+        Şehir: 'İstanbul',
+      });
+      csv.mockRestore();
     });
   });
 });

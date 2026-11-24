@@ -28,6 +28,7 @@ import {
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
+import { PermissionFieldset } from '@/lib/permissions';
 import { PolicyQuickDecision } from './policy-quick-decision';
 import { SellerIdentityPanel } from './seller-identity-panel';
 
@@ -127,6 +128,30 @@ const COLUMN_DEFS: ColumnDef<ColumnId>[] = [
   { id: 'lastSeenAt', label: 'Son görülme', defaultWidth: 130 },
   { id: 'identity', label: 'Kimlik', defaultWidth: 90 },
 ];
+
+/**
+ * Mirrors `IDENTITY_BULK_MAX_SELLERS` in `packages/jobs` — the ceiling the bulk route enforces.
+ * Copied rather than imported so the job package stays out of the client bundle.
+ */
+const IDENTITY_BULK_MAX_SELLERS = 200;
+
+const sellerKey = (s: { marketplaceCode: string; sellerRef: string }) => `${s.marketplaceCode}::${s.sellerRef}`;
+
+/** One row of `/api/competitors/sellers/identity/export`. */
+interface StoredIdentity {
+  marketplaceCode: string;
+  sellerRef: string;
+  sellerName: string;
+  officialName: string | null;
+  taxNumber: string | null;
+  taxOffice: string | null;
+  registeredEmailAddress: string | null;
+  address: string | null;
+  cityName: string | null;
+  countryName: string | null;
+  sourceUrl: string;
+  resolvedAt: number;
+}
 
 /**
  * The link into the seller page carries this screen's own scope — the window, and the brand when
@@ -257,9 +282,8 @@ function renderSellerCell(
     case 'lastSeenAt':
       return <Ago at={s.lastSeenAt} />;
     case 'identity':
-      // Per row rather than a bulk action, deliberately: each resolution is a real page request
-      // to the marketplace, and the sellers worth identifying are the ones somebody intends to
-      // write to.
+      // One seller here; a ticked selection goes through _Seçilenlerin kimliğini çöz_ above the
+      // table (2026-11-25), which walks the same resolution one seller at a time.
       return (
         <Button variant="secondary" size="sm" type="button" onClick={() => onResolveIdentity(s)}>
           Kimlik
@@ -295,6 +319,11 @@ export function BrandSellersClient() {
   const [identitySeller, setIdentitySeller] = useState<Seller | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Ticked rows, by `marketplaceCode::sellerRef` — kept across pages, like Takip Edilen Ürünler. */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const paged = usePagedRows(report?.sellers ?? NO_SELLERS, {
     resetKey: `${sinceMs}|${marketplaceCode}|${scope}`,
@@ -316,6 +345,97 @@ export function BrandSellersClient() {
   }, [sinceMs, marketplaceCode, scope]);
 
   useEffect(load, [load]);
+
+  function toggleSelected(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  /**
+   * Queues one run for the ticked sellers and says what it did. The run is queued, not finished:
+   * the operator is told where its progress is rather than shown a reload that changes nothing.
+   */
+  async function resolveSelected() {
+    const sellers = [...selected].map((key) => {
+      const at = key.indexOf('::');
+      return { marketplaceCode: key.slice(0, at), sellerRef: key.slice(at + 2) };
+    });
+    if (sellers.length === 0) return;
+    setBusy(true);
+    setNotice(null);
+    setActionError(null);
+    try {
+      const res = await fetch('/api/competitors/sellers/identity/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sellers }),
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        queued?: number;
+        alreadyResolved?: number;
+        missing?: number;
+      };
+      if (!res.ok) {
+        setActionError(data.error ?? 'Kimlik çözümü kuyruğa alınamadı.');
+        return;
+      }
+      setSelected(new Set());
+      const queued = data.queued ?? 0;
+      const parts = [
+        queued > 0
+          ? `${formatNumber(queued)} satıcının kimliği kuyruğa alındı; satıcılar sırayla, dakikada en fazla 6 sayfa okunarak çözülür.`
+          : 'Kuyruğa alınacak satıcı kalmadı.',
+      ];
+      if ((data.alreadyResolved ?? 0) > 0) {
+        parts.push(`${formatNumber(data.alreadyResolved ?? 0)} satıcının kimliği zaten çözülmüştü.`);
+      }
+      if ((data.missing ?? 0) > 0) parts.push(`${formatNumber(data.missing ?? 0)} satıcı bulunamadı.`);
+      setNotice(parts.join(' '));
+    } catch {
+      setActionError('Kimlik çözümü kuyruğa alınamadı.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Every identity resolved so far, as a CSV — read from what is stored, nothing is requested. */
+  async function exportIdentities() {
+    setActionError(null);
+    try {
+      const res = await fetch('/api/competitors/sellers/identity/export');
+      if (!res.ok) throw new Error('export failed');
+      const { identities } = (await res.json()) as { identities: StoredIdentity[] };
+      if (identities.length === 0) {
+        setNotice(null);
+        setActionError('Henüz kimliği çözülmüş satıcı yok. Önce satıcıları seçip kimliklerini çözün.');
+        return;
+      }
+      downloadCsv(
+        'satici-kimlikleri.csv',
+        identities.map((i) => ({
+          Satıcı: i.sellerName,
+          'Satıcı Kodu': i.sellerRef,
+          Pazaryeri: labelOf(MARKETPLACE_LABELS, i.marketplaceCode),
+          'Ticari Unvan': i.officialName ?? '',
+          'Vergi / TC No': i.taxNumber ?? '',
+          'Vergi Dairesi': i.taxOffice ?? '',
+          'KEP Adresi': i.registeredEmailAddress ?? '',
+          Adres: i.address ?? '',
+          Şehir: i.cityName ?? '',
+          Ülke: i.countryName ?? '',
+          'Okunma Tarihi': formatDateTime(i.resolvedAt),
+          'Okunduğu Sayfa': i.sourceUrl,
+        })),
+      );
+    } catch {
+      setActionError('Kimlikler indirilemedi.');
+    }
+  }
 
   const visibleColumns = useMemo(() => columns.order.filter((id) => columns.isVisible(id)), [columns]);
 
@@ -524,8 +644,47 @@ export function BrandSellersClient() {
                 />
               )}
 
+              {notice && (
+                <p role="status" aria-live="polite" className="text-sm text-(--color-accent)">
+                  {notice} İlerlemesini{' '}
+                  <Link href="/jobs" className="underline">
+                    İşler
+                  </Link>{' '}
+                  ekranından izleyebilirsiniz.
+                </p>
+              )}
+              {actionError && <StatusBanner ok={false} message={actionError} />}
+
+              {selected.size > 0 && (
+                <PermissionFieldset permission="catalogue.manage">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span>{formatNumber(selected.size)} satıcı seçildi</span>
+                    <Button
+                      size="sm"
+                      type="button"
+                      disabled={busy || selected.size > IDENTITY_BULK_MAX_SELLERS}
+                      onClick={() => void resolveSelected()}
+                      title="Seçilen satıcıların firma bilgilerini arka planda sırayla okur"
+                    >
+                      Seçilenlerin kimliğini çöz
+                    </Button>
+                    {selected.size > IDENTITY_BULK_MAX_SELLERS && (
+                      <span className="text-xs text-(--color-warning)">
+                        Tek seferde en fazla {IDENTITY_BULK_MAX_SELLERS} satıcı.
+                      </span>
+                    )}
+                    <Button variant="ghost" size="sm" type="button" onClick={() => setSelected(new Set())}>
+                      Seçimi temizle
+                    </Button>
+                  </div>
+                </PermissionFieldset>
+              )}
+
               <div className="flex items-center justify-end gap-2">
                 <ColumnMenu defs={COLUMN_DEFS} prefs={columns} />
+                <Button variant="secondary" size="sm" type="button" onClick={() => void exportIdentities()}>
+                  Kimlikleri Excel&apos;e aktar
+                </Button>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -559,9 +718,28 @@ export function BrandSellersClient() {
               </div>
 
               <TableFrame>
-                <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns)}>
+                <table className="text-sm" style={resizableTableStyle(COLUMN_DEFS, columns, 32)}>
                   <thead className={`${STICKY_HEAD} text-left`}>
                     <tr>
+                      <th className="px-2 py-1" style={{ width: 32 }}>
+                        {/* This page only — the selection is what a person looked at, never "all". */}
+                        <input
+                          type="checkbox"
+                          aria-label="Bu sayfadaki satıcıları seç"
+                          title="Bu sayfadaki satıcıları seç"
+                          checked={paged.rows.length > 0 && paged.rows.every((s) => selected.has(sellerKey(s)))}
+                          onChange={(e) =>
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              for (const s of paged.rows) {
+                                if (e.target.checked) next.add(sellerKey(s));
+                                else next.delete(sellerKey(s));
+                              }
+                              return next;
+                            })
+                          }
+                        />
+                      </th>
                       {visibleColumns.map((id) => (
                         <ResizableTh key={id} id={id} prefs={columns}>
                           {COLUMN_DEFS.find((c) => c.id === id)!.label}
@@ -575,6 +753,14 @@ export function BrandSellersClient() {
                         key={`${s.marketplaceCode}::${s.sellerRef}`}
                         className="border-t border-(--color-border)"
                       >
+                        <td className="px-2 py-1">
+                          <input
+                            type="checkbox"
+                            aria-label={`${s.sellerName || s.sellerRef} seç`}
+                            checked={selected.has(sellerKey(s))}
+                            onChange={() => toggleSelected(sellerKey(s))}
+                          />
+                        </td>
                         {visibleColumns.map((id) => (
                           <td key={id} className="px-2 py-1">
                             {renderSellerCell(
