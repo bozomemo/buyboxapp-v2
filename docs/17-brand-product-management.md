@@ -297,12 +297,24 @@ then refuses.
 The key is the **primary card**: a row whose Trendyol link equals an existing product's
 Trendyol primary, or whose Hepsiburada link equals its Hepsiburada primary, updates that product.
 
+**Stand-in key (2026-11-24).** A card linked by hand (§2.4) is not primary, so a product whose only
+card on a marketplace was linked that way had no key: _Mevcut ürünleri indir_ left its link column
+empty and the file came back refused. Now, where a product has **no primary** on a marketplace,
+its **only ×1 card** there is its key (`reimportKeyCards` in `packages/core`). The export writes
+that card's link and the import matches the row to **that card's own product**, so nothing is
+re-pointed. The card is not promoted to primary. Two ×1 cards or only pack cards leave no key,
+because picking one would be a guess.
+
+The duplicate-name warning (§3.5) counts only **other** products. A row that updates product A is
+not warned about A's own name.
+
 | Situation | Outcome |
 |-----------|---------|
 | Neither link is a primary anywhere | **New** brand product. Each link's card is found in `tracked_products` (a card already discovered by a brand sweep is reused, never duplicated) or created, and linked ×1 as primary |
 | One link matches product A's primary, the other is empty or new | **Update** A; a new link becomes A's primary on that marketplace (the previous primary, if any, stays linked as an ordinary card) |
 | The two links match **different** products | **Error** — nothing is merged |
-| A link is a **non-primary** card of some product | **Error** — "bu kart X ürününe ek kart olarak bağlı" |
+| A link is a **non-primary** card of some product, and not that product's stand-in key | **Error** — "bu kart X ürününe ek kart olarak bağlı" |
+| A link is the **stand-in key** of product A (no primary there, its only ×1 card) | **Update** A; the card stays as linked |
 | The same link appears on two rows of the file | **Error** on both rows |
 
 ### 3.4 What a re-import changes

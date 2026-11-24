@@ -11,6 +11,8 @@ import {
   cardKey,
   foldName,
   planBrandProductImport,
+  reimportKeyCards,
+  type ExistingCard,
   type ImportPlan,
   type ImportRowInput,
   type LinkCell,
@@ -51,9 +53,33 @@ export async function planImport(appDb: AppDatabase, file: BrandImportFile): Pro
     configRepo.listMarketplaces(appDb),
   ]);
 
+  // A hand-linked card is not primary; where it is its product's only ×1 card there, it is the
+  // product's re-import key all the same, and the card the export wrote (2026-11-24).
+  const secondaryOwners = [...existingCards.values()]
+    .filter((card) => !card.isPrimary)
+    .map((card) => card.brandProductId);
+  const ownersCards = await brandProductsRepo.cardsOfProducts(appDb, [...new Set(secondaryOwners)]);
+  const keyCardIds = new Set(reimportKeyCards([...ownersCards.values()].flat()).map((card) => card.id));
+  const cards = new Map<string, ExistingCard>(
+    [...existingCards].map(([key, card]) => [
+      key,
+      {
+        brandProductId: card.brandProductId,
+        brandProductName: card.brandProductName,
+        isPrimary: card.isPrimary,
+        standsInForPrimary: !card.isPrimary && keyCardIds.has(card.cardId),
+      },
+    ]),
+  );
+  const nameOwners = new Map<string, string[]>();
+  for (const { id, name } of names) {
+    const folded = foldName(name);
+    nameOwners.set(folded, [...(nameOwners.get(folded) ?? []), id]);
+  }
+
   const plan = planBrandProductImport(parsed.rows, {
-    existingCards,
-    existingNames: new Set(names.map(foldName)),
+    existingCards: cards,
+    existingNames: nameOwners,
     configuredMarketplaces: new Set(marketplaces.map((marketplace) => marketplace.code.toLowerCase())),
   });
 

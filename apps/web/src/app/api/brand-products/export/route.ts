@@ -9,14 +9,16 @@
  *
  * - money as a Turkish decimal with no thousands separator (`1249,90`), divided as `bigint`;
  * - desi with a decimal comma (`4,5`);
- * - each marketplace's **primary** card as an absolute link, because that is what the importer
- *   matches a row to an existing product by. A card found by a catalogue sweep stores only its
- *   path, and a bare path would not match.
+ * - each marketplace's **re-import key** card as an absolute link: the primary, or, for a product
+ *   whose card was linked by hand and so is not primary, its only ×1 card (`reimportKeyCards`).
+ *   That is what the importer matches a row to an existing product by. A card found by a
+ *   catalogue sweep stores only its path, and a bare path would not match.
  *
  * Semicolons and a BOM, like the template: Turkish Excel's list separator is `;`, and without the
  * BOM `Ürün Adı` opens as mojibake.
  */
 import { NextResponse } from 'next/server';
+import { reimportKeyCards } from '@buybox/core';
 import { brandProductsRepo } from '@buybox/db';
 import { TEMPLATE_HEADERS } from '@/lib/brand-product-import';
 import { formatDesi } from '@/lib/desi';
@@ -46,10 +48,11 @@ async function getHandler() {
   }
 
   const links = new Map<string, string>();
-  for (const link of await brandProductsRepo.primaryCardLinks(
+  const cards = await brandProductsRepo.cardLinksOfProducts(
     appDb,
     products.map((p) => p.id),
-  )) {
+  );
+  for (const link of reimportKeyCards(cards)) {
     const url = marketplaceProductUrl(link.marketplaceCode, link.productUrl);
     if (url !== null) links.set(`${link.brandProductId}::${link.marketplaceCode}`, url);
   }
