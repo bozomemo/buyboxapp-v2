@@ -148,6 +148,8 @@ describe('createSmtpTransport', () => {
   // nodemailer is loaded on first send, so nothing failed until the web build bundled the
   // adapters: it was never declared, and a clean install's `next build` could not resolve it
   // (user-guide review 2026-11-18). Building a transport opens no connection.
+  // The first import of nodemailer is a cold load of a large package: seconds on a busy release
+  // build (v0.2.11 timed out at vitest's 5 s default, 2026-11-24), which is not what this checks.
   it('builds a transport from the declared nodemailer package', async () => {
     const transport = await createSmtpTransport({
       host: 'smtp.example.test',
@@ -157,5 +159,5 @@ describe('createSmtpTransport', () => {
       from: 'buybox@example.test',
     });
     expect(typeof transport.sendMail).toBe('function');
-  });
+  }, 60_000);
 });
