@@ -49,11 +49,12 @@
  * ever.
  */
 import type { MarketplaceCode } from '@buybox/core';
-import { eventsRepo, newId, trackedProductsRepo, watchedBrandsRepo } from '@buybox/db';
+import { eventsRepo, jobsRepo, newId, trackedProductsRepo, watchedBrandsRepo } from '@buybox/db';
 import { z } from 'zod';
 import { getCompetitorSource } from '../competitor-source-registry.js';
-import type { JobContext, JobResult } from '../job.js';
+import { DEFAULT_MAX_ATTEMPTS, type JobContext, type JobResult } from '../job.js';
 import { SCRAPE_BRAND_SELLERS_CHUNK, SCRAPE_BRAND_SELLERS_MAX_PRODUCTS } from '../scrape-config.js';
+import { EVALUATE_BRAND_FINDINGS_JOB } from './evaluate-brand-findings.js';
 import { scrapeTrackedProducts } from './scrape-tracked-products.js';
 
 export const SCRAPE_BRAND_SELLERS_JOB = 'ScrapeBrandSellers';
@@ -93,6 +94,11 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
   if (!brand || brand.marketplaceCode !== marketplaceCode) {
     // The brand was removed between the enqueue and the claim. Nothing to read, and nothing
     // worth retrying — an absent brand will not come back on the next attempt.
+    return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
+  }
+  if (!brand.isActive) {
+    // Paused between the enqueue and the claim, or by a worker restart picking an old row back
+    // up (review 2026-11-25 Y3). Pausing is the operator saying "stop reading this brand".
     return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
   }
 
@@ -157,6 +163,23 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
       return { itemsTotal, itemsOk, itemsFailed };
     }
 
+    /**
+     * Paused while the run was reading (review 2026-11-25 Y3). Checked between chunks, so a pause
+     * costs at most the chunk in flight; the products not reached keep their old
+     * `last_scraped_at` and are first in line when the brand is resumed.
+     */
+    const current = await watchedBrandsRepo.getWatchedBrand(ctx.appDb, brand.id);
+    if (!current || !current.isActive) {
+      await noteBrandSellersEvent(
+        ctx,
+        marketplaceCode,
+        'BrandSellerScrapePaused',
+        `${brand.label} · marka duraklatıldı ya da kaldırıldı; satıcı taraması ${processed}/${itemsTotal} üründe durdu`,
+        'info',
+      );
+      return { itemsTotal, itemsOk, itemsFailed };
+    }
+
     if (result.itemsTotal === 0) {
       /**
        * A page came back but nothing in it was read — only reachable if a row vanished between
@@ -192,7 +215,50 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
     'info',
   );
 
+  if (brand.isOwnBrand !== false) await enqueueFindingsEvaluation(ctx, brand.id);
+
   return { itemsTotal, itemsOk, itemsFailed };
+}
+
+/**
+ * Asks for the brand's audit to be re-evaluated now that its sellers have just been read
+ * (review 2026-11-25 Y1).
+ *
+ * The panel's "Açık bulgu" reads the rows `EvaluateBrandFindings` stores, and that job runs every
+ * six hours — so a brand scraped at 09:05 showed 0 open findings until the afternoon while the
+ * findings screen, which derives on demand, showed 129. Chaining one evaluation of this brand
+ * keeps the two in step at the moment new data lands. It reads the archive only and makes no
+ * marketplace request. Single-flight per brand: one already waiting will see this run's data.
+ * A failed enqueue never fails the scrape — the cadence still catches up.
+ */
+async function enqueueFindingsEvaluation(ctx: JobContext, watchedBrandId: string): Promise<void> {
+  try {
+    const active = await jobsRepo.countActiveJobsForPayloadField(
+      ctx.appDb,
+      EVALUATE_BRAND_FINDINGS_JOB,
+      'watchedBrandId',
+      watchedBrandId,
+    );
+    if (active > 0) return;
+    const nowMs = ctx.clock.nowMs();
+    await jobsRepo.enqueueJob(ctx.appDb, {
+      id: newId(),
+      jobName: EVALUATE_BRAND_FINDINGS_JOB,
+      payload: JSON.stringify({ watchedBrandId }),
+      priority: 0,
+      state: 'ready',
+      runAfter: nowMs,
+      lockedBy: null,
+      lockedUntil: null,
+      attempts: 0,
+      maxAttempts: DEFAULT_MAX_ATTEMPTS,
+      lastError: null,
+      createdAt: nowMs,
+      updatedAt: nowMs,
+    });
+  } catch {
+    // Deliberately silent: the six-hour cadence is the fallback.
+  }
 }
 
 /**

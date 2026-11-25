@@ -75,7 +75,7 @@ Sağ üstte **Son güncelleme** saati ve **Yenile** düğmesi vardır. Bir yenil
 Marka modülü açıksa ve izlenen bir marka ya da fiyat bandı izlemesi varsa durum özetinin altında şu kartlar görünür:
 
 - **Fiyat bandı ihlali**: Açık fiyat bandı alarmlarının sayısı. Veri güncel değilse yanında **Veri güncel değil** yazar; alarm yoksa ve veri eskiyse sayı yerine **?** görünür, çünkü "bakılmadı" ile "sorun yok" aynı şey değildir. **Aç →** ile [Marka alarmları](/rehber/brand-alerts) açılır.
-- **Açık bulgu**: Açık denetim bulgularının toplamı; **kesin bilgi** ve **yorum** olarak ikiye ayrılır. **Aç →** ile [Denetim Bulguları](/rehber/findings) açılır.
+- **Açık bulgu**: Açık denetim bulgularının toplamı; **kesin bilgi** ve **yorum** olarak ikiye ayrılır. Bu sayı arka planda hesaplanır; yanında en son ne zaman hesaplandığı yazar (örneğin **2sa 05dk önce hesaplandı**). Bir markanın satıcı taraması bittiğinde o markanın bulguları hemen yeniden hesaplanır; bunun dışında altı saatte bir hesaplanır. Hiç hesaplanmadıysa **henüz hesaplanmadı** yazar. **Aç →** ile [Denetim Bulguları](/rehber/findings) açılır; o ekran bulguları her açılışta yeniden hesapladığı için sayı burada kısa bir süre farklı görünebilir.
 - **Satıcısı olmayan ürün**: Hiçbir satıcının satmadığı ürün sayısı. Bazı ürünlere henüz bakılmadıysa bunu ayrıca yazar; bu durumda sayı eksik olabilir.
 - **Tavsiye fiyat kapsamı**: Tavsiye fiyatı (PSF) yüklenmiş ürünlerin oranı.
 - **Takip edilen ürün**: Takip edilen ürün ve marka sayısı.

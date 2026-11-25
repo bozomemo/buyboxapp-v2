@@ -319,6 +319,84 @@ describe('ScrapeBrandSellers', () => {
     expect(result).toEqual({ itemsTotal: 0, itemsOk: 0, itemsFailed: 0 });
   });
 
+  async function pauseBrand(): Promise<void> {
+    const brand = await watchedBrandsRepo.getWatchedBrand(db.appDb, brandId);
+    if (!brand) throw new Error('brand missing');
+    await watchedBrandsRepo.updateWatchedBrand(db.appDb, brandId, {
+      label: brand.label,
+      brandRef: brand.brandRef,
+      searchTerm: brand.searchTerm,
+      isActive: false,
+      isOwnBrand: brand.isOwnBrand ?? true,
+      updatedAt: NOW,
+    });
+  }
+
+  // Review 2026-11-25 Y3: pausing a brand left its whole-brand scrape running for hours, and a
+  // worker restart picked it up again.
+  it('stops after the current chunk when the brand is paused mid-run', async () => {
+    await seedProducts(6);
+    let paused = false;
+    const { source, calls } = fakeSource(() => [offer()]);
+    const pausingSource: ICompetitorSource = {
+      code: 'trendyol',
+      async fetchProductOffers(ref) {
+        if (!paused) {
+          paused = true;
+          await pauseBrand();
+        }
+        return source.fetchProductOffers(ref);
+      },
+    };
+
+    const result = await scrapeBrandSellers(
+      ctxFor(pausingSource, { marketplaceCode: 'trendyol', watchedBrandId: brandId, chunkSize: 2 }),
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(result.itemsOk).toBe(2);
+    const events = await eventsRepo.listEventsFiltered(db.appDb, { minLevel: 'debug' }, 100);
+    expect(events.some((e) => e.code === 'BrandSellerScrapePaused')).toBe(true);
+  });
+
+  it('reads nothing when the brand was paused before the run was claimed', async () => {
+    await seedProducts(3);
+    await pauseBrand();
+    const { source, calls } = fakeSource(() => [offer()]);
+
+    const result = await scrapeBrandSellers(
+      ctxFor(source, { marketplaceCode: 'trendyol', watchedBrandId: brandId }),
+    );
+
+    expect(calls).toHaveLength(0);
+    expect(result).toEqual({ itemsTotal: 0, itemsOk: 0, itemsFailed: 0 });
+  });
+
+  // Review 2026-11-25 Y1: the panel's open-findings count waited up to six hours for the
+  // cadence; a finished brand scrape now asks for the evaluation of that brand straight away.
+  it('queues a findings evaluation of the brand when it finishes', async () => {
+    await seedProducts(2);
+    const { source } = fakeSource(() => [offer()]);
+
+    await scrapeBrandSellers(ctxFor(source, { marketplaceCode: 'trendyol', watchedBrandId: brandId }));
+
+    const queued = await jobsRepo.listActiveJobs(db.appDb);
+    const evaluations = queued.filter((job) => job.jobName === 'EvaluateBrandFindings');
+    expect(evaluations).toHaveLength(1);
+    expect(JSON.parse(evaluations[0]!.payload)).toEqual({ watchedBrandId: brandId });
+  });
+
+  it('does not queue a second evaluation of the brand while one is waiting', async () => {
+    await seedProducts(2);
+    const { source } = fakeSource(() => [offer()]);
+
+    await scrapeBrandSellers(ctxFor(source, { marketplaceCode: 'trendyol', watchedBrandId: brandId }));
+    await scrapeBrandSellers(ctxFor(source, { marketplaceCode: 'trendyol', watchedBrandId: brandId }));
+
+    const queued = await jobsRepo.listActiveJobs(db.appDb);
+    expect(queued.filter((job) => job.jobName === 'EvaluateBrandFindings')).toHaveLength(1);
+  });
+
   it('is not in the job catalogue: it has no cadence and no runnable empty payload', async () => {
     const { JOB_CATALOG } = await import('../job-catalog.js');
     expect(JOB_CATALOG.some((e) => e.jobName === SCRAPE_BRAND_SELLERS_JOB)).toBe(false);

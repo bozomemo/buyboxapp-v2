@@ -20,7 +20,7 @@ import {
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { publishDashboardFreshness } from '@/lib/dashboard-feed';
-import { formatDateTime, formatMoney, formatNumber, formatTime } from '@/lib/format';
+import { formatDateTime, formatDuration, formatMoney, formatNumber, formatTime } from '@/lib/format';
 import { DECISION_REASON_LABELS, labelOf, MARKETPLACE_LABELS, PHASE_DESCRIPTIONS, PHASE_LABELS, SUBMISSION_STATE_LABELS } from '@/lib/labels';
 import { NO_PERMISSION_TITLE, canToggleStop, useCan } from '@/lib/permissions';
 
@@ -110,6 +110,12 @@ interface BrandAudit {
     lastSweptAt: number | null;
   }[];
   referencePrice: { productsWithPrice: number; productsTotal: number };
+  /**
+   * "Açık bulgu" sayısının hesaplandığı an — son başarılı `EvaluateBrandFindings` çalışması.
+   * `null`: hiç hesaplanmadı. Sayı canlı değil, saklanmış bir değerlendirmedir (inceleme
+   * 2026-11-25 Y1); ekran bunu söylemezse 0, "bulgu yok" diye okunur.
+   */
+  findingsEvaluatedAt?: number | null;
   /** Kuruş, dizge olarak. `null` bir gün: o gün okunabilir fiyat yoktu — sıfır değil. */
   trend: {
     dayMs: number;
@@ -948,6 +954,14 @@ function BrandStatRow({
             {/* İkisi ayrı, çünkü ayrı şeyler: biri birinin yazdığı bir kayda dayanır, diğeri bir
                 örneklem yorumudur. */}
             {formatNumber(audit.openFindings.stated)} kesin bilgi · {formatNumber(audit.openFindings.measured)} yorum
+            {' · '}
+            {audit.findingsEvaluatedAt == null ? (
+              'henüz hesaplanmadı'
+            ) : (
+              <span title={formatDateTime(audit.findingsEvaluatedAt)}>
+                {formatDuration(Math.max(0, Date.now() - audit.findingsEvaluatedAt))} önce hesaplandı
+              </span>
+            )}
             {' · '}
             <Link href="/watched-brands/findings" className="text-(--color-link) hover:underline">
               Aç →

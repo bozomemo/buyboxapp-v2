@@ -195,8 +195,30 @@ describe('DashboardClient', () => {
         ],
         referencePrice: { productsWithPrice: 120, productsTotal: 128 },
         trend: [],
+        findingsEvaluatedAt: Date.now() - 2 * 3_600_000,
       },
     };
+
+    // Review 2026-11-25 Y1: the count is the stored evaluation, not a live one, and it said so
+    // nowhere — 0 on the panel beside 129 on the findings screen.
+    it('says when the open-findings count was last evaluated', async () => {
+      stubFetch({ '/api/dashboard': { body: BRAND_ONLY }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      expect(within(row).getByText(/2sa 00dk önce hesaplandı/)).toBeTruthy();
+    });
+
+    it('says the open-findings count has never been evaluated rather than showing a bare 0', async () => {
+      stubFetch({
+        '/api/dashboard': {
+          body: { ...BRAND_ONLY, brandAudit: { ...BRAND_ONLY.brandAudit, findingsEvaluatedAt: null } },
+        },
+        '/api/health': { body: HEALTH_OK },
+      });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      expect(within(row).getByText(/henüz hesaplanmadı/)).toBeTruthy();
+    });
 
     it('stat row from brand audit', async () => {
       stubFetch({ '/api/dashboard': { body: BRAND_ONLY }, '/api/health': { body: HEALTH_OK } });

@@ -51,7 +51,7 @@ Aynı markayı Trendyol ve Hepsiburada için ayrı ayrı eklersiniz.
 - **Ürün**: markada bulunan ürün sayısı. Tıklayınca ürünler açılır. **(… değerlendirmesiz)** pazaryerinde hiç değerlendirmesi olmayan ürün sayısıdır; tıklayınca yalnızca onlar açılır.
 - **Satıcısız**: son başarılı bakışta kimsenin satmadığı ürün sayısı (turuncu). Tıklayınca bu ürünler açılır. **(+… bakılmadı)** henüz hiç bakılmamış ürünlerdir; bunlar satıcısız değil, bilinmiyor demektir.
 - **Son Tarama**: markanın kataloğunun en son ne zaman tarandığı. **henüz taranmadı** ise hiç taranmamıştır.
-- **Durum**: **aktif** ya da **duraklatıldı**. Tıklayarak değiştirirsiniz. Duraklatılan marka düzenli taramaya girmez.
+- **Durum**: **aktif** ya da **duraklatıldı**. Tıklayarak değiştirirsiniz. Duraklatılan marka düzenli taramaya girmez. O sırada sürmekte olan satıcı taraması da elindeki küçük ürün grubunu bitirip durur; marka yeniden aktif yapılınca kalan ürünler sıradaki taramada ilk okunur.
 
 **Excel'e Aktar** tüm markaları gruplarıyla birlikte dosya olarak indirir.
 
