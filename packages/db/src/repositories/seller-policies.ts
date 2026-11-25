@@ -86,10 +86,11 @@ interface NormalisedIdentity {
 /**
  * Trims, and insists on exactly one identity.
  *
- * A tax number is stored **as typed apart from whitespace** — no digit-stripping, no length
- * check. Turkish tax numbers are 10 digits and national id numbers 11, and an operator pasting
- * from a supplier's own paperwork may legitimately have either; silently reformatting what they
- * typed would make the value stop matching the thing they copied it from.
+ * A tax number is stored **as typed apart from whitespace** — no digit-stripping, no
+ * reformatting: silently changing what an operator typed would make the value stop matching the
+ * thing they copied it from. It must be 10 digits (VKN) or 11 (TCKN), though (review 2026-11-25
+ * Y10): "12345" was stored as a rule that could never match a firm, and showed only as
+ * "etkisiz" with nothing saying why.
  */
 function normaliseIdentity(identity: PolicyIdentityInput): NormalisedIdentity {
   const marketplaceCode = identity.marketplaceCode?.trim() || null;
@@ -107,6 +108,11 @@ function normaliseIdentity(identity: PolicyIdentityInput): NormalisedIdentity {
   if (!hasSeller && !hasTax) {
     throw new SellerPolicyIdentityError(
       'Satıcı kimliği gerekli: ya pazaryeri + satıcı kodu, ya vergi numarası. İsim kabul edilmez.',
+    );
+  }
+  if (hasTax && !/^[0-9]{10,11}$/.test(taxNumber)) {
+    throw new SellerPolicyIdentityError(
+      'Vergi numarası 10 haneli (vergi kimlik no) ya da 11 haneli (T.C. kimlik no) olmalı ve yalnız rakam içermeli.',
     );
   }
   // A ref without a marketplace is not an identity: the same digits are different companies on

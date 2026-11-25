@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { PolicyClient } from './policy-client';
@@ -157,5 +157,49 @@ describe('PolicyClient dormant rules', () => {
         ),
       ).toBe(true),
     );
+  });
+});
+
+// Review 2026-11-25 Y10, O6.
+describe('Elle ekle', () => {
+  const BODY = {
+    filters: { sinceMs: 0, untilMs: 1, watchedBrandId: 'b1' },
+    groups: [{ id: 'g1', name: 'Mars' }],
+    brands: [{ id: 'b1', groupId: 'g1', label: 'Whiskas', marketplaceCode: 'trendyol' }],
+    policies: [],
+    sellers: [],
+  };
+
+  function posted(): boolean {
+    return vi.mocked(fetch).mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
+  }
+
+  async function openForm() {
+    stubFetch({ [ROUTE]: { body: BODY } });
+    render(<PolicyClient />);
+    const heading = await screen.findByRole('heading', { name: 'Elle ekle' });
+    return heading.closest('section') as HTMLElement;
+  }
+
+  it('starts with no status chosen, and asks for one rather than writing an authorised rule', async () => {
+    const form = await openForm();
+    const statuses = within(form).getByRole('group', { name: 'Durum' });
+    expect(within(statuses).queryByRole('button', { pressed: true })).toBeNull();
+    fireEvent.change(within(form).getByRole('textbox', { name: 'Satıcı kodu' }), { target: { value: '123' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Ekle' }));
+    expect(await within(form).findByText(/Durumu seçin/)).toBeTruthy();
+    expect(posted()).toBe(false);
+  });
+
+  it('refuses a tax number that is not 10 or 11 digits, beside the form', async () => {
+    const form = await openForm();
+    fireEvent.click(within(form).getByLabelText('Vergi numarası', { selector: 'input[type=radio]' }));
+    fireEvent.change(within(form).getByLabelText('Vergi numarası', { selector: 'input[type=text], input:not([type])' }), {
+      target: { value: '12345' },
+    });
+    fireEvent.click(within(within(form).getByRole('group', { name: 'Durum' })).getByRole('button', { name: 'Yasaklı' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Ekle' }));
+    expect(await within(form).findByText(/10 haneli/)).toBeTruthy();
+    expect(posted()).toBe(false);
   });
 });
