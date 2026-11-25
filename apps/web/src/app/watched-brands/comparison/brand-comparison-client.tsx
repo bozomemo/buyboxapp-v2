@@ -58,6 +58,13 @@ function daysAgo(n: number): number {
   return Date.now() - n * 24 * 60 * 60 * 1000;
 }
 
+
+/** A daily bucket is a UTC day (`brandDailyTrend`), so it is named in UTC — never shifted a day. */
+const BUCKET_DAY = new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeZone: 'UTC' });
+function formatBucketDay(dayMs: number): string {
+  return BUCKET_DAY.format(new Date(dayMs));
+}
+
 export function BrandComparisonClient() {
   // The period is held as its day count, not as the computed start: `daysAgo` reads the clock, so
   // an option value computed again on the next render never equals the stored start, and the
@@ -239,7 +246,12 @@ export function BrandComparisonClient() {
               <tr>
                 <th className="px-2 py-1">Marka</th>
                 <th className="px-2 py-1">Tür</th>
-                <th className="px-2 py-1">Ort. fiyat</th>
+                <th
+                  className="px-2 py-1"
+                  title="Markanın bütün ürünlerinin ortalaması: farklı gramaj ve paketler birlikte ortalanır. Markalar arasında doğrudan değil, zaman içindeki değişimiyle karşılaştırın."
+                >
+                  Ort. fiyat (tüm ürünler)
+                </th>
                 <th className="px-2 py-1">Endeks</th>
                 <th className="px-2 py-1">Veri günü</th>
                 <th className="px-2 py-1">Son gün</th>
@@ -270,7 +282,9 @@ export function BrandComparisonClient() {
                     {/* Kaç günün verisi var — ortalamanın ne kadar üstüne bastığını söyler.
                         İki günlük veriden çıkan bir endeks, otuz günlükle aynı görünmemeli. */}
                     <td className="px-2 py-1 tabular-nums">{formatNumber(s.points.length)}</td>
-                    <td className="px-2 py-1">{last ? <Ago at={last.dayMs} /> : '—'}</td>
+                    {/* A day, shown as a day (review 2026-11-25 Y11): the bucket starts at UTC
+                        midnight, and "23sa önce" from its start read as stale data. */}
+                    <td className="px-2 py-1">{last ? formatBucketDay(last.dayMs) : '—'}</td>
                   </tr>
                 );
               })}
