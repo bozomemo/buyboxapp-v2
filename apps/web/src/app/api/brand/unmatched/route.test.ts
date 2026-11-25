@@ -135,6 +135,16 @@ describe('/api/brand/unmatched', () => {
     });
   });
 
+  // Review 2026-11-25 O4.
+  it('searches by text and filters by brand, and lists the brands and products the screen offers', async () => {
+    expect((await queue('?text=ton')).total).toBe(1);
+    expect((await queue('?text=somon')).total).toBe(0);
+    expect((await queue('?watchedBrandId=nope')).total).toBe(0);
+    const body = (await queue()) as QueueResponse & { brands: { label: string }[]; products: { id: string; name: string }[] };
+    expect(body.brands.map((b) => b.label)).toEqual(['Whiskas']);
+    expect(body.products).toEqual([{ id: 'bp-1', name: 'Ton Balıklı 85g' }]);
+  });
+
   it('"bizim değil" takes a card out of the queue; putting it back restores it', async () => {
     expect((await post({ ids: ['card-1'], dismissed: true })).status).toBe(200);
     expect((await queue()).total).toBe(0);

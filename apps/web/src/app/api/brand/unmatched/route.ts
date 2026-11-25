@@ -10,7 +10,7 @@
  * them back. Reporting state only; no card, link or price changes.
  */
 import { NextResponse } from 'next/server';
-import { brandQueuesRepo } from '@buybox/db';
+import { brandProductsRepo, brandQueuesRepo, watchedBrandsRepo } from '@buybox/db';
 import { withPermission } from '@/lib/server/auth/guard';
 import { getAppDb } from '@/lib/server/db';
 import { pageLimit, pageOffset } from '@/lib/pagination';
@@ -34,7 +34,14 @@ async function getHandler(request: Request) {
     newSinceMs: Date.now() - NEW_WINDOW_MS,
     marketplaceCode,
     dismissed: params.get('dismissed') === 'true',
+    // Review 2026-11-25 O4: a 737-card queue with no way to find one card in it.
+    text: params.get('text') ?? undefined,
+    watchedBrandId: params.get('watchedBrandId')?.trim() || undefined,
   });
+  const [ownBrands, products] = await Promise.all([
+    watchedBrandsRepo.listWatchedBrands(appDb, { ownOnly: true }),
+    brandProductsRepo.listBrandProductNames(appDb),
+  ]);
   const suggestions = await brandQueuesRepo.brandProductsByBarcodes(
     appDb,
     page.rows.flatMap((row) => (row.barcode === null ? [] : [row.barcode])),
@@ -44,6 +51,9 @@ async function getHandler(request: Request) {
     total: page.total,
     newCount: page.newCount,
     newWindowMs: NEW_WINDOW_MS,
+    brands: ownBrands.map((b) => ({ id: b.id, label: b.label })),
+    /** For "Ürüne bağla": a card with no barcode suggestion is linked by picking the product. */
+    products,
     limit,
     offset,
     cards: page.rows.map((row) => ({
