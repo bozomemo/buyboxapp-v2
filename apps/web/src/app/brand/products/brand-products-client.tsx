@@ -14,7 +14,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { classifyBarcode } from '@buybox/core';
+import { barcodeHint } from '@/lib/barcode-hint';
 import {
   Button,
   buttonClass,
@@ -111,7 +111,7 @@ export function BrandProductsClient() {
   // Review 2026-11-25 O6: a save error belongs beside the form, which sits below the fold.
   const [formError, setFormError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string | null>(null);
-  const barcodeKind = form.barcode.trim() === '' ? null : classifyBarcode(form.barcode);
+  const barcodeKind = form.barcode.trim() === '' ? null : barcodeHint(form.barcode);
 
   const load = useCallback(() => {
     setLoading(true);
