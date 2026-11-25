@@ -64,7 +64,10 @@ function cardReferencePrice(link: brandProductsRepo.CardLink | undefined): bigin
 }
 
 function csvEscape(v: unknown): string {
-  return `"${String(v ?? '').replace(/"/g, '""')}"`;
+  // A plain decimal gets the Turkish comma, as every export does since review 2026-11-25 O11.
+  const text = String(v ?? '');
+  const value = /^-?[0-9]+[.][0-9]+$/.test(text) ? text.replace('.', ',') : text;
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 /** `?flag=true|false`, absent meaning "any" — the tri-state the repository filters expect. */
@@ -163,7 +166,7 @@ async function getHandler(request: Request) {
     // The operator's own columns, in their own order — the grid sends what it is showing, so
     // hiding and reordering columns on screen changes the file too (R-UI-12 + R-UI-13 together).
     const columns = resolveExportColumns(params.get('columns')?.split(',').filter(Boolean));
-    const lines = [exportHeaders(columns).map(csvEscape).join(',')];
+    const lines = [exportHeaders(columns).map(csvEscape).join(';')];
     for (const row of csvRows) {
       // `Marka - Ürün Adı` in the file too, so the export and the grid cannot drift apart —
       // see `withBrand`. The separate `Marka` column still carries the bare brand.
@@ -175,7 +178,7 @@ async function getHandler(request: Request) {
           referencePrice: cardReferencePrice(csvLinks.get(row.id)),
         })
           .map(csvEscape)
-          .join(','),
+          .join(';'),
       );
     }
     // BOM so Excel on Windows reads the Turkish characters as UTF-8 rather than guessing the
@@ -319,7 +322,7 @@ async function postHandler(request: Request) {
     parsed.ref.contentId,
   );
   if (existing) {
-    return NextResponse.json({ error: 'Bu ürün zaten takip listesinde.' }, { status: 409 });
+    return NextResponse.json({ error: 'Bu ürün zaten takip listesinde.', existingId: existing.id }, { status: 409 });
   }
 
   const id = newId();

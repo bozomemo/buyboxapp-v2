@@ -16,7 +16,7 @@
  * simply absent from the match and counted, so the gap is visible rather than filled with
  * guesses.
  */
-import { and, asc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, lt, notExists, sql } from 'drizzle-orm';
 import { alias as mysqlAlias } from 'drizzle-orm/mysql-core';
 import { alias as postgresAlias } from 'drizzle-orm/pg-core';
 import { alias as sqliteAlias } from 'drizzle-orm/sqlite-core';
@@ -270,24 +270,48 @@ export async function barcodeCoverage(
   const rows = await withDialect(appDb, {
     sqlite: (db) => {
       const t = sqliteSchema.trackedProducts;
+      const w = sqliteSchema.watchedBrands;
       return db
         .select(counts(t))
         .from(t)
-        .where(and(eq(t.marketplaceCode, marketplaceCode), eq(t.isActive, true)));
+        .where(
+          and(
+            eq(t.marketplaceCode, marketplaceCode),
+            eq(t.isActive, true),
+            // A paused brand's products are not owed a barcode (review 2026-11-25).
+            notExists(db.select({ one: sql`1` }).from(w).where(and(eq(w.id, t.watchedBrandId), eq(w.isActive, false)))),
+          ),
+        );
     },
     postgres: (db) => {
       const t = postgresSchema.trackedProducts;
+      const w = postgresSchema.watchedBrands;
       return db
         .select(counts(t))
         .from(t)
-        .where(and(eq(t.marketplaceCode, marketplaceCode), eq(t.isActive, true)));
+        .where(
+          and(
+            eq(t.marketplaceCode, marketplaceCode),
+            eq(t.isActive, true),
+            // A paused brand's products are not owed a barcode (review 2026-11-25).
+            notExists(db.select({ one: sql`1` }).from(w).where(and(eq(w.id, t.watchedBrandId), eq(w.isActive, false)))),
+          ),
+        );
     },
     mysql: (db) => {
       const t = mysqlSchema.trackedProducts;
+      const w = mysqlSchema.watchedBrands;
       return db
         .select(counts(t))
         .from(t)
-        .where(and(eq(t.marketplaceCode, marketplaceCode), eq(t.isActive, true)));
+        .where(
+          and(
+            eq(t.marketplaceCode, marketplaceCode),
+            eq(t.isActive, true),
+            // A paused brand's products are not owed a barcode (review 2026-11-25).
+            notExists(db.select({ one: sql`1` }).from(w).where(and(eq(w.id, t.watchedBrandId), eq(w.isActive, false)))),
+          ),
+        );
     },
   });
 

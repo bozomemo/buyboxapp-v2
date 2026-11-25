@@ -64,6 +64,35 @@ describe('BrandAlertsClient', () => {
     expect(screen.getByText(/hiçbirinde buybox satıcısı bandın dışında değil/)).toBeTruthy();
   });
 
+  // Review 2026-11-25 Y6: the only linked card was paused, and the screen sent the operator to
+  // Stok to link a card that was already linked.
+  it('empty with every linked card paused: says so, not "nothing linked"', async () => {
+    stubFetch({ '/api/brand/alerts': { body: body({ staleness: [], linkedCardCount: 1 }) } });
+    render(<BrandAlertsClient />);
+    expect(await screen.findByText('Açık ihlal yok.')).toBeTruthy();
+    expect(screen.getByText(/bağlı kartlarınızın hepsi duraklatılmış/i)).toBeTruthy();
+    expect(screen.queryByText(/hiçbir ürününüze pazaryeri kartı bağlanmamış/)).toBeNull();
+  });
+
+  it('empty with nothing linked: points to Stok', async () => {
+    stubFetch({ '/api/brand/alerts': { body: body({ staleness: [], linkedCardCount: 0 }) } });
+    render(<BrandAlertsClient />);
+    expect(await screen.findByText(/hiçbir ürününüze pazaryeri kartı bağlanmamış/)).toBeTruthy();
+  });
+
+  // Review 2026-11-25 Y9: "webhook bekliyor · e-posta bekliyor · SMS bekliyor" with no channel set
+  // up — those notifications will never go.
+  it('says a channel is not set up rather than "waiting" for it', async () => {
+    const notifications = [
+      { channel: 'webhook', state: 'pending', reason: 'bildirilmedi: webhook adresi ayarlanmamış' },
+      { channel: 'email', state: 'pending', reason: null },
+    ];
+    stubFetch({ '/api/brand/alerts': { body: body({ open: [violation({ notifications })] }) } });
+    render(<BrandAlertsClient />);
+    expect(await screen.findByText(/webhook ayarlı değil/)).toBeTruthy();
+    expect(screen.getByText(/e-posta bekliyor/)).toBeTruthy();
+  });
+
   it('empty but stale: leads with "not current", never "all clear"', async () => {
     stubFetch({
       '/api/brand/alerts': { body: body({ staleness: [{ ...fresh, lastOkAt: null, stale: true }] }) },

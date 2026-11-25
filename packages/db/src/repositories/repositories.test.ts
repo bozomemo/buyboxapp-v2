@@ -1397,6 +1397,26 @@ describe.each(ALL_DIALECTS)('repositories on %s', (dialect) => {
     const failedOnly = await jobsRepo.listJobRuns(appDb, { state: 'failed' });
     expect(failedOnly.map((r) => r.id)).toEqual([laterRunId]);
 
+    // Review 2026-11-25 O12: a finished run with nothing to do is noise; a failed one never is.
+    await jobsRepo.startJobRun(appDb, {
+      id: newId(),
+      jobName: 'DeliverNotifications',
+      startedAt: NOW + 600,
+      finishedAt: NOW + 601,
+      state: 'completed',
+      itemsTotal: 0,
+      itemsOk: 0,
+      itemsFailed: 0,
+      error: null,
+      correlationId: 'corr-d',
+      jobQueueId: null,
+    });
+    expect(await jobsRepo.listJobRuns(appDb, {})).toHaveLength(4);
+    expect((await jobsRepo.listJobRuns(appDb, { hideEmpty: true })).map((r) => r.jobName)).not.toContain(
+      'DeliverNotifications',
+    );
+    expect(await jobsRepo.listJobRuns(appDb, { hideEmpty: true })).toHaveLength(3);
+
     const latest = await jobsRepo.latestJobRunPerJobName(appDb);
     const observeLatest = latest.find((r) => r.jobName === 'ObserveBuybox');
     expect(observeLatest?.id).toBe(laterRunId); // the more recent of the two ObserveBuybox runs

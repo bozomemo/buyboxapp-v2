@@ -150,4 +150,30 @@ describe('GET /api/brand-reports/findings', () => {
     const finding = body.findings.find((f) => f.kind === 'belowReferencePrice');
     expect(finding).toMatchObject({ referencePrice: '10000', lowestPrice: '7000', unitReferencePrice: '10000' });
   });
+
+  // Review 2026-11-25 O3: with two own brands the screen opened empty, asking for a brand.
+  it('opens on the first active own brand when none is named', async () => {
+    await seedBelowReference();
+    const now = Date.now();
+    await watchedBrandsRepo.createWatchedBrand(appDb, {
+      id: 'wb-0',
+      groupId: 'g-1',
+      marketplaceCode: 'trendyol',
+      label: 'Aaa Duraklatılmış',
+      brandRef: '2',
+      searchTerm: 'aaa',
+      isActive: false,
+      isOwnBrand: true,
+      lastSweptAt: null,
+      lastSweepProductCount: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const response = await GET(withCookie(new Request('http://localhost/api/brand-reports/findings'), cookie), routeContext());
+
+    const body = (await response.json()) as { needsBrand: boolean; brand: { id: string } | null };
+    expect(body.needsBrand).toBe(false);
+    expect(body.brand?.id).toBe('wb-1');
+  });
 });

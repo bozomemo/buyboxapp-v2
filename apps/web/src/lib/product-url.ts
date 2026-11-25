@@ -25,9 +25,25 @@ export function marketplaceProductUrl(
 ): string | null {
   const stored = productUrl?.trim();
   if (!stored) return null;
-  if (/^https?:\/\//i.test(stored)) return stored;
+  if (/^https?:\/\//i.test(stored)) return withoutSellerPin(stored);
 
   const origin = PUBLIC_ORIGINS[marketplaceCode];
   if (!origin) return null;
-  return `${origin}${stored.startsWith('/') ? '' : '/'}${stored}`;
+  return withoutSellerPin(`${origin}${stored.startsWith('/') ? '' : '/'}${stored}`);
+}
+
+/**
+ * Drops `merchantId` (review 2026-11-25 Y4). A swept card's link carries the buybox seller of the
+ * moment it was swept, and the page it opens shows that one seller's offer first — an audit link
+ * should open the product, with whoever holds the buybox now.
+ */
+function withoutSellerPin(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.searchParams.has('merchantId')) return url;
+    parsed.searchParams.delete('merchantId');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
 }

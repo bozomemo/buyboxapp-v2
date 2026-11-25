@@ -39,6 +39,7 @@ import {
 } from '@/components/ui';
 import { formatDateTime, formatDuration, formatMoney, formatNumber } from '@/lib/format';
 import { marketplaceProductUrl } from '@/lib/product-url';
+import { useCan } from '@/lib/permissions';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 type BandStatus = 'inBand' | 'belowMin' | 'aboveMax' | 'unknown';
@@ -135,6 +136,12 @@ function money(value: string | null): string {
   return value === null ? '—' : formatMoney(BigInt(value));
 }
 
+/** The card's own name, or the stock product's when the card is still named by its link or code. */
+function displayLabel(row: Listing): string {
+  const placeholder = /^https?:\/\//i.test(row.label) || row.label === row.productRef || /^[0-9]+$/.test(row.label);
+  return placeholder && row.brandProduct ? row.brandProduct.name : row.label;
+}
+
 export function BrandListingsClient() {
   const [rows, setRows] = useState<Listing[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -145,6 +152,9 @@ export function BrandListingsClient() {
   const [query, setQuery] = useState('');
   const [marketplace, setMarketplace] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  // Review 2026-11-25 O8: a refused favourite used to change nothing on screen and say nothing.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const can = useCan();
 
   const params = useCallback(() => {
     const search = new URLSearchParams({
@@ -175,12 +185,18 @@ export function BrandListingsClient() {
 
   async function toggleFavourite(row: Listing) {
     setBusy(row.id);
+    setActionError(null);
     try {
-      await fetch('/api/tracked-products/favourite', {
+      const res = await fetch('/api/tracked-products/favourite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: row.id, isFavourite: !row.isFavourite }),
       });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setActionError(data.error ?? `Favori değiştirilemedi (HTTP ${res.status}).`);
+        return;
+      }
       load();
     } finally {
       setBusy(null);
@@ -190,6 +206,9 @@ export function BrandListingsClient() {
   const breaches = (rows ?? []).filter(
     (row) => row.bandStatus === 'belowMin' || row.bandStatus === 'aboveMax',
   );
+  // Review 2026-11-25 Y7: "unknown" is not "in band". Only linked cards have a band at all.
+  const unknown = (rows ?? []).filter((row) => row.brandProduct != null && row.bandStatus === 'unknown');
+  const known = (rows ?? []).filter((row) => row.brandProduct != null && row.bandStatus !== 'unknown');
   // Brand roadmap §6.7: the buybox holder selling under its own estimated cost.
   const atLoss = (rows ?? []).filter((row) => row.profit != null && BigInt(row.profit.profit) < 0n);
 
@@ -256,15 +275,22 @@ export function BrandListingsClient() {
 
         {rows !== null && rows.length > 0 && (
           <p className="mb-2 text-sm">
-            {breaches.length === 0 ? (
+            {breaches.length === 0 && known.length === 0 ? null : breaches.length === 0 ? (
               <span className="text-(--color-muted)">
-                Bu sayfadaki kartların hiçbiri bandın dışında değil.
+                {unknown.length > 0
+                  ? 'Bu sayfadaki bilinen kartların hiçbiri bandın dışında değil.'
+                  : 'Bu sayfadaki kartların hiçbiri bandın dışında değil.'}
               </span>
             ) : (
               <span className="text-(--color-warning)">
                 Bu sayfada <strong>{formatNumber(breaches.length)}</strong> kart bandın dışında.
               </span>
             )}{' '}
+            {unknown.length > 0 && (
+              <span className="text-(--color-warning)">
+                {`${formatNumber(unknown.length)} kartın bant durumu henüz bilinmiyor — bu kartlara henüz bakılmadı ya da buybox fiyatı okunamadı.`}{' '}
+              </span>
+            )}
             {atLoss.length > 0 && (
               <span className="text-(--color-danger)">
                 <strong>{formatNumber(atLoss.length)}</strong> kartta buybox satıcısı tahmini maliyetinin altında
@@ -275,6 +301,12 @@ export function BrandListingsClient() {
               Bir kartın son bakışı eskiyse durum o eski bakışa aittir — tarama turunu İşler ekranından
               görebilirsiniz.
             </span>
+          </p>
+        )}
+
+        {actionError && (
+          <p role="alert" className="mb-2 text-sm text-(--color-danger)">
+            {actionError}
           </p>
         )}
 
@@ -341,7 +373,7 @@ export function BrandListingsClient() {
                         {/* kit-exempt: favourite star toggle, a pressed icon state the kit has no control for */}
                         <button
                           type="button"
-                          disabled={busy === row.id}
+                          disabled={busy === row.id || !can('catalogue.manage')}
                           onClick={() => void toggleFavourite(row)}
                           aria-label={row.isFavourite ? 'Favoriden çıkar' : 'Favorile'}
                           title={row.isFavourite ? 'Favoriden çıkar' : 'Favorile'}
@@ -351,7 +383,9 @@ export function BrandListingsClient() {
                         </button>
                       </td>
                       <td className="p-2">
-                        <span>{row.label}</span>
+                        {/* A card added by pasting its link carries the link as its label until
+                            renamed; the stock product's name says more (review 2026-11-25). */}
+                        <span title={row.label}>{displayLabel(row)}</span>
                         {(() => {
                           const pageUrl = marketplaceProductUrl(row.marketplaceCode, row.productUrl);
                           return pageUrl ? (

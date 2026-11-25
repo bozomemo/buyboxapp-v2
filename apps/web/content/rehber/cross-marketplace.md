@@ -20,7 +20,7 @@ Bu yüzden barkodu bilinmeyen ürünler eşleşmede görünmez; kaç tane oldukl
 
 Her pazaryeri için bir kart vardır:
 
-- Büyük yüzde ve altında **… / … üründe barkod biliniyor**: o pazaryerindeki ürünlerden kaçının barkodunun bilindiği.
+- Büyük yüzde ve altında **… / … üründe barkod biliniyor**: o pazaryerindeki ürünlerden kaçının barkodunun bilindiği. Duraklatılmış ürünler ve duraklatılmış markaların ürünleri sayılmaz.
 - **Sayfa barkod bildirmedi**: ürün sayfasına bakıldı ama sayfada barkod yoktu.
 - **Sorulup yanıt alınamadı**: ürünün bilgisi alınamadı.
 - **Henüz sorulmadı**: bu ürüne barkod için henüz bakılmadı.

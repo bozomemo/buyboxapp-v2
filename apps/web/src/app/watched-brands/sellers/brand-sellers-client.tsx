@@ -26,7 +26,13 @@ import {
   type Tone,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
+import {
+  formatDateTime,
+  formatMoneyRange,
+  formatNumber,
+  formatPercent,
+  kurusToDecimal,
+} from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
 import { PermissionFieldset } from '@/lib/permissions';
 import { PolicyQuickDecision } from './policy-quick-decision';
@@ -54,6 +60,8 @@ interface Seller {
   maxPrice: string | null;
   firstSeenAt: number;
   lastSeenAt: number;
+  /** The firm behind the storefront, when it has been resolved (review 2026-11-25 O9). */
+  identity?: { officialName: string | null; resolvedAt: number } | null;
 }
 
 interface Report {
@@ -268,7 +276,7 @@ function renderSellerCell(
         '—'
       ) : (
         <span className="tabular-nums">
-          {formatMoney(BigInt(s.minPrice))} – {formatMoney(BigInt(s.maxPrice ?? s.minPrice))}
+          {formatMoneyRange(BigInt(s.minPrice), s.maxPrice === null ? null : BigInt(s.maxPrice))}
         </span>
       );
     case 'firstSeenAt':
@@ -284,7 +292,17 @@ function renderSellerCell(
     case 'identity':
       // One seller here; a ticked selection goes through _Seçilenlerin kimliğini çöz_ above the
       // table (2026-11-25), which walks the same resolution one seller at a time.
-      return (
+      return s.identity ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          title={`Kimliği çözülmüş: ${s.identity.officialName ?? 'unvan okunamadı'}`}
+          onClick={() => onResolveIdentity(s)}
+        >
+          ✓ Kimlik
+        </Button>
+      ) : (
         <Button variant="secondary" size="sm" type="button" onClick={() => onResolveIdentity(s)}>
           Kimlik
         </Button>
@@ -583,8 +601,9 @@ export function BrandSellersClient() {
           */}
               {report.buybox && report.buybox.totalLooks > 0 && (
                 <div className="rounded-lg border border-(--color-border) bg-(--color-surface) p-3 text-sm">
-                  Bu dönemde markanın <strong>{formatNumber(report.buybox.totalLooks)}</strong> kayıtlı buybox
-                  anı var
+                  {/* Plural when no single brand is chosen (review 2026-11-25). */}
+                  Bu dönemde {report.filters.watchedBrandId ? 'markanın' : 'izlenen markaların'}{' '}
+                  <strong>{formatNumber(report.buybox.totalLooks)}</strong> kayıtlı buybox anı var
                   {topShare && (
                     <>
                       {' '}

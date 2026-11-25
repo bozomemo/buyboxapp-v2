@@ -2,11 +2,20 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { configRepo, createDb, newId, runMigrations, watchedBrandsRepo, type AppDatabase } from '@buybox/db';
+import {
+  configRepo,
+  createDb,
+  newId,
+  runMigrations,
+  trackedProductsRepo,
+  watchedBrandsRepo,
+  type AppDatabase,
+} from '@buybox/db';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { routeContext, signIn, withCookie } from '@/lib/server/auth/test-auth';
 import { POST } from './route';
-import { PATCH } from './[id]/route';
+import { DELETE, PATCH } from './[id]/route';
+import { GET } from './route';
 
 /**
  * Adding and editing a watched brand, on the three mistakes a 2026-09-25 run found: a Hepsiburada
@@ -92,5 +101,58 @@ describe('PATCH /api/watched-brands/[id]', () => {
     );
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toContain('arama terimi');
+  });
+});
+
+// Review 2026-11-25 Y12.
+describe('DELETE /api/watched-brands/[id]', () => {
+  async function brandWithProducts() {
+    const created = await add({ marketplaceCode: 'trendyol', label: 'Test Marka', searchTerm: 'testmarka' });
+    for (const ref of ['1', '2']) {
+      await trackedProductsRepo.addTrackedProduct(appDb, {
+        id: newId(),
+        marketplaceCode: 'trendyol',
+        productRef: ref,
+        productUrl: '/x',
+        label: ref,
+        isActive: true,
+        addedAt: 0,
+        watchedBrandId: created.body.id!,
+      });
+    }
+    return created.body.id!;
+  }
+
+  it('keeps the products by default', async () => {
+    const id = await brandWithProducts();
+    const res = await DELETE(authedRequest('http://x', { method: 'DELETE' }), { params: Promise.resolve({ id }) });
+    expect(res.status).toBe(200);
+    expect(await trackedProductsRepo.listTrackedProducts(appDb)).toHaveLength(2);
+  });
+
+  it('deletes the products it found when asked, and says how many', async () => {
+    const id = await brandWithProducts();
+    const res = await DELETE(authedRequest('http://x?withProducts=1', { method: 'DELETE' }), {
+      params: Promise.resolve({ id }),
+    });
+    expect(await res.json()).toMatchObject({ ok: true, deletedProducts: 2, keptProducts: 0 });
+    expect(await trackedProductsRepo.listTrackedProducts(appDb)).toHaveLength(0);
+    expect(await watchedBrandsRepo.getWatchedBrand(appDb, id)).toBeUndefined();
+  });
+});
+
+// Review 2026-11-25 O17.
+describe('GET /api/watched-brands', () => {
+  it('estimates the seller scan of each brand in minutes', async () => {
+    const created = await add({ marketplaceCode: 'trendyol', label: 'Felicia', searchTerm: 'felicia' });
+    for (let i = 0; i < 60; i += 1) {
+      await trackedProductsRepo.addTrackedProduct(appDb, {
+        id: newId(), marketplaceCode: 'trendyol', productRef: String(i), productUrl: '/x', label: String(i),
+        isActive: true, addedAt: 0, watchedBrandId: created.body.id!,
+      });
+    }
+    const res = await GET(authedRequest('http://x'), routeContext());
+    const body = (await res.json()) as { groups: { brands: { deepScanMinutes: number }[] }[] };
+    expect(body.groups[0]!.brands[0]!.deepScanMinutes).toBeGreaterThan(0);
   });
 });

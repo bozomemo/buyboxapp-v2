@@ -1,6 +1,7 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stubFetch } from '@/test-utils';
+import { PermissionsProvider } from '@/lib/permissions';
 import { BrandListingsClient } from './listings-client';
 
 /**
@@ -85,6 +86,29 @@ describe('BrandListingsClient', () => {
 
     expect(await screen.findByText('Min altında')).toBeTruthy();
     expect(screen.getByText(/kart bandın dışında/)).toBeTruthy();
+  });
+
+  // Review 2026-11-25 Y7: every status was "Bilinmiyor" and the summary said none was out of band.
+  it('does not call unknown statuses clean', async () => {
+    stubFetch({
+      '/api/brand/listings': {
+        body: { listings: [listing({ bandStatus: 'unknown' }), listing({ id: 'tp2', bandStatus: 'unknown' })], total: 2 },
+      },
+    });
+    render(<BrandListingsClient />);
+    expect(await screen.findByText(/2 kartın bant durumu henüz bilinmiyor/)).toBeTruthy();
+    expect(screen.queryByText(/hiçbiri bandın dışında değil/)).toBeNull();
+  });
+
+  it('says how many of the rest are unknown beside an in-band summary', async () => {
+    stubFetch({
+      '/api/brand/listings': {
+        body: { listings: [listing(), listing({ id: 'tp2', bandStatus: 'unknown' })], total: 2 },
+      },
+    });
+    render(<BrandListingsClient />);
+    expect(await screen.findByText(/bilinen kartların hiçbiri bandın dışında değil/)).toBeTruthy();
+    expect(screen.getByText(/1 kartın bant durumu henüz bilinmiyor/)).toBeTruthy();
   });
 
   it('an open violation shows how long it has been open, linked to Alarmlar', async () => {
@@ -220,3 +244,39 @@ describe('BrandListingsClient', () => {
   });
 });
 
+describe('card name', () => {
+  // Review 2026-11-25: a card linked by pasting showed its code (999999999) as its name.
+  it('shows the stock product name for a card still named by its code', async () => {
+    stubFetch({ '/api/brand/listings': { body: { listings: [listing({ label: '999999999', productRef: '999999999' })], total: 1 } } });
+    render(<BrandListingsClient />);
+    const name = await screen.findByTitle('999999999');
+    expect(name.textContent).toBe('Mama');
+  });
+});
+
+// Review 2026-11-25 O8: the favourite star was open to İzleyici, and a 403 changed nothing on screen.
+describe('favourite star', () => {
+  it('is disabled for a role that cannot change it', async () => {
+    stubFetch({
+      '/api/brand/listings': { body: { listings: [listing()], total: 1 } },
+      '/api/auth/me': { body: { user: { permissions: ['view'] } } },
+    });
+    render(
+      <PermissionsProvider>
+        <BrandListingsClient />
+      </PermissionsProvider>,
+    );
+    const star = await screen.findByRole('button', { name: 'Favorile' });
+    await waitFor(() => expect((star as HTMLButtonElement).matches(':disabled')).toBe(true));
+  });
+
+  it('says so when the server refuses', async () => {
+    stubFetch({
+      '/api/brand/listings': { body: { listings: [listing()], total: 1 } },
+      '/api/tracked-products/favourite': { status: 403, body: { error: 'Bu işlem için yetkiniz yok.' } },
+    });
+    render(<BrandListingsClient />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Favorile' }));
+    expect(await screen.findByText('Bu işlem için yetkiniz yok.')).toBeTruthy();
+  });
+});

@@ -4,7 +4,7 @@ import { Search } from '@/components/icon';
 import Link from 'next/link';
 import { useState } from 'react';
 import { EmptyState, TextInput } from '@/components/ui';
-import { searchTopics } from '@/lib/guide/search';
+import { matchSnippet, searchTopics } from '@/lib/guide/search';
 import { GUIDE_SECTIONS, SECTION_LABELS, type GuideHeading, type GuideSection } from '@/lib/guide/topic';
 
 export type GuideListItem = {
@@ -28,7 +28,7 @@ export function GuideClient({ topics }: { topics: readonly GuideListItem[] }) {
           icon={Search}
           type="search"
           aria-label="Rehberde ara"
-          placeholder="Rehberde ara… (ör. taban fiyat, şifre, rakip)"
+          placeholder="Rehberde ara… (ör. şifre, rakip, alarm)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -49,6 +49,10 @@ export function GuideClient({ topics }: { topics: readonly GuideListItem[] }) {
                 {t.title}
               </Link>
               <span className="ml-2 text-xs text-(--color-muted)">{SECTION_LABELS[t.section]}</span>
+              {(() => {
+                const snippet = matchSnippet(t.body, query);
+                return snippet ? <p className="mt-0.5 text-sm text-(--color-muted)">{snippet}</p> : null;
+              })()}
             </li>
           ))}
         </ul>

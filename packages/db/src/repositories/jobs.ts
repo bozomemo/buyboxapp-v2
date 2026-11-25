@@ -5,7 +5,7 @@
  * built on the enqueue/list/mark primitives below: `FOR UPDATE SKIP LOCKED` on Postgres
  * and MySQL (both support it), a single-writer transaction on SQLite (doc 10 §1.2).
  */
-import { and, asc, desc, eq, gte, inArray, lt, lte, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, lte, ne, or } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -1098,6 +1098,8 @@ export interface JobRunFilters {
   readonly jobName?: string;
   readonly state?: string;
   readonly sinceMs?: number;
+  /** Leave out finished runs that had nothing to do (completed, 0 items) — review 2026-11-25 O12. */
+  readonly hideEmpty?: boolean;
 }
 
 /** Run history for the Jobs screen (doc 06 §7): "state, duration, item counts and errors", newest first. */
@@ -1116,6 +1118,9 @@ export async function listJobRuns(
             filters.jobName ? eq(sqliteSchema.jobRuns.jobName, filters.jobName) : undefined,
             filters.state ? eq(sqliteSchema.jobRuns.state, filters.state) : undefined,
             filters.sinceMs !== undefined ? gte(sqliteSchema.jobRuns.startedAt, filters.sinceMs) : undefined,
+            filters.hideEmpty
+              ? or(ne(sqliteSchema.jobRuns.state, 'completed'), ne(sqliteSchema.jobRuns.itemsTotal, 0))
+              : undefined,
           ),
         )
         .orderBy(desc(sqliteSchema.jobRuns.startedAt))
@@ -1131,6 +1136,9 @@ export async function listJobRuns(
             filters.sinceMs !== undefined
               ? gte(postgresSchema.jobRuns.startedAt, filters.sinceMs)
               : undefined,
+            filters.hideEmpty
+              ? or(ne(postgresSchema.jobRuns.state, 'completed'), ne(postgresSchema.jobRuns.itemsTotal, 0))
+              : undefined,
           ),
         )
         .orderBy(desc(postgresSchema.jobRuns.startedAt))
@@ -1144,6 +1152,9 @@ export async function listJobRuns(
             filters.jobName ? eq(mysqlSchema.jobRuns.jobName, filters.jobName) : undefined,
             filters.state ? eq(mysqlSchema.jobRuns.state, filters.state) : undefined,
             filters.sinceMs !== undefined ? gte(mysqlSchema.jobRuns.startedAt, filters.sinceMs) : undefined,
+            filters.hideEmpty
+              ? or(ne(mysqlSchema.jobRuns.state, 'completed'), ne(mysqlSchema.jobRuns.itemsTotal, 0))
+              : undefined,
           ),
         )
         .orderBy(desc(mysqlSchema.jobRuns.startedAt))

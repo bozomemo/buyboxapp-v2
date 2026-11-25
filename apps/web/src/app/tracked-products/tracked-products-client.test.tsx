@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockNavigation, stubFetch } from '@/test-utils';
 import { TrackedProductsClient } from './tracked-products-client';
@@ -306,5 +306,40 @@ describe('TrackedProductsClient', () => {
       await vi.waitFor(() => expect(listCalls().at(-1)).not.toContain('text=x'));
       expect(listCalls().at(-1)).toContain('sort=sellerCount&sortDir=desc');
     });
+  });
+});
+
+// Review 2026-11-25: a duplicate link was refused with no way to reach the product it duplicates.
+describe('adding a link that is already tracked', () => {
+  it('links to the product already in the list', async () => {
+    const products = { products: [], total: 1234 };
+    const impl = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url.startsWith('/api/tracked-products') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          json: async () => ({ error: 'Bu ürün zaten takip listesinde.', existingId: 'tp-9' }),
+        } as Response);
+      }
+      const path = url.split('?')[0]!;
+      const routes: Record<string, unknown> = {
+        '/api/tracked-products': products,
+        '/api/watched-brands': { groups: [] },
+        '/api/settings/marketplaces': { marketplaces: [] },
+        '/api/tracked-products/categories': { categories: [] },
+        '/api/tracked-products/sellers': { sellers: [] },
+        '/api/brand-products': { products: [], total: 0 },
+      };
+      return Promise.resolve({ ok: true, status: 200, json: async () => routes[path] ?? {} } as Response);
+    };
+    vi.stubGlobal('fetch', vi.fn(impl));
+    render(<TrackedProductsClient />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Link ile ekle' }));
+    fireEvent.change(screen.getByLabelText('Ürün linki'), { target: { value: 'https://www.trendyol.com/x-p-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+    const link = await screen.findByRole('link', { name: 'Listedeki ürünü aç' });
+    expect(link.getAttribute('href')).toBe('/tracked-products/tp-9');
+    await waitFor(() => expect(screen.getAllByText('Bu ürün zaten takip listesinde.').length).toBeGreaterThan(0));
   });
 });

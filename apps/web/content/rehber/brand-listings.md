@@ -21,12 +21,12 @@ Bu kartlara yaklaşık yarım saatte bir bakılır ve buybox fiyatı fiyat aral�
 - **Pazaryeri**: **Hepsi**, **Trendyol** ya da **Hepsiburada**.
 - **Excel'e aktar**: o anki filtreyle listeyi dosya olarak indirir.
 
-Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışında olduğunu söyler. Bu sayı yalnızca ekrandaki sayfa içindir; tüm açık ihlaller için [Marka Alarmları](/rehber/brand-alerts) ekranına bakın. Buybox satıcısı tahmini maliyetinin altında satıyorsa aynı satırda kaç kartta böyle olduğu da yazar.
+Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışında olduğunu söyler. Bu sayı yalnızca ekrandaki sayfa içindir; tüm açık ihlaller için [Marka Alarmları](/rehber/brand-alerts) ekranına bakın. Buybox satıcısı tahmini maliyetinin altında satıyorsa aynı satırda kaç kartta böyle olduğu da yazar. Durumu **Bilinmiyor** olan kartlar "aralıkta" sayılmaz; kaç kartın durumunun henüz bilinmediği ayrıca yazar.
 
 ## Sütunlar
 
-- **☆ / ★**: kartı favorilere ekler ya da çıkarır. Bu işlem Yönetici ve Fiyat Yöneticisi rollerine açıktır. Bağlı olmayan bir kartın yıldızını kaldırırsanız kart bu listeden çıkar.
-- **Kart**: kartın adı. **↗** pazaryerindeki ürün sayfasını yeni sekmede açar. Yanında pazaryeri yazar; **· duraklatıldı** kartın düzenli taramadan çıkarıldığını gösterir.
+- **☆ / ★**: kartı favorilere ekler ya da çıkarır. Bu işlem Yönetici ve Fiyat Yöneticisi rollerine açıktır; İzleyici rolünde yıldız soluk görünür ve tıklanmaz. Değişiklik kaydedilemezse nedeni tablonun üstünde yazar. Bağlı olmayan bir kartın yıldızını kaldırırsanız kart bu listeden çıkar.
+- **Kart**: kartın adı. **↗** pazaryerindeki ürün sayfasını yeni sekmede açar. Yanında pazaryeri yazar; **· duraklatıldı** kartın düzenli taramadan çıkarıldığını gösterir. Kart henüz yapıştırıldığı link ya da ürün koduyla adlandırılmışsa, yerine bağlı olduğu stok ürününün adı gösterilir; asıl ad üzerine gelince görünür.
 - **Stok ürünü**: kartın bağlı olduğu ürününüz; tıklayınca ürün sayfası açılır. **Bağlı değil (favori)** ise kart yalnızca yıldızlıdır. Bu kartın PSF'si ve aralığı yoktur, bu yüzden alarm da üretmez.
 - **Çarpan**: bir alışta kaç adet ürün gittiği, örneğin **×3**.
 - **Buybox satıcı**: buybox'ı tutan satıcı.

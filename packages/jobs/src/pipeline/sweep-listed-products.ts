@@ -58,7 +58,7 @@ export async function sweepListedProducts(ctx: JobContext): Promise<JobResult> {
       completed: 'ListedSweepPassCompleted',
       halted: 'ListedSweepHalted',
     },
-    passNoun: 'Listings sweep',
+    passNoun: 'İlan turu',
     countCandidates: trackedProductsRepo.countListedTrackedProducts,
   });
 }

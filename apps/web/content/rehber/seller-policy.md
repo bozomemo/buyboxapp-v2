@@ -38,10 +38,10 @@ Sağ üstteki **Marka** listesinden kuralları göreceğiniz markayı seçin. Ma
 ## Elle ekle
 
 1. **Satıcı kodu** ya da **Vergi numarası** seçin.
-2. Satıcı kodu için pazaryerini seçip kodu yazın; vergi numarası için numarayı yazın.
-3. Durumu seçin: **Yetkili** ya da **Yasaklı**.
+2. Satıcı kodu için pazaryerini seçip kodu yazın; vergi numarası için numarayı yazın. Vergi numarası 10 haneli (vergi kimlik no) ya da 11 haneli (T.C. kimlik no) olmalı ve yalnız rakam içermelidir.
+3. Durumu seçin: **Yetkili** ya da **Yasaklı**. Durum önceden seçili gelmez; seçmeden **Ekle**'ye basarsanız seçmeniz istenir.
 4. İsterseniz **Not** yazın.
-5. **Ekle**'ye tıklayın.
+5. **Ekle**'ye tıklayın. Bir sorun varsa nedeni **Ekle** düğmesinin hemen altında yazar.
 
 Vergi numarası kuralı, o numaranın hangi mağazaya ait olduğu biliniyorsa çalışır. Henüz eşleşmediyse kural saklanır ama kimseyi etkilemez. Satıcının vergi numarasını [Marka Satıcıları](/rehber/brand-sellers#satici-kimligi) ekranındaki **Kimlik** panelinden öğrenebilirsiniz.
 

@@ -7,7 +7,7 @@ import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { Download } from '@/components/icon';
 import { Ago, Button, buttonClass, Chip, EmptyState, ErrorState, LoadingState, PageHeader } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
+import { formatDateTime, formatDecimal, formatMoney, formatNumber, kurusToDecimal } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, STATUS_LABELS } from '@/lib/labels';
 import { lookAnnotations } from '@/lib/price-chart-series';
 import { marketplaceProductUrl } from '@/lib/product-url';
@@ -176,7 +176,16 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
     .filter((s) => s.current?.price)
     .sort((a, b) => (BigInt(a.current!.price!) < BigInt(b.current!.price!) ? -1 : 1))[0];
   const activeSellers = ordered.filter((s) => s.current !== null);
-  const totalStock = activeSellers.reduce((sum, s) => sum + (s.current?.offeredStock ?? 0), 0);
+  // Review 2026-11-25 Y8: a seller that states no stock is unknown, not 0 — summed as 0, a
+  // product nobody states stock for read as an empty shelf.
+  const stockKnown = activeSellers.filter((s) => s.current?.offeredStock != null);
+  const totalStock = stockKnown.reduce((sum, s) => sum + (s.current?.offeredStock ?? 0), 0);
+  const totalStockText =
+    stockKnown.length === 0
+      ? 'bilinmiyor'
+      : stockKnown.length < activeSellers.length
+        ? `en az ${formatNumber(totalStock)}`
+        : formatNumber(totalStock);
   // Stored links are absolute when pasted and path-only when swept — see marketplaceProductUrl.
   const pageUrl = marketplaceProductUrl(product.marketplaceCode, product.productUrl);
 
@@ -247,7 +256,16 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
           </div>
           <div>
             <div className="text-xs text-(--color-muted)">Toplam Görünen Stok</div>
-            <div className="text-lg">{formatNumber(totalStock)}</div>
+            <div
+              className="text-lg"
+              title={
+                stockKnown.length < activeSellers.length
+                  ? `${formatNumber(activeSellers.length - stockKnown.length)} satıcı stok göstermiyor`
+                  : undefined
+              }
+            >
+              {totalStockText}
+            </div>
           </div>
           <div>
             {/* İki ayrı olgu, iki ayrı satır: ne zaman baktık, ve en son ne zaman bir şey
@@ -327,7 +345,6 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                   <th className="px-2 py-1">Satıcı</th>
                   <th className="px-2 py-1">Fiyat</th>
                   <th className="px-2 py-1">Değişim</th>
-                  <th className="px-2 py-1">Müşteri Fiyatı</th>
                   <th className="px-2 py-1">Kampanya</th>
                   <th className="px-2 py-1">Stok</th>
                   <th className="px-2 py-1">Puan</th>
@@ -358,6 +375,15 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                       </td>
                       <td className="px-2 py-1">
                         {formatMoney(s.current?.price ? BigInt(s.current.price) : null)}
+                        {/* One column (review 2026-11-25 O10): Trendyol's price already includes the
+                            promotion, so the customer price is shown only where it differs. */}
+                        {s.current?.finalPrice != null &&
+                          s.current.price != null &&
+                          s.current.finalPrice !== s.current.price && (
+                            <div className="text-(--color-muted)">
+                              sepette {formatMoney(BigInt(s.current.finalPrice))}
+                            </div>
+                          )}
                       </td>
                       <td className="px-2 py-1">
                         {delta ? (
@@ -368,9 +394,6 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                           '—'
                         )}
                       </td>
-                      <td className="px-2 py-1">
-                        {formatMoney(s.current?.finalPrice ? BigInt(s.current.finalPrice) : null)}
-                      </td>
                       <td className="px-2 py-1" title={s.current?.promotionText ?? undefined}>
                         {promotionCell(s.current)}
                       </td>
@@ -380,9 +403,9 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                           : formatNumber(s.current.offeredStock)}
                       </td>
                       <td className="px-2 py-1">
-                        {s.current?.sellerRating === null || s.current === null
+                        {s.current?.sellerRating == null || s.current.sellerRating === 0
                           ? '—'
-                          : s.current.sellerRating.toFixed(1)}
+                          : formatDecimal(s.current.sellerRating)}
                       </td>
                       <td className="px-2 py-1">
                         {s.current?.dispatchTime === null || s.current === null
@@ -395,7 +418,7 @@ export function TrackedProductDetailClient({ id }: { id: string }) {
                     </tr>,
                     isOpen && (
                       <tr key={`${s.key}-history`}>
-                        <td colSpan={10} className="bg-(--color-hover) px-4 py-2">
+                        <td colSpan={9} className="bg-(--color-hover) px-4 py-2">
                           <div className="mb-1 text-xs text-(--color-muted)">
                             {s.sellerName || '(isimsiz)'} · bu satıcının pencere içindeki bakışları
                             {s.unverifiedKey && ' · satıcı numarası okunamadı, satırlar isme göre gruplandı'}

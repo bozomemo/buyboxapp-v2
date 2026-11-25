@@ -195,8 +195,65 @@ describe('DashboardClient', () => {
         ],
         referencePrice: { productsWithPrice: 120, productsTotal: 128 },
         trend: [],
+        findingsEvaluatedAt: Date.now() - 2 * 3_600_000,
       },
     };
+
+    // Review 2026-11-25: with no product at all the card said every product had been looked at.
+    it('does not claim every product was looked at when there are none', async () => {
+      stubFetch({
+        '/api/dashboard': {
+          body: {
+            ...BRAND_ONLY,
+            brandAudit: {
+              ...BRAND_ONLY.brandAudit,
+              brands: [{ ...BRAND_ONLY.brandAudit.brands[0], productCount: 0, noSellerCount: 0 }],
+              referencePrice: { productsWithPrice: 0, productsTotal: 0 },
+            },
+          },
+        },
+        '/api/health': { body: HEALTH_OK },
+      });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      expect(within(row).queryByText('Her ürüne en az bir kez bakıldı.')).toBeNull();
+      expect(within(row).getByText('Henüz takip edilen ürün yok.')).toBeTruthy();
+    });
+
+    // The two tracked-product figures on the panel disagreed by one (5.648 vs 2 / 5.649).
+    it('counts tracked products once, the same in both cards', async () => {
+      stubFetch({
+        '/api/dashboard': {
+          body: { ...BRAND_ONLY, brandAudit: { ...BRAND_ONLY.brandAudit, referencePrice: { productsWithPrice: 120, productsTotal: 129 } } },
+        },
+        '/api/health': { body: HEALTH_OK },
+      });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      const card = within(row).getByText('Takip edilen ürün').parentElement!;
+      expect(within(card).getByText('129')).toBeTruthy();
+    });
+
+    // Review 2026-11-25 Y1: the count is the stored evaluation, not a live one, and it said so
+    // nowhere — 0 on the panel beside 129 on the findings screen.
+    it('says when the open-findings count was last evaluated', async () => {
+      stubFetch({ '/api/dashboard': { body: BRAND_ONLY }, '/api/health': { body: HEALTH_OK } });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      expect(within(row).getByText(/2sa 00dk önce hesaplandı/)).toBeTruthy();
+    });
+
+    it('says the open-findings count has never been evaluated rather than showing a bare 0', async () => {
+      stubFetch({
+        '/api/dashboard': {
+          body: { ...BRAND_ONLY, brandAudit: { ...BRAND_ONLY.brandAudit, findingsEvaluatedAt: null } },
+        },
+        '/api/health': { body: HEALTH_OK },
+      });
+      render(<DashboardClient />);
+      const row = await screen.findByTestId('dashboard-stats');
+      expect(within(row).getByText(/henüz hesaplanmadı/)).toBeTruthy();
+    });
 
     it('stat row from brand audit', async () => {
       stubFetch({ '/api/dashboard': { body: BRAND_ONLY }, '/api/health': { body: HEALTH_OK } });

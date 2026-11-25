@@ -20,7 +20,7 @@ import {
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { publishDashboardFreshness } from '@/lib/dashboard-feed';
-import { formatDateTime, formatMoney, formatNumber, formatTime } from '@/lib/format';
+import { formatDateTime, formatDuration, formatMoney, formatNumber, formatTime } from '@/lib/format';
 import { DECISION_REASON_LABELS, labelOf, MARKETPLACE_LABELS, PHASE_DESCRIPTIONS, PHASE_LABELS, SUBMISSION_STATE_LABELS } from '@/lib/labels';
 import { NO_PERMISSION_TITLE, canToggleStop, useCan } from '@/lib/permissions';
 
@@ -110,6 +110,12 @@ interface BrandAudit {
     lastSweptAt: number | null;
   }[];
   referencePrice: { productsWithPrice: number; productsTotal: number };
+  /**
+   * "Açık bulgu" sayısının hesaplandığı an — son başarılı `EvaluateBrandFindings` çalışması.
+   * `null`: hiç hesaplanmadı. Sayı canlı değil, saklanmış bir değerlendirmedir (inceleme
+   * 2026-11-25 Y1); ekran bunu söylemezse 0, "bulgu yok" diye okunur.
+   */
+  findingsEvaluatedAt?: number | null;
   /** Kuruş, dizge olarak. `null` bir gün: o gün okunabilir fiyat yoktu — sıfır değil. */
   trend: {
     dayMs: number;
@@ -949,6 +955,14 @@ function BrandStatRow({
                 örneklem yorumudur. */}
             {formatNumber(audit.openFindings.stated)} kesin bilgi · {formatNumber(audit.openFindings.measured)} yorum
             {' · '}
+            {audit.findingsEvaluatedAt == null ? (
+              'henüz hesaplanmadı'
+            ) : (
+              <span title={formatDateTime(audit.findingsEvaluatedAt)}>
+                {formatDuration(Math.max(0, Date.now() - audit.findingsEvaluatedAt))} önce hesaplandı
+              </span>
+            )}
+            {' · '}
             <Link href="/watched-brands/findings" className="text-(--color-link) hover:underline">
               Aç →
             </Link>
@@ -962,9 +976,11 @@ function BrandStatRow({
         // "Henüz bakılmadı" ayrı yazılıyor: ilk turunu tamamlamamış bir kurulumda satıcısız
         // sayısı tek başına yanıltıcıdır.
         delta={
-          neverLooked > 0
-            ? `${formatNumber(neverLooked)} ürüne henüz bakılmadı — bu sayı eksik olabilir.`
-            : 'Her ürüne en az bir kez bakıldı.'
+          products === 0
+            ? 'Henüz takip edilen ürün yok.'
+            : neverLooked > 0
+              ? `${formatNumber(neverLooked)} ürüne henüz bakılmadı — bu sayı eksik olabilir.`
+              : 'Her ürüne en az bir kez bakıldı.'
         }
       />
       <StatCard
@@ -979,7 +995,9 @@ function BrandStatRow({
             : `${formatNumber(productsWithPrice)} / ${formatNumber(productsTotal)} ürün`
         }
       />
-      <StatCard label="Takip edilen ürün" value={formatNumber(products)} delta={`${formatNumber(audit.brands.length)} marka`} />
+      {/* The same total the PSF card divides by (review 2026-11-25: 5.648 here, "2 / 5.649" there —
+          a card linked by hand belongs to no watched brand). */}
+      <StatCard label="Takip edilen ürün" value={formatNumber(productsTotal)} delta={`${formatNumber(audit.brands.length)} marka`} />
     </div>
   );
 }
@@ -1103,7 +1121,7 @@ function EventLogSection({ events }: { events: AppEvent[] }) {
     <Section id="event-log" title="Sistem Günlüğü">
       <details className="rounded border border-(--color-border) bg-(--color-surface)">
         <summary className="cursor-pointer px-4 py-3 text-sm">
-          Son {formatNumber(events.length)} uyarı ve hata kaydı
+          Son {formatNumber(events.length)} uyarı ve hata kaydı{' '}
           <span className="ml-2 text-xs text-(--color-muted)">
             (teknik kayıt — müdahale gerektiren bir şey varsa yukarıda görünür)
           </span>

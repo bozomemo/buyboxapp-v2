@@ -1,7 +1,7 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { NO_PERMISSION_TITLE, PermissionsProvider } from '@/lib/permissions';
-import { stubFetch } from '@/test-utils';
+import { lastRequestParam, stubFetch } from '@/test-utils';
 import { JobsClient } from './jobs-client';
 
 /**
@@ -294,5 +294,59 @@ describe('JobsClient', () => {
         'Güncelleme nedeniyle fiyat işleri duraklatıldı. Bir güncelleme sürmüyorsa Ayarlar > Güncelleme ekranına bakın.',
       ),
     ).toBeTruthy();
+  });
+});
+
+// Review 2026-11-25 O12.
+describe('run history', () => {
+  const now = Date.now();
+  const JOB = {
+    jobName: 'ImportListings', label: 'İlan İçe Aktarma', cadenceMs: 86_400_000, liveCadenceMs: 86_400_000,
+    pendingRestart: false, isCadenceOverride: false, defaultCadenceMs: 86_400_000, perMarketplace: false,
+    defaultPayload: {}, enabled: true, nextRunAt: now + 60_000, queued: false, activeRun: null, lastRun: null,
+  };
+  function setup() {
+    stubFetch({
+      '/api/jobs': {
+        body: {
+          jobs: [JOB],
+          scheduler: { running: true, systemPaused: false },
+          queueDepth: {},
+          claimed: [],
+          circuitBreakers: [],
+        },
+      },
+      ...EMPTY_SIDE_ROUTES,
+      '/api/jobs/run-history': {
+        body: {
+          runs: [
+            { id: 'r1', jobName: 'ImportListings', startedAt: now - 84_900, finishedAt: now, state: 'completed', itemsTotal: 3, itemsOk: 3, itemsFailed: 0, error: null, correlationId: 'c' },
+          ],
+          limit: 200,
+        },
+      },
+    });
+    render(<JobsClient />);
+  }
+
+  it('names a completed run in Turkish and its duration in minutes and seconds', async () => {
+    setup();
+    const table = await screen.findByRole('table', { name: 'Çalışma geçmişi' });
+    await within(table).findByText('Tamamlandı');
+    expect(within(table).queryByText('completed')).toBeNull();
+    expect(within(table).getByText('1dk 24sn')).toBeTruthy();
+  });
+
+  it('hides runs that had nothing to do, unless asked', async () => {
+    setup();
+    await screen.findByRole('table', { name: 'Çalışma geçmişi' });
+    await waitFor(() => expect(lastRequestParam('/api/jobs/run-history', 'hideEmpty')).toBe('true'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Boş çalışmaları gizle' }));
+    await waitFor(() => expect(lastRequestParam('/api/jobs/run-history', 'hideEmpty')).toBeNull());
+  });
+
+  it('reads a cadence in seconds back as a period', async () => {
+    setup();
+    expect(await screen.findByText('= 1 günde bir')).toBeTruthy();
   });
 });

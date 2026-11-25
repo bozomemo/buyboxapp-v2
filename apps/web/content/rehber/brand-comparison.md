@@ -39,10 +39,10 @@ Her marka için bir satır:
 
 - **Marka**: tıklayınca [Takip Edilen Ürünler](/rehber/tracked-products) o markaya filtrelenmiş olarak açılır.
 - **Tür**: **bizim** ya da **rakip**.
-- **Ort. fiyat**: dönemdeki ortalama teklif fiyatı.
+- **Ort. fiyat (tüm ürünler)**: dönemdeki ortalama teklif fiyatı. Markanın bütün ürünleri birlikte ortalanır; 2 kg ile 12 kg aynı ortalamaya girer. Bu yüzden iki markanın sayısını doğrudan değil, zaman içindeki değişimini karşılaştırın.
 - **Endeks**: bizim markalar için tabana göre endeks; diğerlerinde **—**.
 - **Veri günü**: ortalamanın kaç günlük veriye dayandığı. İki günlük veriden çıkan bir endeks, otuz günlük olanla aynı güvenilirlikte değildir.
-- **Son gün**: en son verinin günü.
+- **Son gün**: en son verinin günü, tarih olarak (örneğin 25.11.2026). Günler UTC'ye göre ayrılır; gece 00:00 ile 03:00 arasında toplanan veri bir önceki güne sayılır.
 
 **Excel'e Aktar** tabloyu indirir.
 

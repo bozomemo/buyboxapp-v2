@@ -14,9 +14,10 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('tr-TR', {
 
 const NUMBER_FORMATTER = new Intl.NumberFormat('tr-TR');
 
+// One decimal, always (review 2026-11-25): a column read "%0,0", "%-2,6" and "%-6,19".
 const PERCENT_FORMATTER = new Intl.NumberFormat('tr-TR', {
   minimumFractionDigits: 1,
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 1,
 });
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('tr-TR', {
@@ -34,6 +35,12 @@ export function formatMoney(kurus: bigint | null | undefined): string {
   return CURRENCY_FORMATTER.format(Number(kurus) / 100);
 }
 
+/** A price range, or one price when both ends are the same (review 2026-11-25). */
+export function formatMoneyRange(min: bigint, max: bigint | null | undefined): string {
+  if (max === null || max === undefined || max === min) return formatMoney(min);
+  return `${formatMoney(min)} – ${formatMoney(max)}`;
+}
+
 /** For a `Money` value from `packages/shared`. */
 export function formatMoneyValue(money: Money | null | undefined): string {
   if (!money) return '—';
@@ -43,6 +50,18 @@ export function formatMoneyValue(money: Money | null | undefined): string {
 export function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—';
   return NUMBER_FORMATTER.format(value);
+}
+
+/**
+ * A decimal with a fixed number of places and the Turkish comma: 8.5 → "8,5", 84.93 → "84,9"
+ * (review 2026-11-25: ratings and durations printed "8.5" and "84.9 sn" beside "%0,0").
+ */
+export function formatDecimal(value: number | null | undefined, fractionDigits = 1): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('tr-TR', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
 }
 
 export function formatPercent(value: number | null | undefined): string {

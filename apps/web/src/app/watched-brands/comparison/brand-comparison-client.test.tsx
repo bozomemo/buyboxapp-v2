@@ -84,6 +84,38 @@ describe('BrandComparisonClient', () => {
     expect(await screen.findByRole('link', { name: 'Whiskas' })).toBeTruthy();
   });
 
+  // Review 2026-11-25 Y11: the last day is a UTC-midnight bucket; shown as "23sa 34dk önce" it read
+  // as stale data minutes after a scrape. It is a day, so it is shown as one.
+  it('shows the last data day as a date, not as time elapsed since a bucket start', async () => {
+    const day = Date.UTC(2026, 10, 25);
+    stubFetch({
+      [ROUTE]: {
+        body: {
+          window: { sinceMs: 0, untilMs: 1 },
+          brands: [{ id: 'b1', label: 'Whiskas', marketplaceCode: 'trendyol', isOwnBrand: true }],
+          series: [
+            {
+              id: 'b1',
+              label: 'Whiskas',
+              marketplaceCode: 'trendyol',
+              isOwnBrand: true,
+              points: [{ dayMs: day, avgPrice: '10000', sellerCount: 3, productsWithOffers: 2 }],
+              windowAvgPrice: '10000',
+            },
+          ],
+          index: null,
+          hasCompetitorBrand: false,
+        },
+      },
+    });
+    render(<BrandComparisonClient />);
+    await screen.findByRole('link', { name: 'Whiskas' });
+    expect(screen.getByText('25.11.2026')).toBeTruthy();
+    expect(screen.queryByText(/önce/)).toBeNull();
+    // The average mixes every pack size of the brand; the header has to say so.
+    expect(screen.getByRole('columnheader', { name: 'Ort. fiyat (tüm ürünler)' })).toBeTruthy();
+  });
+
   it('a selected brand carries a check mark, not only a fill', async () => {
     stubFetch({
       [ROUTE]: {

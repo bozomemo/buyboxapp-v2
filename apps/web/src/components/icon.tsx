@@ -48,6 +48,7 @@ export {
   LayoutDashboard,
   Loader2,
   LogOut,
+  Menu,
   Package,
   PanelLeftClose,
   PanelLeftOpen,

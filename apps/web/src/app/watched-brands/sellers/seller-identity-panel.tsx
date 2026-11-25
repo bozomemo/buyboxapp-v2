@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Ago, Button, buttonClass, ConfirmButton, TONE_BOX, TONE_TEXT } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
+import { formatIdentityAddress } from '@/lib/identity-address';
 
 interface IdentityListing {
   listingRef: string | null;
@@ -161,8 +162,7 @@ export function SellerIdentityPanel({
           <h2 className="font-semibold">{sellerName || sellerRef} — satıcı kimliği</h2>
           <p className="mt-1 max-w-2xl text-sm text-(--color-muted)">
             Firmanın pazaryerinde bildirdiği tescil bilgileri. Bir ihtar yazacaksanız gereken alanlar
-            bunlardır; sıralama, buybox veya fiyat <em>bu istekten okunmaz</em> — satıcı adına sorulan sayfa
-            kendisini her satırda kazanan gösterir.
+            bunlardır. Bu bilgi satıcının kendi sayfasından okunur; fiyat ve buybox bilgisi buradan alınmaz.
           </p>
         </div>
         <div className="flex gap-2">
@@ -224,13 +224,17 @@ export function SellerIdentityPanel({
         <>
           <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
             {FIELDS.map(([key, label, hint]) => {
-              const value = identity[key];
+              const raw = identity[key];
+              // Display only (review 2026-11-25): the address arrives as labelled fields run together.
+              const value = key === 'address' && typeof raw === 'string' ? formatIdentityAddress(raw) : raw;
               return (
                 <div key={key}>
                   <dt className="text-xs text-(--color-muted)" title={hint}>
                     {label}
                   </dt>
-                  <dd className="text-sm">{typeof value === 'string' && value !== '' ? value : '—'}</dd>
+                  <dd className="text-sm" title={key === 'address' && typeof raw === 'string' ? raw : undefined}>
+                    {typeof value === 'string' && value !== '' ? value : '—'}
+                  </dd>
                 </div>
               );
             })}

@@ -9,7 +9,7 @@
  * - **The multiplier is asked, never defaulted.** The add-card field starts empty and the form
  *   refuses to submit without it. A pre-filled 1 is a question nobody reads, and the multiplier
  *   is what every band comparison for that card is scaled by.
- * - **A suggestion is an offer, not a link.** _Bu kart senin ürünün olabilir_ fills the card in
+ * - **A suggestion is an offer, not a link.** _Bu kart sizin ürününüz olabilir_ fills the card in
  *   and still asks the multiplier; nothing is linked until the operator presses the button.
  */
 
@@ -34,6 +34,7 @@ import {
 import { formatDesi } from '@/lib/desi';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
+import { marketplaceProductUrl } from '@/lib/product-url';
 import { BandRealismNote, type BandRealismView } from './band-realism-note';
 import { PermissionFieldset } from '@/lib/permissions';
 
@@ -104,6 +105,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
   const [pickedCard, setPickedCard] = useState<Suggestion | null>(null);
   const [multiplier, setMultiplier] = useState('');
   const [asPrimary, setAsPrimary] = useState(false);
+  const [multiplierError, setMultiplierError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -130,12 +132,25 @@ export function BrandProductDetailClient({ id }: { id: string }) {
 
   useEffect(load, [load]);
 
+  async function removeProduct() {
+    const res = await fetch(`/api/brand-products/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setNotice({ ok: false, message: data.error ?? `Ürün silinemedi (HTTP ${res.status}).` });
+      return;
+    }
+    window.location.assign('/brand/products');
+  }
+
   async function addCard() {
     const count = Number(multiplier);
     if (!Number.isSafeInteger(count) || count < 1) {
-      setNotice({ ok: false, message: 'Adet çarpanı 1 veya daha büyük bir tam sayı olmalı.' });
+      // Beside the field, not at the top of the page (review 2026-11-25 O6/O7): the form sits
+      // below the fold, and a banner up there was never seen.
+      setMultiplierError("Bu kartta kaç birim satılıyor? Tek ürünse 1, 3'lü paketse 3 yazın.");
       return;
     }
+    setMultiplierError(null);
     setBusy(true);
     setNotice(null);
     try {
@@ -203,9 +218,26 @@ export function BrandProductDetailClient({ id }: { id: string }) {
         breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Stok', href: '/brand/products' }, { label: product.name }]}
         description={product.barcode ? `Barkod ${product.barcode}` : undefined}
         action={
-          <Link className={buttonClass('secondary', 'sm')} href="/brand/products">
-            Stok listesine dön
-          </Link>
+          <>
+            <Link className={buttonClass('secondary', 'sm')} href="/brand/products">
+              Stok listesine dön
+            </Link>
+            {/* The product itself, from its own page (review 2026-11-25). */}
+            <PermissionFieldset permission="catalogue.manage">
+              <Link className={buttonClass('secondary', 'sm')} href={`/brand/products?edit=${encodeURIComponent(id)}`}>
+                Düzenle
+              </Link>
+              <ConfirmButton
+                requireConfirm
+                confirmTone="danger"
+                confirmMessage={`${product.name} silinsin mi? Bağlı kartlar takip listesinde kalır; bu ürünün fiyat aralığı ve alarmları silinir.`}
+                className={buttonClass('ghost-danger', 'sm')}
+                onConfirmed={() => void removeProduct()}
+              >
+                Ürünü sil
+              </ConfirmButton>
+            </PermissionFieldset>
+          </>
         }
       />
 
@@ -268,9 +300,18 @@ export function BrandProductDetailClient({ id }: { id: string }) {
                   <tr key={card.id} className="border-t border-(--color-border)">
                     <td className="p-2">{labelOf(MARKETPLACE_LABELS, card.marketplaceCode)}</td>
                     <td className="p-2">
-                      <a className="underline" href={card.productUrl} target="_blank" rel="noreferrer">
-                        {card.label}
-                      </a>
+                      {marketplaceProductUrl(card.marketplaceCode, card.productUrl) === null ? (
+                        card.label
+                      ) : (
+                        <a
+                          className="underline"
+                          href={marketplaceProductUrl(card.marketplaceCode, card.productUrl)!}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {card.label}
+                        </a>
+                      )}
                       <div className="text-xs text-(--color-muted)">
                         {card.productRef}
                         {!card.isActive && ' · pasif'}
@@ -341,10 +382,14 @@ export function BrandProductDetailClient({ id }: { id: string }) {
               className="w-96"
             />
           </Field>
-          <Field label="Adet çarpanı" hint="Bir alışta kaç birim gider?">
+          <Field label="Adet çarpanı" hint="Bir alışta kaç birim gider?" error={multiplierError ?? undefined}>
             <TextInput
               value={multiplier}
-              onChange={(e) => setMultiplier(e.target.value)}
+              aria-invalid={multiplierError !== null}
+              onChange={(e) => {
+                setMultiplier(e.target.value);
+                setMultiplierError(null);
+              }}
               inputMode="numeric"
               placeholder="örn. 3"
               className="w-28"
@@ -368,7 +413,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
         )}
       </Section>
 
-      <Section id="suggestions" title="Bu kart senin ürünün olabilir">
+      <Section id="suggestions" title="Bu kart sizin ürününüz olabilir">
         {suggestions.length === 0 ? (
           <EmptyState
             message="Öneri yok."

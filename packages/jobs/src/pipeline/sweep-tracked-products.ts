@@ -85,7 +85,7 @@ export async function sweepTrackedProducts(ctx: JobContext): Promise<JobResult> 
       completed: 'TrackedSweepPassCompleted',
       halted: 'TrackedSweepHalted',
     },
-    passNoun: 'Tracked-product sweep',
+    passNoun: 'Takip ürün turu',
     countCandidates: trackedProductsRepo.countActiveTrackedProducts,
   });
 }

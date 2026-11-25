@@ -29,7 +29,15 @@ import {
   TextInput,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
+import {
+  formatDateTime,
+  formatMoney,
+  formatMoneyRange,
+  formatNumber,
+  formatPercent,
+  kurusToDecimal,
+} from '@/lib/format';
+import { PermissionFieldset } from '@/lib/permissions';
 import { CoverageBadge, type Coverage } from '../../../coverage-badge';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
@@ -87,6 +95,15 @@ interface Detail {
     isKnown: boolean;
   };
   group: { id: string; displayName: string; note: string | null } | null;
+  /** The firm behind the storefront, once resolved (review 2026-11-25 O9). Absent from an older server. */
+  identity?: {
+    officialName: string | null;
+    taxNumber: string | null;
+    taxOffice: string | null;
+    cityName: string | null;
+    registeredEmailAddress: string | null;
+    resolvedAt: number;
+  } | null;
   groupMembers: { marketplaceCode: string; sellerRef: string }[];
   listings: SellerListing[];
   trackedProducts: SellerTrackedProduct[];
@@ -157,7 +174,7 @@ function renderListingCell(id: ColumnId, l: SellerListing): React.ReactNode {
     case 'priceRange':
       return l.minPrice === null
         ? '—'
-        : `${formatMoney(BigInt(l.minPrice))} – ${formatMoney(BigInt(l.maxPrice ?? l.minPrice))}`;
+        : formatMoneyRange(BigInt(l.minPrice), l.maxPrice === null ? null : BigInt(l.maxPrice));
     case 'observationCount':
       return formatNumber(l.observationCount);
     case 'buyboxCount':
@@ -218,7 +235,7 @@ function renderTrackedCell(id: TrackedColumnId, t: SellerTrackedProduct): React.
     case 'priceRange':
       return t.minPrice === null
         ? '—'
-        : `${formatMoney(BigInt(t.minPrice))} – ${formatMoney(BigInt(t.maxPrice ?? t.minPrice))}`;
+        : formatMoneyRange(BigInt(t.minPrice), t.maxPrice === null ? null : BigInt(t.maxPrice));
     case 'deviation':
       // Only ever coloured *below* the market. A seller consistently above it is not a finding,
       // and colouring both directions trains the operator to ignore the colour that matters.
@@ -457,6 +474,36 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
         </>
       )}
 
+      {detail.identity && (
+        <section
+          className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)"
+          aria-labelledby="firm-heading"
+        >
+          <h2 id="firm-heading" className="text-[15px] font-semibold">
+            Firma
+          </h2>
+          <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+            <dt className="text-(--color-muted)">Ticari unvan</dt>
+            <dd>{detail.identity.officialName ?? '—'}</dd>
+            <dt className="text-(--color-muted)">Vergi / TC no</dt>
+            <dd className="font-mono">{detail.identity.taxNumber ?? '—'}</dd>
+            <dt className="text-(--color-muted)">Vergi dairesi</dt>
+            <dd>{detail.identity.taxOffice ?? '—'}</dd>
+            <dt className="text-(--color-muted)">Şehir</dt>
+            <dd>{detail.identity.cityName ?? '—'}</dd>
+            <dt className="text-(--color-muted)">KEP</dt>
+            <dd>{detail.identity.registeredEmailAddress ?? '—'}</dd>
+          </dl>
+          <p className="mt-2 text-xs text-(--color-muted)">
+            Pazaryerinin satıcı sayfasından okundu: <Ago at={detail.identity.resolvedAt} />. Yenilemek için{' '}
+            <Link className="underline" href="/watched-brands/sellers">
+              Marka Satıcıları
+            </Link>{' '}
+            ekranındaki <strong>Kimlik</strong> panelini kullanın.
+          </p>
+        </section>
+      )}
+
       <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="identity-heading">
         <h2 id="identity-heading" className="text-[15px] font-semibold">
           Kimlik eşleme
@@ -474,6 +521,8 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
             tarama çalıştıktan sonra gruplama ve not ekleyebilirsiniz.
           </p>
         ) : (
+          // Review 2026-11-25 O8: closed to a role that cannot write it, rather than failing on submit.
+          <PermissionFieldset permission="catalogue.manage">
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <label className="text-sm">
               <span className="mb-1 block text-(--color-muted)">Grup</span>
@@ -521,6 +570,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
               </span>
             )}
           </div>
+          </PermissionFieldset>
         )}
       </section>
 

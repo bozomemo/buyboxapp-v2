@@ -117,6 +117,57 @@ describe('TrackedProductDetailClient', () => {
     expect(screen.getByRole('button', { name: 'Rakip Satıcı' })).toBeTruthy();
   });
 
+  function withSellers(...currents: Record<string, unknown>[]) {
+    const template = POPULATED_BODY.sellers[0]!;
+    return {
+      ...POPULATED_BODY,
+      sellers: currents.map((current, i) => ({
+        ...template,
+        key: `s${i}`,
+        sellerName: `Satıcı ${i}`,
+        sellerRef: `S${i}`,
+        current: { ...template.current, ...current },
+      })),
+    };
+  }
+
+  // Review 2026-11-25 Y8: no seller showed a stock and the card said "0" — read as an empty shelf.
+  it('shows total stock as unknown when no seller states one, never as 0', async () => {
+    stubFetch({ [PRIMARY_ROUTE]: { body: withSellers({ offeredStock: null }, { offeredStock: null }) } });
+    render(<TrackedProductDetailClient id="t1" />);
+    const label = await screen.findByText('Toplam Görünen Stok');
+    expect(label.nextElementSibling?.textContent).toBe('bilinmiyor');
+  });
+
+  it('says a partial total is a floor when some sellers do not state stock', async () => {
+    stubFetch({ [PRIMARY_ROUTE]: { body: withSellers({ offeredStock: 10 }, { offeredStock: null }) } });
+    render(<TrackedProductDetailClient id="t1" />);
+    const label = await screen.findByText('Toplam Görünen Stok');
+    expect(label.nextElementSibling?.textContent).toBe('en az 10');
+  });
+
+  // Review 2026-11-25 O10: Trendyol's price already includes the promotion, so the two columns
+  // were the same number on nearly every row and read as "the basket discount is missing".
+  it('shows one price column, with the basket price only where it differs', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: {
+        body: withSellers({ price: '10000', finalPrice: '10000' }, { price: '10000', finalPrice: '9000' }),
+      },
+    });
+    render(<TrackedProductDetailClient id="t1" />);
+    await screen.findByRole('button', { name: 'Satıcı 0' });
+    expect(screen.queryByRole('columnheader', { name: 'Müşteri Fiyatı' })).toBeNull();
+    expect(screen.getAllByText(/sepette/)).toHaveLength(1);
+  });
+
+  it('writes a seller rating with a Turkish decimal comma, and no rating as a dash', async () => {
+    stubFetch({ [PRIMARY_ROUTE]: { body: withSellers({ sellerRating: 8.5 }, { sellerRating: 0 }) } });
+    render(<TrackedProductDetailClient id="t1" />);
+    await screen.findByRole('button', { name: 'Satıcı 0' });
+    expect(screen.getByText('8,5')).toBeTruthy();
+    expect(screen.queryByText('0.0')).toBeNull();
+  });
+
   // Redesign phase 3 (plan 2026-11-03-ui-redesign-phase-3-rest, Task 7): a detail screen names
   // where it sits and links back to its list from the breadcrumb.
   it('breadcrumb links back', async () => {

@@ -14,7 +14,7 @@ routes:
 
 ## Marka, dönem ve eşikler
 
-- **Marka**: bulgular her zaman tek bir marka içindir, çünkü yetkili/yasaklı kararı markaya özeldir. Marka seçili değilse _Bulgular için bir marka seçin._ yazar.
+- **Marka**: bulgular her zaman tek bir marka içindir, çünkü yetkili/yasaklı kararı markaya özeldir. Ekran açılışta aktif markalarınızdan adı alfabede ilk olanı gösterir; başka markaya geçmek için bu seçiciyi kullanın. Hiç aktif marka yoksa _Bulgular için bir marka seçin._ yazar.
 - **Dönem**: **Son 7 gün**, **Son 30 gün** ya da **Son 90 gün**.
 - **Eşikler**: bulguları üreten sayıları gösteren paneli açar. Bkz. [Eşikler](#esikler).
 
@@ -40,7 +40,9 @@ Bulgular iki gruba ayrılır:
 - **Kesin bilgi** (kırmızı rozet): sizin yazdığınız bir kayda dayanır. Örneğin "yasaklı satıcı bu markayı satıyor" bir yorum değildir; kuralı siz yazdınız, satıcı da sayfada. Bu grup her zaman önce gelir.
 - **Yorum** (gri rozet): gözlenen fiyatlardan çıkarılır; döneme ve eşiklere göre değişir.
 
-Listenin üstündeki düğmeler bulgu türlerini ve sayılarını gösterir. Bir türe tıklayınca gizlenir, tekrar tıklayınca geri gelir. **Excel'e Aktar** görünen bulguları indirir.
+Listenin üstündeki düğmeler bulgu türlerini ve sayılarını gösterir. Bir türe tıklayınca liste yalnız o türü gösterir; **Tümü**'ne (ya da aynı türe tekrar) tıklayınca bütün bulgular geri gelir.
+
+**Yetkili listesinde yok** bulgusu üçten fazla satıcıda varsa bunlar ayrı kartlar yerine tek bir tabloda toplanır: **… satıcı yetkili listesinde yok**. Tabloda satıcı, ürün sayısı ve son görülme yazar; satıcı adına tıklayınca satıcı ayrıntısı açılır. Bu satıcılar için karar [Satıcı Politikası](/rehber/seller-policy) ekranında verilir. **Excel'e Aktar** görünen bulguları indirir.
 
 Her bulgu kartında tür, konu (satıcı ya da ürün; tıklayınca [Satıcı Ayrıntısı](/rehber/seller-detail) ya da [ürün sayfası](/rehber/tracked-products#urun-ayrinti-sayfasi) açılır), bulgunun ne zamandır açık olduğu ve tek cümlelik açıklama yer alır.
 

@@ -145,6 +145,50 @@ describe('NavShell', () => {
       expect(screen.queryByRole('group', { name: 'Menü görünümü' })).toBeNull();
     });
 
+    // Review 2026-11-25 O14: while the module list loads, the menu showed only Sistem, and the
+    // module items appeared later — the menu jumped. It holds their place instead.
+    it('holds the module items’ place while the module list loads', async () => {
+      stubFetch({ ...base, '/api/modules': { pending: true } });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      expect(await screen.findByTestId('nav-modules-loading')).toBeTruthy();
+    });
+
+    // Review 2026-11-25 O15: on a phone the icon rail took a third of the screen, with no menu
+    // button. The rail is hidden there and a button in the header opens the menu over the page.
+    it('opens the menu from a header button, and closes it again', async () => {
+      stubFetch({ ...base, '/api/modules': { body: { modules: { seller: false, brand: true } } } });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      const open = await screen.findByRole('button', { name: 'Menüyü aç' });
+      expect(open.getAttribute('aria-expanded')).toBe('false');
+      fireEvent.click(open);
+      expect(screen.getByRole('button', { name: 'Menüyü kapat' }).getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByRole('complementary').getAttribute('data-mobile-open')).toBe('true');
+      fireEvent.click(screen.getByRole('button', { name: 'Menüyü kapat' }));
+      expect(screen.getByRole('complementary').getAttribute('data-mobile-open')).toBe('false');
+    });
+
+    // Review 2026-11-25: a brand-only install was told the stop button halts "fiyat gönderimi".
+    it('describes the stop button in brand terms on a brand-only install', async () => {
+      stubFetch({ ...base, '/api/modules': { body: { modules: { seller: false, brand: true } } } });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      await screen.findByRole('link', { name: 'Takip Edilen Ürünler' });
+      const stop = await screen.findByRole('button', { name: /Sistem Çalışıyor/ });
+      await vi.waitFor(() => expect(stop.getAttribute('title')).toContain('katalog ve satıcı taramaları'));
+      expect(stop.getAttribute('title')).not.toContain('fiyat gönderimi');
+    });
+
     it('both installed: both groups by default, and the view switch narrows them', async () => {
       stubFetch({ ...base, '/api/modules': { body: { modules: { seller: true, brand: true } } } });
       render(

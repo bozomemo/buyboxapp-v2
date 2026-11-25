@@ -11,6 +11,7 @@
  * `packages/db/src/schema/sqlite.ts`.
  */
 import { NextResponse } from 'next/server';
+import { TRENDYOL_SCRAPE_DEFAULTS } from '@buybox/adapters';
 import { configRepo, newId, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
@@ -60,6 +61,11 @@ async function getHandler() {
             lastSweptAt: brand.lastSweptAt,
             lastSweepProductCount: brand.lastSweepProductCount,
             productCount: countsById.get(brand.id)?.productCount ?? 0,
+            // Review 2026-11-25 O17: what "Şimdi tara" will cost, said before it starts — one page
+            // per product at the source's rate, the same estimate the prune suggestion gives.
+            deepScanMinutes: Math.round(
+              (countsById.get(brand.id)?.productCount ?? 0) / TRENDYOL_SCRAPE_DEFAULTS.requestsPerMinute,
+            ),
             // Products the marketplace itself has never had rated — what the "drop these?"
             // suggestion acts on. Deliberately not products whose rating we failed to read.
             unratedCount: countsById.get(brand.id)?.unratedCount ?? 0,

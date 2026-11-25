@@ -21,12 +21,18 @@ import {
   competitorReportsRepo,
   configRepo,
   eventsRepo,
+  jobsRepo,
   listingsRepo,
   repricingRepo,
   trackedProductsRepo,
   watchedBrandsRepo,
 } from '@buybox/db';
-import { ALERT_STALE_AFTER_MS, marketplaceKillSwitchSetting, readEnabledModules } from '@buybox/jobs';
+import {
+  ALERT_STALE_AFTER_MS,
+  EVALUATE_BRAND_FINDINGS_JOB,
+  marketplaceKillSwitchSetting,
+  readEnabledModules,
+} from '@buybox/jobs';
 import {
   GLOBAL_KILL_SWITCH_SETTING_KEY,
   isKillSwitchEngaged,
@@ -141,7 +147,7 @@ async function getHandler() {
       ? null
       : await (async () => {
           const window = { sinceMs: nowMs - BRAND_TREND_WINDOW_MS, untilMs: nowMs };
-          const [counts, coverage, trend, findingsPerBrand] = await Promise.all([
+          const [counts, coverage, trend, findingsPerBrand, lastEvaluation] = await Promise.all([
             watchedBrandsRepo.watchedBrandCounts(appDb),
             trackedProductsRepo.referencePriceCoverage(appDb),
             brandReportsRepo.brandDailyTrend(appDb, window),
@@ -151,6 +157,7 @@ async function getHandler() {
                 open: await brandFindingsRepo.openFindings(appDb, brand.id),
               })),
             ),
+            jobsRepo.listJobRuns(appDb, { jobName: EVALUATE_BRAND_FINDINGS_JOB, state: 'completed' }, 1),
           ]);
           const countsById = new Map(counts.map((c) => [c.watchedBrandId, c]));
           return {
@@ -181,6 +188,12 @@ async function getHandler() {
               openFindings: open.length,
               lastSweptAt: brand.lastSweptAt,
             })),
+            /**
+             * When the stored open findings above were last evaluated (review 2026-11-25 Y1). The
+             * count is a stored evaluation, not a live derivation, and without this the panel's 0
+             * sat beside 129 on the findings screen with nothing saying it was six hours old.
+             */
+            findingsEvaluatedAt: lastEvaluation[0]?.finishedAt ?? null,
             referencePrice: {
               productsWithPrice: coverage.withPrice,
               productsTotal: coverage.total,

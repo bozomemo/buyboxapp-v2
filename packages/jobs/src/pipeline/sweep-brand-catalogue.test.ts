@@ -24,6 +24,7 @@ import {
   brandRefMismatch,
   BrandRefMismatchError,
   completenessShortfall,
+  isRelevantToSearchTerm,
   mergeSelectorResults,
   sweepBrandCatalogue,
   sweepSelector,
@@ -216,6 +217,34 @@ describe('mergeSelectorResults', () => {
   });
 });
 
+// Review 2026-11-25 Y2: Trendyol's search is fuzzy. "testmarka" answered 4,911 saws, drills and
+// knives — every one of them stored, tracked and queued for a 164-minute seller scrape.
+describe('isRelevantToSearchTerm', () => {
+  it('keeps a card whose storefront brand is the term, across Turkish case and dotted i', () => {
+    expect(isRelevantToSearchTerm(product('1', { brandName: 'FELİCİA', name: 'Kuru Mama' }), 'felicia')).toBe(true);
+  });
+
+  it('keeps a card of another brand whose title carries the term — the misuse finding', () => {
+    expect(
+      isRelevantToSearchTerm(product('1', { brandName: 'Başka', name: 'Whiskas uyumlu mama kabı' }), 'whiskas'),
+    ).toBe(true);
+  });
+
+  it('drops a card the fuzzy search matched on neither brand nor title', () => {
+    expect(
+      isRelevantToSearchTerm(product('1', { brandName: 'Bosch', name: 'Bosch Budama Testeresi' }), 'testmarka'),
+    ).toBe(false);
+  });
+
+  it('ignores spacing and punctuation in the term and the card', () => {
+    expect(isRelevantToSearchTerm(product('1', { brandName: 'Pro-Plan', name: 'x' }), 'pro plan')).toBe(true);
+  });
+
+  it('keeps a card that states neither brand nor title, rather than guessing it away', () => {
+    expect(isRelevantToSearchTerm(product('1', { brandName: null, name: null }), 'whiskas')).toBe(true);
+  });
+});
+
 describe('the job', () => {
   let db: TestDb;
   let clock: FakeClock;
@@ -296,11 +325,45 @@ describe('the job', () => {
     expect(rows.map((r) => r.productRef).sort()).toEqual(['1', '2', '99']);
   });
 
+  it('stores only the search results that carry the term, and records how many it dropped', async () => {
+    await seedBrand({ brandRef: null, searchTerm: 'testmarka', label: 'Test Marka' });
+    const source = fakeSource({
+      bySearchTerm: [
+        [
+          product('1', { brandName: 'TestMarka', name: 'Kedi maması' }),
+          product('2', { brandName: 'Bosch', name: 'Bosch Testere' }),
+          product('3', { brandName: 'Makita', name: 'Matkap ucu' }),
+        ],
+      ],
+    });
+    await sweepBrandCatalogue(ctxFor(source, { marketplaceCode: 'trendyol' }));
+
+    const rows = await trackedProductsRepo.listTrackedProducts(db.appDb);
+    expect(rows.map((r) => r.productRef)).toEqual(['1']);
+    const events = await eventsRepo.listEventsFiltered(db.appDb, { minLevel: 'debug' }, 100);
+    const skipped = events.find((e) => e.code === 'BrandSweepIrrelevantSkipped');
+    expect(skipped?.message).toContain('2');
+  });
+
+  it('stops paging the search term at a page with nothing relevant on it', async () => {
+    await seedBrand({ brandRef: null, searchTerm: 'testmarka', label: 'Test Marka' });
+    const source = fakeSource({
+      bySearchTerm: [
+        [product('1', { brandName: 'TestMarka' })],
+        [product('2', { brandName: 'Bosch', name: 'Testere' })],
+        [product('3', { brandName: 'TestMarka' })],
+      ],
+    });
+    await sweepBrandCatalogue(ctxFor(source, { marketplaceCode: 'trendyol' }));
+
+    expect(source.calls.map((c) => c.pageIndex)).toEqual([1, 2]);
+  });
+
   it('records which selector found each product', async () => {
     await seedBrand();
     const source = fakeSource({
       byBrandRef: [[product('1')]],
-      bySearchTerm: [[product('1'), product('99')]],
+      bySearchTerm: [[product('1'), product('99', { brandName: 'Başka', name: 'Whiskas uyumlu kap' })]],
     });
     await sweepBrandCatalogue(ctxFor(source, { marketplaceCode: 'trendyol' }));
 

@@ -155,6 +155,24 @@ for (const dialect of ALL_DIALECTS) {
       expect(found.has('nope')).toBe(false);
     });
 
+    // Review 2026-11-25 O4: a 737-card queue had no search and no brand filter.
+    it('narrows the queue by text and by brand', async () => {
+      db = await createTestDb(dialect);
+      await seed(db.appDb);
+      const byText = await brandQueuesRepo.queryUnmatchedCards(db.appDb, { limit: 50, offset: 0, newSinceMs: 0, text: 'popu' });
+      expect(byText.rows.map((r) => r.id)).toEqual(['popular']);
+      expect(byText.total).toBe(1);
+      const byRef = await brandQueuesRepo.queryUnmatchedCards(db.appDb, { limit: 50, offset: 0, newSinceMs: 0, text: 'quiet' });
+      expect(byRef.rows.map((r) => r.id)).toEqual(['quiet']);
+      const byBrand = await brandQueuesRepo.queryUnmatchedCards(db.appDb, {
+        limit: 50,
+        offset: 0,
+        newSinceMs: 0,
+        watchedBrandId: 'rival',
+      });
+      expect(byBrand.total).toBe(0);
+    });
+
     it('pages the queue', async () => {
       db = await createTestDb(dialect);
       await seed(db.appDb);

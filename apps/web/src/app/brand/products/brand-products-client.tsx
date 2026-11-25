@@ -14,6 +14,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { barcodeHint } from '@/lib/barcode-hint';
 import {
   Button,
   buttonClass,
@@ -107,6 +108,10 @@ export function BrandProductsClient() {
   const [formOpen, setFormOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
+  // Review 2026-11-25 O6: a save error belongs beside the form, which sits below the fold.
+  const [formError, setFormError] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const barcodeKind = form.barcode.trim() === '' ? null : barcodeHint(form.barcode);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -132,6 +137,19 @@ export function BrandProductsClient() {
 
   useEffect(load, [load]);
 
+  // `?edit=<id>` — "Düzenle" on the product's own page lands here with its form open
+  // (review 2026-11-25). Read once on mount; the product is fetched, not looked up on this page.
+  useEffect(() => {
+    const editId = new URLSearchParams(window.location.search).get('edit');
+    if (!editId) return;
+    fetch(`/api/brand-products/${encodeURIComponent(editId)}`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ product: BrandProduct }>) : null))
+      .then((data) => {
+        if (data?.product) edit(data.product);
+      })
+      .catch(() => undefined);
+  }, []);
+
   function edit(row: BrandProduct) {
     setForm({
       id: row.id,
@@ -145,11 +163,14 @@ export function BrandProductsClient() {
     });
     setFormOpen(true);
     setNotice(null);
+    setFormError(null);
+    setEditingName(row.name);
   }
 
   async function save() {
     setBusy(true);
     setNotice(null);
+    setFormError(null);
     try {
       const body = {
         name: form.name,
@@ -167,7 +188,7 @@ export function BrandProductsClient() {
       });
       const data = (await res.json()) as { ok?: boolean; error?: string; warnings?: string[] };
       if (!res.ok) {
-        setNotice({ ok: false, message: data.error ?? 'Kaydedilemedi.' });
+        setFormError(data.error ?? 'Kaydedilemedi.');
         return;
       }
       // Warnings are the prices the manager may have meant differently — a PSF outside their own
@@ -181,6 +202,7 @@ export function BrandProductsClient() {
       });
       setForm(EMPTY_FORM);
       setFormOpen(false);
+      setEditingName(null);
       load();
     } finally {
       setBusy(false);
@@ -249,15 +271,20 @@ export function BrandProductsClient() {
           </label>
           <div className="ml-auto">
             <PermissionFieldset permission="catalogue.manage">
+            {/* One way to close the form, its own Kapat (review 2026-11-25): this used to turn into a
+                second cancel button while the form was open. */}
             <Button
               type="button"
+              disabled={formOpen && form.id === null}
               onClick={() => {
                 setForm(EMPTY_FORM);
-                setFormOpen((open) => !open);
+                setFormOpen(true);
                 setNotice(null);
+                setFormError(null);
+                setEditingName(null);
               }}
             >
-              {formOpen && form.id === null ? 'Vazgeç' : 'Yeni Ürün'}
+              Yeni Ürün
             </Button>
             </PermissionFieldset>
           </div>
@@ -265,7 +292,14 @@ export function BrandProductsClient() {
 
         <PermissionFieldset permission="catalogue.manage">
         {formOpen && (
-          <div className="mb-4 rounded-xl border border-(--color-border) bg-(--color-bg) p-4">
+          <div
+            role="group"
+            aria-label={form.id && editingName ? `Düzenleniyor: ${editingName}` : 'Yeni ürün'}
+            className="mb-4 rounded-xl border border-(--color-border) bg-(--color-bg) p-4"
+          >
+            <h3 className="mb-3 text-sm font-semibold">
+              {form.id && editingName ? `Düzenleniyor: ${editingName}` : 'Yeni ürün'}
+            </h3>
             <div className="flex flex-wrap items-end gap-3">
               <Field label="Ürün adı">
                 <TextInput
@@ -278,7 +312,7 @@ export function BrandProductsClient() {
                 <TextInput
                   value={form.referencePrice}
                   onChange={(e) => setForm({ ...form, referencePrice: e.target.value })}
-                  placeholder="1.249,90"
+                  placeholder="örn. 1.249,90"
                   className="w-32"
                 />
               </Field>
@@ -298,7 +332,16 @@ export function BrandProductsClient() {
                   className="w-32"
                 />
               </Field>
-              <Field label="Barkod">
+              <Field
+                label="Barkod"
+                hint={
+                  barcodeKind === 'other'
+                    ? 'Barkod geçerli bir EAN/GTIN değil; pazaryeri kartlarıyla eşleşmez.'
+                    : barcodeKind === 'scientific'
+                      ? 'Barkod Excel’in bilimsel gösterimine dönmüş; rakamları kaybolmuş.'
+                      : undefined
+                }
+              >
                 <TextInput
                   value={form.barcode}
                   onChange={(e) => setForm({ ...form, barcode: e.target.value })}
@@ -318,7 +361,7 @@ export function BrandProductsClient() {
                 <TextInput
                   value={form.desi}
                   onChange={(e) => setForm({ ...form, desi: e.target.value })}
-                  placeholder="4,5"
+                  placeholder="örn. 4,5"
                   className="w-20"
                 />
               </Field>
@@ -331,11 +374,18 @@ export function BrandProductsClient() {
                 onClick={() => {
                   setForm(EMPTY_FORM);
                   setFormOpen(false);
+                  setFormError(null);
+                  setEditingName(null);
                 }}
               >
                 Kapat
               </Button>
             </div>
+            {formError && (
+              <p role="alert" className="mt-2 text-sm text-(--color-danger)">
+                {formError}
+              </p>
+            )}
             <p className="mt-2 text-xs text-(--color-muted)">
               Fiyatlar <strong>birim başına</strong>dır. Üç&apos;lü paket satan bir kart, çarpanıyla
               ölçeklenerek karşılaştırılır. Max boşsa üst sınır PSF olur. <strong>Birim fiyat</strong>, ürünü

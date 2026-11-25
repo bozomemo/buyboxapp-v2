@@ -12,7 +12,8 @@
  */
 
 import { useRef, useState } from 'react';
-import { Button, buttonClass, Field, Section, StatusBanner } from '@/components/ui';
+import { FileInput } from '@/components/file-input';
+import { Button, buttonClass, Section, StatusBanner } from '@/components/ui';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatNumber } from '@/lib/format';
@@ -158,10 +159,12 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
       }
     >
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Dosya" hint=".xlsx veya .csv">
-          <input
+        {/* Not a `Field`: that is a <label>, and the picker carries its own (review 2026-11-25). */}
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">Dosya</span>
+          <FileInput
+            aria-label="Dosya"
             ref={fileInput}
-            type="file"
             accept=".xlsx,.csv,text/csv"
             onChange={() => {
               // A new file invalidates the preview: confirming after swapping the file would
@@ -172,9 +175,10 @@ export function ImportPanel({ onImported }: { onImported: () => void }) {
               setWarnings([]);
               setNotice(null);
             }}
-            className="w-80 text-sm file:mr-3 file:h-9 file:rounded-lg file:border file:border-(--color-border) file:bg-(--color-surface) file:px-3 file:font-semibold"
+            className="w-80"
           />
-        </Field>
+          <span className="text-xs text-(--color-muted)">.xlsx veya .csv</span>
+        </div>
         <Button variant="secondary" type="button" disabled={busy} onClick={() => void send(false)}>
           {busy ? 'Okunuyor…' : 'Önizle'}
         </Button>

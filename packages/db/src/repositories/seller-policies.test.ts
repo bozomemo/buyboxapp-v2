@@ -223,6 +223,43 @@ for (const dialect of ALL_DIALECTS) {
         ).rejects.toBeInstanceOf(sellerPoliciesRepo.SellerPolicyIdentityError);
       }, 30_000);
 
+      // Review 2026-11-25 Y10: "12345" was stored as a rule that could never match anything.
+      it.each(['12345', '123456789012', '12345abcde', '123-456-7890'])(
+        'refuses a tax number that is neither 10 nor 11 digits: %s',
+        async (taxNumber) => {
+          db = await createTestDb(dialect);
+          const { groupId, whiskas } = await seed(db.appDb);
+          await expect(
+            sellerPoliciesRepo.upsertSellerPolicy(db.appDb, {
+              id: newId(),
+              watchedBrandGroupId: groupId,
+              watchedBrandId: whiskas,
+              identity: { taxNumber },
+              status: 'blocked',
+              note: null,
+              nowMs: NOW,
+            }),
+          ).rejects.toBeInstanceOf(sellerPoliciesRepo.SellerPolicyIdentityError);
+        },
+        30_000,
+      );
+
+      it('accepts an 11-digit national id number as typed', async () => {
+        db = await createTestDb(dialect);
+        const { groupId, whiskas } = await seed(db.appDb);
+        await sellerPoliciesRepo.upsertSellerPolicy(db.appDb, {
+          id: newId(),
+          watchedBrandGroupId: groupId,
+          watchedBrandId: whiskas,
+          identity: { taxNumber: ' 12345678901 ' },
+          status: 'blocked',
+          note: null,
+          nowMs: NOW,
+        });
+        const [row] = await sellerPoliciesRepo.listSellerPolicies(db.appDb, {});
+        expect(row?.taxNumber).toBe('12345678901');
+      }, 30_000);
+
       it('refuses a seller ref with no marketplace', async () => {
         // The same digits are different companies on different marketplaces, so half the pair is
         // not half an answer — it is no answer.

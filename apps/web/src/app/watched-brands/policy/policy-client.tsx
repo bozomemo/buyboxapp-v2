@@ -25,6 +25,7 @@ import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
 import { PermissionFieldset } from '@/lib/permissions';
+import { FileInput } from '@/components/file-input';
 
 type Verdict = 'authorised' | 'blocked' | 'undefined';
 
@@ -119,7 +120,10 @@ export function PolicyClient() {
   const [manualMarketplace, setManualMarketplace] = useState('trendyol');
   const [manualRef, setManualRef] = useState('');
   const [manualTax, setManualTax] = useState('');
-  const [manualStatus, setManualStatus] = useState<'authorised' | 'blocked'>('authorised');
+  // No default (review 2026-11-25 Y10): a pre-selected "Yetkili" wrote authorised rules nobody chose.
+  const [manualStatus, setManualStatus] = useState<'authorised' | 'blocked' | ''>('');
+  // Beside the form, not at the top of the page (review 2026-11-25 O6).
+  const [manualError, setManualError] = useState<string | null>(null);
   const [manualNote, setManualNote] = useState('');
 
   const paged = usePagedRows(report?.sellers ?? EMPTY_SELLERS, { resetKey: watchedBrandId });
@@ -203,6 +207,17 @@ export function PolicyClient() {
   }
 
   async function addManual() {
+    if (manualStatus === '') {
+      setManualError('Durumu seçin: Yetkili ya da Yasaklı.');
+      return;
+    }
+    if (manualKind === 'taxNumber' && !/^[0-9]{10,11}$/.test(manualTax.trim())) {
+      setManualError(
+        'Vergi numarası 10 haneli (vergi kimlik no) ya da 11 haneli (T.C. kimlik no) olmalı ve yalnız rakam içermeli.',
+      );
+      return;
+    }
+    setManualError(null);
     const res = await post('/api/seller-policies', {
       watchedBrandId,
       applyToWholeGroup,
@@ -214,9 +229,10 @@ export function PolicyClient() {
     });
     const data = (await res.json()) as { error?: string };
     if (!res.ok) {
-      setError(data.error ?? 'Kural kaydedilemedi.');
+      setManualError(data.error ?? 'Kural kaydedilemedi.');
       return;
     }
+    setManualStatus('');
     setManualRef('');
     setManualTax('');
     setManualNote('');
@@ -456,6 +472,11 @@ export function PolicyClient() {
                 <Button size="sm" type="button" disabled={busy || !watchedBrandId} onClick={addManual}>
                   Ekle
                 </Button>
+                {manualError && (
+                  <p role="alert" className="text-xs text-(--color-danger)">
+                    {manualError}
+                  </p>
+                )}
                 {manualKind === 'taxNumber' && (
                   <p className="text-xs text-(--color-muted)">
                     Vergi numarası kuralı, o numaranın hangi mağazaya ait olduğu kayıtlıysa çalışır. Henüz
@@ -488,16 +509,16 @@ export function PolicyClient() {
                     ]}
                   />
                 </div>
-                <input
+                <FileInput
+                  aria-label="CSV dosyası"
                   ref={fileInput}
-                  type="file"
                   accept=".csv,text/csv"
                   disabled={busy || !watchedBrandId}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) void importFile(file);
                   }}
-                  className="block w-full text-xs"
+                  className="w-full"
                 />
               </div>
             </Section>

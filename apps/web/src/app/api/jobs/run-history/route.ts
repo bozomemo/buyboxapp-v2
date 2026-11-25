@@ -20,7 +20,12 @@ async function getHandler(request: Request) {
 
   const runs = await jobsRepo.listJobRuns(
     appDb,
-    { jobName, state, sinceMs: sinceMs ? Number(sinceMs) : undefined },
+    {
+      jobName,
+      state,
+      sinceMs: sinceMs ? Number(sinceMs) : undefined,
+      hideEmpty: url.searchParams.get('hideEmpty') === 'true',
+    },
     RUN_HISTORY_LIMIT,
   );
   return NextResponse.json({

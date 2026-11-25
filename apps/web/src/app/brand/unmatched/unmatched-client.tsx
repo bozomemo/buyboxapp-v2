@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { errorMessage } from '@/components/auth-card';
 import { DEFAULT_PAGE_SIZE, Pagination, STICKY_HEAD, TableFrame } from '@/components/table';
-import { Ago, Button, EmptyState, ErrorState, LoadingState, PageHeader, Section, TextInput } from '@/components/ui';
+import { Ago, Button, EmptyState, ErrorState, LoadingState, PageHeader, Section, Select, TextInput } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 import { PermissionFieldset } from '@/lib/permissions';
@@ -45,6 +45,95 @@ interface Data {
   newCount: number;
   newWindowMs: number;
   cards: UnmatchedCard[];
+  /** Own brands for the filter, and stock products for "Ürüne bağla". Absent from an older server. */
+  brands?: { id: string; label: string }[];
+  products?: { id: string; name: string }[];
+}
+
+/**
+ * "Ürüne bağla" for a card with no barcode suggestion (review 2026-11-25 O4): before this the
+ * operator copied the card's link, opened the product and pasted it there. The multiplier is still
+ * asked — empty by default, as on the product screen (doc 17 §2.4).
+ */
+function DirectLink({
+  card,
+  products,
+  onDone,
+}: {
+  card: UnmatchedCard;
+  products: { id: string; name: string }[];
+  onDone: (error: string | null) => void;
+}) {
+  const [productId, setProductId] = useState('');
+  const [multiplier, setMultiplier] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function link() {
+    const count = Number(multiplier);
+    if (productId === '') {
+      setError('Bir stok ürünü seçin.');
+      return;
+    }
+    if (!Number.isSafeInteger(count) || count < 1) {
+      setError("Bu kartta kaç birim satılıyor? Tek ürünse 1, 3'lü paketse 3 yazın.");
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/brand-products/${productId}/cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackedProductId: card.id, unitMultiplier: count, linkSource: 'manual' }),
+      });
+      onDone(response.ok ? null : await failure(response, 'Kart bağlanamadı'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (products.length === 0) {
+    return (
+      <span className="text-xs text-(--color-muted)">
+        Henüz stok ürünü yok.{' '}
+        <Link className="underline" href="/brand/products">
+          Stok
+        </Link>{' '}
+        ekranından ekleyin.
+      </span>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          aria-label="Stok ürünü"
+          value={productId}
+          onChange={(e) => setProductId(e.target.value)}
+          options={[{ value: '', label: 'Stok ürünü seçin…' }, ...products.map((p) => ({ value: p.id, label: p.name }))]}
+          className="max-w-56"
+        />
+        <span className="text-xs text-(--color-muted)">×</span>
+        <TextInput
+          aria-label="Adet çarpanı"
+          inputMode="numeric"
+          placeholder="adet"
+          className="w-14"
+          value={multiplier}
+          onChange={(e) => setMultiplier(e.target.value)}
+        />
+        <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void link()}>
+          Ürüne bağla
+        </Button>
+      </div>
+      {error && (
+        <span role="alert" className="text-xs text-(--color-danger)">
+          {error}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /** The server's Turkish reason, or a fallback naming the HTTP status. */
@@ -109,6 +198,12 @@ export function UnmatchedCardsClient() {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [busy, setBusy] = useState<string | null>(null);
+  // Review 2026-11-25 O4/O5: search, brand filter, a ticked selection and an undo.
+  const [textDraft, setTextDraft] = useState('');
+  const [text, setText] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [undo, setUndo] = useState<{ ids: string[]; label: string } | null>(null);
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -117,6 +212,8 @@ export function UnmatchedCardsClient() {
       offset: String(page * pageSize),
       dismissed: String(showDismissed),
     });
+    if (text.trim()) params.set('text', text.trim());
+    if (brandFilter) params.set('watchedBrandId', brandFilter);
     fetch(`/api/brand/unmatched?${params.toString()}`)
       .then((r) => r.json())
       .then((body: Data & { error?: string }) => {
@@ -124,7 +221,7 @@ export function UnmatchedCardsClient() {
         else setData(body);
       })
       .catch((error: unknown) => setLoadError(error instanceof Error ? error.message : 'Kartlar okunamadı.'));
-  }, [page, pageSize, showDismissed]);
+  }, [page, pageSize, showDismissed, text, brandFilter]);
 
   useEffect(load, [load]);
 
@@ -140,14 +237,21 @@ export function UnmatchedCardsClient() {
     }
   }
 
-  const dismiss = (card: UnmatchedCard, dismissed: boolean) =>
-    act(card.id, () =>
-      fetch('/api/brand/unmatched', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: [card.id], dismissed }),
-      }),
-    );
+  const postDismissed = (ids: string[], dismissed: boolean) =>
+    fetch('/api/brand/unmatched', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, dismissed }),
+    });
+
+  /** Set aside, with an undo rather than a confirmation: the move is reversible (review O5). */
+  async function dismissIds(ids: string[], label: string, dismissed: boolean) {
+    await act(ids[0]!, () => postDismissed(ids, dismissed));
+    setSelected(new Set());
+    setUndo(dismissed ? { ids, label } : null);
+  }
+
+  const dismiss = (card: UnmatchedCard, dismissed: boolean) => dismissIds([card.id], `“${card.label}”`, dismissed);
 
   const toggleFavourite = (card: UnmatchedCard) =>
     act(card.id, () =>
@@ -181,10 +285,71 @@ export function UnmatchedCardsClient() {
               setPage(0);
             }}
           >
-            {showDismissed ? 'Kuyruğa dön' : 'Kenara alınanlar'}
+            {showDismissed ? 'Kuyruğu göster' : 'Kenara alınanlar'}
           </Button>
         }
       >
+        <form
+          role="search"
+          className="mb-3 flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setText(textDraft);
+            setPage(0);
+          }}
+        >
+          <TextInput
+            type="search"
+            aria-label="Kartlarda ara"
+            placeholder="Kart adı, ürün kodu ya da barkod"
+            value={textDraft}
+            onChange={(e) => setTextDraft(e.target.value)}
+            className="w-72"
+          />
+          <Button type="submit" size="sm" variant="secondary">
+            Ara
+          </Button>
+          {(data?.brands?.length ?? 0) > 1 && (
+            <Select
+              aria-label="Marka"
+              value={brandFilter}
+              onChange={(e) => {
+                setBrandFilter(e.target.value);
+                setPage(0);
+              }}
+              options={[{ value: '', label: 'Tüm markalar' }, ...data!.brands!.map((b) => ({ value: b.id, label: b.label }))]}
+            />
+          )}
+          {selected.size > 0 && !showDismissed && (
+            <PermissionFieldset permission="catalogue.manage">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void dismissIds([...selected], `${formatNumber(selected.size)} kart`, true)}
+              >
+                {`Seçilen ${formatNumber(selected.size)} kart bizim değil`}
+              </Button>
+            </PermissionFieldset>
+          )}
+        </form>
+        {undo && (
+          <p role="status" className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+            <span>{undo.label} kenara alındı.</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                const ids = undo.ids;
+                setUndo(null);
+                void act(ids[0]!, () => postDismissed(ids, false));
+              }}
+            >
+              Geri al
+            </Button>
+          </p>
+        )}
         {data !== null && !showDismissed && data.total > 0 && (
           <p className="mb-2 text-sm">
             Toplam <strong>{formatNumber(data.total)}</strong> kart.{' '}
@@ -217,6 +382,7 @@ export function UnmatchedCardsClient() {
               <table className="w-full text-sm">
                 <thead className={STICKY_HEAD}>
                   <tr className="text-left">
+                    {!showDismissed && <th className="w-8 p-2" aria-label="Seçim" />}
                     <th className="p-2">Kart</th>
                     <th className="p-2">Marka</th>
                     <th className="p-2 text-right">Değerlendirme</th>
@@ -232,6 +398,23 @@ export function UnmatchedCardsClient() {
                     const isNew = nowMs - card.addedAt < data.newWindowMs;
                     return (
                       <tr key={card.id} className="border-t border-(--color-border) align-top">
+                        {!showDismissed && (
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              aria-label={`${card.label} seç`}
+                              checked={selected.has(card.id)}
+                              onChange={(e) =>
+                                setSelected((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.add(card.id);
+                                  else next.delete(card.id);
+                                  return next;
+                                })
+                              }
+                            />
+                          </td>
+                        )}
                         <td className="p-2">
                           <span>{card.label}</span>
                           {url && (
@@ -282,13 +465,14 @@ export function UnmatchedCardsClient() {
                                 }}
                               />
                             ) : (
-                              <span className="text-xs text-(--color-muted)">
-                                Barkod eşleşmesi yok.{' '}
-                                <Link className="underline" href="/brand/products">
-                                  Stok
-                                </Link>{' '}
-                                ekranındaki ürüne bu kartı bağlayabilirsiniz.
-                              </span>
+                              <DirectLink
+                                card={card}
+                                products={data.products ?? []}
+                                onDone={(error) => {
+                                  setActionError(error);
+                                  load();
+                                }}
+                              />
                             )}
                           </PermissionFieldset>
                         </td>

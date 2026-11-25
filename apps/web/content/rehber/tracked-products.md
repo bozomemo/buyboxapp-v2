@@ -15,7 +15,7 @@ Rakip verisi yalnızca raporlama içindir. Bkz. [Rakip Verisi](/rehber/concepts-
 
 ## Üst bölüm
 
-- **+ Link ile ekle**: tek bir kartı link ile takibe alır. **Ürün linki** alanına Trendyol veya Hepsiburada ürün sayfasının linkini, isterseniz **Etiket (opsiyonel)** alanına kolay tanımak için bir isim yazıp **Ekle**'ye tıklayın.
+- **+ Link ile ekle**: tek bir kartı link ile takibe alır. **Ürün linki** alanına Trendyol veya Hepsiburada ürün sayfasının linkini, isterseniz **Etiket (opsiyonel)** alanına kolay tanımak için bir isim yazıp **Ekle**'ye tıklayın. Ürün zaten listedeyse **Bu ürün zaten takip listesinde.** yazar ve yanındaki **Listedeki ürünü aç** bağlantısı o ürünün sayfasını açar.
 - **Sütunlar**: sütunları gösterir/gizler ve sıralarını değiştirir.
 - **Excel'e Aktar**: geçerli filtreye uyan ilk 5.000 ürünü, ekranda görünen sütunlarla indirir. Yalnızca ekrandaki sayfayı değil, filtrenin tamamını indirir.
 
@@ -97,7 +97,7 @@ Listede bir ürün adına tıklayınca kartın tüm satıcılarını ve fiyat ge
 
 ### Şu An
 
-**Buybox Satıcı**, **Buybox Fiyat**, **En Ucuz Teklif**, **Satıcı Sayısı**, **Toplam Görünen Stok** ve **Son Bakış**. Son bakış başarısız olduysa yanında kırmızı ⚠ ile neden yazar (**Sayfa okunamadı**, **Sayfaya ulaşılamadı**). Altındaki **son değişiklik** teklif listesinin en son ne zaman değiştiğini gösterir; fiyatlar uzun süredir sabitse bu tarih eski olabilir.
+**Buybox Satıcı**, **Buybox Fiyat**, **En Ucuz Teklif**, **Satıcı Sayısı**, **Toplam Görünen Stok** ve **Son Bakış**. **Toplam Görünen Stok**, stok gösteren satıcıların toplamıdır; hiçbir satıcı stok göstermiyorsa **bilinmiyor**, bazıları göstermiyorsa **en az …** yazar (stoğu bilinmeyen satıcı sıfır sayılmaz). Son bakış başarısız olduysa yanında kırmızı ⚠ ile neden yazar (**Sayfa okunamadı**, **Sayfaya ulaşılamadı**). Altındaki **son değişiklik** teklif listesinin en son ne zaman değiştiğini gösterir; fiyatlar uzun süredir sabitse bu tarih eski olabilir.
 
 ### Satıcılar
 
@@ -105,10 +105,9 @@ Her satır bir satıcıdır; önce şu an satanlar sırasıyla, sonra sayfadan �
 
 - **Sıra**: satıcının sayfadaki sırası; 1 buybox'tır.
 - **Satıcı**: tıklayınca bu satıcının son 30 gündeki bakışları (tarih, sıra, fiyat, stok, kampanya) açılır. **· teklifte değil** yazan satıcı artık satmıyor; satırı bilgi olsun diye soluk olarak kalır.
-- **Fiyat** ve **Değişim**: güncel fiyat ve önceki bakışa göre değişim (▲ arttı, ▼ düştü).
-- **Müşteri Fiyatı**: indirim ve kuponlardan sonra müşterinin ödediği fiyat.
+- **Fiyat** ve **Değişim**: güncel fiyat ve önceki bakışa göre değişim (▲ arttı, ▼ düştü). Trendyol'un fiyatı mağaza kampanyasını zaten içerir. Sepette ayrıca bir indirim varsa fiyatın altında **sepette …** satırı çıkar. Excel dosyasında **Müşteri Fiyatı** ayrı bir sütundur.
 - **Kampanya**: satıcının kampanyası varsa adı, yoksa **yok**. **—** bilinmiyor demektir.
-- **Stok**, **Puan** (satıcı puanı), **Termin** (gün olarak gönderim süresi), **Son Görülme**.
+- **Stok**, **Puan** (satıcı puanı; değerlendirmesi olmayan satıcıda **—**), **Termin** (gün olarak gönderim süresi), **Son Görülme**.
 
 **Excel'e Aktar** satıcı listesini indirir.
 

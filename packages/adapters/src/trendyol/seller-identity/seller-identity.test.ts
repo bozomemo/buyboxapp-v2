@@ -225,7 +225,19 @@ describe('the request this source is the only one allowed to make', () => {
     );
     const params = new URL(url).searchParams;
     expect(params.getAll('merchantId')).toEqual(['736424']);
-    expect(params.get('filterOverPriceListings')).toBe('false');
+  });
+
+  it('drops every other query parameter, boutiqueId above all', () => {
+    // Measured live 2026-11-25 (api-references §1.6a): with `boutiqueId` on the URL Trendyol
+    // redirects to the bare product path, discarding `merchantId`, and the page comes back
+    // about the buybox holder — 49 of 55 failed bulk resolutions in production were this.
+    // The sweep stores every productUrl as `?boutiqueId=…&merchantId=…`.
+    const source = sourceWith(async () => htmlResponse(pageHtml));
+    const url = source.buildUrl(
+      { url: '/acana/regionals-pacifica-kopek-mamasi-2-kg-p-970664666?boutiqueId=61&merchantId=1114093', contentId: null },
+      '107975',
+    );
+    expect(url).toBe('https://www.trendyol.com/acana/regionals-pacifica-kopek-mamasi-2-kg-p-970664666?merchantId=107975');
   });
 
   it('fails typed when the product ref addresses nothing', () => {

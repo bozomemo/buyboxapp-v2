@@ -215,6 +215,31 @@ describe('BrandSellersClient', () => {
       });
     });
 
+    // Review 2026-11-25 O9: nothing in the table said which sellers were already resolved.
+    it('marks a seller whose identity is already resolved, naming the firm', async () => {
+      stubFetch({
+        [ROUTE]: {
+          body: {
+            ...REPORT,
+            sellers: [
+              { ...seller('111', 'Birinci'), identity: { officialName: 'BİRİNCİ TİCARET A.Ş.', resolvedAt: 1 } },
+              seller('222', 'İkinci'),
+            ],
+          },
+        },
+      });
+      render(<BrandSellersClient />);
+      const resolved = await screen.findByRole('button', { name: '✓ Kimlik' });
+      expect(resolved.getAttribute('title')).toContain('BİRİNCİ TİCARET A.Ş.');
+      expect(screen.getAllByRole('button', { name: 'Kimlik' })).toHaveLength(1);
+    });
+
+    it('speaks of brands, plural, when no single brand is chosen', async () => {
+      stubFetch({ [ROUTE]: { body: { ...REPORT, buybox: { totalLooks: 193, unidentifiedLooks: 0 } } } });
+      render(<BrandSellersClient />);
+      expect(await screen.findByText(/izlenen markaların/)).toBeTruthy();
+    });
+
     it('the header box ticks every seller on this page', async () => {
       stubFetch({ [ROUTE]: { body: REPORT } });
       render(<BrandSellersClient />);

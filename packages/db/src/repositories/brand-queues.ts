@@ -10,7 +10,7 @@
  *   on purpose, so neither is queued. "Bizim değil / önemsiz" sets `queue_dismissed_at` and the
  *   card stays out of the queue.
  */
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, notExists, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, like, notExists, or, sql } from 'drizzle-orm';
 import type { AppDatabase } from '../client.js';
 import * as mysqlSchema from '../schema/mysql.js';
 import * as postgresSchema from '../schema/postgres.js';
@@ -138,6 +138,21 @@ export interface UnmatchedCardQuery {
   readonly marketplaceCode?: string;
   /** `true`: the cards set aside instead of the queue. */
   readonly dismissed?: boolean;
+  /** Only this watched brand's cards (review 2026-11-25 O4). */
+  readonly watchedBrandId?: string;
+  /** A substring of the card's label, or its marketplace ref or barcode (review 2026-11-25 O4). */
+  readonly text?: string;
+}
+
+function unmatchedTextFilter(
+  t: typeof sqliteSchema.trackedProducts | typeof postgresSchema.trackedProducts | typeof mysqlSchema.trackedProducts,
+  text: string | undefined,
+) {
+  const trimmed = text?.trim();
+  if (!trimmed) return undefined;
+  // Bound parameters, never interpolation; the same shape as the tracked-products grid's search.
+  const pattern = `%${trimmed}%`;
+  return or(like(t.label, pattern), like(t.productRef, pattern), eq(t.barcode, trimmed));
 }
 
 export interface UnmatchedCard {
@@ -183,6 +198,8 @@ export async function queryUnmatchedCards(appDb: AppDatabase, query: UnmatchedCa
         query.dismissed ? isNotNull(t.queueDismissedAt) : isNull(t.queueDismissedAt),
         notExists(db.select({ one: sql`1` }).from(c).where(eq(c.trackedProductId, t.id))),
         query.marketplaceCode === undefined ? undefined : eq(t.marketplaceCode, query.marketplaceCode),
+        query.watchedBrandId === undefined ? undefined : eq(t.watchedBrandId, query.watchedBrandId),
+        unmatchedTextFilter(t, query.text),
       );
       return db
         .select({
@@ -219,6 +236,8 @@ export async function queryUnmatchedCards(appDb: AppDatabase, query: UnmatchedCa
         query.dismissed ? isNotNull(t.queueDismissedAt) : isNull(t.queueDismissedAt),
         notExists(db.select({ one: sql`1` }).from(c).where(eq(c.trackedProductId, t.id))),
         query.marketplaceCode === undefined ? undefined : eq(t.marketplaceCode, query.marketplaceCode),
+        query.watchedBrandId === undefined ? undefined : eq(t.watchedBrandId, query.watchedBrandId),
+        unmatchedTextFilter(t, query.text),
       );
       return db
         .select({
@@ -255,6 +274,8 @@ export async function queryUnmatchedCards(appDb: AppDatabase, query: UnmatchedCa
         query.dismissed ? isNotNull(t.queueDismissedAt) : isNull(t.queueDismissedAt),
         notExists(db.select({ one: sql`1` }).from(c).where(eq(c.trackedProductId, t.id))),
         query.marketplaceCode === undefined ? undefined : eq(t.marketplaceCode, query.marketplaceCode),
+        query.watchedBrandId === undefined ? undefined : eq(t.watchedBrandId, query.watchedBrandId),
+        unmatchedTextFilter(t, query.text),
       );
       return db
         .select({
@@ -293,6 +314,8 @@ export async function queryUnmatchedCards(appDb: AppDatabase, query: UnmatchedCa
         query.dismissed ? isNotNull(t.queueDismissedAt) : isNull(t.queueDismissedAt),
         notExists(db.select({ one: sql`1` }).from(c).where(eq(c.trackedProductId, t.id))),
         query.marketplaceCode === undefined ? undefined : eq(t.marketplaceCode, query.marketplaceCode),
+        query.watchedBrandId === undefined ? undefined : eq(t.watchedBrandId, query.watchedBrandId),
+        unmatchedTextFilter(t, query.text),
       );
       return db
         .select({
@@ -312,6 +335,8 @@ export async function queryUnmatchedCards(appDb: AppDatabase, query: UnmatchedCa
         query.dismissed ? isNotNull(t.queueDismissedAt) : isNull(t.queueDismissedAt),
         notExists(db.select({ one: sql`1` }).from(c).where(eq(c.trackedProductId, t.id))),
         query.marketplaceCode === undefined ? undefined : eq(t.marketplaceCode, query.marketplaceCode),
+        query.watchedBrandId === undefined ? undefined : eq(t.watchedBrandId, query.watchedBrandId),
+        unmatchedTextFilter(t, query.text),
       );
       return db
         .select({
@@ -331,6 +356,8 @@ export async function queryUnmatchedCards(appDb: AppDatabase, query: UnmatchedCa
         query.dismissed ? isNotNull(t.queueDismissedAt) : isNull(t.queueDismissedAt),
         notExists(db.select({ one: sql`1` }).from(c).where(eq(c.trackedProductId, t.id))),
         query.marketplaceCode === undefined ? undefined : eq(t.marketplaceCode, query.marketplaceCode),
+        query.watchedBrandId === undefined ? undefined : eq(t.watchedBrandId, query.watchedBrandId),
+        unmatchedTextFilter(t, query.text),
       );
       return db
         .select({

@@ -23,6 +23,8 @@ Bir marka iki yolla aranır:
 
 İkisi de verilirse ikisi de taranır. Arama terimiyle çıkıp marka id'siyle çıkmayan bir ürün, marka adını izinsiz kullanıyor olabilir; bu fark bir denetim bulgusudur.
 
+Pazaryerinin araması bulanıktır; kelimeye yalnızca benzeyen alakasız ürünler de döner. Bu yüzden arama teriminden gelen bir ürün yalnız markasında ya da adında bu terim geçiyorsa takibe alınır; geri kalanı atlanır ve kaç ürünün atlandığı [Olaylar](/rehber/events) ekranına yazılır. Büyük/küçük harf, Türkçe karakterler ve boşluklar fark etmez.
+
 ## Marka veya grup ekleme
 
 **Marka veya grup ekle** düğmesi ekleme formunu açar (**Ekleme formunu gizle** kapatır). Hiç grup yoksa form kendiliğinden açılır. Ekleme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
@@ -31,7 +33,8 @@ Bir marka iki yolla aranır:
 2. Marka eklemek için **Grup**'u ve **Pazaryeri**'ni seçin.
 3. **Marka adı** alanına markanın adını yazın.
 4. **Arama terimi**'ni ve biliyorsanız **Marka id (opsiyonel)**'yi yazın. İkisinden en az biri gereklidir.
-5. **Marka Ekle**'ye tıklayın.
+5. **Tür**'ü seçin: **Bizim marka** (varsayılan) ya da **Rakip marka**. Rakip markalar yalnız fiyat karşılaştırması için izlenir, denetim bulgusu üretmez.
+6. **Marka Ekle**'ye tıklayın. Ekranın üstünde **… eklendi** mesajı çıkar.
 
 Marka id'sini bilmiyorsanız boş bırakın. İlk taramadan sonra sistem, bulunan ürünlerin çoğunun taşıdığı marka id'sini **Nasıl aranıyor** sütununda önerir.
 
@@ -44,22 +47,26 @@ Aynı markayı Trendyol ve Hepsiburada için ayrı ayrı eklersiniz.
 - **Marka**: markanın adı. Tıklayınca Takip Edilen Ürünler bu markaya filtrelenmiş olarak açılır.
 - **Pazaryeri**
 - **Nasıl aranıyor**: **marka id: …** ve/veya **arama: …**. Sistem bir marka id önerirse **+ marka id … ekle** bağlantısı görünür; üzerine gelince ürünlerin yüzde kaçının bu id'yi taşıdığını görürsünüz. Tıklayınca id markaya eklenir.
-- **Tür**: **bizim** ya da **rakip**. Tıklayarak değiştirirsiniz.
+- **Tür**: **bizim** ya da **rakip**. Tıklayarak değiştirirsiniz; tıklanabilir etiketlerin yanında **⇄** işareti vardır.
   - **bizim**: kendi markanız. Denetim bulguları (yetkisiz satıcı, tavsiye fiyat altı satış vb.) üretilir.
   - **rakip**: rakip marka. Aynı şekilde taranır ve fiyatları karşılaştırılır, ama denetim bulgusu üretilmez.
   - **bizim**'den **rakip**'e geçerken onay istenir, çünkü bulgular bundan sonra durur.
 - **Ürün**: markada bulunan ürün sayısı. Tıklayınca ürünler açılır. **(… değerlendirmesiz)** pazaryerinde hiç değerlendirmesi olmayan ürün sayısıdır; tıklayınca yalnızca onlar açılır.
 - **Satıcısız**: son başarılı bakışta kimsenin satmadığı ürün sayısı (turuncu). Tıklayınca bu ürünler açılır. **(+… bakılmadı)** henüz hiç bakılmamış ürünlerdir; bunlar satıcısız değil, bilinmiyor demektir.
 - **Son Tarama**: markanın kataloğunun en son ne zaman tarandığı. **henüz taranmadı** ise hiç taranmamıştır.
-- **Durum**: **aktif** ya da **duraklatıldı**. Tıklayarak değiştirirsiniz. Duraklatılan marka düzenli taramaya girmez.
+- **Durum**: **aktif** ya da **duraklatıldı**. Tıklayarak değiştirirsiniz. Duraklatılan marka düzenli taramaya girmez. O sırada sürmekte olan satıcı taraması da elindeki küçük ürün grubunu bitirip durur; marka yeniden aktif yapılınca kalan ürünler sıradaki taramada ilk okunur.
 
 **Excel'e Aktar** tüm markaları gruplarıyla birlikte dosya olarak indirir.
 
 ## Satır düğmeleri
 
-- **Şimdi tara**: önce markanın kataloğunu tarar, sonra bulunan **her ürünün satıcılarını** tek tek okur. Her ürün tek tek sorgulandığı için büyük bir markada saatler sürebilir. Onay ister ve arka planda çalışır.
+- **Şimdi tara**: önce markanın kataloğunu tarar, sonra bulunan **her ürünün satıcılarını** tek tek okur. Her ürün tek tek sorgulandığı için büyük bir markada saatler sürebilir. Onay ister ve arka planda çalışır. Onay penceresi kayıtlı ürün sayısını ve satıcı taramasının yaklaşık kaç dakika süreceğini yazar; marka hiç taranmadıysa ürün sayısının tarama bitince belli olacağını söyler.
+
+Dar ekranda tablo yana kaydırılabilir; **Marka** sütunu ile işlem düğmeleri kaydırırken yerinde kalır.
 - **Sadece katalog**: yalnızca markada hangi ürünlerin olduğunu bulur; satıcı ve buybox verisi toplamaz. Çok daha hızlıdır.
-- **Kaldır**: markayı izleme listesinden çıkarır. Bulunan ürünler ve geçmişleri silinmez; yalnızca markayla bağları kalkar.
+- **Kaldır**: markayı izleme listesinden çıkarır. Onay penceresinde **Bulduğu … ürünü de sil** kutusu vardır ve işaretsiz gelir:
+  - İşaretlemezseniz bulunan ürünler ve geçmişleri silinmez; yalnızca markayla bağları kalkar.
+  - İşaretlerseniz markanın bulduğu ürünler ve geçmişleri silinir. Stok ürününe bağlı kartlar ve favoriler bu durumda da silinmez. Yanlış eklenmiş bir markanın ürünlerini topluca temizlemenin yolu budur.
 
 İki tarama düğmesi de işi kuyruğa alır; ilerlemeyi [İşler](/rehber/jobs) ekranından izlersiniz. Tarama başlatma, tür ve durum değiştirme ile kaldırma Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 

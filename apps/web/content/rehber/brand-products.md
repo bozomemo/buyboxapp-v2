@@ -96,17 +96,17 @@ Sık görülen hatalar:
 
 ### Yeni ürün ekleme ve düzenleme
 
-**Yeni Ürün**'e ya da bir satırdaki **Düzenle**'ye tıklayınca form açılır:
+**Yeni Ürün**'e ya da bir satırdaki **Düzenle**'ye tıklayınca form açılır. Formun başlığı **Yeni ürün** ya da **Düzenleniyor: …** (düzenlenen ürünün adı) olur. Formu **Kapat** ile kapatırsınız:
 
 - **Ürün adı**
 - **PSF (birim)**: zorunlu.
 - **Min (birim)**: boş bırakırsanız alt sınır alarmı olmaz.
 - **Max (birim)**: boş bırakırsanız üst sınır PSF olur.
-- **Barkod**: kart önerileri için.
+- **Barkod**: kart önerileri için. Yazdığınız değer geçerli bir EAN/GTIN değilse kaydetmeden önce alanın altında uyarı çıkar.
 - **Birim fiyat (KDV dahil)**: ürünü satıcılara sattığınız fiyat.
 - **Desi**: ürünün kargo desisi, örneğin `4,5`.
 
-**Birim fiyat** ve **Desi** yalnızca [İlanlar](/rehber/brand-listings) ekranındaki tahmini satıcı kârında kullanılır; alarmı etkilemez. Kaydetmek için **Ekle** (yeni ürün) ya da **Güncelle**'ye tıklayın. PSF kendi aralığınızın dışındaysa ürün yine kaydedilir ve **Dikkat:** ile başlayan bir uyarı görürsünüz.
+**Birim fiyat** ve **Desi** yalnızca [İlanlar](/rehber/brand-listings) ekranındaki tahmini satıcı kârında kullanılır; alarmı etkilemez. Kaydetmek için **Ekle** (yeni ürün) ya da **Güncelle**'ye tıklayın. PSF kendi aralığınızın dışındaysa ürün yine kaydedilir ve **Dikkat:** ile başlayan bir uyarı görürsünüz. Kayıt yapılamazsa nedeni formun altında, düğmelerin hemen altında yazar.
 
 Ekleme, düzenleme ve silme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
@@ -129,7 +129,7 @@ Ekleme, düzenleme ve silme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
 ## Ürün sayfası
 
-Listede bir ürün adına tıklayınca ürünün kendi sayfası açılır. **Stok listesine dön** sizi listeye geri götürür.
+Listede bir ürün adına tıklayınca ürünün kendi sayfası açılır. **Stok listesine dön** sizi listeye geri götürür. **Düzenle** Stok ekranını bu ürünün formu açık olarak açar. **Ürünü sil** onay sorduktan sonra ürünü siler ve sizi Stok listesine götürür; bağlı kartlar takip listesinde kalır. Bu iki düğme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
 ### Özet kutuları
 
@@ -142,6 +142,8 @@ Son 30 günde bağlı kartlarda kaydedilen bütün satıcı fiyatları üst sın
 Bu not bir uyarıdır: bandınız piyasayı anlatmıyor olabilir ya da piyasa topluca bandın dışına çıkmış olabilir. Hangisi olduğuna siz karar verirsiniz; alarmlar değişmez. En az 10 fiyat kaydı olmadan not çıkmaz.
 
 ### Bağlı kartlar
+
+Kartın adına tıklayınca kart pazaryerinde yeni sekmede açılır. Bağlantı belirli bir satıcıya kilitli değildir; sayfa o an buybox'ta kim varsa onunla açılır.
 
 Her satır bu ürüne bağlı bir karttır:
 
@@ -158,11 +160,11 @@ Her satır bu ürüne bağlı bir karttır:
 ### Kart ekle
 
 1. **Ürün linki** alanına Trendyol veya Hepsiburada ürün sayfasının linkini yapıştırın. Takip listesinde olmayan bir kartsa takibe eklenir.
-2. **Adet çarpanı** alanına bir alışta kaç adet ürün gittiğini yazın. Bu alan bilerek boş gelir; her kart için siz cevaplamalısınız.
+2. **Adet çarpanı** alanına bir alışta kaç adet ürün gittiğini yazın. Bu alan bilerek boş gelir; her kart için siz cevaplamalısınız. Boş bırakırsanız alanın hemen altında ne yazmanız gerektiği söylenir (tek ürünse 1, 3'lü paketse 3).
 3. Bu kart o pazaryerinde ana kart olacaksa **Bu pazaryerinde birincil kart olsun** kutusunu işaretleyin.
 4. **Bağla**'ya tıklayın.
 
-### Bu kart senin ürünün olabilir
+### Bu kart sizin ürününüz olabilir
 
 Ürüne barkod yazdıysanız, aynı barkodu taşıyan ve henüz hiçbir ürüne bağlı olmayan kartlar burada önerilir. Öneriler kendiliğinden bağlanmaz.
 

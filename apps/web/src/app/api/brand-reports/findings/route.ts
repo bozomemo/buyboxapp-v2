@@ -60,7 +60,9 @@ async function getHandler(request: Request) {
       ? brands.find((b) => b.id === requestedBrandId)
       : brands.length === 1
         ? brands[0]
-        : undefined;
+        : // Review 2026-11-25 O3: two own brands opened an empty screen asking for one. The first
+          // active brand by name is a starting point the picker can change, not a guess at intent.
+          [...brands].filter((b) => b.isActive).sort((a, b) => a.label.localeCompare(b.label, 'tr'))[0];
 
   const catalogue = {
     groups: groups.map((g) => ({ id: g.id, name: g.name })),

@@ -89,3 +89,65 @@ describe('BrandProductsClient', () => {
     expect(screen.queryByText(/Ürün silindi/)).toBeNull();
   });
 });
+
+// Review 2026-11-25 O6 and the Stok low findings.
+describe('the product form', () => {
+  function openNew() {
+    stubFetch({
+      [ROUTE]: { body: { products: [PRODUCT], total: 1 } },
+    });
+    render(<BrandProductsClient />);
+  }
+
+  it('shows a save error inside the form, beside its fields', async () => {
+    openNew();
+    fireEvent.click(await screen.findByRole('button', { name: 'Yeni Ürün' }));
+    stubFetch({
+      [ROUTE]: { status: 400, body: { error: 'PSF okunamadı.' } },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+    const form = screen.getByRole('group', { name: 'Yeni ürün' });
+    expect(await within(form).findByText('PSF okunamadı.')).toBeTruthy();
+  });
+
+  it('has one way to close it', async () => {
+    openNew();
+    fireEvent.click(await screen.findByRole('button', { name: 'Yeni Ürün' }));
+    expect(screen.queryByRole('button', { name: 'Vazgeç' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Kapat' })).toHaveLength(1);
+  });
+
+  it('names the product being edited', async () => {
+    openNew();
+    fireEvent.click(await screen.findByRole('button', { name: 'Düzenle' }));
+    expect(screen.getByRole('group', { name: 'Düzenleniyor: Miyav Gold Somonlu 1,5 kg' })).toBeTruthy();
+  });
+
+  it('warns about a barcode that is not an EAN while it is typed, before saving', async () => {
+    openNew();
+    fireEvent.click(await screen.findByRole('button', { name: 'Yeni Ürün' }));
+    fireEvent.change(screen.getByLabelText(/Barkod/), { target: { value: '8690000000002' } });
+    expect(screen.getByText(/geçerli bir EAN\/GTIN değil/)).toBeTruthy();
+  });
+
+  it('marks example values as examples', async () => {
+    openNew();
+    fireEvent.click(await screen.findByRole('button', { name: 'Yeni Ürün' }));
+    expect(screen.getByLabelText(/PSF \(birim\)/).getAttribute('placeholder')).toBe('örn. 1.249,90');
+    expect(screen.getByLabelText(/Desi/).getAttribute('placeholder')).toBe('örn. 4,5');
+  });
+});
+
+// Review 2026-11-25: "Düzenle" on a product's own page opens its form here.
+describe('opening the edit form from a link', () => {
+  it('opens the form for ?edit=<id>', async () => {
+    window.history.pushState({}, '', '/brand/products?edit=bp1');
+    stubFetch({
+      [ROUTE]: { body: { products: [PRODUCT], total: 1 } },
+      '/api/brand-products/bp1': { body: { product: PRODUCT, cards: [], suggestions: [] } },
+    });
+    render(<BrandProductsClient />);
+    expect(await screen.findByRole('group', { name: 'Düzenleniyor: Miyav Gold Somonlu 1,5 kg' })).toBeTruthy();
+    window.history.pushState({}, '', '/');
+  });
+});

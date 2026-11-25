@@ -80,9 +80,14 @@ async function openOrResumePass(
   ctx: JobContext,
   marketplaceCode: MarketplaceCode,
   options: SweepPassOptions,
-): Promise<trackedProductsRepo.TrackedScrapePassRow> {
+): Promise<trackedProductsRepo.TrackedScrapePassRow | null> {
   const latest = await trackedProductsRepo.latestTrackedScrapePass(ctx.appDb, marketplaceCode, options.scope);
   if (latest && latest.finishedAt === null) return latest;
+
+  // Nothing to read, nothing to open (review 2026-11-25 O12/O13): a marketplace with no products
+  // opened and closed a pass every minute — two events a minute and a pass number counting up.
+  const plannedCount = await options.countCandidates(ctx.appDb, marketplaceCode);
+  if (plannedCount === 0) return null;
 
   const startedAt = ctx.clock.nowMs();
   const pass: trackedProductsRepo.TrackedScrapePassRow = {
@@ -92,7 +97,7 @@ async function openOrResumePass(
     passNo: (latest?.passNo ?? 0) + 1,
     startedAt,
     finishedAt: null,
-    plannedCount: await options.countCandidates(ctx.appDb, marketplaceCode),
+    plannedCount,
     doneCount: 0,
     okCount: 0,
     failedCount: 0,
@@ -103,7 +108,7 @@ async function openOrResumePass(
     ctx,
     marketplaceCode,
     options.eventCodes.started,
-    `${options.passNoun} pass #${pass.passNo} started over ${pass.plannedCount} product(s)`,
+    `${options.passNoun}: tur #${pass.passNo} başladı, ${pass.plannedCount} ürün`,
     { passNo: pass.passNo, plannedCount: pass.plannedCount },
   );
   return pass;
@@ -147,6 +152,7 @@ export async function runSweepPass(
   }
 
   const pass = await openOrResumePass(ctx, marketplaceCode, options);
+  if (pass === null) return { itemsTotal: 0, itemsOk: 0, itemsFailed: 0 };
 
   let itemsOk = 0;
   let itemsFailed = 0;
@@ -173,7 +179,7 @@ export async function runSweepPass(
         ctx,
         marketplaceCode,
         options.eventCodes.completed,
-        `${options.passNoun} pass #${pass.passNo} completed: ${pass.doneCount + processed} product(s) in ${Math.round(durationMs / 60_000)} min`,
+        `${options.passNoun}: tur #${pass.passNo} bitti: ${pass.doneCount + processed} ürün, ${Math.round(durationMs / 60_000)} dk`,
         {
           passNo: pass.passNo,
           plannedCount: pass.plannedCount,
@@ -218,7 +224,7 @@ export async function runSweepPass(
         ctx,
         marketplaceCode,
         options.eventCodes.halted,
-        `${options.passNoun} stopped at ${pass.doneCount + processed}/${pass.plannedCount} of pass #${pass.passNo} — a whole chunk of ${result.itemsTotal} products failed, the source looks unavailable; the pass stays open and resumes`,
+        `${options.passNoun}: tur #${pass.passNo} ${pass.doneCount + processed}/${pass.plannedCount} üründe durdu — art arda ${result.itemsTotal} ürün okunamadı, kaynağa ulaşılamıyor; tur açık kalır ve sonra devam eder`,
         { passNo: pass.passNo, chunkSize: result.itemsTotal },
         'warn',
       );

@@ -470,9 +470,13 @@ export function TrackedProductsClient() {
     }
   }
 
+  // The product a refused duplicate already is (review 2026-11-25).
+  const [existingId, setExistingId] = useState<string | null>(null);
+
   async function add() {
     setBusy(true);
     setError(null);
+    setExistingId(null);
     try {
       const res = await fetch('/api/tracked-products', {
         method: 'POST',
@@ -484,8 +488,9 @@ export function TrackedProductsClient() {
         setLabel('');
         load();
       } else {
-        const data = (await res.json()) as { error?: string };
+        const data = (await res.json()) as { error?: string; existingId?: string };
         setError(data.error ?? 'Eklenemedi.');
+        setExistingId(data.existingId ?? null);
       }
     } finally {
       setBusy(false);
@@ -846,6 +851,14 @@ export function TrackedProductsClient() {
                 {error && (
                   <p role="alert" className="text-xs text-(--color-danger)">
                     {error}
+                    {existingId && (
+                      <>
+                        {' '}
+                        <Link href={`/tracked-products/${existingId}`} className="underline">
+                          Listedeki ürünü aç
+                        </Link>
+                      </>
+                    )}
                   </p>
                 )}
               </div>

@@ -497,6 +497,8 @@ describe('GET /api/brand/listings — export', () => {
     // Comma decimals and the Turkish verdict, so the file reads like the screen.
     expect(text).toContain('"299,40"');
     expect(text).toContain('"Aralıkta"');
+    // `;`, as every export (review 2026-11-25 O11): Turkish Excel opens it in columns.
+    expect(text).toContain('"Buybox Fiyat";');
     // A BOM, checked in bytes: `Response.text()` decodes UTF-8 and strips a leading BOM.
     const bytes = new Uint8Array(
       await (await GET(authedRequest('http://localhost/api/brand/listings?format=csv'), routeContext())).arrayBuffer(),

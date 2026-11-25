@@ -203,7 +203,7 @@ export function EventsClient() {
             <TextInput
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="ör. SubmitPriceChangesBatchFailed"
+              placeholder="ör. Failed, Halted"
             />
           </label>
           <label className="relative flex flex-col gap-1 text-xs text-(--color-muted)">
