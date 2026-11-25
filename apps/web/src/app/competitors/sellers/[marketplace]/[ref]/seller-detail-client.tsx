@@ -88,6 +88,15 @@ interface Detail {
     isKnown: boolean;
   };
   group: { id: string; displayName: string; note: string | null } | null;
+  /** The firm behind the storefront, once resolved (review 2026-11-25 O9). Absent from an older server. */
+  identity?: {
+    officialName: string | null;
+    taxNumber: string | null;
+    taxOffice: string | null;
+    cityName: string | null;
+    registeredEmailAddress: string | null;
+    resolvedAt: number;
+  } | null;
   groupMembers: { marketplaceCode: string; sellerRef: string }[];
   listings: SellerListing[];
   trackedProducts: SellerTrackedProduct[];
@@ -456,6 +465,36 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
             olmadığı anlamına gelir.
           </p>
         </>
+      )}
+
+      {detail.identity && (
+        <section
+          className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)"
+          aria-labelledby="firm-heading"
+        >
+          <h2 id="firm-heading" className="text-[15px] font-semibold">
+            Firma
+          </h2>
+          <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+            <dt className="text-(--color-muted)">Ticari unvan</dt>
+            <dd>{detail.identity.officialName ?? '—'}</dd>
+            <dt className="text-(--color-muted)">Vergi / TC no</dt>
+            <dd className="font-mono">{detail.identity.taxNumber ?? '—'}</dd>
+            <dt className="text-(--color-muted)">Vergi dairesi</dt>
+            <dd>{detail.identity.taxOffice ?? '—'}</dd>
+            <dt className="text-(--color-muted)">Şehir</dt>
+            <dd>{detail.identity.cityName ?? '—'}</dd>
+            <dt className="text-(--color-muted)">KEP</dt>
+            <dd>{detail.identity.registeredEmailAddress ?? '—'}</dd>
+          </dl>
+          <p className="mt-2 text-xs text-(--color-muted)">
+            Pazaryerinin satıcı sayfasından okundu: <Ago at={detail.identity.resolvedAt} />. Yenilemek için{' '}
+            <Link className="underline" href="/watched-brands/sellers">
+              Marka Satıcıları
+            </Link>{' '}
+            ekranındaki <strong>Kimlik</strong> panelini kullanın.
+          </p>
+        </section>
       )}
 
       <section className="rounded-xl border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-card)" aria-labelledby="identity-heading">

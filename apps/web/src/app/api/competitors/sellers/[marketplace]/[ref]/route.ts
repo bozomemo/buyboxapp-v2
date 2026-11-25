@@ -28,6 +28,7 @@ import {
   catalogRepo,
   competitorReportsRepo,
   competitorSellersRepo,
+  sellerIdentitiesRepo,
   watchedBrandsRepo,
 } from '@buybox/db';
 import { withBrand } from '@/lib/product-name';
@@ -100,6 +101,9 @@ async function getHandler(
     watchedBrandsRepo.listWatchedBrands(appDb),
   ]);
 
+  // Review 2026-11-25 O9: the resolved firm, so this page does not need Marka Satıcıları to show it.
+  const firm = identity ? await sellerIdentitiesRepo.getSellerIdentity(appDb, identity.id) : undefined;
+
   const brandNames = await catalogRepo.brandNamesByListingIds(
     appDb,
     listings.map((l) => l.listingId),
@@ -124,6 +128,16 @@ async function getHandler(
       // the observations), but there is no durable record to attach a note or a group to yet.
       isKnown: identity !== undefined,
     },
+    identity: firm
+      ? {
+          officialName: firm.officialName,
+          taxNumber: firm.taxNumber,
+          taxOffice: firm.taxOffice,
+          cityName: firm.cityName,
+          registeredEmailAddress: firm.registeredEmailAddress,
+          resolvedAt: Number(firm.resolvedAt),
+        }
+      : null,
     group: group ? { id: group.id, displayName: group.displayName, note: group.note } : null,
     groupMembers: members,
     listings: listings.map((l) => ({

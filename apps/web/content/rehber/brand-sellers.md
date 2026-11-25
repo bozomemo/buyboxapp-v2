@@ -49,7 +49,7 @@ Buybox payı **kayıtlı bakışlar** üzerinden hesaplanır, süre üzerinden d
 - **Fiyat aralığı**: dönemdeki en düşük ve en yüksek fiyatı.
 - **İlk görülme** (gizli): ≥ ile gösterilir, çünkü bu bir gözlem tarihidir; satıcı daha önce de orada olabilir.
 - **Son görülme**
-- **Kimlik**: satıcının firma bilgilerini gösteren paneli açar.
+- **Kimlik**: satıcının firma bilgilerini gösteren paneli açar. Kimliği daha önce çözülmüş satıcıda düğme **✓ Kimlik** olarak görünür; üzerine gelince ticari unvan yazar.
 
 ## Satıcı kimliği
 

@@ -240,3 +240,29 @@ describe('group form', () => {
     await waitFor(() => expect((input as HTMLInputElement).matches(':disabled')).toBe(true));
   });
 });
+
+// Review 2026-11-25 O9: the resolved firm was shown only on Marka Satıcıları.
+describe('resolved identity', () => {
+  it('names the firm behind the storefront', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: {
+        body: {
+          filters: { sinceMs: 0, untilMs: 1, watchedBrandId: null },
+          seller: { marketplaceCode: 'trendyol', sellerRef: 'S1', sellerName: 'Test Satıcı', operatorNote: null, isKnown: true },
+          identity: { officialName: 'TEST TİCARET A.Ş.', taxNumber: '1234567890', taxOffice: 'Kadıköy', cityName: 'İstanbul', registeredEmailAddress: null, resolvedAt: Date.now() },
+          group: null,
+          groupMembers: [],
+          listings: [],
+          trackedProducts: [],
+          trackedTruncated: false,
+          watchedBrands: [],
+          coverage: EMPTY_COVERAGE,
+        },
+      },
+      ...SIDE_ROUTES,
+    });
+    render(<SellerDetailClient marketplace="trendyol" sellerRef="S1" />);
+    expect(await screen.findByText('TEST TİCARET A.Ş.')).toBeTruthy();
+    expect(screen.getByText(/1234567890/)).toBeTruthy();
+  });
+});

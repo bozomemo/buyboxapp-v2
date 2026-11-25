@@ -54,6 +54,8 @@ interface Seller {
   maxPrice: string | null;
   firstSeenAt: number;
   lastSeenAt: number;
+  /** The firm behind the storefront, when it has been resolved (review 2026-11-25 O9). */
+  identity?: { officialName: string | null; resolvedAt: number } | null;
 }
 
 interface Report {
@@ -284,7 +286,17 @@ function renderSellerCell(
     case 'identity':
       // One seller here; a ticked selection goes through _Seçilenlerin kimliğini çöz_ above the
       // table (2026-11-25), which walks the same resolution one seller at a time.
-      return (
+      return s.identity ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          title={`Kimliği çözülmüş: ${s.identity.officialName ?? 'unvan okunamadı'}`}
+          onClick={() => onResolveIdentity(s)}
+        >
+          ✓ Kimlik
+        </Button>
+      ) : (
         <Button variant="secondary" size="sm" type="button" onClick={() => onResolveIdentity(s)}>
           Kimlik
         </Button>

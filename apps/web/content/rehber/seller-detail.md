@@ -27,6 +27,10 @@ Rakip verisi yalnızca raporlama içindir. Ayrıntı için [Rakip verisi](/rehbe
 
 Satış modülü açıksa altında tarama kapsamı kutusu bulunur. Kutunun anlamı [Rakip Geçmişi](/rehber/competitors#tarama-kapsami-kutusu) sayfasında anlatılır.
 
+## Firma
+
+Satıcının kimliği daha önce [Marka Satıcıları](/rehber/brand-sellers) ekranında çözüldüyse burada **Firma** bölümü çıkar: ticari unvan, vergi / TC no, vergi dairesi, şehir, KEP adresi ve bilginin ne zaman okunduğu. Kimlik hiç çözülmediyse bu bölüm görünmez.
+
 ## Kimlik eşleme
 
 Pazaryerleri satıcılara kendi kimlik numaralarını verir. Trendyol'daki bir numara ile Hepsiburada'daki aynı numara birbiriyle ilgisizdir. İki kimliğin aynı firmaya ait olduğunu yalnızca siz bilebilirsiniz. Sistem bunu isim benzerliğinden asla tahmin etmez, çünkü yanlış bir birleştirme alarmların yanlış firma için çalışmasına yol açar.

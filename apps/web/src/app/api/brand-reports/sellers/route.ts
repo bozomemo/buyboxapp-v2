@@ -18,7 +18,13 @@
 import { NextResponse } from 'next/server';
 import { resolveSellerPolicy, type SellerPolicyRule } from '@buybox/core';
 import { toSellerPolicyRules } from '@/lib/server/seller-policy-rules';
-import { brandReportsRepo, competitorSellersRepo, sellerPoliciesRepo, watchedBrandsRepo } from '@buybox/db';
+import {
+  brandReportsRepo,
+  competitorSellersRepo,
+  sellerIdentitiesRepo,
+  sellerPoliciesRepo,
+  watchedBrandsRepo,
+} from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { withPermission } from '@/lib/server/auth/guard';
 
@@ -65,7 +71,7 @@ async function getHandler(request: Request) {
    */
   const scopedBrand = watchedBrandId ? brands.find((b) => b.id === watchedBrandId) : undefined;
 
-  const [aggregates, unidentifiedCount, knownSellers, sellerGroups, policyRows, buyboxShare] =
+  const [aggregates, unidentifiedCount, knownSellers, sellerGroups, policyRows, buyboxShare, identities] =
     await Promise.all([
       brandReportsRepo.brandSellerAggregatesInRange(appDb, window),
       brandReportsRepo.countUnidentifiedTrackedObservations(appDb, window),
@@ -78,7 +84,10 @@ async function getHandler(request: Request) {
           })
         : Promise.resolve([]),
       brandReportsRepo.brandBuyboxShare(appDb, window),
+      sellerIdentitiesRepo.listSellerIdentitiesWithSellers(appDb),
     ]);
+  // Review 2026-11-25 O9: which sellers are already resolved, so the table can say so.
+  const identityBySeller = new Map(identities.map((i) => [`${i.marketplaceCode}::${i.sellerRef}`, i]));
 
   /**
    * Each seller's slice of the brand's whole buybox, keyed for the row loop below.
@@ -123,6 +132,10 @@ async function getHandler(request: Request) {
       groupId: identity?.groupId ?? null,
       groupName: group?.displayName ?? null,
       operatorNote: identity?.operatorNote ?? null,
+      identity: (() => {
+        const resolved = identityBySeller.get(`${a.marketplaceCode}::${a.sellerRef}`);
+        return resolved ? { officialName: resolved.officialName, resolvedAt: resolved.resolvedAt } : null;
+      })(),
       productCount: a.productCount,
       observationCount: a.observationCount,
       buyboxCount: a.buyboxCount,
