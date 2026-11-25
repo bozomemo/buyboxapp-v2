@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { foldTr, searchTopics } from './search';
+import { foldTr, matchSnippet, searchTopics } from './search';
 import { parseTopic } from './topic';
 
 const topic = (id: string, title: string, body: string) =>
@@ -56,5 +56,24 @@ describe('searchTopics synonyms', () => {
   it('finds "taban fiyat" from "dip fiyat" and "minimum fiyat"', () => {
     expect(searchTopics([OTHER, FLOOR], 'dip fiyat')).toEqual([FLOOR]);
     expect(searchTopics([OTHER, FLOOR], 'minimum fiyat')).toEqual([FLOOR]);
+  });
+});
+
+// Review 2026-11-25: search results listed titles only, so the operator had to open each topic
+// to see whether it answered the question.
+describe('matchSnippet', () => {
+  it('returns the sentence the query was found in, without markdown', () => {
+    const body = 'İlk cümle burada. **Kaldır** markayı listeden çıkarır ve [ürünler](/rehber/x) kalır. Son cümle.';
+    expect(matchSnippet(body, 'listeden')).toBe('Kaldır markayı listeden çıkarır ve ürünler kalır.');
+  });
+
+  it('matches across Turkish case and synonyms', () => {
+    expect(matchSnippet('Parolanızı unuttuysanız yöneticinize başvurun.', 'ŞİFRE')).toBe(
+      'Parolanızı unuttuysanız yöneticinize başvurun.',
+    );
+  });
+
+  it('says nothing when the body does not contain the query', () => {
+    expect(matchSnippet('Başka bir konu.', 'alarm')).toBeNull();
   });
 });

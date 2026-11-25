@@ -52,3 +52,21 @@ export function searchTopics<T extends Searchable>(topics: readonly T[], query: 
     .sort((a, b) => a.r - b.r || a.i - b.i)
     .map(({ t }) => t);
 }
+
+/**
+ * The sentence of `body` the query was found in, as plain text (review 2026-11-25: results listed
+ * titles only). Markdown emphasis and link targets are dropped; `null` when the body has no hit.
+ */
+export function matchSnippet(body: string, query: string): string | null {
+  const q = foldTr(query.trim());
+  if (q === '') return null;
+  const qs = variants(q);
+  const plain = body
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`#>|]/g, '')
+    .replace(/\s+/g, ' ');
+  const sentences = plain.split(/(?<=[.!?])\s+/);
+  const found = sentences.find((sentence) => qs.some((v) => foldTr(sentence).includes(v)));
+  return found ? found.trim() : null;
+}
