@@ -15,6 +15,7 @@ import {
   TextInput,
   TONE_BOX,
 } from '@/components/ui';
+import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent } from '@/lib/format';
 import { FINDING_BASIS_LABELS, FINDING_KIND_LABELS, labelOf } from '@/lib/labels';
@@ -475,6 +476,70 @@ function FindingRow({
   );
 }
 
+/** Bundan fazla "yetkili listesinde yok" bulgusu tek bir tabloda toplanır. */
+const UNLISTED_SUMMARY_MIN = 3;
+
+/**
+ * "Yetkili listesinde yok" bulgularının tek tablo hâli (inceleme 2026-11-25 O1).
+ *
+ * Tek bir yetkili satıcı tanımlanınca kalan bütün satıcılar bu bulguyu alır; 109 ayrı kart listeyi
+ * boğuyor ve asıl bulguları aşağı itiyordu. Hepsinin cevabı aynı yerde verilir — Satıcı Politikası.
+ */
+function UnlistedSummary({ findings }: { findings: Finding[] }) {
+  const headingId = 'findings-unlisted-summary';
+  const sorted = [...findings].sort((a, b) => (b.productCount ?? 0) - (a.productCount ?? 0));
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="rounded-xl border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-card)"
+    >
+      <h4 id={headingId} className="text-sm font-medium">
+        {formatNumber(findings.length)} satıcı yetkili listesinde yok
+      </h4>
+      <p className="mb-2 text-xs text-(--color-muted)">
+        Bu satıcılar ne yetkili ne yasaklı olarak işaretlenmiş. Her biri için{' '}
+        <Link href="/watched-brands/policy" className="text-(--color-accent) hover:underline">
+          Satıcı Politikası
+        </Link>{' '}
+        ekranında karar verebilirsiniz.
+      </p>
+      <TableFrame maxHeight="40vh">
+        <table className="w-full text-xs">
+          <thead className={`${STICKY_HEAD} text-left text-(--color-muted)`}>
+            <tr>
+              <th className="px-2 py-1">Satıcı</th>
+              <th className="px-2 py-1">Ürün</th>
+              <th className="px-2 py-1">Son görülme</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-(--color-border)">
+            {sorted.map((f) => (
+              <tr key={f.id}>
+                <td className="px-2 py-1">
+                  {f.subject.kind === 'seller' ? (
+                    <Link
+                      className="hover:underline"
+                      href={`/competitors/sellers/${f.subject.marketplaceCode}/${encodeURIComponent(f.subject.sellerRef)}`}
+                    >
+                      {f.subject.name || f.subject.sellerRef}
+                    </Link>
+                  ) : (
+                    f.subject.label
+                  )}
+                </td>
+                <td className="px-2 py-1 tabular-nums">{formatNumber(f.productCount ?? 0)}</td>
+                <td className="px-2 py-1">
+                  <Ago at={f.lastSeenAt ?? null} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableFrame>
+    </section>
+  );
+}
+
 /**
  * Bir dayanak grubu ("Kesin Bilgi" ya da "Yorum") başlığıyla birlikte.
  *
@@ -507,6 +572,8 @@ function FindingGroup({
 }) {
   if (findings.length === 0) return null;
   const headingId = id;
+  const unlisted = findings.filter((f) => f.kind === 'notOnAuthorisedList');
+  const rows = unlisted.length > UNLISTED_SUMMARY_MIN ? findings.filter((f) => f.kind !== 'notOnAuthorisedList') : findings;
   return (
     <section aria-labelledby={headingId} className="space-y-2">
       <div>
@@ -516,7 +583,8 @@ function FindingGroup({
         <p className="text-xs text-(--color-muted)">{hint}</p>
       </div>
       <div className="space-y-2">
-        {findings.map((f) => (
+        {unlisted.length > UNLISTED_SUMMARY_MIN && <UnlistedSummary findings={unlisted} />}
+        {rows.map((f) => (
           <FindingRow
             key={f.id}
             finding={f}
@@ -543,7 +611,8 @@ export function FindingsClient() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hidden, setHidden] = useState<Set<FindingKind>>(new Set());
+  // One kind or all of them (review 2026-11-25 O2): a chip that hid its kind read backwards.
+  const [onlyKind, setOnlyKind] = useState<FindingKind | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [evidence, setEvidence] = useState<EvidenceLook[] | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
@@ -641,7 +710,10 @@ export function FindingsClient() {
   }, [load]);
 
   const findings = report?.findings ?? [];
-  const visible = useMemo(() => findings.filter((f) => !hidden.has(f.kind)), [findings, hidden]);
+  const visible = useMemo(
+    () => (onlyKind === null ? findings : findings.filter((f) => f.kind === onlyKind)),
+    [findings, onlyKind],
+  );
   const visibleStated = useMemo(() => visible.filter((f) => f.basis === 'stated'), [visible]);
   const visibleMeasured = useMemo(() => visible.filter((f) => f.basis === 'measured'), [visible]);
 
@@ -913,24 +985,27 @@ export function FindingsClient() {
             ) : (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant={onlyKind === null ? 'primary' : 'secondary'}
+                    size="sm"
+                    type="button"
+                    aria-pressed={onlyKind === null}
+                    onClick={() => setOnlyKind(null)}
+                    className="rounded-full!"
+                  >
+                    Tümü · {formatNumber(findings.length)}
+                  </Button>
                   {([...counts.keys()] as FindingKind[])
                     .sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))
                     .map((kind) => (
                       <Button
                         key={kind}
-                        variant={hidden.has(kind) ? 'secondary' : 'primary'}
+                        variant={onlyKind === kind ? 'primary' : 'secondary'}
                         size="sm"
                         type="button"
-                        aria-pressed={!hidden.has(kind)}
-                        onClick={() =>
-                          setHidden((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(kind)) next.delete(kind);
-                            else next.add(kind);
-                            return next;
-                          })
-                        }
-                        className={`rounded-full! ${hidden.has(kind) ? 'text-(--color-muted) line-through' : ''}`}
+                        aria-pressed={onlyKind === kind}
+                        onClick={() => setOnlyKind((prev) => (prev === kind ? null : kind))}
+                        className="rounded-full!"
                       >
                         {labelOf(FINDING_KIND_LABELS, kind)} · {formatNumber(counts.get(kind) ?? 0)}
                       </Button>
@@ -971,10 +1046,7 @@ export function FindingsClient() {
                 </div>
 
                 {visible.length === 0 ? (
-                  <EmptyState
-                    message="Seçili türler gizlendi."
-                    reason="Yukarıdaki türlerden birine tekrar tıklayarak geri getirebilirsiniz."
-                  />
+                  <EmptyState message="Bu türde bulgu yok." reason="Tümü'ne tıklayarak bütün bulguları görebilirsiniz." />
                 ) : (
                   <>
                     <FindingGroup

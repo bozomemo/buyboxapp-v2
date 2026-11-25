@@ -172,12 +172,19 @@ describe('FindingsClient', () => {
       render(<FindingsClient />);
     }
 
-    it('kind toggles stay pressed buttons', async () => {
+    // Review 2026-11-25 O2: every kind started on and a click hid it — the opposite of what an
+    // operator expects from a chip. A kind chip now shows only that kind; "Tümü" brings all back.
+    it('a kind chip shows only that kind, and Tümü brings all back', async () => {
       populated();
-      const toggle = await screen.findByRole('button', { name: /Yasaklı satıcı satışta · 1/ });
-      expect(toggle.getAttribute('aria-pressed')).toBe('true');
-      fireEvent.click(toggle);
+      const all = await screen.findByRole('button', { name: /Tümü · 1/ });
+      const toggle = screen.getByRole('button', { name: /Yasaklı satıcı satışta · 1/ });
+      expect(all.getAttribute('aria-pressed')).toBe('true');
       expect(toggle.getAttribute('aria-pressed')).toBe('false');
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
+      expect(all.getAttribute('aria-pressed')).toBe('false');
+      fireEvent.click(all);
+      expect(all.getAttribute('aria-pressed')).toBe('true');
       // Button draws `rounded-lg`; a same-property override needs `!` to win in Tailwind v4.
       expect(toggle.className).toContain('rounded-full!');
     });
@@ -278,5 +285,45 @@ describe('FindingsClient thresholds', () => {
   it('does not name an internal table', async () => {
     await openThresholds();
     expect(screen.queryByText(/settings_audit/)).toBeNull();
+  });
+});
+
+// Review 2026-11-25 O1: one authorised seller turned the other 109 into 109 separate cards.
+describe('not on the authorised list', () => {
+  it('collapses many such sellers into one summary table', async () => {
+    const now = Date.now();
+    const findings = Array.from({ length: 5 }, (_, i) => ({
+      id: `na-${i}`,
+      kind: 'notOnAuthorisedList',
+      basis: 'stated',
+      subject: { kind: 'seller', marketplaceCode: 'trendyol', sellerRef: `s${i}`, name: `Satıcı ${i}` },
+      thresholdKey: null,
+      magnitude: 1,
+      productCount: i + 1,
+      lastSeenAt: now,
+      note: null,
+      openedAt: now,
+      notifiedAt: null,
+    }));
+    stubFetch({
+      '/api/brand-reports/findings': {
+        body: {
+          ...CATALOGUE,
+          brand: BRAND,
+          needsBrand: false,
+          findings,
+          notificationsConfigured: true,
+          filters: { sinceMs: now - 1000, untilMs: now },
+          context: { hasAuthorisedList: true, sellerCount: 6, productCount: 10, truncatedDeviations: false, truncatedDisagreements: false, disagreementTotal: 0 },
+        },
+      },
+    });
+    render(<FindingsClient />);
+    const summary = await screen.findByRole('region', { name: /5 satıcı yetkili listesinde yok/ });
+    expect(within(summary).getAllByRole('row')).toHaveLength(6);
+    expect(within(summary).getByRole('link', { name: /Satıcı Politikası/ }).getAttribute('href')).toBe(
+      '/watched-brands/policy',
+    );
+    expect(screen.queryAllByText('Yetkili listesinde yok', { selector: 'span.font-medium' })).toHaveLength(0);
   });
 });
