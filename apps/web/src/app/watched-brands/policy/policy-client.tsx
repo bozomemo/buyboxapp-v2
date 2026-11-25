@@ -25,6 +25,7 @@ import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatNumber, formatPercent } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
 import { PermissionFieldset } from '@/lib/permissions';
+import { FileInput } from '@/components/file-input';
 
 type Verdict = 'authorised' | 'blocked' | 'undefined';
 
@@ -508,16 +509,16 @@ export function PolicyClient() {
                     ]}
                   />
                 </div>
-                <input
+                <FileInput
+                  aria-label="CSV dosyası"
                   ref={fileInput}
-                  type="file"
                   accept=".csv,text/csv"
                   disabled={busy || !watchedBrandId}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) void importFile(file);
                   }}
-                  className="block w-full text-xs"
+                  className="w-full"
                 />
               </div>
             </Section>

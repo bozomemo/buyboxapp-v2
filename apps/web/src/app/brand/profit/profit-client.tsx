@@ -26,6 +26,7 @@ import { formatDesi } from '@/lib/desi';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { fileToBase64 } from '../products/import-panel';
 import { PermissionFieldset } from '@/lib/permissions';
+import { FileInput } from '@/components/file-input';
 
 interface BandForm {
   maxDesi: string;
@@ -311,10 +312,11 @@ export function ProfitSettingsClient() {
             yeniden yüklemek öncekinin yerine geçer. Tarife her satıcı için aynı kabul edilir.
           </p>
           <div className="flex flex-wrap items-end gap-3">
-            <Field label="Dosya" hint=".xlsx veya .csv">
-              <input
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="font-medium">Dosya</span>
+              <FileInput
+                aria-label="Dosya"
                 ref={fileInput}
-                type="file"
                 accept=".xlsx,.csv,text/csv"
                 onChange={() => {
                   setStaged(null);
@@ -322,9 +324,10 @@ export function ProfitSettingsClient() {
                   setTariffProblems([]);
                   setTariffNotice(null);
                 }}
-                className="w-80 text-sm file:mr-3 file:h-9 file:rounded-lg file:border file:border-(--color-border) file:bg-(--color-surface) file:px-3 file:font-semibold"
+                className="w-80"
               />
-            </Field>
+              <span className="text-xs text-(--color-muted)">.xlsx veya .csv</span>
+            </div>
             <Button variant="secondary" type="button" disabled={busy} onClick={() => void sendTariff(false)}>
               {busy ? 'Okunuyor…' : 'Önizle'}
             </Button>
