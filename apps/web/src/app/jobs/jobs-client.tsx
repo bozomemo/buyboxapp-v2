@@ -238,6 +238,7 @@ const RUN_HISTORY_COLUMNS: ColumnDef<RunHistoryColumnId>[] = [
 
 function formatCadence(ms: number | null): string {
   if (ms === null) return 'Yalnızca manuel';
+  if (ms % 86_400_000 === 0) return `${ms / 86_400_000} günde bir`;
   if (ms % 3_600_000 === 0) return `${ms / 3_600_000} saatte bir`;
   if (ms % 60_000 === 0) return `${ms / 60_000} dakikada bir`;
   return `${ms / 1000} saniyede bir`;
@@ -391,9 +392,12 @@ export function JobsClient() {
   const [marketplaces, setMarketplaces] = useState<MarketplaceOption[]>([]);
   const [runHistory, setRunHistory] = useState<JobRunRow[]>([]);
   const [historyLimit, setHistoryLimit] = useState<number | null>(null);
-  const [historyFilter, setHistoryFilter] = useState<{ jobName: string; state: string }>({
+  // `hideEmpty` on by default (review 2026-11-25 O12): every-minute runs with nothing to do
+  // ("Bildirim Gönderimi 0/0") buried the runs that did something.
+  const [historyFilter, setHistoryFilter] = useState<{ jobName: string; state: string; hideEmpty: boolean }>({
     jobName: '',
     state: '',
+    hideEmpty: true,
   });
   const [selectedMarketplace, setSelectedMarketplace] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -512,6 +516,7 @@ export function JobsClient() {
     const params = new URLSearchParams();
     if (historyFilter.jobName) params.set('jobName', historyFilter.jobName);
     if (historyFilter.state) params.set('state', historyFilter.state);
+    if (historyFilter.hideEmpty) params.set('hideEmpty', 'true');
     fetch(`/api/jobs/run-history?${params.toString()}`)
       .then((r) => r.json())
       .then((data: { runs: JobRunRow[]; limit: number }) => {
@@ -959,6 +964,12 @@ export function JobsClient() {
                             }
                           />
                           <span className="text-xs text-(--color-muted)">sn</span>
+                          {/* Seconds read back as a period (review 2026-11-25 O12): "86400 sn" is a day. */}
+                          {Number(cadenceDraft[job.jobName] ?? job.cadenceMs / 1000) >= 60 && (
+                            <span className="text-xs text-(--color-muted)">
+                              = {formatCadence(Number(cadenceDraft[job.jobName] ?? job.cadenceMs / 1000) * 1000)}
+                            </span>
+                          )}
                           <Button
                             size="sm"
                             type="button"
@@ -1356,10 +1367,18 @@ export function JobsClient() {
             onChange={(e) => setHistoryFilter((f) => ({ ...f, state: e.target.value }))}
             options={[
               { value: '', label: 'Tüm durumlar' },
-              { value: 'success', label: labelOf(JOB_RUN_STATE_LABELS, 'success') },
+              { value: 'completed', label: labelOf(JOB_RUN_STATE_LABELS, 'completed') },
               { value: 'failed', label: labelOf(JOB_RUN_STATE_LABELS, 'failed') },
             ]}
           />
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={historyFilter.hideEmpty}
+              onChange={(e) => setHistoryFilter((f) => ({ ...f, hideEmpty: e.target.checked }))}
+            />
+            Boş çalışmaları gizle
+          </label>
         </div>
         {runHistory.length === 0 ? (
           <EmptyState
@@ -1370,6 +1389,7 @@ export function JobsClient() {
           <>
             <TableFrame>
               <table
+                aria-label="Çalışma geçmişi"
                 className="w-full text-sm"
                 style={resizableTableStyle(RUN_HISTORY_COLUMNS, runHistoryColumns)}
               >
@@ -1405,7 +1425,7 @@ export function JobsClient() {
                         if (d.id === 'duration') {
                           return (
                             <td key={d.id} className="px-3 py-2 text-(--color-muted)">
-                              {r.finishedAt ? `${((r.finishedAt - r.startedAt) / 1000).toFixed(1)} sn` : '—'}
+                              {r.finishedAt ? formatDuration(r.finishedAt - r.startedAt) : '—'}
                             </td>
                           );
                         }

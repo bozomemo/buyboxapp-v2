@@ -39,8 +39,8 @@ Her satır bir iştir. Kapalı bir modüle ait işler varsayılan olarak gizleni
 |---|---|
 | **İş** | İşin adı. Adında **(raporlama)** geçen işler yalnızca rapor verisi toplar, fiyata dokunmaz. |
 | **Durum** | **Çalışıyor** (yanında ilerleme, ör. 40/200), **Kuyrukta** (sırasını bekliyor) veya **Boşta**. |
-| **Sıklık** | İşin kaç saniyede bir çalıştığı. Kutuya yeni değeri saniye olarak yazıp **Kaydet**'e tıklayın. **Varsayılana dön** değeri ilk haline getirir. **Yalnızca manuel** yazan işler kendiliğinden çalışmaz. |
-| **Son Çalışma** | Ne kadar önce çalıştığı ve sonucu: **Başarılı**, **Başarısız** veya **Çalışıyor**. Hiç çalışmadıysa **Hiç çalışmadı**. |
+| **Sıklık** | İşin kaç saniyede bir çalıştığı. Kutuya yeni değeri saniye olarak yazıp **Kaydet**'e tıklayın. Bir dakika ve üstündeki değerin yanında okunuşu yazar (örneğin 86400 için **= 1 günde bir**). **Varsayılana dön** değeri ilk haline getirir. **Yalnızca manuel** yazan işler kendiliğinden çalışmaz. |
+| **Son Çalışma** | Ne kadar önce çalıştığı ve sonucu: **Tamamlandı**, **Başarısız** veya **Çalışıyor**. Hiç çalışmadıysa **Hiç çalışmadı**. |
 | **Sonraki Çalışma** | Bir sonraki zamanlanmış çalışma (ör. "5 dk sonra" veya **şimdi**). |
 | **Etkin** | **Etkin** / **Devre dışı** düğmesi. Tıklayınca iş açılır veya kapanır. Kapalı bir iş zamanında çalışmaz. **Modül kapalı** etiketi, işin kapalı bir modüle ait olduğunu gösterir; tıklarsanız [Modüller](/rehber/settings-modules) ekranı açılır. |
 | **Şimdi Çalıştır** | **Çalıştır** işi hemen sıraya koyar. Pazaryeri başına çalışan işlerde önce yanındaki listeden pazaryerini seçin. İş sıradayken düğme **Kuyruğa alındı**, çalışırken **Çalışıyor…** yazar ve ikinci kez basılamaz. **Detaylar** satırın altında ayrıntıları açar. |
@@ -93,7 +93,7 @@ Değişiklik, arka plan servisi bir sonraki başlatıldığında geçerli olur.
 
 ## Çalışma Geçmişi
 
-Geçmiş çalışmaların listesi. Üstteki listelerden işe (**Tüm işler**) ve duruma (**Tüm durumlar**, **Başarılı**, **Başarısız**) göre süzebilirsiniz. Sütunlar: **İş**, **Başlangıç**, **Süre**, **Durum**, **Öğeler** (ör. "180/200 başarılı, 20 başarısız") ve **Hata**.
+Geçmiş çalışmaların listesi. Üstteki listelerden işe (**Tüm işler**) ve duruma (**Tüm durumlar**, **Tamamlandı**, **Başarısız**) göre süzebilirsiniz. **Boş çalışmaları gizle** kutusu işaretli gelir: yapacak işi olmadan biten çalışmalar (örneğin her dakika çalışan ve gönderecek bildirimi olmayan **Bildirim Gönderimi 0/0**) listede gösterilmez; görmek için işareti kaldırın. Başarısız çalışmalar her zaman gösterilir. Sütunlar: **İş**, **Başlangıç**, **Süre** (örneğin **1dk 24sn**), **Durum**, **Öğeler** (ör. "180/200 başarılı, 20 başarısız") ve **Hata**.
 
 **Sütunlar** menüsüyle sütunları gizleyip sıralayabilir, **Excel'e Aktar** ile listeyi dosya olarak indirebilirsiniz.
 

@@ -137,6 +137,8 @@ export const QUEUE_STATE_LABELS: Record<string, string> = {
 
 export const JOB_RUN_STATE_LABELS: Record<string, string> = {
   running: 'Çalışıyor',
+  // What the runner actually stores (review 2026-11-25 O12: "completed" reached the screen).
+  completed: 'Tamamlandı',
   success: 'Başarılı',
   failed: 'Başarısız',
 };

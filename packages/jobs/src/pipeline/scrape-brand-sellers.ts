@@ -158,7 +158,7 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
         ctx,
         marketplaceCode,
         'BrandSellerScrapeHalted',
-        `${brand.label} · whole-brand seller scrape stopped at ${processed}/${itemsTotal} — a full chunk of ${result.itemsTotal} products failed, the source looks unavailable; the rest keep their place in the rotation`,
+        `${brand.label} · satıcı taraması ${processed}/${itemsTotal} üründe durdu — art arda ${result.itemsTotal} ürün okunamadı, kaynağa ulaşılamıyor; kalan ürünler sıradaki taramada ilk okunur`,
       );
       return { itemsTotal, itemsOk, itemsFailed };
     }
@@ -200,7 +200,7 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
       ctx,
       marketplaceCode,
       'BrandSellerScrapeTruncated',
-      `${brand.label} · whole-brand seller scrape stopped at the ${payload.maxProducts}-product ceiling — some products were not read`,
+      `${brand.label} · satıcı taraması ${payload.maxProducts} ürün sınırında durdu — bazı ürünler okunmadı`,
     );
   }
 
@@ -211,7 +211,7 @@ export async function scrapeBrandSellers(ctx: JobContext): Promise<JobResult> {
     // `removed` is named only when it happened: it is the operator's own deletions catching up
     // with a run in flight, and printing "0 removed" on every ordinary sweep would invite them
     // to read a normal run as one that lost something.
-    `${brand.label} · ${processed} products read (${itemsOk} ok, ${itemsFailed} failed, ${itemsChanged} changed${itemsRemoved > 0 ? `, ${itemsRemoved} removed while the run was reading them` : ''})`,
+    `${brand.label} · satıcı taraması bitti: ${processed} ürün okundu (${itemsOk} başarılı, ${itemsFailed} okunamadı, ${itemsChanged} değişti${itemsRemoved > 0 ? `, ${itemsRemoved} tarama sürerken silindi` : ''})`,
     'info',
   );
 

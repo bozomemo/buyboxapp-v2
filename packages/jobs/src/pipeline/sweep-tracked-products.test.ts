@@ -185,6 +185,29 @@ describe('SweepTrackedProducts (doc 06 §12.2, doc 07 §7.4)', () => {
       expect(await pass()).toMatchObject({ passNo: 1, plannedCount: 3, doneCount: 3 });
     });
 
+    // Review 2026-11-25 O12/O13: Hepsiburada had no products and still opened and closed a pass
+    // every minute — two events a minute, ~2,900 a day, and a pass number counting up for nothing.
+    it('opens no pass and writes no event when there is nothing to read', async () => {
+      const { source, calls } = fakeSource(() => [offer()]);
+
+      await run(source, NOW);
+      await run(source, NOW + HOUR);
+
+      expect(calls).toHaveLength(0);
+      expect(await pass()).toBeUndefined();
+      const events = await eventsRepo.listRecentEvents(db.appDb, 50);
+      expect(events.filter((e) => e.code.startsWith('TrackedSweepPass'))).toHaveLength(0);
+    });
+
+    it('writes its pass events in Turkish', async () => {
+      await seedMany(['t-a']);
+      const { source } = fakeSource(() => [offer()]);
+      await run(source, NOW);
+      const events = await eventsRepo.listRecentEvents(db.appDb, 50);
+      const completed = events.find((e) => e.code === 'TrackedSweepPassCompleted');
+      expect(completed?.message).toMatch(/tur #1 bitti: 1 ürün/);
+    });
+
     it('closes the pass when nothing is left, and the next run opens the next one', async () => {
       await seedMany(['t-a', 't-b']);
       const { source, calls } = fakeSource(() => [offer()]);
