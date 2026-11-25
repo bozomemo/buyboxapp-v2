@@ -132,6 +132,16 @@ export async function deleteBrandProduct(appDb: AppDatabase, id: string): Promis
 // --------------------------------------------------------------------------------- cards
 
 /** A product's cards, primaries first, then oldest link first. */
+/** Every linked card, paused or not — "has anything been linked at all" (review 2026-11-25 Y6). */
+export async function countLinkedCards(appDb: AppDatabase): Promise<number> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => db.select({ n: count() }).from(sqliteSchema.brandProductCards),
+    postgres: (db) => db.select({ n: count() }).from(postgresSchema.brandProductCards),
+    mysql: (db) => db.select({ n: count() }).from(mysqlSchema.brandProductCards),
+  })) as { n: number | string }[];
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function listBrandProductCards(
   appDb: AppDatabase,
   brandProductId: string,

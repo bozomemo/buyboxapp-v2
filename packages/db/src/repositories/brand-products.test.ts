@@ -376,6 +376,20 @@ for (const dialect of ALL_DIALECTS) {
       });
     }, 30_000);
 
+    // Review 2026-11-25 Y6: Alarmlar said "no card linked" when the only linked card was paused.
+    it('counts linked cards, paused ones included', async () => {
+      db = await createTestDb(dialect);
+      await seedMarketplaces(db.appDb);
+      const product = await addProduct(db.appDb);
+      expect(await brandProductsRepo.countLinkedCards(db.appDb)).toBe(0);
+      const a = await addCard(db.appDb, 'TY', 'a');
+      const b = await addCard(db.appDb, 'TY', 'b');
+      await brandProductsRepo.linkCard(db.appDb, link(product, a, { isPrimary: true }));
+      await brandProductsRepo.linkCard(db.appDb, link(product, b));
+      await trackedProductsRepo.setTrackedProductsActive(db.appDb, [b], false);
+      expect(await brandProductsRepo.countLinkedCards(db.appDb)).toBe(2);
+    }, 30_000);
+
     /** doc 17 §2.5: a card has a PSF exactly when it is linked. */
     it('counts PSF coverage as linked cards', async () => {
       db = await createTestDb(dialect);

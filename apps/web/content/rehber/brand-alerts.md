@@ -38,6 +38,8 @@ Bu kutu görünürken alarm olmaması "sorun yok" anlamına gelmez; "bakmadık" 
 
 İhlaller ürüne göre gruplanır. Grup başlığında ürün adı (tıklayınca ürün sayfası açılır) ve ihlal sayısı yazar. **Excel'e Aktar** açık ihlalleri dosya olarak indirir; dosyadaki **Neden** sütunu **Raf fiyatı** ya da **Yalnız kupon** yazar.
 
+Açık ihlal yoksa tablonun yerinde nedeni yazar: veri güncel değilse bunun "sorun yok" anlamına gelmediği, hiç kart bağlanmamışsa Stok ekranına gitmeniz, bağlı kartların hepsi duraklatılmışsa duraklatılmış karta bakılmadığı söylenir.
+
 Yalnız kuponla oluşan bir ihlal varsa tablonun üstünde **Tümü**, **Raf fiyatı** ve **Yalnız kupon** düğmeleri çıkar. Düğmeye basınca tablo yalnız o türü gösterir.
 
 - **Kart**: kart adı, **↗** ile pazaryerindeki sayfa, pazaryeri ve çarpan 1 değilse **×3** gibi çarpan.
@@ -50,7 +52,8 @@ Yalnız kuponla oluşan bir ihlal varsa tablonun üstünde **Tümü**, **Raf fiy
 - **Son görülme**: ihlalin en son doğrulandığı bakış.
 - **Bildirim**: kanal başına bildirim durumu: **webhook**, **e-posta**, **SMS** ve yanında
   - **✓**: gönderildi,
-  - **bekliyor**: henüz gönderilmedi; kanal kurulmamışsa nedeni üzerine gelince görünür,
+  - **bekliyor**: henüz gönderilmedi, sıradaki gönderimde gidecek,
+  - **ayarlı değil**: bu kanal kurulmamış ya da alıcısı yok; kanal kurulana kadar gönderilmez. Nedeni üzerine gelince görünür,
   - **başarısız** (kırmızı): gönderilemedi,
   - **sessiz**: aynı satıcı aynı kartta kısa süre önce de ihlal yaptığı için tekrar bildirilmedi.
 
@@ -95,8 +98,8 @@ Hayır. Bu ekran yalnızca buybox'ı tutan satıcıya bakar. Ucuza satan diğer 
 **Aynı ihlal için neden tekrar bildirim almıyorum?**
 İhlal sürdükçe yeni bildirim gitmez; yalnızca açılışta bildirilir. **sessiz** yazıyorsa satıcı kısa süre içinde tekrar aralık dışına çıkmıştır ve tekrar bildirilmemiştir.
 
-**Bildirim sütununda "bekliyor" yazıyor ve hiç değişmiyor.**
-O kanal kurulmamış olabilir; üzerine gelince nedeni görünür. Kanalı [Bildirim Ayarları](/rehber/settings-notifications) ekranında kurduğunuzda bekleyenler toplu gönderilir.
+**Bildirim sütununda "ayarlı değil" yazıyor.**
+O kanal kurulmamış ya da alıcısı tanımlanmamış; üzerine gelince nedeni görünür. Kanalı [Bildirim Ayarları](/rehber/settings-notifications) ekranında kurduğunuzda bekleyenler toplu gönderilir.
 
 **"Yalnız kupon" ihlali de bildirilir mi?**
 Evet. Bildirim metninde "yalnız kuponla; raf fiyatı bantta" yazar.

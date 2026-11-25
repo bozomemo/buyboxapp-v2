@@ -94,6 +94,8 @@ interface Data {
   resolvedWindowMs: number;
   staleness: Staleness[];
   staleAfterMs: number;
+  /** Linked cards, paused ones included (review 2026-11-25 Y6). Absent from an older server. */
+  linkedCardCount?: number;
 }
 
 const KIND_LABELS: Record<Kind, string> = { belowMin: 'Min altında', aboveMax: 'Max üstünde' };
@@ -197,7 +199,9 @@ function notifiedCell(v: Violation) {
           }
         >
           {i > 0 && ' · '}
-          {CHANNEL_SHORT[d.channel]} {DELIVERY_SHORT[d.state]}
+          {CHANNEL_SHORT[d.channel]}{' '}
+          {/* Review 2026-11-25 Y9: a channel that is not set up is not "waiting" — it will never send. */}
+          {d.state === 'pending' && d.reason?.startsWith('bildirilmedi') ? 'ayarlı değil' : DELIVERY_SHORT[d.state]}
         </span>
       ))}
     </span>
@@ -368,7 +372,9 @@ export function BrandAlertsClient() {
             reason={
               stale.length > 0
                 ? 'Yukarıdaki uyarıya göre veri güncel değil — bu "sorun yok" anlamına gelmez.'
-                : data.staleness.length === 0
+                : data.staleness.length === 0 && (data.linkedCardCount ?? 0) > 0
+                  ? 'Bağlı kartlarınızın hepsi duraklatılmış; duraklatılmış karta bakılmaz. Takip Edilen Ürünler ekranından sürdürebilirsiniz.'
+                  : data.staleness.length === 0
                   ? 'Henüz hiçbir ürününüze pazaryeri kartı bağlanmamış. Stok ekranından bağlayabilirsiniz.'
                   : 'Bağlı kartların hiçbirinde buybox satıcısı bandın dışında değil.'
             }

@@ -9,7 +9,7 @@
  * Amounts cross as decimal kuruş strings, like every other route.
  */
 import { LOW_STOCK_THRESHOLD } from '@buybox/core';
-import { bandViolationsRepo, notificationDeliveriesRepo } from '@buybox/db';
+import { bandViolationsRepo, brandProductsRepo, notificationDeliveriesRepo } from '@buybox/db';
 import { BAND_STALE_AFTER_MS } from '@buybox/jobs';
 import { NextResponse } from 'next/server';
 import { withPermission } from '@/lib/server/auth/guard';
@@ -58,7 +58,7 @@ function toWire(
 async function getHandler() {
   const appDb = getAppDb();
   const nowMs = Date.now();
-  const [open, resolved, staleness, availability] = await Promise.all([
+  const [open, resolved, staleness, availability, linkedCardCount] = await Promise.all([
     bandViolationsRepo.queryBandViolations(appDb, { state: 'open' }),
     bandViolationsRepo.queryBandViolations(appDb, {
       state: 'resolved',
@@ -67,6 +67,7 @@ async function getHandler() {
     }),
     bandStaleness(appDb, nowMs),
     brandAvailability(appDb),
+    brandProductsRepo.countLinkedCards(appDb),
   ]);
   const deliveries = await notificationDeliveriesRepo.deliveriesForSubjects(
     appDb,
@@ -79,6 +80,7 @@ async function getHandler() {
     resolvedWindowMs: RESOLVED_WINDOW_MS,
     staleness,
     staleAfterMs: BAND_STALE_AFTER_MS,
+    linkedCardCount,
     /** Shelf and stock warnings on linked cards (brand roadmap §6.8). */
     availability,
     lowStockThreshold: LOW_STOCK_THRESHOLD,
