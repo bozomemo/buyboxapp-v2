@@ -61,7 +61,9 @@ Aynı markayı Trendyol ve Hepsiburada için ayrı ayrı eklersiniz.
 
 - **Şimdi tara**: önce markanın kataloğunu tarar, sonra bulunan **her ürünün satıcılarını** tek tek okur. Her ürün tek tek sorgulandığı için büyük bir markada saatler sürebilir. Onay ister ve arka planda çalışır.
 - **Sadece katalog**: yalnızca markada hangi ürünlerin olduğunu bulur; satıcı ve buybox verisi toplamaz. Çok daha hızlıdır.
-- **Kaldır**: markayı izleme listesinden çıkarır. Bulunan ürünler ve geçmişleri silinmez; yalnızca markayla bağları kalkar.
+- **Kaldır**: markayı izleme listesinden çıkarır. Onay penceresinde **Bulduğu … ürünü de sil** kutusu vardır ve işaretsiz gelir:
+  - İşaretlemezseniz bulunan ürünler ve geçmişleri silinmez; yalnızca markayla bağları kalkar.
+  - İşaretlerseniz markanın bulduğu ürünler ve geçmişleri silinir. Stok ürününe bağlı kartlar ve favoriler bu durumda da silinmez. Yanlış eklenmiş bir markanın ürünlerini topluca temizlemenin yolu budur.
 
 İki tarama düğmesi de işi kuyruğa alır; ilerlemeyi [İşler](/rehber/jobs) ekranından izlersiniz. Tarama başlatma, tür ve durum değiştirme ile kaldırma Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 

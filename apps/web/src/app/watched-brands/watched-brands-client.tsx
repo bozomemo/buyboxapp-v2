@@ -298,8 +298,44 @@ export function WatchedBrandsClient() {
     }
   }
 
+  /**
+   * Asks, with the products as an explicit choice (review 2026-11-25 Y12). Off by default: the
+   * products of a brand removed by mistake are history somebody may still want. Linked cards and
+   * favourites are kept by the server either way.
+   */
   async function removeBrand(brand: WatchedBrand) {
-    if (await request('DELETE', `/api/watched-brands/${brand.id}`, {})) load();
+    const choice = { withProducts: false };
+    const confirmed = await ask({
+      title: 'Marka kaldırılsın mı?',
+      confirmLabel: 'Kaldır',
+      tone: 'danger',
+      message: (
+        <div className="space-y-3">
+          <p>{brand.label} markası izleme listesinden çıkarılacak.</p>
+          {brand.productCount > 0 && (
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                onChange={(e) => {
+                  choice.withProducts = e.target.checked;
+                }}
+              />
+              <span>
+                Bulduğu {formatNumber(brand.productCount)} ürünü de sil
+                <span className="block text-xs text-(--color-muted)">
+                  Ürünler ve geçmişleri silinir. Stok ürününe bağlı kartlar ve favoriler silinmez. İşaretlemezseniz
+                  ürünler takipte kalır, yalnız marka bağlantısı kalkar.
+                </span>
+              </span>
+            </label>
+          )}
+        </div>
+      ),
+    });
+    if (!confirmed) return;
+    const url = `/api/watched-brands/${brand.id}${choice.withProducts ? '?withProducts=1' : ''}`;
+    if (await request('DELETE', url, {})) load();
   }
 
   async function removeGroup(group: WatchedBrandGroup) {
@@ -697,16 +733,15 @@ Başlatılsın mı?`}
                       >
                         Sadece katalog
                       </Button>
-                      <ConfirmButton
-                        requireConfirm
-                        confirmTone="danger"
-                        confirmMessage={`${brand.label} markasını izleme listesinden çıkar?\n\nBulduğu ${formatNumber(brand.productCount)} ürün ve geçmişleri silinmez — sadece marka bağlantıları kalkar.`}
-                        onConfirmed={() => void removeBrand(brand)}
+                      {/* kit-exempt: opens removeBrand's own dialog, which carries the products choice */}
+                      <button
+                        type="button"
+                        onClick={() => void removeBrand(brand)}
                         disabled={busy}
                         className={`${buttonClass('ghost', 'sm')} hover:text-(--color-danger)`}
                       >
                         Kaldır
-                      </ConfirmButton>
+                      </button>
                       </PermissionFieldset>
                     </td>
                   </tr>

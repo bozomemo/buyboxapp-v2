@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { WatchedBrandsClient } from './watched-brands-client';
 
@@ -132,5 +132,48 @@ describe('WatchedBrandsClient', () => {
         'includeNoSeller=true',
       );
     });
+  });
+});
+
+// Review 2026-11-25 Y12: Kaldır left every product the brand found in tracking.
+describe('Kaldır', () => {
+  const BRAND = {
+    id: 'b1', marketplaceCode: 'trendyol', label: 'Test Marka', brandRef: null, searchTerm: 'testmarka',
+    isActive: true, lastSweptAt: Date.now(), lastSweepProductCount: 4911, productCount: 4911, unratedCount: 0,
+    isOwnBrand: true, noSellerCount: 0, neverLookedCount: 0, suggestedBrandRef: null,
+  };
+
+  function deleteUrls(): string[] {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'DELETE')
+      .map((c) => String(c[0]));
+  }
+
+  async function openRemove() {
+    stubFetch({
+      '/api/watched-brands': { body: { groups: [{ id: 'g1', name: 'Mars', note: null, brands: [BRAND] }] } },
+      '/api/watched-brands/b1': { body: { ok: true, deletedProducts: 4911, keptProducts: 0 } },
+      ...EMPTY_SIDE_ROUTES,
+    });
+    render(<WatchedBrandsClient />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Kaldır' }));
+    return screen.findByRole('alertdialog');
+  }
+
+  it('offers to delete the products the brand found, off by default', async () => {
+    const dialog = await openRemove();
+    const box = (await screen.findByRole('checkbox', { name: /4.911 ürünü de sil/ })) as HTMLInputElement;
+    expect(dialog.contains(box)).toBe(true);
+    expect(box.checked).toBe(false);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Kaldır' }).at(-1)!);
+    await waitFor(() => expect(deleteUrls()).toEqual(['/api/watched-brands/b1']));
+  });
+
+  it('asks the server to delete them when ticked', async () => {
+    await openRemove();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /4.911 ürünü de sil/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Kaldır' }).at(-1)!);
+    await waitFor(() => expect(deleteUrls()).toEqual(['/api/watched-brands/b1?withProducts=1']));
   });
 });

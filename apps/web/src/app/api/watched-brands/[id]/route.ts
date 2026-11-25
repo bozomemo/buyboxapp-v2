@@ -5,7 +5,7 @@
  * and simply lose their brand attribution (`set null` on `tracked_products.watched_brand_id`).
  */
 import { NextResponse } from 'next/server';
-import { watchedBrandsRepo } from '@buybox/db';
+import { trackedProductsRepo, watchedBrandsRepo } from '@buybox/db';
 import { getAppDb } from '@/lib/server/db';
 import { invalidBody, readJsonBody } from '@/lib/server/request-body';
 import { watchedBrandSelectorProblem } from '@/lib/watched-brand-selector';
@@ -57,10 +57,21 @@ async function patchHandler(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true });
 }
 
-async function deleteHandler(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+/**
+ * `?withProducts=1` also deletes the products the brand's sweep found (review 2026-11-25 Y12),
+ * except those linked to a brand product or marked favourite. Done **before** the brand row goes,
+ * because deleting the brand nulls `watched_brand_id` and the products could no longer be told
+ * apart from any others.
+ */
+async function deleteHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await watchedBrandsRepo.deleteWatchedBrand(getAppDb(), id);
-  return NextResponse.json({ ok: true });
+  const appDb = getAppDb();
+  const withProducts = new URL(request.url).searchParams.get('withProducts') === '1';
+  const products = withProducts
+    ? await trackedProductsRepo.deleteUnlinkedBrandProducts(appDb, id)
+    : { deleted: 0, kept: 0 };
+  await watchedBrandsRepo.deleteWatchedBrand(appDb, id);
+  return NextResponse.json({ ok: true, deletedProducts: products.deleted, keptProducts: products.kept });
 }
 
 export const PATCH = withPermission('catalogue.manage', patchHandler);

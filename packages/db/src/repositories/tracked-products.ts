@@ -414,6 +414,63 @@ export async function deleteTrackedProduct(appDb: AppDatabase, id: string): Prom
   });
 }
 
+/**
+ * Deletes the products a watched brand's sweep brought in, for "Kaldır — bulduğu ürünleri de sil"
+ * (review 2026-11-25 Y12). Removing a brand only nulls `watched_brand_id`, which left a wrongly
+ * added brand's thousands of products tracked and scraped with no way to clear them in bulk.
+ *
+ * Two kinds are **kept**, because each is an operator decision this does not get to reverse: a
+ * product linked to a brand product (it carries a PSF and feeds the band alarm) and a favourite.
+ * History goes with the deleted rows, as it does for a single delete — tracking has stopped.
+ */
+export async function deleteUnlinkedBrandProducts(
+  appDb: AppDatabase,
+  watchedBrandId: string,
+): Promise<{ deleted: number; kept: number }> {
+  const rows = (await withDialect(appDb, {
+    sqlite: (db) => {
+      const t = sqliteSchema.trackedProducts;
+      const c = sqliteSchema.brandProductCards;
+      return db
+        .select({ id: t.id, isFavourite: t.isFavourite, cardId: c.id })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(eq(t.watchedBrandId, watchedBrandId));
+    },
+    postgres: (db) => {
+      const t = postgresSchema.trackedProducts;
+      const c = postgresSchema.brandProductCards;
+      return db
+        .select({ id: t.id, isFavourite: t.isFavourite, cardId: c.id })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(eq(t.watchedBrandId, watchedBrandId));
+    },
+    mysql: (db) => {
+      const t = mysqlSchema.trackedProducts;
+      const c = mysqlSchema.brandProductCards;
+      return db
+        .select({ id: t.id, isFavourite: t.isFavourite, cardId: c.id })
+        .from(t)
+        .leftJoin(c, eq(c.trackedProductId, t.id))
+        .where(eq(t.watchedBrandId, watchedBrandId));
+    },
+  })) as { id: string; isFavourite: boolean | number; cardId: string | null }[];
+
+  const doomed = rows.filter((row) => row.cardId === null && !row.isFavourite).map((row) => row.id);
+  // Chunked: a brand of thousands would exceed SQLite's bound-parameter limit in one IN list.
+  for (let i = 0; i < doomed.length; i += 500) {
+    const chunk = doomed.slice(i, i + 500);
+    await runDialect(appDb, {
+      sqlite: (db) => db.delete(sqliteSchema.trackedProducts).where(inArray(sqliteSchema.trackedProducts.id, chunk)),
+      postgres: (db) =>
+        db.delete(postgresSchema.trackedProducts).where(inArray(postgresSchema.trackedProducts.id, chunk)),
+      mysql: (db) => db.delete(mysqlSchema.trackedProducts).where(inArray(mysqlSchema.trackedProducts.id, chunk)),
+    });
+  }
+  return { deleted: doomed.length, kept: new Set(rows.map((row) => row.id)).size - doomed.length };
+}
+
 export interface TrackedProductObservationRow {
   readonly id: string;
   readonly trackedProductId: string;

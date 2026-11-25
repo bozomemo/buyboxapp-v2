@@ -11,6 +11,7 @@ import { ALL_DIALECTS, createTestDb, type TestDb } from '../test-helpers.js';
 import * as brandProductsRepo from './brand-products.js';
 import * as configRepo from './config.js';
 import * as trackedProductsRepo from './tracked-products.js';
+import * as watchedBrandsRepo from './watched-brands.js';
 
 const NOW = Date.UTC(2026, 8, 19);
 
@@ -388,6 +389,39 @@ for (const dialect of ALL_DIALECTS) {
       await brandProductsRepo.linkCard(db.appDb, link(product, b));
       await trackedProductsRepo.setTrackedProductsActive(db.appDb, [b], false);
       expect(await brandProductsRepo.countLinkedCards(db.appDb)).toBe(2);
+    }, 30_000);
+
+    // Review 2026-11-25 Y12: removing a wrongly added brand left its 4,911 products tracked, with
+    // no way to clear them but one by one.
+    it('deletes a brand’s swept products, keeping linked cards and favourites', async () => {
+      db = await createTestDb(dialect);
+      await seedMarketplaces(db.appDb);
+      const groupId = newId();
+      await watchedBrandsRepo.createWatchedBrandGroup(db.appDb, { id: groupId, name: 'G', note: null, createdAt: NOW, updatedAt: NOW });
+      const brandId = newId();
+      await watchedBrandsRepo.createWatchedBrand(db.appDb, {
+        id: brandId, groupId, marketplaceCode: 'TY', label: 'Test Marka', brandRef: null, searchTerm: 'testmarka',
+        isActive: true, lastSweptAt: null, lastSweepProductCount: null, createdAt: NOW, updatedAt: NOW,
+      });
+      const ids: string[] = [];
+      for (const ref of ['1', '2', '3', '4']) {
+        const id = newId();
+        await trackedProductsRepo.addTrackedProduct(db.appDb, {
+          id, marketplaceCode: 'TY', productRef: ref, productUrl: '/x', label: ref, isActive: true, addedAt: NOW,
+          watchedBrandId: brandId,
+        });
+        ids.push(id);
+      }
+      const other = await addCard(db.appDb, 'TY', 'other');
+      const product = await addProduct(db.appDb);
+      await brandProductsRepo.linkCard(db.appDb, link(product, ids[0]!, { isPrimary: true }));
+      await trackedProductsRepo.setTrackedProductFavourite(db.appDb, ids[1]!, true, NOW);
+
+      const result = await trackedProductsRepo.deleteUnlinkedBrandProducts(db.appDb, brandId);
+
+      expect(result).toEqual({ deleted: 2, kept: 2 });
+      const left = (await trackedProductsRepo.listTrackedProducts(db.appDb)).map((r) => r.id).sort();
+      expect(left).toEqual([ids[0], ids[1], other].sort());
     }, 30_000);
 
     /** doc 17 §2.5: a card has a PSF exactly when it is linked. */
