@@ -196,7 +196,7 @@ describe('GET /api/tracked-products', () => {
     );
     const text = await response.text();
 
-    expect(text.replace('﻿', '').split('\n')).toEqual(['"Ürün","Satıcı Sayısı (30 gün)"', '"A","2"']);
+    expect(text.replace('﻿', '').split('\n')).toEqual(['"Ürün";"Satıcı Sayısı (30 gün)"', '"A";"2"']);
   });
 });
 

@@ -23,6 +23,9 @@ Her ekranın sağ üstündeki **Sistem Çalışıyor** düğmesine tıklayın. T
 **Her ekranın sağ üstündeki ? işareti ne?**
 Bulunduğunuz ekranın rehber bölümünü açar.
 
+**"Excel'e Aktar" dosyası nasıl bir dosya?**
+Bütün ekranlardaki **Excel'e Aktar** düğmeleri aynı biçimde bir CSV dosyası indirir: sütunlar noktalı virgülle (;) ayrılır, ondalıklar virgülle yazılır (49,90). Türkçe Windows'taki Excel bu dosyayı çift tıklayınca sütunlara ayrılmış olarak açar. Barkod ve vergi numarası gibi kodlar metin olarak yazılır; baştaki sıfır kaybolmaz.
+
 **Bu rehberde bazı bölümler yok.**
 Rehber yalnızca kurulumunuzda açık olan modüllerin bölümlerini gösterir.
 

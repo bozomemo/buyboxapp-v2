@@ -315,7 +315,7 @@ async function getHandler(request: Request) {
       '0 Kâr Fiyatı',
       'Zararına',
     ];
-    const lines = [headers.map(csvEscape).join(',')];
+    const lines = [headers.map(csvEscape).join(';')];
     for (const row of listings) {
       lines.push(
         [
@@ -343,7 +343,7 @@ async function getHandler(request: Request) {
           row.profit === null ? '' : BigInt(row.profit.profit) < 0n ? 'Evet' : 'Hayır',
         ]
           .map(csvEscape)
-          .join(','),
+          .join(';'),
       );
     }
     // BOM so Excel on Windows reads the Turkish characters as UTF-8 rather than guessing.
