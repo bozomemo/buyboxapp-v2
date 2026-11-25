@@ -18,7 +18,6 @@ import { Button, ErrorState, LoadingState, PageHeader, SegmentedFilter } from '@
 import { downloadCsv } from '@/lib/csv';
 import {
   formatDateTime,
-  formatMoney,
   formatMoneyRange,
   formatNumber,
   formatPercent,

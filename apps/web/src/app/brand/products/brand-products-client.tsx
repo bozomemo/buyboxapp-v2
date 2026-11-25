@@ -148,7 +148,6 @@ export function BrandProductsClient() {
         if (data?.product) edit(data.product);
       })
       .catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on arrival
   }, []);
 
   function edit(row: BrandProduct) {

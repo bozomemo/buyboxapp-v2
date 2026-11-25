@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Check } from '@/components/icon';
-import { Ago, Button, ErrorState, LoadingState, PageHeader, Section, SegmentedFilter } from '@/components/ui';
+import { Button, ErrorState, LoadingState, PageHeader, Section, SegmentedFilter } from '@/components/ui';
 import { PriceChart } from '@/components/price-chart';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { alignBrandSeries, COMPARISON_COLORS } from '@/lib/brand-comparison';

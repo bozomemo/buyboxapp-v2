@@ -13,7 +13,7 @@
 
 import { useRef, useState } from 'react';
 import { FileInput } from '@/components/file-input';
-import { Button, buttonClass, Field, Section, StatusBanner } from '@/components/ui';
+import { Button, buttonClass, Section, StatusBanner } from '@/components/ui';
 import { STICKY_HEAD, TableFrame } from '@/components/table';
 import { downloadCsv } from '@/lib/csv';
 import { formatNumber } from '@/lib/format';
