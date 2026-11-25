@@ -54,6 +54,8 @@ interface WatchedBrand {
   /** Henüz başarılı bakış yapılmamış ürünler. "Satıcısız" değil, "bilinmiyor". */
   neverLookedCount: number;
   suggestedBrandRef: { ref: string; share: number } | null;
+  /** Approximate minutes a whole-brand seller scan takes at the scrape rate (review 2026-11-25 O17). */
+  deepScanMinutes?: number;
 }
 
 interface PruneSuggestion {
@@ -131,6 +133,9 @@ export function WatchedBrandsClient() {
   const [brandMarketplace, setBrandMarketplace] = useState('trendyol');
   const [brandRef, setBrandRef] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  // Review 2026-11-25 O16: the add form had no way to say "a rival's brand", and said nothing on success.
+  const [brandKind, setBrandKind] = useState<'own' | 'rival'>('own');
+  const [added, setAdded] = useState<string | null>(null);
 
   const columns = useColumnPrefs<ColumnId>('watchedBrands.columns', COLUMN_DEFS);
 
@@ -197,8 +202,13 @@ export function WatchedBrandsClient() {
       label: brandLabel,
       brandRef,
       searchTerm,
+      isOwnBrand: brandKind === 'own',
     });
     if (ok) {
+      setAdded(
+        `${brandLabel.trim()} eklendi. Ürünlerini bulmak için satırındaki Şimdi tara'ya basın; günlük katalog taraması da kendiliğinden bulur.`,
+      );
+      setBrandKind('own');
       setBrandLabel('');
       setBrandRef('');
       setSearchTerm('');
@@ -397,7 +407,11 @@ export function WatchedBrandsClient() {
                 : 'Rakip marka — sadece fiyat karşılaştırması, denetim bulgusu üretilmez. Değiştirmek için tıklayın.'
             }
           >
-            <Chip tone={brand.isOwnBrand ? 'ok' : 'neutral'}>{brand.isOwnBrand ? 'bizim' : 'rakip'}</Chip>
+            <Chip tone={brand.isOwnBrand ? 'ok' : 'neutral'}>
+              {brand.isOwnBrand ? 'bizim' : 'rakip'}
+              {/* A chip that is a button says so (review 2026-11-25 O16). */}
+              <span aria-hidden="true" className="ml-1 opacity-60">⇄</span>
+            </Chip>
           </ConfirmButton>
           </PermissionFieldset>
         );
@@ -462,7 +476,10 @@ export function WatchedBrandsClient() {
             className="disabled:opacity-40"
             title={brand.isActive ? 'Duraklatmak için tıklayın' : 'Sürdürmek için tıklayın'}
           >
-            <Chip tone={brand.isActive ? 'ok' : 'neutral'}>{brand.isActive ? 'aktif' : 'duraklatıldı'}</Chip>
+            <Chip tone={brand.isActive ? 'ok' : 'neutral'}>
+              {brand.isActive ? 'aktif' : 'duraklatıldı'}
+              <span aria-hidden="true" className="ml-1 opacity-60">⇄</span>
+            </Chip>
           </button>
           </PermissionFieldset>
         );
@@ -599,6 +616,17 @@ export function WatchedBrandsClient() {
                     className="w-40"
                   />
                 </Field>
+                <Field label="Tür">
+                  <Select
+                    value={brandKind}
+                    onChange={(e) => setBrandKind(e.target.value as 'own' | 'rival')}
+                    options={[
+                      { value: 'own', label: 'Bizim marka' },
+                      { value: 'rival', label: 'Rakip marka' },
+                    ]}
+                    className="w-36"
+                  />
+                </Field>
                 <Field label="Marka id (opsiyonel)">
                   <TextInput
                     value={brandRef}
@@ -626,6 +654,7 @@ export function WatchedBrandsClient() {
       </PermissionFieldset>
 
       {error && <StatusBanner ok={false} message={error} />}
+      {added && !error && <StatusBanner ok message={added} />}
 
       {pruneSuggestions.length > 0 && (
         <Section id="watched-brands-prune" title="Ölü ürün önerisi">
@@ -688,22 +717,32 @@ export function WatchedBrandsClient() {
               >
                 <tr>
                   {visibleColumnIds.map((id) => (
-                    <ResizableTh key={id} id={id} prefs={columns} className="px-2 py-2">
+                    <ResizableTh
+                      key={id}
+                      id={id}
+                      prefs={columns}
+                      className={`px-2 py-2 ${id === 'brand' ? 'sticky left-0 z-[2] bg-(--color-hover)' : ''}`}
+                    >
                       {COLUMN_LABEL.get(id)}
                     </ResizableTh>
                   ))}
-                  <th className="px-2 py-2" />
+                  <th className="sticky right-0 z-[2] bg-(--color-hover) px-2 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-(--color-border)">
                 {group.brands.map((brand) => (
                   <tr key={brand.id}>
+                    {/* Name and actions stay put on a narrow screen (review 2026-11-25 O16): scrolled
+                        to the buttons, the row no longer said which brand they would act on. */}
                     {visibleColumnIds.map((id) => (
-                      <td key={id} className="px-2 py-1">
+                      <td
+                        key={id}
+                        className={`px-2 py-1 ${id === 'brand' ? 'sticky left-0 z-[1] bg-(--color-surface)' : ''}`}
+                      >
                         {renderCell(id, brand)}
                       </td>
                     ))}
-                    <td className="px-2 py-1 text-right whitespace-nowrap">
+                    <td className="sticky right-0 z-[1] bg-(--color-surface) px-2 py-1 text-right whitespace-nowrap">
                       {/* §3.6: onay, geri alınamadığı için değil — pazaryerine binlerce istek
                           gönderdiği için. Mesaj kaç ürünün okunacağını adıyla söyler. */}
                       <PermissionFieldset permission="catalogue.manage">
@@ -711,7 +750,13 @@ export function WatchedBrandsClient() {
                         requireConfirm
                         confirmMessage={`${brand.label}: önce katalog taranacak, ardından bulunan her ürünün satıcıları tek tek okunacak.
 
-Şu an ${formatNumber(brand.productCount)} ürün kayıtlı; ürün başına bir sayfa okunur, bu yüzden iş saatler sürebilir ve arka planda çalışır.
+${
+  // Review 2026-11-25 O17: "Şu an 0 ürün kayıtlı" read as "this brand has no products" before
+  // the first sweep, which then found 737.
+  brand.productCount === 0
+    ? 'Bu marka henüz hiç taranmadı; ürün sayısı katalog taraması bitince belli olur. Ürün başına bir sayfa okunur, bu yüzden satıcı taraması büyük bir markada saatler sürebilir ve arka planda çalışır.'
+    : `Şu an ${formatNumber(brand.productCount)} ürün kayıtlı; ürün başına bir sayfa okunur, bu yüzden satıcı taraması yaklaşık ${formatNumber(brand.deepScanMinutes ?? 0)} dk sürer ve arka planda çalışır.`
+}
 
 Başlatılsın mı?`}
                         onConfirmed={() => void sweepNow(brand, true)}

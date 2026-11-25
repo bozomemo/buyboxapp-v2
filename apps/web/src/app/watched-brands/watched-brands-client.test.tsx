@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { WatchedBrandsClient } from './watched-brands-client';
@@ -175,5 +175,55 @@ describe('Kaldır', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: /4.911 ürünü de sil/ }));
     fireEvent.click(screen.getAllByRole('button', { name: 'Kaldır' }).at(-1)!);
     await waitFor(() => expect(deleteUrls()).toEqual(['/api/watched-brands/b1?withProducts=1']));
+  });
+});
+
+// Review 2026-11-25 O16, O17.
+describe('adding and sweeping', () => {
+  const brand = (overrides: Record<string, unknown> = {}) => ({
+    id: 'b1', marketplaceCode: 'trendyol', label: 'Felicia', brandRef: null, searchTerm: 'felicia',
+    isActive: true, lastSweptAt: null, lastSweepProductCount: null, productCount: 0, unratedCount: 0,
+    isOwnBrand: true, noSellerCount: 0, neverLookedCount: 0, suggestedBrandRef: null, deepScanMinutes: 0,
+    ...overrides,
+  });
+  function setup(b = brand()) {
+    stubFetch({
+      '/api/watched-brands': { body: { ok: true, id: 'new', groups: [{ id: 'g1', name: 'Mars', note: null, brands: [b] }] } },
+      ...EMPTY_SIDE_ROUTES,
+    });
+    render(<WatchedBrandsClient />);
+  }
+  function postedBody(): Record<string, unknown> | undefined {
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(([u, init]) => String(u) === '/api/watched-brands' && (init as RequestInit | undefined)?.method === 'POST');
+    return call ? (JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>) : undefined;
+  }
+
+  it('asks whether a new brand is ours or a rival, and says it was added', async () => {
+    setup();
+    await screen.findByText('Felicia');
+    fireEvent.click(screen.getByRole('button', { name: 'Marka veya grup ekle' }));
+    fireEvent.change(screen.getByLabelText('Marka adı'), { target: { value: 'Rakip Mama' } });
+    fireEvent.change(screen.getByLabelText('Arama terimi'), { target: { value: 'rakipmama' } });
+    fireEvent.change(screen.getByLabelText('Tür'), { target: { value: 'rival' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Marka Ekle' }));
+    await waitFor(() => expect(postedBody()).toMatchObject({ label: 'Rakip Mama', isOwnBrand: false }));
+    expect(await screen.findByText(/Rakip Mama eklendi/)).toBeTruthy();
+  });
+
+  it('says a never-swept brand has no product count yet, instead of "0 ürün"', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Şimdi tara' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/henüz hiç taranmadı/)).toBeTruthy();
+    expect(within(dialog).queryByText(/0 ürün kayıtlı/)).toBeNull();
+  });
+
+  it('estimates how long the seller scan of a swept brand takes', async () => {
+    setup(brand({ productCount: 737, lastSweptAt: Date.now(), deepScanMinutes: 25 }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Şimdi tara' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/737 ürün.*yaklaşık 25 dk/s)).toBeTruthy();
   });
 });
