@@ -18,6 +18,7 @@ import {
   Icon,
   LayoutDashboard,
   LogOut,
+  Menu,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
@@ -31,6 +32,7 @@ import {
   Store,
   Tags,
   Users,
+  X,
   type LucideIcon,
 } from '@/components/icon';
 import { Ago, Button, Chip, ConfirmButton, SegmentedFilter } from '@/components/ui';
@@ -524,6 +526,9 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   // Off until the operator toggles: animating the stored width read after mount slid the rail
   // shut on every full page load.
   const [animateRail, setAnimateRail] = useState(false);
+  // The phone menu (review 2026-11-25 O15): below `sm` the rail is hidden and opens over the page.
+  const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => setMobileOpen(false), [pathname]);
   useEffect(() => {
     setView(readStoredNavView());
     const stored = readStoredNavCollapsed();
@@ -550,28 +555,47 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   }
 
   const subtitle = moduleName(shown);
+  // In the phone overlay the menu always shows its labels: the stored rail choice is for desktop.
+  const rail = collapsed && !mobileOpen;
 
   return (
     <PermissionsProvider>
     <div className="flex min-h-screen">
+      {mobileOpen && (
+        <div className="fixed inset-0 z-30 bg-black/40 sm:hidden" aria-hidden="true" onClick={() => setMobileOpen(false)} />
+      )}
       <aside
-        className={`sticky top-0 flex h-screen flex-none flex-col bg-(--color-sidebar) py-4 ${animateRail ? 'transition-[width]' : ''} ${
-          collapsed ? 'w-16 px-2' : 'w-60 px-3'
-        }`}
+        data-mobile-open={mobileOpen}
+        className={`top-0 h-screen flex-none flex-col bg-(--color-sidebar) py-4 ${animateRail ? 'transition-[width]' : ''} ${
+          mobileOpen ? 'fixed left-0 z-40 flex w-60 px-3' : 'hidden'
+        } sm:sticky sm:z-auto sm:flex ${collapsed ? 'sm:w-16 sm:px-2' : 'sm:w-60 sm:px-3'}`}
       >
-        <div className={`mb-6 flex items-center gap-2.5 ${collapsed ? 'justify-center' : 'px-2'}`}>
+        <div className={`mb-6 flex items-center gap-2.5 ${rail ? 'justify-center' : 'px-2'}`}>
           <span className="flex size-8 flex-none items-center justify-center rounded-lg bg-(--color-accent) text-(--color-sidebar-strong)">
             <Icon icon={ShoppingBag} size={18} />
           </span>
-          <span className={collapsed ? 'sr-only' : 'leading-tight'}>
+          <span className={rail ? 'sr-only' : 'leading-tight'}>
             <span className="block text-[15px] font-bold text-(--color-sidebar-strong)">BuyBoxApp</span>
             {subtitle && <span className="block text-xs text-(--color-sidebar-muted)">{subtitle}</span>}
           </span>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
+          {modulesState.status === 'loading' && (
+            // Review 2026-11-25 O14: hold the module items' place rather than let the menu jump.
+            <div
+              data-testid="nav-modules-loading"
+              aria-busy="true"
+              aria-label="Menü yükleniyor"
+              className="mb-4 space-y-2 px-1"
+            >
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="h-7 animate-pulse rounded-lg bg-(--color-sidebar-raised)" />
+              ))}
+            </div>
+          )}
           {groups.map((group, index) => (
             <div key={group.title ?? 'root'} className={index === 0 ? '' : 'mt-4'}>
-              {group.title && !collapsed && (
+              {group.title && !rail && (
                 <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-(--color-sidebar-muted)">
                   {group.title}
                 </div>
@@ -582,16 +606,16 @@ export function NavShell({ children }: { children: React.ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    title={collapsed ? item.label : undefined}
+                    title={rail ? item.label : undefined}
                     aria-current={active ? 'page' : undefined}
-                    className={`flex items-center gap-3 rounded-lg py-2 text-sm ${collapsed ? 'justify-center px-0' : 'px-3'} ${
+                    className={`flex items-center gap-3 rounded-lg py-2 text-sm ${rail ? 'justify-center px-0' : 'px-3'} ${
                       active
                         ? 'bg-(--color-sidebar-active-bg) font-semibold text-(--color-sidebar-active-text)'
                         : 'text-(--color-sidebar-text) hover:bg-(--color-sidebar-raised)'
                     }`}
                   >
                     <Icon icon={item.icon} size={18} className="flex-none" />
-                    <span className={collapsed ? 'sr-only' : 'truncate'}>{item.label}</span>
+                    <span className={rail ? 'sr-only' : 'truncate'}>{item.label}</span>
                   </Link>
                 );
               })}
@@ -599,7 +623,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="mt-4 flex flex-col gap-2">
-          <UserMenu collapsed={collapsed} />
+          <UserMenu collapsed={rail} />
           {/* A plain button, not the kit's ghost `Button`: that variant's content ink would win
               over a sidebar-ink class by Tailwind's source order, not class order, and content ink
               on the navy sidebar is 1.08:1 in the light theme — the only control that opens the
@@ -624,7 +648,17 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <LicenseGraceBanner />
-        <header className="flex items-center justify-end gap-3 border-b border-(--color-border) bg-(--color-surface) px-6 py-3">
+        <header className="flex flex-wrap items-center justify-end gap-2 border-b border-(--color-border) bg-(--color-surface) px-3 py-3 sm:gap-3 sm:px-6">
+          {/* kit-exempt: header menu toggle carries aria-expanded */}
+          <button
+            type="button"
+            aria-label={mobileOpen ? 'Menüyü kapat' : 'Menüyü aç'}
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="mr-auto flex size-9 items-center justify-center rounded-lg text-(--color-muted) hover:bg-(--color-hover) sm:hidden"
+          >
+            <Icon icon={mobileOpen ? X : Menu} />
+          </button>
           <ScanFreshness onPanel={pathname === '/'} />
           <UpdateNotice />
           {showsViewSwitch(modulesState) && (
@@ -640,7 +674,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
           <ThemeToggle />
           <SystemPauseButton />
         </header>
-        <main className="flex-1 overflow-x-auto p-6">{children}</main>
+        <main className="flex-1 overflow-x-auto p-3 sm:p-6">{children}</main>
       </div>
     </div>
     </PermissionsProvider>

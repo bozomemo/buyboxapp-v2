@@ -51,7 +51,9 @@ Durdurma anahtarlarının farkını [Otomasyon ve durdurma](/rehber/concepts-aut
 
 ### Sol menü
 
-Sol menü üç gruptan oluşur: **Satış**, **Marka Denetimi** ve **Sistem**. Kapalı olan modülün grubu gösterilmez. Menünün altında adınız ve rolünüz görünür. Rolünüz yalnızca görüntülemeye izin veriyorsa yanında **Salt okunur** etiketi çıkar. Adınıza tıklayınca [Hesabım](/rehber/account) açılır; çıkış simgesi oturumu kapatır. En alttaki düğme menüyü daraltır veya genişletir.
+Sol menü üç gruptan oluşur: **Satış**, **Marka Denetimi** ve **Sistem**. Kapalı olan modülün grubu gösterilmez. Menünün altında adınız ve rolünüz görünür. Rolünüz yalnızca görüntülemeye izin veriyorsa yanında **Salt okunur** etiketi çıkar. Adınıza tıklayınca [Hesabım](/rehber/account) açılır; çıkış simgesi oturumu kapatır. En alttaki düğme menüyü daraltır veya genişletir. Sayfa ilk açılırken menüde modül öğelerinin yerinde birkaç gri satır görünür; açık modüller okununca öğeler o yere gelir.
+
+Telefonda (dar ekranda) sol menü gizlidir. Üst çubuğun solundaki **☰** (**Menüyü aç**) düğmesi menüyü sayfanın üstünde açar; **✕** ya da menü dışına dokunmak kapatır. Bir sayfaya geçince menü kendiliğinden kapanır.
 
 ## Durum özeti
 
