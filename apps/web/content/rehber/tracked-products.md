@@ -15,7 +15,7 @@ Rakip verisi yalnızca raporlama içindir. Bkz. [Rakip Verisi](/rehber/concepts-
 
 ## Üst bölüm
 
-- **+ Link ile ekle**: tek bir kartı link ile takibe alır. **Ürün linki** alanına Trendyol veya Hepsiburada ürün sayfasının linkini, isterseniz **Etiket (opsiyonel)** alanına kolay tanımak için bir isim yazıp **Ekle**'ye tıklayın.
+- **+ Link ile ekle**: tek bir kartı link ile takibe alır. **Ürün linki** alanına Trendyol veya Hepsiburada ürün sayfasının linkini, isterseniz **Etiket (opsiyonel)** alanına kolay tanımak için bir isim yazıp **Ekle**'ye tıklayın. Ürün zaten listedeyse **Bu ürün zaten takip listesinde.** yazar ve yanındaki **Listedeki ürünü aç** bağlantısı o ürünün sayfasını açar.
 - **Sütunlar**: sütunları gösterir/gizler ve sıralarını değiştirir.
 - **Excel'e Aktar**: geçerli filtreye uyan ilk 5.000 ürünü, ekranda görünen sütunlarla indirir. Yalnızca ekrandaki sayfayı değil, filtrenin tamamını indirir.
 

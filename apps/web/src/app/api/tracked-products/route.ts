@@ -322,7 +322,7 @@ async function postHandler(request: Request) {
     parsed.ref.contentId,
   );
   if (existing) {
-    return NextResponse.json({ error: 'Bu ürün zaten takip listesinde.' }, { status: 409 });
+    return NextResponse.json({ error: 'Bu ürün zaten takip listesinde.', existingId: existing.id }, { status: 409 });
   }
 
   const id = newId();
