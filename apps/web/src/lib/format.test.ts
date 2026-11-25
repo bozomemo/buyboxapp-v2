@@ -4,7 +4,16 @@
  * does not throw — it produces a plausible wrong number.
  */
 import { describe, expect, it } from 'vitest';
-import { formatDuration, kurusToDecimal, parseMoneyToKurus } from './format';
+import { formatDecimal, formatDuration, kurusToDecimal, parseMoneyToKurus } from './format';
+
+describe('formatDecimal', () => {
+  it('uses the Turkish comma and a fixed number of places', () => {
+    expect(formatDecimal(8.5)).toBe('8,5');
+    expect(formatDecimal(84.93)).toBe('84,9');
+    expect(formatDecimal(1234.5, 1)).toBe('1.234,5');
+    expect(formatDecimal(null)).toBe('—');
+  });
+});
 
 describe('parseMoneyToKurus', () => {
   const accepted: ReadonlyArray<readonly [string, bigint]> = [

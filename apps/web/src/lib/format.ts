@@ -45,6 +45,18 @@ export function formatNumber(value: number | null | undefined): string {
   return NUMBER_FORMATTER.format(value);
 }
 
+/**
+ * A decimal with a fixed number of places and the Turkish comma: 8.5 → "8,5", 84.93 → "84,9"
+ * (review 2026-11-25: ratings and durations printed "8.5" and "84.9 sn" beside "%0,0").
+ */
+export function formatDecimal(value: number | null | undefined, fractionDigits = 1): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('tr-TR', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
+}
+
 export function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—';
   return `%${PERCENT_FORMATTER.format(value)}`;
