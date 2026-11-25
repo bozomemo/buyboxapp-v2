@@ -1,6 +1,7 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { stubFetch } from '@/test-utils';
+import { PermissionsProvider } from '@/lib/permissions';
 import { BrandListingsClient } from './listings-client';
 
 /**
@@ -243,3 +244,29 @@ describe('BrandListingsClient', () => {
   });
 });
 
+// Review 2026-11-25 O8: the favourite star was open to İzleyici, and a 403 changed nothing on screen.
+describe('favourite star', () => {
+  it('is disabled for a role that cannot change it', async () => {
+    stubFetch({
+      '/api/brand/listings': { body: { listings: [listing()], total: 1 } },
+      '/api/auth/me': { body: { user: { permissions: ['view'] } } },
+    });
+    render(
+      <PermissionsProvider>
+        <BrandListingsClient />
+      </PermissionsProvider>,
+    );
+    const star = await screen.findByRole('button', { name: 'Favorile' });
+    await waitFor(() => expect((star as HTMLButtonElement).matches(':disabled')).toBe(true));
+  });
+
+  it('says so when the server refuses', async () => {
+    stubFetch({
+      '/api/brand/listings': { body: { listings: [listing()], total: 1 } },
+      '/api/tracked-products/favourite': { status: 403, body: { error: 'Bu işlem için yetkiniz yok.' } },
+    });
+    render(<BrandListingsClient />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Favorile' }));
+    expect(await screen.findByText('Bu işlem için yetkiniz yok.')).toBeTruthy();
+  });
+});

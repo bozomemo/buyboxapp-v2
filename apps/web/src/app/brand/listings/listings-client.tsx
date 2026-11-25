@@ -39,6 +39,7 @@ import {
 } from '@/components/ui';
 import { formatDateTime, formatDuration, formatMoney, formatNumber } from '@/lib/format';
 import { marketplaceProductUrl } from '@/lib/product-url';
+import { useCan } from '@/lib/permissions';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
 type BandStatus = 'inBand' | 'belowMin' | 'aboveMax' | 'unknown';
@@ -145,6 +146,9 @@ export function BrandListingsClient() {
   const [query, setQuery] = useState('');
   const [marketplace, setMarketplace] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  // Review 2026-11-25 O8: a refused favourite used to change nothing on screen and say nothing.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const can = useCan();
 
   const params = useCallback(() => {
     const search = new URLSearchParams({
@@ -175,12 +179,18 @@ export function BrandListingsClient() {
 
   async function toggleFavourite(row: Listing) {
     setBusy(row.id);
+    setActionError(null);
     try {
-      await fetch('/api/tracked-products/favourite', {
+      const res = await fetch('/api/tracked-products/favourite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: row.id, isFavourite: !row.isFavourite }),
       });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setActionError(data.error ?? `Favori değiştirilemedi (HTTP ${res.status}).`);
+        return;
+      }
       load();
     } finally {
       setBusy(null);
@@ -288,6 +298,12 @@ export function BrandListingsClient() {
           </p>
         )}
 
+        {actionError && (
+          <p role="alert" className="mb-2 text-sm text-(--color-danger)">
+            {actionError}
+          </p>
+        )}
+
         {loadError ? (
           <ErrorState message={loadError} onRetry={load} />
         ) : rows === null ? (
@@ -351,7 +367,7 @@ export function BrandListingsClient() {
                         {/* kit-exempt: favourite star toggle, a pressed icon state the kit has no control for */}
                         <button
                           type="button"
-                          disabled={busy === row.id}
+                          disabled={busy === row.id || !can('catalogue.manage')}
                           onClick={() => void toggleFavourite(row)}
                           aria-label={row.isFavourite ? 'Favoriden çıkar' : 'Favorile'}
                           title={row.isFavourite ? 'Favoriden çıkar' : 'Favorile'}

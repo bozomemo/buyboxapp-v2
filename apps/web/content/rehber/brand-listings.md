@@ -25,7 +25,7 @@ Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışın
 
 ## Sütunlar
 
-- **☆ / ★**: kartı favorilere ekler ya da çıkarır. Bu işlem Yönetici ve Fiyat Yöneticisi rollerine açıktır. Bağlı olmayan bir kartın yıldızını kaldırırsanız kart bu listeden çıkar.
+- **☆ / ★**: kartı favorilere ekler ya da çıkarır. Bu işlem Yönetici ve Fiyat Yöneticisi rollerine açıktır; İzleyici rolünde yıldız soluk görünür ve tıklanmaz. Değişiklik kaydedilemezse nedeni tablonun üstünde yazar. Bağlı olmayan bir kartın yıldızını kaldırırsanız kart bu listeden çıkar.
 - **Kart**: kartın adı. **↗** pazaryerindeki ürün sayfasını yeni sekmede açar. Yanında pazaryeri yazar; **· duraklatıldı** kartın düzenli taramadan çıkarıldığını gösterir.
 - **Stok ürünü**: kartın bağlı olduğu ürününüz; tıklayınca ürün sayfası açılır. **Bağlı değil (favori)** ise kart yalnızca yıldızlıdır. Bu kartın PSF'si ve aralığı yoktur, bu yüzden alarm da üretmez.
 - **Çarpan**: bir alışta kaç adet ürün gittiği, örneğin **×3**.

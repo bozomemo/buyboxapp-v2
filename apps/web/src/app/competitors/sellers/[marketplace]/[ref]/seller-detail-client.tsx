@@ -30,6 +30,7 @@ import {
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
+import { PermissionFieldset } from '@/lib/permissions';
 import { CoverageBadge, type Coverage } from '../../../coverage-badge';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
@@ -474,6 +475,8 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
             tarama çalıştıktan sonra gruplama ve not ekleyebilirsiniz.
           </p>
         ) : (
+          // Review 2026-11-25 O8: closed to a role that cannot write it, rather than failing on submit.
+          <PermissionFieldset permission="catalogue.manage">
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <label className="text-sm">
               <span className="mb-1 block text-(--color-muted)">Grup</span>
@@ -521,6 +524,7 @@ export function SellerDetailClient({ marketplace, sellerRef }: { marketplace: st
               </span>
             )}
           </div>
+          </PermissionFieldset>
         )}
       </section>
 

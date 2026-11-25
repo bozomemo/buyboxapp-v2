@@ -37,7 +37,7 @@ Bir satıcıyı gruba atamak için:
 2. Uygun grup yoksa **Yeni grup oluştur** alanına bir ad yazın (örneğin **Olympus Grup**) ve **Oluştur** düğmesine tıklayın. Sonra yeni grubu **Grup** listesinden seçin.
 3. Aynı firmanın diğer pazaryerindeki satıcı sayfasını açıp aynı grubu orada da seçin.
 
-Gruptan çıkarmak için **Grup** listesinden **— gruplanmamış —** seçin. Kaydedilirken **Kaydediliyor…** yazar.
+Gruptan çıkarmak için **Grup** listesinden **— gruplanmamış —** seçin. Kaydedilirken **Kaydediliyor…** yazar. Gruplama Yönetici ve Fiyat Yöneticisi rollerine açıktır; İzleyici rolünde bu alanlar soluk görünür.
 
 Satıcı henüz kalıcı olarak kaydedilmemişse sarı bir kutu çıkar ve gruplama yapılamaz. Bir tarama çalıştıktan sonra tekrar deneyin.
 

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockNavigation, stubFetch } from '@/test-utils';
 import { SellerDetailClient } from './seller-detail-client';
+import { PermissionsProvider } from '@/lib/permissions';
 
 /**
  * Smoke test for `/competitors/sellers/[marketplace]/[ref]` (doc 15 §6, Phase 3.1). Shape copied
@@ -207,5 +208,35 @@ describe('SellerDetailClient', () => {
     const nav = await screen.findByRole('navigation', { name: 'Konum' });
     expect(within(nav).getByRole('link', { name: 'Rakip Satıcılar' }).getAttribute('href')).toBe('/competitors/sellers');
     expect(screen.getByRole('heading', { level: 1, name: 'Test Satıcı' })).toBeTruthy();
+  });
+});
+
+// Review 2026-11-25 O8: the group form was open to İzleyici and only failed on submit.
+describe('group form', () => {
+  it('is disabled for a role that cannot change it', async () => {
+    stubFetch({
+      [PRIMARY_ROUTE]: {
+        body: {
+          filters: { sinceMs: 0, untilMs: 1, watchedBrandId: null },
+          seller: { marketplaceCode: 'trendyol', sellerRef: 'S1', sellerName: 'Test Satıcı', operatorNote: null, isKnown: true },
+          group: null,
+          groupMembers: [],
+          listings: [],
+          trackedProducts: [],
+          trackedTruncated: false,
+          watchedBrands: [],
+          coverage: EMPTY_COVERAGE,
+        },
+      },
+      ...SIDE_ROUTES,
+      '/api/auth/me': { body: { user: { permissions: ['view'] } } },
+    });
+    render(
+      <PermissionsProvider>
+        <SellerDetailClient marketplace="trendyol" sellerRef="S1" />
+      </PermissionsProvider>,
+    );
+    const input = await screen.findByPlaceholderText('ör. Olympus Grup');
+    await waitFor(() => expect((input as HTMLInputElement).matches(':disabled')).toBe(true));
   });
 });
