@@ -36,7 +36,7 @@ Lisans süresi dolmuş ama ek süre içindeyseniz, üst çubuğun üstünde sar�
 
 Düğme iki durumdan birini gösterir:
 
-- **Genel Durdurma: Duraklatıldı** (gri): Hiçbir iş çalışmıyor. İçe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi durmuştur. Kurulum Sihirbazı bitene kadar sistem bu durumda bekler.
+- **Genel Durdurma: Duraklatıldı** (gri): Hiçbir iş çalışmıyor. İçe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi durmuştur; yalnız marka modülü kuruluysa katalog ve satıcı taramaları, bulgu hesaplama ve bildirimler durmuştur. Düğmenin üzerine gelince kurulumunuza göre hangi işlerin durduğu yazar. Kurulum Sihirbazı bitene kadar sistem bu durumda bekler.
 - **Sistem Çalışıyor** (yeşil): İşler normal şekilde çalışıyor.
 
 Yeşil düğmeye tıklarsanız sistem hemen duraklatılır, onay sorulmaz. Gri düğmeye tıklarsanız sistemi devam ettirmek istediğinizden emin olup olmadığınız sorulur. Onay verdiğinizde tüm işler yeniden başlar.
@@ -78,9 +78,9 @@ Marka modülü açıksa ve izlenen bir marka ya da fiyat bandı izlemesi varsa d
 
 - **Fiyat bandı ihlali**: Açık fiyat bandı alarmlarının sayısı. Veri güncel değilse yanında **Veri güncel değil** yazar; alarm yoksa ve veri eskiyse sayı yerine **?** görünür, çünkü "bakılmadı" ile "sorun yok" aynı şey değildir. **Aç →** ile [Marka alarmları](/rehber/brand-alerts) açılır.
 - **Açık bulgu**: Açık denetim bulgularının toplamı; **kesin bilgi** ve **yorum** olarak ikiye ayrılır. Bu sayı arka planda hesaplanır; yanında en son ne zaman hesaplandığı yazar (örneğin **2sa 05dk önce hesaplandı**). Bir markanın satıcı taraması bittiğinde o markanın bulguları hemen yeniden hesaplanır; bunun dışında altı saatte bir hesaplanır. Hiç hesaplanmadıysa **henüz hesaplanmadı** yazar. **Aç →** ile [Denetim Bulguları](/rehber/findings) açılır; o ekran bulguları her açılışta yeniden hesapladığı için sayı burada kısa bir süre farklı görünebilir.
-- **Satıcısı olmayan ürün**: Hiçbir satıcının satmadığı ürün sayısı. Bazı ürünlere henüz bakılmadıysa bunu ayrıca yazar; bu durumda sayı eksik olabilir.
+- **Satıcısı olmayan ürün**: Hiçbir satıcının satmadığı ürün sayısı. Bazı ürünlere henüz bakılmadıysa bunu ayrıca yazar; bu durumda sayı eksik olabilir. Hiç ürün yoksa **Henüz takip edilen ürün yok.** yazar.
 - **Tavsiye fiyat kapsamı**: Tavsiye fiyatı (PSF) yüklenmiş ürünlerin oranı.
-- **Takip edilen ürün**: Takip edilen ürün ve marka sayısı.
+- **Takip edilen ürün**: Takip edilen ürün ve marka sayısı. Ürün sayısı, **Tavsiye fiyat kapsamı** kartındaki toplamla aynıdır; linkle eklenen ürünler de sayılır.
 
 ## Dikkat Gerekenler
 

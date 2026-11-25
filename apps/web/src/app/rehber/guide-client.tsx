@@ -28,7 +28,7 @@ export function GuideClient({ topics }: { topics: readonly GuideListItem[] }) {
           icon={Search}
           type="search"
           aria-label="Rehberde ara"
-          placeholder="Rehberde ara… (ör. taban fiyat, şifre, rakip)"
+          placeholder="Rehberde ara… (ör. şifre, rakip, alarm)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />

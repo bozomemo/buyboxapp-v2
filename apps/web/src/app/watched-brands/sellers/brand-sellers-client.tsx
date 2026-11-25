@@ -26,7 +26,14 @@ import {
   type Tone,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
+import {
+  formatDateTime,
+  formatMoney,
+  formatMoneyRange,
+  formatNumber,
+  formatPercent,
+  kurusToDecimal,
+} from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS, POLICY_VERDICT_LABELS } from '@/lib/labels';
 import { PermissionFieldset } from '@/lib/permissions';
 import { PolicyQuickDecision } from './policy-quick-decision';
@@ -270,7 +277,7 @@ function renderSellerCell(
         '—'
       ) : (
         <span className="tabular-nums">
-          {formatMoney(BigInt(s.minPrice))} – {formatMoney(BigInt(s.maxPrice ?? s.minPrice))}
+          {formatMoneyRange(BigInt(s.minPrice), s.maxPrice === null ? null : BigInt(s.maxPrice))}
         </span>
       );
     case 'firstSeenAt':

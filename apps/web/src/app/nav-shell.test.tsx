@@ -175,6 +175,20 @@ describe('NavShell', () => {
       expect(screen.getByRole('complementary').getAttribute('data-mobile-open')).toBe('false');
     });
 
+    // Review 2026-11-25: a brand-only install was told the stop button halts "fiyat gönderimi".
+    it('describes the stop button in brand terms on a brand-only install', async () => {
+      stubFetch({ ...base, '/api/modules': { body: { modules: { seller: false, brand: true } } } });
+      render(
+        <NavShell>
+          <p>içerik</p>
+        </NavShell>,
+      );
+      await screen.findByRole('link', { name: 'Takip Edilen Ürünler' });
+      const stop = await screen.findByRole('button', { name: /Sistem Çalışıyor/ });
+      await vi.waitFor(() => expect(stop.getAttribute('title')).toContain('katalog ve satıcı taramaları'));
+      expect(stop.getAttribute('title')).not.toContain('fiyat gönderimi');
+    });
+
     it('both installed: both groups by default, and the view switch narrows them', async () => {
       stubFetch({ ...base, '/api/modules': { body: { modules: { seller: true, brand: true } } } });
       render(

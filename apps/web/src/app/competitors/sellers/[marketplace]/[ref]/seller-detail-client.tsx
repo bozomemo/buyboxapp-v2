@@ -29,7 +29,14 @@ import {
   TextInput,
 } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
+import {
+  formatDateTime,
+  formatMoney,
+  formatMoneyRange,
+  formatNumber,
+  formatPercent,
+  kurusToDecimal,
+} from '@/lib/format';
 import { PermissionFieldset } from '@/lib/permissions';
 import { CoverageBadge, type Coverage } from '../../../coverage-badge';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
@@ -167,7 +174,7 @@ function renderListingCell(id: ColumnId, l: SellerListing): React.ReactNode {
     case 'priceRange':
       return l.minPrice === null
         ? '—'
-        : `${formatMoney(BigInt(l.minPrice))} – ${formatMoney(BigInt(l.maxPrice ?? l.minPrice))}`;
+        : formatMoneyRange(BigInt(l.minPrice), l.maxPrice === null ? null : BigInt(l.maxPrice));
     case 'observationCount':
       return formatNumber(l.observationCount);
     case 'buyboxCount':
@@ -228,7 +235,7 @@ function renderTrackedCell(id: TrackedColumnId, t: SellerTrackedProduct): React.
     case 'priceRange':
       return t.minPrice === null
         ? '—'
-        : `${formatMoney(BigInt(t.minPrice))} – ${formatMoney(BigInt(t.maxPrice ?? t.minPrice))}`;
+        : formatMoneyRange(BigInt(t.minPrice), t.maxPrice === null ? null : BigInt(t.maxPrice));
     case 'deviation':
       // Only ever coloured *below* the market. A seller consistently above it is not a finding,
       // and colouring both directions trains the operator to ignore the colour that matters.

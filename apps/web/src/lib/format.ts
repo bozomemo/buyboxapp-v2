@@ -14,9 +14,10 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('tr-TR', {
 
 const NUMBER_FORMATTER = new Intl.NumberFormat('tr-TR');
 
+// One decimal, always (review 2026-11-25): a column read "%0,0", "%-2,6" and "%-6,19".
 const PERCENT_FORMATTER = new Intl.NumberFormat('tr-TR', {
   minimumFractionDigits: 1,
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 1,
 });
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('tr-TR', {
@@ -32,6 +33,12 @@ const TIME_FORMATTER = new Intl.DateTimeFormat('tr-TR', { timeStyle: 'medium' })
 export function formatMoney(kurus: bigint | null | undefined): string {
   if (kurus === null || kurus === undefined) return '—';
   return CURRENCY_FORMATTER.format(Number(kurus) / 100);
+}
+
+/** A price range, or one price when both ends are the same (review 2026-11-25). */
+export function formatMoneyRange(min: bigint, max: bigint | null | undefined): string {
+  if (max === null || max === undefined || max === min) return formatMoney(min);
+  return `${formatMoney(min)} – ${formatMoney(max)}`;
 }
 
 /** For a `Money` value from `packages/shared`. */

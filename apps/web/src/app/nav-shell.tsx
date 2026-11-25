@@ -195,7 +195,7 @@ const NAV_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
  * price-submission switch itself lives on the dashboard (`PriceSubmissionSwitch`), correctly
  * coloured the other way around, because *that* one's "on" state is the one worth alarming on.
  */
-function SystemPauseButton() {
+function SystemPauseButton({ seller = true }: { seller?: boolean }) {
   const [poll, retry] = usePoll<{ engaged: boolean }>('/api/system-pause');
   const [busy, setBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | undefined>();
@@ -251,7 +251,10 @@ function SystemPauseButton() {
         disabled={busy || !canToggleStop(can, engaged)}
         title={
           canToggleStop(can, engaged)
-            ? 'Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur.'
+            ? seller
+              ? 'Tüm işleri durdurur: içe aktarma, buybox gözlemi, karar hesaplama ve fiyat gönderimi. Fiyat gönderiminin kendi ayrı anahtarı panelde bulunur.'
+              : // Review 2026-11-25: a brand-only install has no price submission to stop.
+                'Tüm işleri durdurur: katalog ve satıcı taramaları, bulgu hesaplama ve bildirimler.'
             : NO_PERMISSION_TITLE
         }
         className={`h-9 rounded-lg px-4 text-sm font-semibold transition disabled:opacity-50 ${
@@ -672,7 +675,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
           )}
           <GuideLink pathname={pathname} />
           <ThemeToggle />
-          <SystemPauseButton />
+          <SystemPauseButton seller={modulesState.status !== 'ready' || modulesState.modules.seller} />
         </header>
         <main className="flex-1 overflow-x-auto p-3 sm:p-6">{children}</main>
       </div>

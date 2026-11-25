@@ -4,7 +4,33 @@
  * does not throw — it produces a plausible wrong number.
  */
 import { describe, expect, it } from 'vitest';
-import { formatDecimal, formatDuration, kurusToDecimal, parseMoneyToKurus } from './format';
+import {
+  formatDecimal,
+  formatDuration,
+  formatMoney,
+  formatMoneyRange,
+  formatPercent,
+  kurusToDecimal,
+  parseMoneyToKurus,
+} from './format';
+
+// Review 2026-11-25: "%0,0", "%-2,6" and "%-6,19" side by side in one column.
+describe('formatPercent', () => {
+  it('always writes one decimal', () => {
+    expect(formatPercent(0)).toBe('%0,0');
+    expect(formatPercent(-6.19)).toBe('%-6,2');
+    expect(formatPercent(12)).toBe('%12,0');
+  });
+});
+
+// Review 2026-11-25: "₺590,00 – ₺590,00".
+describe('formatMoneyRange', () => {
+  it('writes one amount when the ends are equal', () => {
+    expect(formatMoneyRange(59000n, 59000n)).toBe(formatMoney(59000n));
+    expect(formatMoneyRange(59000n, 69000n)).toBe(`${formatMoney(59000n)} – ${formatMoney(69000n)}`);
+    expect(formatMoneyRange(59000n, null)).toBe(formatMoney(59000n));
+  });
+});
 
 describe('formatDecimal', () => {
   it('uses the Turkish comma and a fixed number of places', () => {

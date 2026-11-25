@@ -976,9 +976,11 @@ function BrandStatRow({
         // "Henüz bakılmadı" ayrı yazılıyor: ilk turunu tamamlamamış bir kurulumda satıcısız
         // sayısı tek başına yanıltıcıdır.
         delta={
-          neverLooked > 0
-            ? `${formatNumber(neverLooked)} ürüne henüz bakılmadı — bu sayı eksik olabilir.`
-            : 'Her ürüne en az bir kez bakıldı.'
+          products === 0
+            ? 'Henüz takip edilen ürün yok.'
+            : neverLooked > 0
+              ? `${formatNumber(neverLooked)} ürüne henüz bakılmadı — bu sayı eksik olabilir.`
+              : 'Her ürüne en az bir kez bakıldı.'
         }
       />
       <StatCard
@@ -993,7 +995,9 @@ function BrandStatRow({
             : `${formatNumber(productsWithPrice)} / ${formatNumber(productsTotal)} ürün`
         }
       />
-      <StatCard label="Takip edilen ürün" value={formatNumber(products)} delta={`${formatNumber(audit.brands.length)} marka`} />
+      {/* The same total the PSF card divides by (review 2026-11-25: 5.648 here, "2 / 5.649" there —
+          a card linked by hand belongs to no watched brand). */}
+      <StatCard label="Takip edilen ürün" value={formatNumber(productsTotal)} delta={`${formatNumber(audit.brands.length)} marka`} />
     </div>
   );
 }
@@ -1117,7 +1121,7 @@ function EventLogSection({ events }: { events: AppEvent[] }) {
     <Section id="event-log" title="Sistem Günlüğü">
       <details className="rounded border border-(--color-border) bg-(--color-surface)">
         <summary className="cursor-pointer px-4 py-3 text-sm">
-          Son {formatNumber(events.length)} uyarı ve hata kaydı
+          Son {formatNumber(events.length)} uyarı ve hata kaydı{' '}
           <span className="ml-2 text-xs text-(--color-muted)">
             (teknik kayıt — müdahale gerektiren bir şey varsa yukarıda görünür)
           </span>

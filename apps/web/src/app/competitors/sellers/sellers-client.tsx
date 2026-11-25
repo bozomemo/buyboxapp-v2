@@ -16,7 +16,14 @@ import {
 import { Download } from '@/components/icon';
 import { Button, ErrorState, LoadingState, PageHeader, SegmentedFilter } from '@/components/ui';
 import { downloadCsv } from '@/lib/csv';
-import { formatDateTime, formatMoney, formatNumber, formatPercent, kurusToDecimal } from '@/lib/format';
+import {
+  formatDateTime,
+  formatMoney,
+  formatMoneyRange,
+  formatNumber,
+  formatPercent,
+  kurusToDecimal,
+} from '@/lib/format';
 import { CoverageBadge } from '../coverage-badge';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
 
@@ -134,7 +141,7 @@ function renderSellerCell(id: ColumnId, s: Seller): React.ReactNode {
     case 'priceRange':
       return s.minPrice === null
         ? '—'
-        : `${formatMoney(BigInt(s.minPrice))} – ${formatMoney(BigInt(s.maxPrice ?? s.minPrice))}`;
+        : formatMoneyRange(BigInt(s.minPrice), s.maxPrice === null ? null : BigInt(s.maxPrice));
     case 'firstSeenAt':
       return <>≥ {formatDateTime(s.firstSeenAt)}</>;
     case 'lastSeenAt':
