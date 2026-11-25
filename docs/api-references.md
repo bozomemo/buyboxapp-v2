@@ -533,6 +533,14 @@ page to catch it. `SweepBrandCatalogue` therefore checks the first `wb=` page's 
 the requested id and refuses the brand — writing nothing, recording `BrandRefMismatch` with the
 id the search term's first page suggests — when fewer than half of them carry it.
 
+⚠️ **`q=` is fuzzy: a term with no exact brand behind it answers with anything close.**
+Observed 2026-11-25 on a local install: `q=testmarka` answered 4,911 saws, drills and knives,
+every one stored and queued for a seller scrape. `SweepBrandCatalogue` therefore keeps a
+search-pass card only when the folded term (Turkish lower case, diacritics and punctuation
+removed) occurs in its storefront brand name or its title, stops paging at the first page with
+no such card, and records the rest as `BrandSweepIrrelevantSkipped`. A card stating neither field
+is kept. This is a relevance test only; no price, rank or seller is derived from the text.
+
 **Page size is now 36, not 24** (every page of `wb=105401`, `wb=104703`, `wb=106105` and
 `q=orijen`, measured 2026-09-26). Nothing depends on it — paging ends on an empty page — but
 the "one request per 24 products" cost figures above are now one per 36.

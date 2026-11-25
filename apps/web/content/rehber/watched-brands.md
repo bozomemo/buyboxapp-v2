@@ -23,6 +23,8 @@ Bir marka iki yolla aranır:
 
 İkisi de verilirse ikisi de taranır. Arama terimiyle çıkıp marka id'siyle çıkmayan bir ürün, marka adını izinsiz kullanıyor olabilir; bu fark bir denetim bulgusudur.
 
+Pazaryerinin araması bulanıktır; kelimeye yalnızca benzeyen alakasız ürünler de döner. Bu yüzden arama teriminden gelen bir ürün yalnız markasında ya da adında bu terim geçiyorsa takibe alınır; geri kalanı atlanır ve kaç ürünün atlandığı [Olaylar](/rehber/events) ekranına yazılır. Büyük/küçük harf, Türkçe karakterler ve boşluklar fark etmez.
+
 ## Marka veya grup ekleme
 
 **Marka veya grup ekle** düğmesi ekleme formunu açar (**Ekleme formunu gizle** kapatır). Hiç grup yoksa form kendiliğinden açılır. Ekleme Yönetici ve Fiyat Yöneticisi rollerine açıktır.

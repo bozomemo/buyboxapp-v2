@@ -100,6 +100,38 @@ interface SelectorSweep {
   readonly totalProducts: number | null;
   readonly pagesFetched: number;
   readonly truncated: boolean;
+  /** Cards the relevance filter dropped; 0 when the pass had no filter. */
+  readonly skipped?: number;
+}
+
+/** Lower-cases with Turkish rules, strips diacritics and everything that is not a letter or digit. */
+function foldForMatch(text: string): string {
+  return text
+    .toLocaleLowerCase('tr')
+    .replace(/ı/g, 'i')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Whether a card the **search term** returned is about the term at all (review 2026-11-25 Y2).
+ *
+ * Trendyol's search is fuzzy: a term with no exact brand behind it answers with whatever it
+ * finds close, and "testmarka" brought 4,911 saws, drills and knives into tracking — each one
+ * scraped, each one reported. The search pass exists to find two things: our own products
+ * listed without our brand id, and other brands' cards that carry our name in their title (the
+ * misuse finding). Both carry the term in the storefront brand or in the title; a card that
+ * carries it in neither is the fuzzy match and nothing else.
+ *
+ * This is a **relevance** test, not data: no price, rank or seller is derived from the text,
+ * which is what CLAUDE.md forbids. A card stating neither field is kept rather than guessed away.
+ */
+export function isRelevantToSearchTerm(product: BrandCatalogueProduct, searchTerm: string): boolean {
+  const term = foldForMatch(searchTerm);
+  if (term === '') return true;
+  if (product.brandName === null && product.name === null) return true;
+  return [product.brandName, product.name].some((text) => text !== null && foldForMatch(text).includes(term));
 }
 
 /**
@@ -179,10 +211,12 @@ export async function sweepSelector(
   query: BrandCatalogueQuery,
   maxPages: number,
   onPage?: (pageIndex: number, running: number) => void,
+  relevant?: (product: BrandCatalogueProduct) => boolean,
 ): Promise<SelectorSweep> {
   const products: BrandCatalogueProduct[] = [];
   let totalProducts: number | null = null;
   let pagesFetched = 0;
+  let skipped = 0;
   const requestedBrandRef = query.brandRef?.trim() || null;
 
   for (let pageIndex = 1; pageIndex <= maxPages; pageIndex += 1) {
@@ -190,16 +224,29 @@ export async function sweepSelector(
     pagesFetched += 1;
     if (totalProducts === null) totalProducts = page.totalProducts;
     if (page.products.length === 0) {
-      return { products, totalProducts, pagesFetched, truncated: false };
+      return { products, totalProducts, pagesFetched, truncated: false, skipped };
     }
     if (pageIndex === 1 && requestedBrandRef !== null) {
       const foreign = brandRefMismatch(requestedBrandRef, page.products);
       if (foreign !== null) throw new BrandRefMismatchError(requestedBrandRef, foreign);
     }
-    products.push(...page.products);
+    if (relevant !== undefined) {
+      const kept = page.products.filter(relevant);
+      skipped += page.products.length - kept.length;
+      if (kept.length === 0) {
+        // The fuzzy tail: search results are ordered by relevance, so a page with nothing about
+        // the term means the rest is the same. Stopping here is what turns 4,911 requests' worth
+        // of pages into two. The marketplace's total counted the tail too, so it is no claim
+        // this pass can be held to — `null`, not a shortfall.
+        return { products, totalProducts: null, pagesFetched, truncated: false, skipped };
+      }
+      products.push(...kept);
+    } else {
+      products.push(...page.products);
+    }
     onPage?.(pageIndex, products.length);
   }
-  return { products, totalProducts, pagesFetched, truncated: true };
+  return { products, totalProducts, pagesFetched, truncated: true, skipped };
 }
 
 /**
@@ -321,7 +368,16 @@ async function sweepOneBrand(
       { brandRef: null, searchTerm: brand.searchTerm },
       maxPages,
       (_page, running) => reportProgress(`${brand.label} · arama · ${running} ürün`),
+      (product) => isRelevantToSearchTerm(product, brand.searchTerm!),
     );
+    if ((bySearchTerm.skipped ?? 0) > 0) {
+      await noteSweepEvent(
+        ctx,
+        brand.marketplaceCode as MarketplaceCode,
+        'BrandSweepIrrelevantSkipped',
+        `${brand.label} · arama terimi "${brand.searchTerm}" ile gelen ${bySearchTerm.skipped} ürün ne markasında ne adında bu terimi taşıdığı için takibe alınmadı`,
+      );
+    }
   }
 
   const merged = mergeSelectorResults(byBrandRef.products, bySearchTerm.products);
