@@ -96,17 +96,17 @@ Sık görülen hatalar:
 
 ### Yeni ürün ekleme ve düzenleme
 
-**Yeni Ürün**'e ya da bir satırdaki **Düzenle**'ye tıklayınca form açılır:
+**Yeni Ürün**'e ya da bir satırdaki **Düzenle**'ye tıklayınca form açılır. Formun başlığı **Yeni ürün** ya da **Düzenleniyor: …** (düzenlenen ürünün adı) olur. Formu **Kapat** ile kapatırsınız:
 
 - **Ürün adı**
 - **PSF (birim)**: zorunlu.
 - **Min (birim)**: boş bırakırsanız alt sınır alarmı olmaz.
 - **Max (birim)**: boş bırakırsanız üst sınır PSF olur.
-- **Barkod**: kart önerileri için.
+- **Barkod**: kart önerileri için. Yazdığınız değer geçerli bir EAN/GTIN değilse kaydetmeden önce alanın altında uyarı çıkar.
 - **Birim fiyat (KDV dahil)**: ürünü satıcılara sattığınız fiyat.
 - **Desi**: ürünün kargo desisi, örneğin `4,5`.
 
-**Birim fiyat** ve **Desi** yalnızca [İlanlar](/rehber/brand-listings) ekranındaki tahmini satıcı kârında kullanılır; alarmı etkilemez. Kaydetmek için **Ekle** (yeni ürün) ya da **Güncelle**'ye tıklayın. PSF kendi aralığınızın dışındaysa ürün yine kaydedilir ve **Dikkat:** ile başlayan bir uyarı görürsünüz.
+**Birim fiyat** ve **Desi** yalnızca [İlanlar](/rehber/brand-listings) ekranındaki tahmini satıcı kârında kullanılır; alarmı etkilemez. Kaydetmek için **Ekle** (yeni ürün) ya da **Güncelle**'ye tıklayın. PSF kendi aralığınızın dışındaysa ürün yine kaydedilir ve **Dikkat:** ile başlayan bir uyarı görürsünüz. Kayıt yapılamazsa nedeni formun altında, düğmelerin hemen altında yazar.
 
 Ekleme, düzenleme ve silme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
