@@ -433,7 +433,7 @@ without notice. `packages/adapters` records `parserVersion` and per-field diagno
 scrape so a change surfaces as a metric, not as quietly empty reports. Re-verify this section
 whenever the parser's diagnostics show a drop in `winnerVariantFound` or `merchantCount`.
 
-## 1.6a Merchant-scoped product page — seller identity (reporting only, on demand) ⚠️ *(added 2026-08-28)*
+## 1.6a Merchant-scoped product page — seller identity (reporting only, on demand) ⚠️ *(added 2026-08-28, re-verified 2026-11-25)*
 
 The **same page as §1.6, requested the opposite way**, and the only place in this system allowed
 to do so.
@@ -452,6 +452,16 @@ buybox endpoint, §1.4, which reported rank 8 for a product the scoped page repo
 This section **adds** it, because that is what makes the page carry the merchant's own business
 registration in `merchantListing.merchant` — `officialName`, `taxNumber`, `taxOffice`,
 `registeredEmailAddress`, `address`, `cityName`, `countryName` (guide §29).
+
+⚠️ **`merchantId` must be the only query parameter** *(measured live 2026-11-25)*. The sweep
+stores every product URL as `…-p-{id}?boutiqueId=…&merchantId=…` (§1.6). With `boutiqueId`
+present, Trendyol redirects to the bare product path and drops `merchantId` on the way, so the
+page comes back about the buybox holder — even for a seller who is in stock on that product
+(`p-2270129?boutiqueId=61&merchantId=725336` → bare `p-2270129`, merchant 107121; the same URL
+without `boutiqueId` → merchant 725336). Without `boutiqueId` the page answers for the requested
+merchant even when their offer is out of stock ("Tükendi"), identity fields included. In
+production this was 49 of the 55 failures in a 195-seller bulk run, all `identityMismatch`.
+`buildUrl` therefore discards the captured query string whole and sets `merchantId` alone.
 
 Those are the same finding used twice, not a contradiction: **a merchant-scoped response is
 authoritative about who that merchant is and worthless about where they rank.** Both halves are
@@ -1515,3 +1525,4 @@ sounding one would have reported a live product as gone. Unconfirmed, unmapped.
 | 2026-08-29 | Trendyol | §1.6 — **`net::ERR_ABORTED` characterised and retried.** Reproduced live through the production Playwright transport: ~1 navigation in 6 across one reused page aborts in ~70 ms, non-deterministically (three consecutive fetches of one URL fine; a repeat of another aborted), with the fetches either side returning 200 and full `__envoy__SHARED_PROPS`. Not URL-specific and not a block. One retry added; a second consecutive abort still fails the item | assistant, read-only live fetches; measured while trialling every job on the operator's install |
 | 2026-09-20 | Trendyol | §1.6 — **operator-pasted link shapes**, measured against the live install's 7,309 tracked rows: 7,308 are stored as a relative `/{marka}/{slug}-p-{id}?boutiqueId=…&merchantId=…` path (what the sweep writes), the rest absolute. Query params are never identity | assistant, read-only query against the operator's database; no marketplace request |
 | 2026-09-11 | Trendyol | §1.6 — **the production event log read end to end** (`TrackedProductScrapeFailed`, the operator's own export). Five distinct causes, not one: (1) `page.goto: Page crashed` unbroken from 7 Eylül 17:38 to 8 Eylül 13:28 across the whole tracked catalogue — a crashed renderer the session liveness check could not see, since the browser stays connected and the page stays open, so the poisoned page was handed to every later fetch until the worker restarted; (2) `Timeout 15000ms exceeded`, the most common recurring entry, steady and outside every crash window — the machine, not the marketplace; (3) ten 503s over four days, unretried because only 403 was; (4) one 410 product (`…-p-793542803`) and two 404s, retried hourly for days although the marketplace had said they were gone; (5) singletons — `net::ERR_NETWORK_IO_SUSPENDED` (the Windows box asleep), `net::ERR_NAME_NOT_RESOLVED`, and three `parseFailed: No <script> containing __envoy__SHARED_PROPS` on `/pd/…` URLs, **still open**. Fixed: crash detection and page recycling, 30 s operator-settable timeout, retry on 403/429/502/503/504, and 404/410 deactivating the tracked row | operator's CSV export of the live event log; assistant read the code against it — no live request made |
+| 2026-11-25 | Trendyol | §1.6a — **`boutiqueId` defeats `merchantId`.** A production bulk run failed 55 of 195 sellers, 49 as `identityMismatch`, the same 55 on a second run. Live: `p-970664666?boutiqueId=61&merchantId=107975` and `p-2270129?boutiqueId=61&merchantId=725336` both redirect to the bare path and return the buybox holder (107121); the same URLs without `boutiqueId` return 107975 (out of stock, identity present) and 725336 (in stock). `buildUrl` now sends `merchantId` as the only query parameter | operator's production `app_events` / `job_runs`; assistant, four read-only live page loads in a browser |
