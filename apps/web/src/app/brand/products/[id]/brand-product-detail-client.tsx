@@ -34,6 +34,7 @@ import {
 import { formatDesi } from '@/lib/desi';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { labelOf, MARKETPLACE_LABELS } from '@/lib/labels';
+import { marketplaceProductUrl } from '@/lib/product-url';
 import { BandRealismNote, type BandRealismView } from './band-realism-note';
 import { PermissionFieldset } from '@/lib/permissions';
 
@@ -104,6 +105,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
   const [pickedCard, setPickedCard] = useState<Suggestion | null>(null);
   const [multiplier, setMultiplier] = useState('');
   const [asPrimary, setAsPrimary] = useState(false);
+  const [multiplierError, setMultiplierError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -133,9 +135,12 @@ export function BrandProductDetailClient({ id }: { id: string }) {
   async function addCard() {
     const count = Number(multiplier);
     if (!Number.isSafeInteger(count) || count < 1) {
-      setNotice({ ok: false, message: 'Adet çarpanı 1 veya daha büyük bir tam sayı olmalı.' });
+      // Beside the field, not at the top of the page (review 2026-11-25 O6/O7): the form sits
+      // below the fold, and a banner up there was never seen.
+      setMultiplierError("Bu kartta kaç birim satılıyor? Tek ürünse 1, 3'lü paketse 3 yazın.");
       return;
     }
+    setMultiplierError(null);
     setBusy(true);
     setNotice(null);
     try {
@@ -268,9 +273,18 @@ export function BrandProductDetailClient({ id }: { id: string }) {
                   <tr key={card.id} className="border-t border-(--color-border)">
                     <td className="p-2">{labelOf(MARKETPLACE_LABELS, card.marketplaceCode)}</td>
                     <td className="p-2">
-                      <a className="underline" href={card.productUrl} target="_blank" rel="noreferrer">
-                        {card.label}
-                      </a>
+                      {marketplaceProductUrl(card.marketplaceCode, card.productUrl) === null ? (
+                        card.label
+                      ) : (
+                        <a
+                          className="underline"
+                          href={marketplaceProductUrl(card.marketplaceCode, card.productUrl)!}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {card.label}
+                        </a>
+                      )}
                       <div className="text-xs text-(--color-muted)">
                         {card.productRef}
                         {!card.isActive && ' · pasif'}
@@ -341,10 +355,14 @@ export function BrandProductDetailClient({ id }: { id: string }) {
               className="w-96"
             />
           </Field>
-          <Field label="Adet çarpanı" hint="Bir alışta kaç birim gider?">
+          <Field label="Adet çarpanı" hint="Bir alışta kaç birim gider?" error={multiplierError ?? undefined}>
             <TextInput
               value={multiplier}
-              onChange={(e) => setMultiplier(e.target.value)}
+              aria-invalid={multiplierError !== null}
+              onChange={(e) => {
+                setMultiplier(e.target.value);
+                setMultiplierError(null);
+              }}
               inputMode="numeric"
               placeholder="örn. 3"
               className="w-28"

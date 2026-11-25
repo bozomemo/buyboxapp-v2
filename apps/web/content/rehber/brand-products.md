@@ -143,6 +143,8 @@ Bu not bir uyarıdır: bandınız piyasayı anlatmıyor olabilir ya da piyasa to
 
 ### Bağlı kartlar
 
+Kartın adına tıklayınca kart pazaryerinde yeni sekmede açılır. Bağlantı belirli bir satıcıya kilitli değildir; sayfa o an buybox'ta kim varsa onunla açılır.
+
 Her satır bu ürüne bağlı bir karttır:
 
 - **Pazaryeri**
@@ -158,7 +160,7 @@ Her satır bu ürüne bağlı bir karttır:
 ### Kart ekle
 
 1. **Ürün linki** alanına Trendyol veya Hepsiburada ürün sayfasının linkini yapıştırın. Takip listesinde olmayan bir kartsa takibe eklenir.
-2. **Adet çarpanı** alanına bir alışta kaç adet ürün gittiğini yazın. Bu alan bilerek boş gelir; her kart için siz cevaplamalısınız.
+2. **Adet çarpanı** alanına bir alışta kaç adet ürün gittiğini yazın. Bu alan bilerek boş gelir; her kart için siz cevaplamalısınız. Boş bırakırsanız alanın hemen altında ne yazmanız gerektiği söylenir (tek ürünse 1, 3'lü paketse 3).
 3. Bu kart o pazaryerinde ana kart olacaksa **Bu pazaryerinde birincil kart olsun** kutusunu işaretleyin.
 4. **Bağla**'ya tıklayın.
 

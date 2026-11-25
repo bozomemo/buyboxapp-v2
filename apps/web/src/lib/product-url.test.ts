@@ -11,6 +11,8 @@ describe('marketplaceProductUrl', () => {
     ['an unknown marketplace yields no link', 'amazon', '/urun-p-1', null],
     ['an empty stored value yields no link', 'trendyol', '', null],
     ['a missing stored value yields no link', 'trendyol', null, null],
+    ['the seller pin is dropped, the rest of the query kept', 'trendyol', '/m/u-p-1?boutiqueId=61&merchantId=107493', 'https://www.trendyol.com/m/u-p-1?boutiqueId=61'],
+    ['a lone seller pin leaves no dangling question mark', 'trendyol', 'https://www.trendyol.com/m/u-p-1?merchantId=5', 'https://www.trendyol.com/m/u-p-1'],
   ])('%s', (_name, code, stored, expected) => {
     expect(marketplaceProductUrl(code, stored)).toBe(expected);
   });
