@@ -137,3 +137,17 @@ describe('the product form', () => {
     expect(screen.getByLabelText(/Desi/).getAttribute('placeholder')).toBe('örn. 4,5');
   });
 });
+
+// Review 2026-11-25: "Düzenle" on a product's own page opens its form here.
+describe('opening the edit form from a link', () => {
+  it('opens the form for ?edit=<id>', async () => {
+    window.history.pushState({}, '', '/brand/products?edit=bp1');
+    stubFetch({
+      [ROUTE]: { body: { products: [PRODUCT], total: 1 } },
+      '/api/brand-products/bp1': { body: { product: PRODUCT, cards: [], suggestions: [] } },
+    });
+    render(<BrandProductsClient />);
+    expect(await screen.findByRole('group', { name: 'Düzenleniyor: Miyav Gold Somonlu 1,5 kg' })).toBeTruthy();
+    window.history.pushState({}, '', '/');
+  });
+});

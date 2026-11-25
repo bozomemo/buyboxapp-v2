@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubFetch } from '@/test-utils';
 import { BrandProductDetailClient } from './brand-product-detail-client';
 
@@ -75,5 +75,33 @@ describe('BrandProductDetailClient', () => {
     fireEvent.change(linkField, { target: { value: 'https://www.trendyol.com/x-p-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Bağla' }));
     expect(await screen.findByText(/Tek ürünse 1/)).toBeTruthy();
+  });
+});
+
+// Review 2026-11-25: the product itself could be neither edited nor deleted from its own page.
+describe('product actions', () => {
+  it('links to editing it on Stok', async () => {
+    stubFetch({ '/api/brand-products/bp1': { body: detail([]) } });
+    render(<BrandProductDetailClient id="bp1" />);
+    const edit = await screen.findByRole('link', { name: 'Düzenle' });
+    expect(edit.getAttribute('href')).toBe('/brand/products?edit=bp1');
+  });
+
+  it('deletes it after confirmation', async () => {
+    stubFetch({ '/api/brand-products/bp1': { body: detail([]) } });
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    render(<BrandProductDetailClient id="bp1" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ürünü sil' }));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Onayla' }));
+    await waitFor(() =>
+      expect(
+        vi.mocked(fetch).mock.calls.some(
+          ([u, init]) => String(u) === '/api/brand-products/bp1' && (init as RequestInit | undefined)?.method === 'DELETE',
+        ),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/brand/products'));
+    vi.unstubAllGlobals();
   });
 });

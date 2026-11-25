@@ -132,6 +132,16 @@ export function BrandProductDetailClient({ id }: { id: string }) {
 
   useEffect(load, [load]);
 
+  async function removeProduct() {
+    const res = await fetch(`/api/brand-products/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setNotice({ ok: false, message: data.error ?? `Ürün silinemedi (HTTP ${res.status}).` });
+      return;
+    }
+    window.location.assign('/brand/products');
+  }
+
   async function addCard() {
     const count = Number(multiplier);
     if (!Number.isSafeInteger(count) || count < 1) {
@@ -208,9 +218,26 @@ export function BrandProductDetailClient({ id }: { id: string }) {
         breadcrumb={[{ label: 'Marka Denetimi' }, { label: 'Stok', href: '/brand/products' }, { label: product.name }]}
         description={product.barcode ? `Barkod ${product.barcode}` : undefined}
         action={
-          <Link className={buttonClass('secondary', 'sm')} href="/brand/products">
-            Stok listesine dön
-          </Link>
+          <>
+            <Link className={buttonClass('secondary', 'sm')} href="/brand/products">
+              Stok listesine dön
+            </Link>
+            {/* The product itself, from its own page (review 2026-11-25). */}
+            <PermissionFieldset permission="catalogue.manage">
+              <Link className={buttonClass('secondary', 'sm')} href={`/brand/products?edit=${encodeURIComponent(id)}`}>
+                Düzenle
+              </Link>
+              <ConfirmButton
+                requireConfirm
+                confirmTone="danger"
+                confirmMessage={`${product.name} silinsin mi? Bağlı kartlar takip listesinde kalır; bu ürünün fiyat aralığı ve alarmları silinir.`}
+                className={buttonClass('ghost-danger', 'sm')}
+                onConfirmed={() => void removeProduct()}
+              >
+                Ürünü sil
+              </ConfirmButton>
+            </PermissionFieldset>
+          </>
         }
       />
 

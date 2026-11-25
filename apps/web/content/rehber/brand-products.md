@@ -129,7 +129,7 @@ Ekleme, düzenleme ve silme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
 ## Ürün sayfası
 
-Listede bir ürün adına tıklayınca ürünün kendi sayfası açılır. **Stok listesine dön** sizi listeye geri götürür.
+Listede bir ürün adına tıklayınca ürünün kendi sayfası açılır. **Stok listesine dön** sizi listeye geri götürür. **Düzenle** Stok ekranını bu ürünün formu açık olarak açar. **Ürünü sil** onay sorduktan sonra ürünü siler ve sizi Stok listesine götürür; bağlı kartlar takip listesinde kalır. Bu iki düğme Yönetici ve Fiyat Yöneticisi rollerine açıktır.
 
 ### Özet kutuları
 

@@ -137,6 +137,20 @@ export function BrandProductsClient() {
 
   useEffect(load, [load]);
 
+  // `?edit=<id>` — "Düzenle" on the product's own page lands here with its form open
+  // (review 2026-11-25). Read once on mount; the product is fetched, not looked up on this page.
+  useEffect(() => {
+    const editId = new URLSearchParams(window.location.search).get('edit');
+    if (!editId) return;
+    fetch(`/api/brand-products/${encodeURIComponent(editId)}`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ product: BrandProduct }>) : null))
+      .then((data) => {
+        if (data?.product) edit(data.product);
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on arrival
+  }, []);
+
   function edit(row: BrandProduct) {
     setForm({
       id: row.id,
