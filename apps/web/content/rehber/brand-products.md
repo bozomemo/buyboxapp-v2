@@ -164,7 +164,7 @@ Her satır bu ürüne bağlı bir karttır:
 3. Bu kart o pazaryerinde ana kart olacaksa **Bu pazaryerinde birincil kart olsun** kutusunu işaretleyin.
 4. **Bağla**'ya tıklayın.
 
-### Bu kart senin ürünün olabilir
+### Bu kart sizin ürününüz olabilir
 
 Ürüne barkod yazdıysanız, aynı barkodu taşıyan ve henüz hiçbir ürüne bağlı olmayan kartlar burada önerilir. Öneriler kendiliğinden bağlanmaz.
 

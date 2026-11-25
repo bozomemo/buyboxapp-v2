@@ -9,7 +9,7 @@
  * - **The multiplier is asked, never defaulted.** The add-card field starts empty and the form
  *   refuses to submit without it. A pre-filled 1 is a question nobody reads, and the multiplier
  *   is what every band comparison for that card is scaled by.
- * - **A suggestion is an offer, not a link.** _Bu kart senin ürünün olabilir_ fills the card in
+ * - **A suggestion is an offer, not a link.** _Bu kart sizin ürününüz olabilir_ fills the card in
  *   and still asks the multiplier; nothing is linked until the operator presses the button.
  */
 
@@ -386,7 +386,7 @@ export function BrandProductDetailClient({ id }: { id: string }) {
         )}
       </Section>
 
-      <Section id="suggestions" title="Bu kart senin ürünün olabilir">
+      <Section id="suggestions" title="Bu kart sizin ürününüz olabilir">
         {suggestions.length === 0 ? (
           <EmptyState
             message="Öneri yok."
