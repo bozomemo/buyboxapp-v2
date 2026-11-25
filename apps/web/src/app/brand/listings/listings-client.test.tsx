@@ -244,6 +244,16 @@ describe('BrandListingsClient', () => {
   });
 });
 
+describe('card name', () => {
+  // Review 2026-11-25: a card linked by pasting showed its code (999999999) as its name.
+  it('shows the stock product name for a card still named by its code', async () => {
+    stubFetch({ '/api/brand/listings': { body: { listings: [listing({ label: '999999999', productRef: '999999999' })], total: 1 } } });
+    render(<BrandListingsClient />);
+    const name = await screen.findByTitle('999999999');
+    expect(name.textContent).toBe('Mama');
+  });
+});
+
 // Review 2026-11-25 O8: the favourite star was open to İzleyici, and a 403 changed nothing on screen.
 describe('favourite star', () => {
   it('is disabled for a role that cannot change it', async () => {

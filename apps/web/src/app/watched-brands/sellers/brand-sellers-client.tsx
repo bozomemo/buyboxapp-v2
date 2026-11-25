@@ -602,8 +602,9 @@ export function BrandSellersClient() {
           */}
               {report.buybox && report.buybox.totalLooks > 0 && (
                 <div className="rounded-lg border border-(--color-border) bg-(--color-surface) p-3 text-sm">
-                  Bu dönemde markanın <strong>{formatNumber(report.buybox.totalLooks)}</strong> kayıtlı buybox
-                  anı var
+                  {/* Plural when no single brand is chosen (review 2026-11-25). */}
+                  Bu dönemde {report.filters.watchedBrandId ? 'markanın' : 'izlenen markaların'}{' '}
+                  <strong>{formatNumber(report.buybox.totalLooks)}</strong> kayıtlı buybox anı var
                   {topShare && (
                     <>
                       {' '}

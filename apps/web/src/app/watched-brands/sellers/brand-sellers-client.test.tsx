@@ -234,6 +234,12 @@ describe('BrandSellersClient', () => {
       expect(screen.getAllByRole('button', { name: 'Kimlik' })).toHaveLength(1);
     });
 
+    it('speaks of brands, plural, when no single brand is chosen', async () => {
+      stubFetch({ [ROUTE]: { body: { ...REPORT, buybox: { totalLooks: 193, unidentifiedLooks: 0 } } } });
+      render(<BrandSellersClient />);
+      expect(await screen.findByText(/izlenen markaların/)).toBeTruthy();
+    });
+
     it('the header box ticks every seller on this page', async () => {
       stubFetch({ [ROUTE]: { body: REPORT } });
       render(<BrandSellersClient />);

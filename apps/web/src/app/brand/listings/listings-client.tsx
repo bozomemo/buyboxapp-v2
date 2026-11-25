@@ -136,6 +136,12 @@ function money(value: string | null): string {
   return value === null ? '—' : formatMoney(BigInt(value));
 }
 
+/** The card's own name, or the stock product's when the card is still named by its link or code. */
+function displayLabel(row: Listing): string {
+  const placeholder = /^https?:\/\//i.test(row.label) || row.label === row.productRef || /^[0-9]+$/.test(row.label);
+  return placeholder && row.brandProduct ? row.brandProduct.name : row.label;
+}
+
 export function BrandListingsClient() {
   const [rows, setRows] = useState<Listing[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -377,7 +383,9 @@ export function BrandListingsClient() {
                         </button>
                       </td>
                       <td className="p-2">
-                        <span>{row.label}</span>
+                        {/* A card added by pasting its link carries the link as its label until
+                            renamed; the stock product's name says more (review 2026-11-25). */}
+                        <span title={row.label}>{displayLabel(row)}</span>
                         {(() => {
                           const pageUrl = marketplaceProductUrl(row.marketplaceCode, row.productUrl);
                           return pageUrl ? (
