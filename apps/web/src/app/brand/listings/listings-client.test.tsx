@@ -87,6 +87,29 @@ describe('BrandListingsClient', () => {
     expect(screen.getByText(/kart bandın dışında/)).toBeTruthy();
   });
 
+  // Review 2026-11-25 Y7: every status was "Bilinmiyor" and the summary said none was out of band.
+  it('does not call unknown statuses clean', async () => {
+    stubFetch({
+      '/api/brand/listings': {
+        body: { listings: [listing({ bandStatus: 'unknown' }), listing({ id: 'tp2', bandStatus: 'unknown' })], total: 2 },
+      },
+    });
+    render(<BrandListingsClient />);
+    expect(await screen.findByText(/2 kartın bant durumu henüz bilinmiyor/)).toBeTruthy();
+    expect(screen.queryByText(/hiçbiri bandın dışında değil/)).toBeNull();
+  });
+
+  it('says how many of the rest are unknown beside an in-band summary', async () => {
+    stubFetch({
+      '/api/brand/listings': {
+        body: { listings: [listing(), listing({ id: 'tp2', bandStatus: 'unknown' })], total: 2 },
+      },
+    });
+    render(<BrandListingsClient />);
+    expect(await screen.findByText(/bilinen kartların hiçbiri bandın dışında değil/)).toBeTruthy();
+    expect(screen.getByText(/1 kartın bant durumu henüz bilinmiyor/)).toBeTruthy();
+  });
+
   it('an open violation shows how long it has been open, linked to Alarmlar', async () => {
     stubFetch({
       '/api/brand/listings': {

@@ -190,6 +190,9 @@ export function BrandListingsClient() {
   const breaches = (rows ?? []).filter(
     (row) => row.bandStatus === 'belowMin' || row.bandStatus === 'aboveMax',
   );
+  // Review 2026-11-25 Y7: "unknown" is not "in band". Only linked cards have a band at all.
+  const unknown = (rows ?? []).filter((row) => row.brandProduct != null && row.bandStatus === 'unknown');
+  const known = (rows ?? []).filter((row) => row.brandProduct != null && row.bandStatus !== 'unknown');
   // Brand roadmap §6.7: the buybox holder selling under its own estimated cost.
   const atLoss = (rows ?? []).filter((row) => row.profit != null && BigInt(row.profit.profit) < 0n);
 
@@ -256,15 +259,22 @@ export function BrandListingsClient() {
 
         {rows !== null && rows.length > 0 && (
           <p className="mb-2 text-sm">
-            {breaches.length === 0 ? (
+            {breaches.length === 0 && known.length === 0 ? null : breaches.length === 0 ? (
               <span className="text-(--color-muted)">
-                Bu sayfadaki kartların hiçbiri bandın dışında değil.
+                {unknown.length > 0
+                  ? 'Bu sayfadaki bilinen kartların hiçbiri bandın dışında değil.'
+                  : 'Bu sayfadaki kartların hiçbiri bandın dışında değil.'}
               </span>
             ) : (
               <span className="text-(--color-warning)">
                 Bu sayfada <strong>{formatNumber(breaches.length)}</strong> kart bandın dışında.
               </span>
             )}{' '}
+            {unknown.length > 0 && (
+              <span className="text-(--color-warning)">
+                {`${formatNumber(unknown.length)} kartın bant durumu henüz bilinmiyor — bu kartlara henüz bakılmadı ya da buybox fiyatı okunamadı.`}{' '}
+              </span>
+            )}
             {atLoss.length > 0 && (
               <span className="text-(--color-danger)">
                 <strong>{formatNumber(atLoss.length)}</strong> kartta buybox satıcısı tahmini maliyetinin altında

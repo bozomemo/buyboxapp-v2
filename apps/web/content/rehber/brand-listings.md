@@ -21,7 +21,7 @@ Bu kartlara yaklaşık yarım saatte bir bakılır ve buybox fiyatı fiyat aral�
 - **Pazaryeri**: **Hepsi**, **Trendyol** ya da **Hepsiburada**.
 - **Excel'e aktar**: o anki filtreyle listeyi dosya olarak indirir.
 
-Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışında olduğunu söyler. Bu sayı yalnızca ekrandaki sayfa içindir; tüm açık ihlaller için [Marka Alarmları](/rehber/brand-alerts) ekranına bakın. Buybox satıcısı tahmini maliyetinin altında satıyorsa aynı satırda kaç kartta böyle olduğu da yazar.
+Tablonun üstündeki satır, bu sayfadaki kartlardan kaçının aralık dışında olduğunu söyler. Bu sayı yalnızca ekrandaki sayfa içindir; tüm açık ihlaller için [Marka Alarmları](/rehber/brand-alerts) ekranına bakın. Buybox satıcısı tahmini maliyetinin altında satıyorsa aynı satırda kaç kartta böyle olduğu da yazar. Durumu **Bilinmiyor** olan kartlar "aralıkta" sayılmaz; kaç kartın durumunun henüz bilinmediği ayrıca yazar.
 
 ## Sütunlar
 
