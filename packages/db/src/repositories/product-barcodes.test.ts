@@ -12,6 +12,7 @@ import { ALL_DIALECTS, createTestDb, type TestDb } from '../test-helpers.js';
 import * as configRepo from './config.js';
 import * as productBarcodesRepo from './product-barcodes.js';
 import * as trackedProductsRepo from './tracked-products.js';
+import * as watchedBrandsRepo from './watched-brands.js';
 
 const NOW = Date.UTC(2026, 7, 28);
 
@@ -131,6 +132,24 @@ for (const dialect of ALL_DIALECTS) {
         failed: 0,
         pending: 1,
       });
+    }, 30_000);
+
+    // Review 2026-11-25: a paused brand's products were still counted in the coverage.
+    it('leaves a paused brand’s products out of the coverage', async () => {
+      db = await createTestDb(dialect);
+      await seedMarketplaces(db.appDb);
+      await watchedBrandsRepo.createWatchedBrandGroup(db.appDb, { id: 'g', name: 'G', note: null, createdAt: NOW, updatedAt: NOW });
+      await watchedBrandsRepo.createWatchedBrand(db.appDb, {
+        id: 'paused', groupId: 'g', marketplaceCode: 'HB', label: 'Duraklatılmış', brandRef: null, searchTerm: 'x',
+        isActive: false, lastSweptAt: null, lastSweepProductCount: null, createdAt: NOW, updatedAt: NOW,
+      });
+      await addProduct(db.appDb, 'HB', 'HBCV1');
+      const paused = newId();
+      await trackedProductsRepo.addTrackedProduct(db.appDb, {
+        id: paused, marketplaceCode: 'HB', productRef: 'HBCV9', productUrl: '/u', label: 'u', isActive: true,
+        addedAt: NOW, watchedBrandId: 'paused',
+      });
+      expect((await productBarcodesRepo.barcodeCoverage(db.appDb, 'HB')).total).toBe(1);
     }, 30_000);
 
     it('counts a product that failed its way off the list as failed, not as pending', async () => {

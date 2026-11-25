@@ -121,9 +121,13 @@ export class TrendyolSellerIdentitySource implements ISellerIdentitySource {
   /**
    * The product page for `ref`, requested **as** `sellerRef`.
    *
-   * Any `merchantId` already on a captured `productUrl` is our own seller id (mapping.ts), so it
-   * is overwritten rather than appended to — `set`, not `append`. Every other query parameter is
-   * left as Trendyol supplied it, exactly as the scraper leaves them.
+   * The query string of a captured `productUrl` is discarded whole and replaced by
+   * `merchantId=<sellerRef>` alone. Its `merchantId` is our own seller id (mapping.ts), and its
+   * `boutiqueId` — on every URL the sweep stores — makes Trendyol redirect to the bare product
+   * path, dropping `merchantId` on the way, so the page comes back about the buybox holder
+   * (measured live 2026-11-25, api-references §1.6a). That cost 49 of 55 failed resolutions in
+   * one production run as `identityMismatch`. Without `boutiqueId` the page answers for the
+   * requested merchant even when their offer is out of stock.
    */
   buildUrl(ref: ProductPageRef, sellerRef: string): string {
     const base =
@@ -141,6 +145,8 @@ export class TrendyolSellerIdentitySource implements ISellerIdentitySource {
       );
     }
     const url = new URL(base);
+    url.search = '';
+    url.hash = '';
     url.searchParams.set('merchantId', sellerRef);
     return url.toString();
   }
